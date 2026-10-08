@@ -223,7 +223,7 @@ function parseDay(s: string | null | undefined): number | null {
 }
 
 /** Whole days between two dates (to − from); 0 if either is unparseable. */
-function daysBetween(fromISO: string, toISO: string): number {
+export function daysBetween(fromISO: string, toISO: string): number {
   const a = parseDay(fromISO);
   const b = parseDay(toISO);
   if (a == null || b == null) return 0;

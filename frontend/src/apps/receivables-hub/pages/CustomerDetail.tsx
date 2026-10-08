@@ -43,6 +43,7 @@ import { useQuery } from "@tanstack/react-query";
 import { utilizationPct } from "@hub/lib/receivables";
 import { matchesSearch } from "@/shared/lib/search";
 import { exportCustomerPdf, exportCustomerXlsx, exportTransactionsXlsx } from "@hub/lib/exportCustomer";
+import { daysBetween } from "@hub/lib/agingReport";
 import type { Customer, CustomerGroupMap, InvoiceStatus } from "@hub/lib/types";
 
 /* ── Types ─────────────────────────────────────────────── */
@@ -522,6 +523,9 @@ export default function CustomerDetail() {
   const [agingOpen, setAgingOpen] = useState(true);
   const [obOpen, setObOpen] = useState(false);
   const [agingBucketFilter, setAgingBucketFilter] = useState<Set<string>>(new Set());
+  // Which lens the aging card reads through: days past DUE date (the pipeline's agingBuckets)
+  // or days since the BILL date (computed here from the open bills, as the Aging Report does).
+  const [agingBasis, setAgingBasis] = useState<"overdue" | "billDate">("overdue");
   const [invoiceSearch, setInvoiceSearch] = useState("");
   const [monthlyOpen, setMonthlyOpen] = useState(false);
   const [monthlyCols, setMonthlyCols] = useState<Set<string>>(
@@ -831,6 +835,46 @@ export default function CustomerDetail() {
       .sort((a, b) => a.date.localeCompare(b.date)),
     [activeEntities, customerDetail],
   );
+
+  // ── Bill-date aging ─────────────────────────────────────────────────────────
+  // Every OPEN bill (due or not yet due), bucketed by days since its bill date, measured to the
+  // data's as-of date — the same lens as the Aging Report's "Outstanding" columns. A bill with no
+  // date (an orphan Agst Ref debit, see agingReport.isOrphanDebitBill) has nothing to age it by
+  // and is left to the bridge line in the card instead.
+  const asOfDate = dashboard?.asOfDate ?? "";
+  const billAgeKey = (billDate: string): string | null => {
+    if (!billDate || !asOfDate) return null;
+    const age = daysBetween(billDate, asOfDate);
+    if (age <= 30)  return "0_30";
+    if (age <= 60)  return "31_60";
+    if (age <= 90)  return "61_90";
+    if (age <= 120) return "91_120";
+    if (age <= 180) return "121_180";
+    return "180_plus";
+  };
+  const billDateAging = useMemo(() => {
+    const buckets: Record<string, number> = {};
+    let bills = 0;
+    for (const inv of invoices) {
+      if (inv.pending < 0.5) continue;   // settled, or a credit balance (falls into the bridge)
+      const k = billAgeKey(inv.date);
+      if (!k) continue;
+      buckets[k] = (buckets[k] ?? 0) + inv.pending;
+      bills += inv.pending;
+    }
+    return { buckets, bills };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [invoices, asOfDate]);
+  // Bills − ledger. Positive = credit settling no open bill (On Account, advances); negative =
+  // ledger balance no bill carries (opening-balance residue, untagged debits). Shown as one line so
+  // the card's Total ties to the Outstanding KPI. Meaningless under a sale-type filter (the ledger
+  // has no per-type split — same rule as agingReport.creditsOfLedger), so it is skipped there.
+  const billDateBridge = effectiveSaleType === "all" && customer
+    ? billDateAging.bills - customer.outstanding
+    : 0;
+  const billDateTotal = billDateAging.bills - billDateBridge;
+  // The lens actually in force: with nothing overdue only the Bill Date lens has anything to show.
+  const agingByBillDate = agingBasis === "billDate" || !((customer?.overdue ?? 0) > 0);
 
   // ── Bill-reference universe (for the "Applied To" classification) ───────────
   // The full set of this customer's invoice/bill numbers across ALL fiscal years.
@@ -1273,12 +1317,17 @@ export default function CustomerDetail() {
         if (t.kind !== "sales" || !statusFilter.has(t.status ?? "")) return false;
       }
       if (agingBucketFilter.size > 0) {
-        if (t.kind !== "sales" || !agingBucketFilter.has(invoiceAgingKey(t.overdueDays ?? 0) ?? "")) return false;
+        if (t.kind !== "sales") return false;
+        const key = agingByBillDate
+          ? ((t.pending ?? 0) >= 0.5 ? billAgeKey(t.date) : null)
+          : invoiceAgingKey(t.overdueDays ?? 0);
+        if (!agingBucketFilter.has(key ?? "")) return false;
       }
       if (!matchesSearch(invoiceSearch, t.voucherNo, t.refInvoice)) return false;
       return true;
     });
-  }, [transactions, selectedTypes, voucherTypeFilter, statusFilter, agingBucketFilter, invoiceSearch]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [transactions, selectedTypes, voucherTypeFilter, statusFilter, agingBucketFilter, agingByBillDate, asOfDate, invoiceSearch]);
 
   // ── Transactions table sort ──────────────────────────────────────────────
   // (TxnSortKey is declared at module scope alongside the column config.)
@@ -1632,15 +1681,30 @@ export default function CustomerDetail() {
         "0_30": "0–30 days", "31_60": "31–60 days", "61_90": "61–90 days",
         "91_120": "91–120 days", "121_180": "121–180 days", "180_plus": "180+ days",
       };
-      const buckets = customer.agingBuckets as unknown as Record<string, number> | undefined;
+      // Follows the card's selected tab: Overdue Aging or Bill Date Aging.
+      const byBillDate = agingByBillDate;
+      const buckets = byBillDate
+        ? billDateAging.buckets
+        : customer.agingBuckets as unknown as Record<string, number> | undefined;
       const aging = buckets
         ? Object.entries(agingLabels)
-            .map(([k, label]) => ({ bucket: label, amount: Math.round(buckets[k] ?? 0) }))
+            .map(([k, label]) => ({
+              bucket: byBillDate ? `Bill age ${label}` : label,
+              amount: Math.round(buckets[k] ?? 0),
+            }))
             .filter((a) => a.amount !== 0)
         : [];
       // Mirror the on-screen strip: gross buckets, then the deduction, then the net Total —
-      // otherwise the sheet's rows would sum to a different figure than the Overdue KPI above.
-      if (onAccount > 0) {
+      // otherwise the sheet's rows would sum to a different figure than the KPI above.
+      if (byBillDate) {
+        if (Math.abs(billDateBridge) >= 0.5) {
+          aging.push({
+            bucket: billDateBridge > 0 ? "Less: On Account / advances" : "Add: Not on any bill",
+            amount: -Math.round(billDateBridge),
+          });
+        }
+        aging.push({ bucket: "Total Outstanding", amount: Math.round(billDateTotal) });
+      } else if (onAccount > 0) {
         aging.push({ bucket: "Less: On Account", amount: -Math.round(onAccount) });
         aging.push({ bucket: "Total Overdue (net)", amount: Math.round(overdueNet) });
       }
@@ -2236,8 +2300,8 @@ export default function CustomerDetail() {
       </Card>
       </Collapsible>
 
-      {/* Overdue Aging Breakdown */}
-      {customer.overdue > 0 && (() => {
+      {/* Aging Breakdown — one card, two lenses: Overdue Aging (days past due date) | Bill Date Aging (days since bill date) */}
+      {(customer.overdue > 0 || billDateAging.bills > 0) && (() => {
         const AGING_BUCKETS = [
           { label: "0–30 days",    key: "0_30",     color: "hsl(142, 71%, 45%)" },
           { label: "31–60 days",   key: "31_60",    color: "hsl(82, 70%, 42%)"  },
@@ -2246,6 +2310,18 @@ export default function CustomerDetail() {
           { label: "121–180 days", key: "121_180",  color: "hsl(20, 90%, 50%)"  },
           { label: "180+ days",    key: "180_plus", color: "hsl(var(--destructive))" },
         ] as const;
+
+        // No overdue at all → only the Bill Date lens has anything to show.
+        const hasOverdue = customer.overdue > 0;
+        const byBillDate = agingByBillDate;
+
+        const switchBasis = (next: "overdue" | "billDate") => {
+          if (next === agingBasis) return;
+          setAgingBasis(next);
+          // A bucket picked under one lens means something else under the other.
+          setAgingBucketFilter(new Set());
+          setInvoicePage(1);
+        };
 
         const handleBucketClick = (key: string) => {
           setAgingBucketFilter((prev) => {
@@ -2262,10 +2338,13 @@ export default function CustomerDetail() {
           }
         };
 
+        const bucketSource = byBillDate
+          ? billDateAging.buckets
+          : (customer.agingBuckets as unknown as Record<string, number>);
         const agingData = AGING_BUCKETS.map(({ label, key, color }) => ({
           label,
           color,
-          amount: (customer.agingBuckets as unknown as Record<string, number>)?.[key] ?? 0,
+          amount: bucketSource?.[key] ?? 0,
         })).filter((d) => d.amount > 0);
 
         const totalAgingAmt = agingData.reduce((s, d) => s + d.amount, 0);
@@ -2274,19 +2353,46 @@ export default function CustomerDetail() {
           <Collapsible open={agingOpen} onOpenChange={setAgingOpen}>
           <Card className="rounded-card border-border bg-surface">
             <CardHeader className="pb-2">
-              <CollapsibleTrigger asChild>
-                <button className="flex items-center justify-between w-full text-left">
-                  <CardTitle className="text-sm font-semibold flex items-center gap-2">
-                    <Clock className="h-4 w-4 text-destructive" />
-                    Overdue Aging Breakdown
-                    <span className="text-xs font-normal text-muted-foreground ml-1">
-                      — invoice-level only; opening balance excluded
-                      {onAccount > 0 ? "; bars are gross, On Account is deducted from the Total" : ""}
-                    </span>
-                  </CardTitle>
-                  <ChevronDown className={`h-4 w-4 text-muted-foreground transition-transform duration-200 shrink-0 ${agingOpen ? "rotate-180" : ""}`} />
-                </button>
-              </CollapsibleTrigger>
+              <div className="flex items-center justify-between gap-3">
+                <CollapsibleTrigger asChild>
+                  <button className="flex items-center justify-between flex-1 min-w-0 text-left">
+                    <CardTitle className="text-sm font-semibold flex items-center gap-2">
+                      <Clock className="h-4 w-4 text-destructive" />
+                      {byBillDate ? "Bill Date Aging Breakdown" : "Overdue Aging Breakdown"}
+                      <span className="text-xs font-normal text-muted-foreground ml-1">
+                        {byBillDate
+                          ? <>— every unpaid bill, aged from its bill date{asOfDate ? ` to ${formatDateDMY(asOfDate)}` : ""}{Math.abs(billDateBridge) >= 0.5 ? "; bars are gross, the Total ties to Outstanding" : ""}</>
+                          : <>— invoice-level only; opening balance excluded{onAccount > 0 ? "; bars are gross, On Account is deducted from the Total" : ""}</>}
+                      </span>
+                    </CardTitle>
+                    <ChevronDown className={`h-4 w-4 text-muted-foreground transition-transform duration-200 shrink-0 ${agingOpen ? "rotate-180" : ""}`} />
+                  </button>
+                </CollapsibleTrigger>
+                {/* Lens toggle — same pill style as the Revenue | Quantity switch on the other reports */}
+                <div data-export-hide className="flex items-center rounded-full border border-border bg-surface p-0.5 shrink-0">
+                  {([
+                    { id: "overdue",  label: "Overdue Aging"   },
+                    { id: "billDate", label: "Bill Date Aging" },
+                  ] as const).map((o) => {
+                    const active = (o.id === "billDate") === byBillDate;
+                    const disabled = o.id === "overdue" && !hasOverdue;
+                    return (
+                      <button
+                        key={o.id}
+                        type="button"
+                        disabled={disabled}
+                        title={disabled ? "Nothing is overdue for this customer" : undefined}
+                        onClick={() => switchBasis(o.id)}
+                        className={`px-3 py-1 rounded-full text-xs font-medium transition-colors
+                          ${active ? "bg-primary text-primary-foreground shadow-sm" : "text-muted-foreground hover:text-foreground"}
+                          ${disabled ? "opacity-40 cursor-not-allowed" : ""}`}
+                      >
+                        {o.label}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
             </CardHeader>
             <CollapsibleContent>
             <CardContent>
@@ -2303,7 +2409,7 @@ export default function CustomerDetail() {
                         borderRadius: "var(--radius)",
                         fontSize: 12,
                       }}
-                      formatter={(v: number) => [fmt(v), "Overdue"]}
+                      formatter={(v: number) => [fmt(v), byBillDate ? "Outstanding" : "Overdue"]}
                     />
                     <Bar dataKey="amount" radius={[4, 4, 0, 0]} maxBarSize={72} cursor="pointer"
                       onClick={(entry) => handleBucketClick(AGING_BUCKETS.find((b) => b.label === entry.label)?.key ?? "")}>
@@ -2337,8 +2443,10 @@ export default function CustomerDetail() {
                       </div>
                     );
                   })}
-                  {/* Opening balance row — only if non-zero */}
-                  {(customer as any).remainingOpeningBalance > 0 && (
+                  {/* Opening balance row — only if non-zero. Overdue lens only: on the Bill Date
+                      lens opening bills are aged by their own date, and any residue rides the
+                      bridge line below. */}
+                  {!byBillDate && (customer as any).remainingOpeningBalance > 0 && (
                     <div className="flex items-center justify-between gap-3 px-3 py-1.5 rounded-input bg-muted/40 border border-dashed border-muted-foreground/30">
                       <span className="text-xs text-muted-foreground w-24 shrink-0 italic">Opening Bal.</span>
                       <span className="text-xs font-bold font-mono text-muted-foreground">{fmt((customer as any).remainingOpeningBalance)}</span>
@@ -2352,7 +2460,7 @@ export default function CustomerDetail() {
                       age bracket, so the buckets stay gross rather than guessing which slice the
                       money was meant to pay. The strip therefore reads
                       bars + opening balance − On Account = Total. */}
-                  {onAccount > 0 && (
+                  {!byBillDate && onAccount > 0 && (
                     <div className="flex items-center justify-between gap-3 px-3 py-1.5 rounded-input bg-emerald-50/60 dark:bg-emerald-950/20 border border-dashed border-emerald-600/30">
                       <span className="text-xs text-emerald-700 dark:text-emerald-500 w-24 shrink-0 italic">Less: On Acct.</span>
                       <span className="text-xs font-bold font-mono text-emerald-700 dark:text-emerald-500">−{fmt(onAccount)}</span>
@@ -2362,8 +2470,40 @@ export default function CustomerDetail() {
                       </span>
                     </div>
                   )}
+                  {/* Bill Date bridge — bills − ledger, so bars ± this line = Total Outstanding.
+                      Positive = credit settling no open bill (On Account / advances); negative =
+                      ledger balance no dated bill carries. */}
+                  {byBillDate && billDateBridge >= 0.5 && (
+                    <div className="flex items-center justify-between gap-3 px-3 py-1.5 rounded-input bg-emerald-50/60 dark:bg-emerald-950/20 border border-dashed border-emerald-600/30">
+                      <span className="text-xs text-emerald-700 dark:text-emerald-500 w-24 shrink-0 italic">Less: On Acct.</span>
+                      <span className="text-xs font-bold font-mono text-emerald-700 dark:text-emerald-500">−{fmt(billDateBridge)}</span>
+                      <span className="text-[10px] text-muted-foreground w-10 text-right shrink-0">
+                        {billDateAging.bills > 0 ? `${((billDateBridge / billDateAging.bills) * 100).toFixed(1)}%` : "—"}
+                      </span>
+                    </div>
+                  )}
+                  {byBillDate && billDateBridge <= -0.5 && (
+                    <div className="flex items-center justify-between gap-3 px-3 py-1.5 rounded-input bg-muted/40 border border-dashed border-muted-foreground/30">
+                      <span className="text-xs text-muted-foreground w-24 shrink-0 italic">Add: Not on bill</span>
+                      <span className="text-xs font-bold font-mono text-muted-foreground">+{fmt(-billDateBridge)}</span>
+                      <span className="text-[10px] text-muted-foreground w-10 text-right shrink-0">—</span>
+                    </div>
+                  )}
                 </div>
-                {/* Right — total overdue */}
+                {/* Right — total */}
+                {byBillDate ? (
+                  <div className="flex items-center justify-center bg-primary/10 border border-primary/20 rounded-input px-6 py-3 shrink-0">
+                    <div className="text-center">
+                      <p className="text-[10px] text-primary font-medium uppercase tracking-wide">Total Outstanding</p>
+                      <p className="text-xl font-bold font-mono text-primary mt-1">{fmt(billDateTotal)}</p>
+                      {Math.abs(billDateBridge) >= 0.5 && (
+                        <p className="text-[10px] text-muted-foreground mt-1">
+                          bills {fmt(billDateAging.bills)} {billDateBridge > 0 ? "less On Account" : "plus balance not on any bill"}
+                        </p>
+                      )}
+                    </div>
+                  </div>
+                ) : (
                 <div className="flex items-center justify-center bg-destructive/10 border border-destructive/20 rounded-input px-6 py-3 shrink-0">
                   <div className="text-center">
                     <p className="text-[10px] text-destructive font-medium uppercase tracking-wide">Total Overdue</p>
@@ -2380,6 +2520,7 @@ export default function CustomerDetail() {
                     )}
                   </div>
                 </div>
+                )}
               </div>
             </CardContent>
             </CollapsibleContent>
@@ -2599,7 +2740,7 @@ export default function CustomerDetail() {
                         setInvoicePage(1);
                       }}
                     >
-                      {labels[k] ?? k} <X className="h-3 w-3" />
+                      {agingByBillDate ? "Bill age " : ""}{labels[k] ?? k} <X className="h-3 w-3" />
                     </Badge>
                   ))}
                   {selected.length > 1 && (
