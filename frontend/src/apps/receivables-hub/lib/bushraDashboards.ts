@@ -19,7 +19,7 @@
  * only the pages the viewer holds (groupPageIds below). A new page therefore also needs its catalogue
  * entry, or nobody but an admin can open it.
  */
-import { Factory, LayoutDashboard, Package, Receipt, ShoppingCart, Truck, type LucideIcon } from "lucide-react";
+import { Factory, LayoutDashboard, Package, Receipt, ShoppingCart, Truck, Users, type LucideIcon } from "lucide-react";
 import { appBasePath } from "@/apps/appInfo";
 import { SALES_DASHBOARDS } from "./bushraSalesDashboards";
 import { PURCHASE_DASHBOARDS, purchaseDashboardTitle } from "./bushraPurchaseDashboards";
@@ -97,14 +97,26 @@ export const BUSHRA_DASHBOARDS: BushraDashboardGroup[] = [
     blurb: "Pure sales, each product line, FOC, SOA and branch & related-party sales — by sales-type and category.",
     icon: ShoppingCart,
     // Generated from the preset list, so each page's id and path cannot drift from its screen.
-    pages: SALES_DASHBOARDS.map((p) => ({
-      id: p.id,
-      title: p.id === "bushra-sales-dashboard" ? p.title : `${p.title} Dashboard`,
-      purpose: p.blurb.charAt(0).toUpperCase() + p.blurb.slice(1) + ".",
-      path: p.path,
-      icon: p.id === "bushra-sales-dashboard" ? LayoutDashboard : ShoppingCart,
-      status: "live" as const,
-    })),
+    pages: [
+      ...SALES_DASHBOARDS.map((p) => ({
+        id: p.id,
+        title: p.id === "bushra-sales-dashboard" ? p.title : `${p.title} Dashboard`,
+        purpose: p.blurb.charAt(0).toUpperCase() + p.blurb.slice(1) + ".",
+        path: p.path,
+        icon: p.id === "bushra-sales-dashboard" ? LayoutDashboard : ShoppingCart,
+        status: "live" as const,
+      })),
+      // Not a preset: its own screen (pages/BushraOrangeCustomers.tsx). Id and path must equal
+      // ORANGE_DASHBOARD_ID / _PATH there and its entry in lib/reportCatalog.ts.
+      {
+        id: "bushra-sales-orange-customers",
+        title: "Orange vs Non-Orange Customers",
+        purpose: "Customers who bought our machine against those who buy only our ink — last two FYs, by Customer Group.",
+        path: "bushra-dashboard/sales-orange-customers",
+        icon: Users,
+        status: "live" as const,
+      },
+    ],
   },
   {
     id: "purchase",

@@ -931,6 +931,19 @@ export const REPORTS: ReportEntry[] = [
     keywords: ["sales register", "sales", "colour", "color", "item group", "item category", "item type", "bushra"],
   },
   {
+    // The Orange vs Non-Orange customer list on its own (pages/BushraOrangeCustomers.tsx, mode "report").
+    id: "bushra-orange-customers",
+    scoping: "party-server",
+    title: "Orange vs Non-Orange Customers",
+    purpose: "Every customer group of the last two FYs: Orange (bought our machine) or Non-Orange (only our ink), with machine, ink and other sales and each ledger.",
+    category: "bushra-report",
+    path: "reports/bushra-orange-customers",
+    icon: Users,
+    source: "tally",
+    status: "live",
+    keywords: ["orange", "non-orange", "machine customers", "ink customers", "customer group", "bushra"],
+  },
+  {
     id: "bushra-purchase-register",
     // Vendors, not customers — the salesperson scope does not apply.
     scoping: "none",
@@ -1010,6 +1023,19 @@ export const REPORTS: ReportEntry[] = [
     status: "live",
     keywords: ["sales dashboard", p.title.toLowerCase(), "sales type", "category", "bushra"],
   })),
+  {
+    // Bushra-Dashboard → Sales → Orange vs Non-Orange (pages/BushraOrangeCustomers.tsx, mode "dashboard").
+    id: "bushra-sales-orange-customers",
+    scoping: "party-server",
+    title: "Sales — Orange vs Non-Orange Customers",
+    purpose: "Customers who bought our machine against those who buy only our ink — last two FYs, by Customer Group.",
+    category: "bushra-report",
+    path: "bushra-dashboard/sales-orange-customers",
+    icon: Users,
+    source: "tally",
+    status: "live",
+    keywords: ["orange", "non-orange", "machine customers", "ink customers", "sales dashboard", "bushra"],
+  },
   // Bushra-Dashboard → Purchase: one entry per dashboard, generated from lib/bushraPurchaseDashboards.ts
   // so each id and path matches its screen. All built on the Bushra Purchase Register (vendors — no scope).
   ...PURCHASE_DASHBOARDS.map((p): ReportEntry => ({

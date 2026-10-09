@@ -494,7 +494,7 @@ export default function BushraSalesDashboard({ presetId }: { presetId: string })
       </Sheet>
 
       {/* ── Dashboard tabs ────────────────────────────────────────────────── */}
-      {tabs.length > 1 && (
+      {(tabs.length > 1 || canSee("bushra-sales-orange-customers")) && (
         <nav className="flex flex-wrap gap-1.5">
           {tabs.map((p) => (
             <Link key={p.id} to={`${BASE}/${p.path}`}
@@ -507,6 +507,12 @@ export default function BushraSalesDashboard({ presetId }: { presetId: string })
               {p.id === "bushra-sales-dashboard" ? "Sales" : p.title}
             </Link>
           ))}
+          {canSee("bushra-sales-orange-customers") && (
+            <Link to={`${BASE}/bushra-dashboard/sales-orange-customers`}
+                  className="rounded-pill border border-border bg-surface px-3 py-1 text-[12px] font-medium text-muted-foreground transition-colors hover:bg-muted/50 hover:text-foreground">
+              Orange vs Non-Orange
+            </Link>
+          )}
         </nav>
       )}
 
