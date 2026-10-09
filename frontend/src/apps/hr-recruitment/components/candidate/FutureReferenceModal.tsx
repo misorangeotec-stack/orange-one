@@ -3,27 +3,29 @@ import Button from "@/shared/components/ui/Button";
 import Modal from "@/shared/components/ui/Modal";
 import { FieldLabel, TextArea } from "@/shared/components/ui/Form";
 import { useHrStore } from "../../store";
+import { STAGE_LABEL } from "../../lib/board";
 import type { Candidate } from "../../types";
 
 /**
- * Save a candidate for future reference — or take them back out of the bucket.
+ * Move a candidate OUT of the pipeline and into the Future Reference bucket.
  *
- * A FLAG, NOT A STAGE MOVE. The card stays exactly where it is on this vacancy; HR can
- * still Disqualify them here. What changes is that the candidate now also sits in the
- * Future Reference bucket, where the HR people named in Setup can find them for the
- * next vacancy. The note is the reason, and it is shown in the bucket.
+ * Not a copy: the same candidate leaves the board (and the queues, and the counts) and
+ * waits in the bucket until somebody presses "Move to pipeline" there. Their stage is
+ * remembered, so going back to the same vacancy puts them back where they were.
  */
 export default function FutureReferenceModal({
   candidate: c,
   open,
   onClose,
+  onDone,
 }: {
   candidate: Candidate;
   open: boolean;
   onClose: () => void;
+  /** After a successful save — the host usually leaves the page, the card is gone. */
+  onDone?: () => void;
 }) {
   const s = useHrStore();
-  const saved = !!c.futureRefAt;
   const [note, setNote] = useState("");
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
@@ -32,8 +34,9 @@ export default function FutureReferenceModal({
     setBusy(true);
     setErr(null);
     try {
-      await s.setFutureReference(c.id, !saved, note.trim() || undefined);
+      await s.saveFutureReference(c.id, note.trim() || undefined);
       onClose();
+      onDone?.();
     } catch (e) {
       setErr((e as Error).message);
     } finally {
@@ -46,7 +49,7 @@ export default function FutureReferenceModal({
       open={open}
       onClose={onClose}
       size="sm"
-      title={saved ? "Remove from future reference" : "Save for future reference"}
+      title="Move to Future Reference"
       subtitle={c.name}
       footer={
         <div className="flex items-center justify-end gap-2">
@@ -55,35 +58,23 @@ export default function FutureReferenceModal({
             Cancel
           </Button>
           <Button size="sm" onClick={submit} disabled={busy}>
-            {busy ? "Saving…" : saved ? "Remove" : "Save for future"}
+            {busy ? "Moving…" : "Move to Future Reference"}
           </Button>
         </div>
       }
     >
       <div className="space-y-3">
         <p className="text-[12.5px] leading-snug text-grey-2">
-          {saved ? (
-            <>
-              They will leave the <strong className="font-semibold text-navy">Future Reference</strong> bucket.
-              Their stage on this vacancy does not change.
-            </>
-          ) : (
-            <>
-              The candidate goes into the <strong className="font-semibold text-navy">Future Reference</strong>{" "}
-              bucket, where HR can pick them up for a later vacancy. Their stage on this vacancy does not change —
-              you can still disqualify them here.
-            </>
-          )}
+          {c.name} will <strong className="font-semibold text-navy">leave this pipeline</strong> and wait in the{" "}
+          <strong className="font-semibold text-navy">Future Reference</strong> bucket. From there HR can move them
+          back to this vacancy (at {STAGE_LABEL[c.stage]}) or into another open vacancy.
         </p>
-        {saved && c.futureRefNote && (
-          <p className="rounded-lg bg-page px-3 py-2 text-[12.5px] text-navy">Saved because: {c.futureRefNote}</p>
-        )}
-        <FieldLabel label={saved ? "Reason (optional)" : "Why keep them? (optional)"}>
+        <FieldLabel label="Why keep them? (optional)">
           <TextArea
             rows={3}
             value={note}
             onChange={(e) => setNote(e.target.value)}
-            placeholder={saved ? "e.g. placed elsewhere, no longer interested" : "e.g. good fit for a Surat sales role"}
+            placeholder="e.g. good fit for a Surat sales role"
           />
         </FieldLabel>
       </div>

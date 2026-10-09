@@ -11,7 +11,7 @@ import { useHrStore } from "../../store";
  * The list saved here is the `fms_hr_config` key `future_ref_viewers`, which
  * `fms_hr_is_future_ref_viewer()` reads in SQL. It grants READ over SAVED candidates
  * only — their row, their discussion trail, the vacancy they came from and their CV —
- * and lets the viewer take a candidate back out of the bucket. It opens nothing else:
+ * and lets the viewer move a candidate back into a pipeline. It opens nothing else:
  * not the boards, not other candidates.
  *
  * Modelled on PipelineViewersSection, including its `edited ?? saved` pattern: the
@@ -87,7 +87,7 @@ export default function FutureRefViewersSection() {
           <span className="mt-1 block text-[11px] leading-snug text-grey-2">
             Everyone listed here gets <strong className="font-semibold text-navy">Future Reference</strong> in
             their sidebar and can read every saved candidate — name, phone, email and CV — from any vacancy, and
-            take a candidate back out of the bucket. It opens nothing else. Admins always see the bucket.
+            move a candidate back into a pipeline. It opens nothing else. Admins always see the bucket.
           </span>
           <span className="mt-1.5 block text-[11px] leading-snug text-grey-2">
             They also need <strong className="font-semibold text-navy">New Recruitment</strong> in the Users

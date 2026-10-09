@@ -46,13 +46,10 @@ export default function CandidatePage() {
   const c = s.candidateById(id);
 
   /**
-   * Arrived from the Future Reference bucket? Then Back returns there and ‹ › walks the
-   * bucket, not a board column. A bucket viewer who works no board also lands here:
-   * RLS hands them saved candidates only, so the bucket is the only list they have.
+   * Parked in Future Reference = off every board. ‹ › walks the bucket instead of a
+   * board column (the column would not contain them), and Back returns to the bucket.
    */
-  const fromBucket =
-    (location.state as { from?: string } | null)?.from === "future-reference" ||
-    (!canSeeBoard(s) && !!c?.futureRefAt && s.canSeeFutureRef);
+  const fromBucket = !!c?.futureRefAt;
 
   /**
    * Previous / next WITHIN THE SAME BOARD COLUMN, in the board's own order (oldest CV

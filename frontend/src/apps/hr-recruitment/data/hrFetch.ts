@@ -248,7 +248,14 @@ export interface HrData {
   qualifications: Qualification[];
   requisitions: Requisition[];
   requisitionPlatforms: RequisitionPlatform[];
+  /**
+   * The candidates IN THE PIPELINE. A candidate parked in Future Reference is NOT here
+   * — it has left the pipeline, so the board, the queues, the counts, the Control
+   * Center and My Work (all of which read this array) must not see it.
+   */
   candidates: Candidate[];
+  /** Parked in the Future Reference bucket — out of the pipeline. */
+  futureRefCandidates: Candidate[];
   interviews: Interview[];
   onboardings: Onboarding[];
   onboardingChecks: OnboardingCheck[];
@@ -504,6 +511,9 @@ export async function fetchHrData(): Promise<HrData> {
     fetchAll("fms_hr_department_hods", "department_id"),
   ]);
 
+  // Split once, here, so every consumer of the cache sees the same pipeline.
+  const mappedCandidates = (candidates as any[]).map(mapCandidate);
+
   const byKey = new Map<string, any>(configRows.map((r) => [r.key, r.value ?? {}]));
   const config: HrConfig = {
     processCoordinatorIds: (byKey.get("process_coordinators")?.user_ids ?? []) as string[],
@@ -534,7 +544,8 @@ export async function fetchHrData(): Promise<HrData> {
     qualifications: qualifications.map(mapMaster),
     requisitions: requisitions.map(mapRequisition),
     requisitionPlatforms: requisitionPlatforms.map(mapRequisitionPlatform),
-    candidates: candidates.map(mapCandidate),
+    candidates: mappedCandidates.filter((c) => !c.futureRefAt),
+    futureRefCandidates: mappedCandidates.filter((c) => !!c.futureRefAt),
     interviews: interviews.map(mapInterview),
     onboardings: onboardings.map(mapOnboarding),
     onboardingChecks: onboardingChecks.map(mapOnboardingCheck),
