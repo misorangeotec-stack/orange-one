@@ -427,8 +427,8 @@ export default function BatchCosting() {
             {latest && <div>Latest production voucher in the Tally mirror: {tallyDate(latest)}</div>}
           </div>
 
-          <ScrollableTable className="rounded-lg border border-border" maxHeight="max-h-[62vh]">
-            <Table className="border-collapse min-w-[1750px] [&_th]:border-b [&_th]:border-border">
+          <ScrollableTable className="rounded-lg border border-border" maxHeight="max-h-[62vh]" resizeKey="batch-costing">
+            <Table resizeKey="batch-costing" className="border-collapse min-w-[1750px] [&_th]:border-b [&_th]:border-border">
               <TableHeader>
                 <TableRow className="bg-muted/60 hover:bg-muted/60 sticky top-0 z-30">
                   <Head w={90}>Date</Head>

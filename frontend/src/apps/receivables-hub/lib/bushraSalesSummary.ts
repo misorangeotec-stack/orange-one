@@ -11,7 +11,7 @@ import type { BushraRegisterRow } from "./bushraSalesRegister";
 import type { QtyUnit } from "./bushraSalesDashboards";
 import {
   DIMS, MAIN_PRODUCTS, OTHER_PRODUCT, QUARTER_MONTHS, SALES_TYPE_UNIT, compareBy, fmtInt,
-  makeQtyFmt, monthName, monthsOfFy, orNotSet, pairBy, quarterOf, salesKpis, yearBefore,
+  makeQtyFmt, monthName, monthsOfFy, orNotSet, pairBy, quarterOf, salesKpis, yearBefore, isMonthEnd,
   type Cmp, type DimKey, type Pair, type QtyFmt, type SalesKpis,
 } from "./bushraSalesFigures";
 
@@ -186,7 +186,7 @@ export function buildSalesSummary(input: SummaryInput): SalesSummary {
     },
     company: pairBy(rows, DIMS.company),
     location: pairBy(rows, DIMS.location),
-    monthLabel: `${monthName(compareMonth)} vs ${monthName(yearBefore(`${compareMonth}01`).slice(0, 6))}${monthCut ? ` · 1–${Number(ytdTo.slice(6))}` : ""}`,
+    monthLabel: `${monthName(compareMonth)} vs ${monthName(yearBefore(`${compareMonth}01`).slice(0, 6))}${monthCut && !isMonthEnd(ytdTo) ? ` · 1–${Number(ytdTo.slice(6))}` : ""}`,
     ytdLabel: `FY ${thisFy} to date vs FY ${lastFy}`,
     performance: sortRows(perfRows()),
     periods,

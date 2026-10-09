@@ -12,17 +12,23 @@
  */
 import { useMemo, useState } from "react";
 import { Link } from "react-router-dom";
-import { useQuery } from "@tanstack/react-query";
-import { ArrowDown, ArrowLeft, ArrowUp, ArrowUpDown, Download, NotebookText, RotateCcw, Search } from "lucide-react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { ArrowDown, ArrowLeft, ArrowUp, ArrowUpDown, Download, NotebookText, PencilLine, RotateCcw, Search } from "lucide-react";
 import { Button } from "@hub/components/ui/button";
 import { Input } from "@hub/components/ui/input";
 import { MultiSelectFilter, type MultiSelectOption } from "@hub/components/MultiSelectFilter";
 import { FilterChips, type FilterChip } from "@hub/components/FilterChips";
 import { ScrollableTable } from "@/core/shared/components/ScrollableTable";
+import { FitFilter, FitTh, ResetWidths } from "@/shared/components/ui/ColumnResizer";
+import { useColumnWidths } from "@/shared/lib/useColumnWidths";
 import { usePagination } from "@/shared/lib/usePagination";
 import Pagination from "@/shared/components/ui/Pagination";
 import { defaultRange, ymdToIso, isoToYmd } from "@hub/lib/salesRegister";
-import { loadBushraSalesRegister, loadItemLookup, type BushraRegisterRow } from "@hub/lib/bushraSalesRegister";
+import { copiesOf, loadBushraSalesRegister, loadItemLookup, type BushraRegisterRow } from "@hub/lib/bushraSalesRegister";
+import BushraItemEditDialog, { type EditSuggestions } from "@hub/components/BushraItemEditDialog";
+import BushraBulkItemEditDialog from "@hub/components/BushraBulkItemEditDialog";
+import { DISCOUNT_TYPE } from "@hub/lib/bushraSalesFigures";
+import { useSession } from "@/core/platform/session";
 import { exportSalesRegisterXlsx, type ExtraColumn } from "@hub/lib/exportSalesRegister";
 import { useScopedParties } from "@hub/lib/scopeParties";
 import { appBasePath } from "@/apps/appInfo";
@@ -103,6 +109,9 @@ const TABLE_COLUMNS: { header: string; filter: FilterKey | null; right?: boolean
   { header: "Colour", filter: "colour", sort: (r) => r.colour },
 ];
 
+/** Column ids for the dragged widths — the headings themselves. */
+const COL_IDS = TABLE_COLUMNS.map((c) => c.header);
+
 const EXPORT_EXTRA: ExtraColumn<Row>[] = [
   { header: "SALES-TYPE", width: 16, get: (r) => r.sales_type },
   { header: "INK TYPE", width: 22, get: (r) => r.ink_type },
@@ -112,6 +121,16 @@ const EXPORT_EXTRA: ExtraColumn<Row>[] = [
 ];
 
 export default function BushraSalesRegister() {
+  /**
+   * Only an admin is offered the editor. The table's own RLS ('edit' on bushra-central-master,
+   * which admins always hold) is what actually refuses anyone else.
+   */
+  const { isAdmin, user } = useSession();
+  const qc = useQueryClient();
+  /** Column widths the reader drags — header edge, double-click resets, "Reset widths" clears all. */
+  const fit = useColumnWidths("tb", COL_IDS, "bushra-sales-register");
+  const [editing, setEditing] = useState<Row | null>(null);
+  const [bulkOpen, setBulkOpen] = useState(false);
   const init = useMemo(() => defaultRange(), []);
   const [fromIso, setFromIso] = useState(ymdToIso(init.from));
   const [toIso, setToIso] = useState(ymdToIso(init.to));
@@ -124,13 +143,13 @@ export default function BushraSalesRegister() {
 
   // Central Masters items (~14k) change rarely — fetched once and kept, not re-read per date change.
   const { data: lookup, error: lookupError } = useQuery({
-    queryKey: ["bushraSalesRegister", "itemLookup", "v3"],
+    queryKey: ["bushraSalesRegister", "itemLookup", "v4"],
     queryFn: loadItemLookup,
     staleTime: 30 * 60 * 1000,
   });
 
   const { data: rows, isLoading, error: rowsError } = useQuery<Row[]>({
-    queryKey: ["bushraSalesRegister", "v7", from, to, scopeKey],
+    queryKey: ["bushraSalesRegister", "v8", from, to, scopeKey],
     queryFn: () => loadBushraSalesRegister(from, to, scope, lookup),
     enabled: validRange && !scopeLoading && !!lookup,
     staleTime: 5 * 60 * 1000,
@@ -140,7 +159,23 @@ export default function BushraSalesRegister() {
   // "loading" to TanStack. Without the two extra checks the page shows "0 lines · ₹0" meanwhile.
   const loading = !error && (isLoading || scopeLoading || !lookup);
   const all = useMemo(() => rows ?? [], [rows]);
-  const notInMasters = useMemo(() => new Set(all.filter((r) => !r.in_masters).map((r) => r.particulars)).size, [all]);
+  // Discount ledgers are never stock items — they read "Discount", so they are not counted as missing.
+  const notInMasters = useMemo(() => new Set(all.filter((r) => !r.in_masters && !r.is_discount).map((r) => r.particulars)).size, [all]);
+
+  /** Why a line cannot be edited — or null when it can. */
+  const noEditReason = (r: Row) =>
+    (r.is_discount ? "A discount ledger has no stock item — it always reads Discount."
+      : !r.in_masters ? "Not found in Central Masters, so there is no item to correct."
+        : null);
+  const openEditor = (r: Row) => { if (isAdmin && !noEditReason(r)) setEditing(r); };
+  const onSaved = () => {
+    setEditing(null);
+    setBulkOpen(false);
+    // The lookup, every register window and every dashboard share the "bushraSalesRegister" prefix.
+    qc.invalidateQueries({ queryKey: ["bushraSalesRegister"] });
+    qc.invalidateQueries({ queryKey: ["bushra-central-master", "overrides"] });
+  };
+
 
   /* -------- filters (same one-pass cascade as the Tally Sales Register) -------- */
   const [sel, setSel] = useState<Record<FilterKey, string[]>>(NO_FILTERS);
@@ -178,6 +213,18 @@ export default function BushraSalesRegister() {
       FILTER_KEYS.map((k) => [k, [...found[k]].sort(k === "date" ? byDate : undefined).map((v) => ({ value: v, label: v }))]),
     ) as Record<FilterKey, MultiSelectOption[]>;
   }, [searched, sel]);
+
+  /** The values already in use, offered as suggestions in the editor. */
+  const suggestions = useMemo<EditSuggestions>(() => {
+    const uniq = (get: (r: Row) => string) =>
+      [...new Set(all.map(get).filter((v) => v && v !== DISCOUNT_TYPE))].sort(collator.compare);
+    return {
+      inkType: uniq((r) => r.ink_type),
+      groupName: uniq((r) => r.item_group),
+      category: uniq((r) => r.item_category),
+      color: uniq((r) => r.colour),
+    };
+  }, [all]);
 
   const setFilter = (key: FilterKey) => (v: string[]) => setSel((s) => ({ ...s, [key]: v }));
 
@@ -237,10 +284,23 @@ export default function BushraSalesRegister() {
             <NotebookText className="h-6 w-6 text-primary" /> Sales Register
           </h1>
           <p className="text-sm text-muted-foreground mt-1">
-            Every sales voucher line from the Tally Sales Register, with Sales-Type, Ink Type, Group and
-            Category from Central Masters → Items, and Colour read from the item description.
+            Every sales voucher line from the Tally Sales Register, with Sales-Type, Ink Type, Group,
+            Category and Colour from the Bushra Central Master (Central Masters → Items with the team's
+            corrections). Discount ledgers read Discount.
           </p>
         </div>
+        <div className="flex items-center gap-2">
+        {isAdmin && (
+          <Button
+            variant="outline"
+            onClick={() => setBulkOpen(true)}
+            disabled={!lookup || !filtered.length}
+            title="Fix Sales-Type, Ink Type, Group, Category and Colour for every product in this view at once"
+            className="h-9 gap-1.5 rounded-button"
+          >
+            <PencilLine className="h-4 w-4" /> Fix Not set products
+          </Button>
+        )}
         <Button
           onClick={onExport}
           disabled={!filtered.length}
@@ -248,6 +308,7 @@ export default function BushraSalesRegister() {
         >
           <Download className="h-4 w-4" /> Export
         </Button>
+        </div>
       </div>
 
       <div className="flex flex-wrap items-end gap-3">
@@ -296,21 +357,29 @@ export default function BushraSalesRegister() {
             {notInMasters > 0 && (
               <> · {notInMasters.toLocaleString("en-IN")} item{notInMasters === 1 ? "" : "s"} not found in Central Masters</>
             )}
+            <ResetWidths fit={fit} cols={COL_IDS} className="ml-3 inline-flex items-center gap-1 text-primary hover:underline" />
           </div>
+          {isAdmin && (
+            <div className="text-xs text-muted-foreground">
+              Admin: click a line's Sales-Type, Ink Type, Group, Category or Colour to correct that item, or use
+              "Fix Not set products" to correct every product in this view at once. Saved to the Bushra Central
+              Master for every company's copy.
+            </div>
+          )}
 
-          <ScrollableTable className="rounded-lg border border-border" maxHeight="max-h-[64vh]">
+          <ScrollableTable className="rounded-lg border border-border" maxHeight="max-h-[64vh]" resizeKey="bushra-sales-register">
             <table className="w-full border-collapse min-w-[1800px]">
               <thead>
                 <tr className="border-b border-border bg-muted/50">
                   {TABLE_COLUMNS.map((c, i) => (
-                    <th key={c.header} className={`${c.right ? "text-right" : "text-left"} py-2 px-3 text-xs font-semibold uppercase tracking-wide text-muted-foreground whitespace-nowrap`}>
+                    <FitTh key={c.header} fit={fit} col={c.header} className={`${c.right ? "text-right" : "text-left"} py-2 px-3 text-xs font-semibold uppercase tracking-wide text-muted-foreground whitespace-nowrap`}>
                       <button type="button" onClick={() => toggleSort(i)} title={`Sort by ${c.header}`}
                               className={`inline-flex items-center gap-1 uppercase hover:text-foreground ${sort?.col === i ? "text-foreground" : ""}`}>
                         {c.header}
                         {sort?.col !== i ? <ArrowUpDown className="h-3 w-3 opacity-40" />
                           : sort.dir === 1 ? <ArrowUp className="h-3 w-3" /> : <ArrowDown className="h-3 w-3" />}
                       </button>
-                    </th>
+                    </FitTh>
                   ))}
                 </tr>
                 {/* Filter row — one dropdown under each heading, same selection as the toolbar. */}
@@ -318,14 +387,16 @@ export default function BushraSalesRegister() {
                   {TABLE_COLUMNS.map((c) => (
                     <th key={c.header} className="py-1.5 px-2 font-normal">
                       {c.filter && (
-                        <MultiSelectFilter
-                          options={options[c.filter]}
-                          value={sel[c.filter]}
-                          onChange={setFilter(c.filter)}
-                          allLabel="Any"
-                          unit={c.header}
-                          triggerClassName="w-full min-w-[110px] h-8 text-xs rounded-input border-border bg-surface"
-                        />
+                        <FitFilter dragged={fit.width(c.header) !== undefined}>
+                          <MultiSelectFilter
+                            options={options[c.filter]}
+                            value={sel[c.filter]}
+                            onChange={setFilter(c.filter)}
+                            allLabel="Any"
+                            unit={c.header}
+                            triggerClassName="w-full min-w-[110px] h-8 text-xs rounded-input border-border bg-surface"
+                          />
+                        </FitFilter>
                       )}
                     </th>
                   ))}
@@ -359,14 +430,26 @@ export default function BushraSalesRegister() {
                       <td className="py-1.5 px-3 text-sm text-right tabular-nums whitespace-nowrap">{fmtQty(r.quantity)}</td>
                       <td className="py-1.5 px-3 text-sm text-right tabular-nums whitespace-nowrap">{fmtRate(r.rate)}</td>
                       <td className={`py-1.5 px-3 text-sm text-right tabular-nums whitespace-nowrap ${r.revenue < 0 ? "text-destructive" : ""}`}>{fmtRev(r.revenue)}</td>
-                      <td
-                        className="py-1.5 px-3 text-sm whitespace-nowrap"
-                        title={r.sales_type_source ? `From ${r.sales_type_source}` : "No source typed this line"}
-                      >{r.sales_type}</td>
-                      <td className="py-1.5 px-3 text-sm whitespace-nowrap">{r.ink_type}</td>
-                      <td className="py-1.5 px-3 text-sm whitespace-nowrap">{r.item_group}</td>
-                      <td className="py-1.5 px-3 text-sm whitespace-nowrap">{r.item_category}</td>
-                      <td className="py-1.5 px-3 text-sm whitespace-nowrap font-medium">{r.colour}</td>
+                      {(() => {
+                        // An admin's classification cells open the editor; everyone else's are plain text.
+                        const blocked = noEditReason(r);
+                        const editCls = isAdmin && !blocked ? " cursor-pointer hover:bg-primary/10 hover:underline decoration-dotted" : "";
+                        const editTitle = isAdmin ? (blocked ?? "Click to edit this item") : undefined;
+                        const cell = (value: string, extra = "", title = editTitle) => (
+                          <td className={`py-1.5 px-3 text-sm whitespace-nowrap${extra}${editCls}`} title={title}
+                              onClick={() => openEditor(r)}>{value}</td>
+                        );
+                        const source = r.sales_type_source ? `From ${r.sales_type_source}` : "No source typed this line";
+                        return (
+                          <>
+                            {cell(r.sales_type, "", editTitle ? `${source} · ${editTitle}` : source)}
+                            {cell(r.ink_type)}
+                            {cell(r.item_group)}
+                            {cell(r.item_category)}
+                            {cell(r.colour, " font-medium")}
+                          </>
+                        );
+                      })()}
                     </tr>
                   ))
                 )}
@@ -376,6 +459,27 @@ export default function BushraSalesRegister() {
 
           <Pagination state={page} rowsLabel="lines" />
         </>
+      )}
+
+      {bulkOpen && lookup && (
+        <BushraBulkItemEditDialog
+          rows={filtered}
+          lookup={lookup}
+          suggestions={suggestions}
+          userId={user.id}
+          onClose={() => setBulkOpen(false)}
+          onSaved={onSaved}
+        />
+      )}
+      {editing && lookup && (
+        <BushraItemEditDialog
+          row={editing}
+          copies={copiesOf(lookup, editing.particulars)}
+          suggestions={suggestions}
+          userId={user.id}
+          onClose={() => setEditing(null)}
+          onSaved={onSaved}
+        />
       )}
     </div>
   );
