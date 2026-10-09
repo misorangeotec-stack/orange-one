@@ -19,7 +19,10 @@
  * width (300 px) and is cut there with "…".
  */
 
-import { useRef, type CSSProperties, type ReactNode, type ThHTMLAttributes } from "react";
+import {
+  Children, Fragment, cloneElement, isValidElement, useRef,
+  type CSSProperties, type HTMLAttributes, type ReactElement, type ReactNode, type ThHTMLAttributes,
+} from "react";
 import { FIT } from "@/shared/lib/tableLook";
 import type { FitTable } from "@/shared/lib/useColumnWidths";
 
@@ -236,9 +239,17 @@ export function FitHead({ width, children }: { width: number | undefined; childr
   );
 }
 
-export function FitFilter({ dragged, children }: { dragged: boolean; children: ReactNode }) {
+/**
+ * `fitPicker` (opt-in, the Bushra tables): a dragged column's filter fits the column — a picker's
+ * own minimum width (min-w-[110px] there) would otherwise spill it across the next column.
+ */
+export function FitFilter({ dragged, fitPicker = false, children }: { dragged: boolean; fitPicker?: boolean; children: ReactNode }) {
   if (!dragged) return <>{children}</>;
-  return <div style={{ width: 0, minWidth: "100%" }}>{children}</div>;
+  return (
+    <div className={fitPicker ? "overflow-hidden [&_button]:!min-w-0" : undefined} style={{ width: 0, minWidth: "100%" }}>
+      {children}
+    </div>
+  );
 }
 
 /**
@@ -350,5 +361,32 @@ export function ResetWidths({ fit, cols, className, label = "Reset widths" }: { 
       </svg>
       {label}
     </button>
+  );
+}
+
+/** Cells as a flat list — a Fragment (a helper returning several <td>s) counts as its children. */
+function flatCells(children: ReactNode): ReactNode[] {
+  return Children.toArray(children).flatMap((c) =>
+    isValidElement(c) && c.type === Fragment ? flatCells((c.props as { children?: ReactNode }).children) : [c]);
+}
+
+/**
+ * A body row of a HAND-BUILT table whose cells should obey a dragged width. `cols` are the ids of
+ * the cells in order (the columns on show). Each cell of a dragged column has its content wrapped
+ * in `FitCell`, so the column holds exactly the dragged width — narrower than its text if the
+ * reader wants, cut with "…" and whole on hover (spread `fit.tbodyProps` on the <tbody>). Cells of
+ * columns nobody dragged are returned untouched, and with the drag off the row is a plain <tr>.
+ */
+export function FitRow({ fit, cols, children, ...rest }: { fit: FitTable; cols: readonly string[] } & HTMLAttributes<HTMLTableRowElement>) {
+  if (!fit.on) return <tr {...rest}>{children}</tr>;
+  return (
+    <tr {...rest}>
+      {flatCells(children).map((cell, i) => {
+        const col = cols[i];
+        if (!col || !isValidElement(cell) || fit.width(col) === undefined) return cell;
+        const el = cell as ReactElement<{ children?: ReactNode }>;
+        return cloneElement(el, undefined, <FitCell fit={fit} col={col} cap={null}>{el.props.children}</FitCell>);
+      })}
+    </tr>
   );
 }
