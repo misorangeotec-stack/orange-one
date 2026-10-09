@@ -23,6 +23,7 @@ import type { QueueEntryBase } from "@/shared/lib/fmsQueue";
 import { dueIsoFrom, type StepSlaMap } from "./sla";
 import type { StepKey } from "./steps";
 import type { ComplaintRequest } from "../types";
+import { runsManagementChain } from "./format";
 
 export interface ComplaintSnapshot {
   requests: ComplaintRequest[];
@@ -333,7 +334,7 @@ export const completedAssigneeEntries = (d: ComplaintSnapshot): StageEntry<Compl
  */
 export const completedRmManagementEntries = (d: ComplaintSnapshot): StageEntry<ComplaintRequest>[] =>
   d.requests
-    .filter((r) => !!r.rmAssignedAt || (!!r.mgmtAt && r.rmOrigin === "import" && !r.purAt))
+    .filter((r) => !!r.rmAssignedAt || (!!r.mgmtAt && runsManagementChain(r) && !r.purAt))
     .map((r) =>
       entryOf(
         "rm_management",
