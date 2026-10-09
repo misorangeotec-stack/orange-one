@@ -11,19 +11,27 @@
  *
  * Filters narrow the FIGURES; the bucket is always decided on the customer's whole window. Clicking a
  * bucket card, a month or a customer's bar filters every panel; click it again to let it go.
+ *
+ * AN ADMIN CAN MOVE ANY CUSTOMER (asked 09-10-2026: the rule cannot see a machine sold before the
+ * window, so it under-counts Orange). Click a customer's bucket in the list, or tick several and set
+ * them together; the choice is shared (lib/bushraOrangeOverrides.ts) and every card, chart and the
+ * export follow it. "Auto" hands a customer back to the rule.
  */
 import { Fragment, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   Bar, BarChart, CartesianGrid, Cell, LabelList, Legend, ResponsiveContainer, Tooltip, XAxis, YAxis,
 } from "recharts";
 import * as XLSX from "xlsx-js-style";
 import { saveAs } from "file-saver";
 import {
-  ArrowDown, ArrowLeft, ArrowUp, ArrowUpDown, ChevronRight, CircleDot, Download, Droplet, IndianRupee,
-  RotateCcw, Search, Table2, Users,
+  ArrowDown, ArrowLeft, ArrowUp, ArrowUpDown, ChevronDown, ChevronRight, CircleDot, Download, Droplet, Hand,
+  IndianRupee, Loader2, RotateCcw, Search, Table2, Users,
 } from "lucide-react";
+import { Popover, PopoverContent, PopoverTrigger } from "@hub/components/ui/popover";
+import { Checkbox } from "@hub/components/ui/checkbox";
+import { useSession } from "@/core/platform/session";
 import { cn } from "@hub/lib/utils";
 import { Button } from "@hub/components/ui/button";
 import { Input } from "@hub/components/ui/input";
@@ -40,8 +48,9 @@ import { loadBushraSalesRegister, loadItemLookup, type BushraRegisterRow } from 
 import { SALES_DASHBOARDS, isPureSale } from "@hub/lib/bushraSalesDashboards";
 import { DIMS, fmtInt, makeQtyFmt, monthName, productOf } from "@hub/lib/bushraSalesFigures";
 import {
-  BUCKETS, classify, customerFigures, loadGroupLink, type Bucket, type CustomerFigures,
+  BUCKETS, UNCLASSIFIED, classify, customerFigures, loadGroupLink, type Bucket, type CustomerFigures, type Placement,
 } from "@hub/lib/bushraOrangeCustomers";
+import { loadBucketOverrides, saveBucketOverrides } from "@hub/lib/bushraOrangeOverrides";
 import { useScopedParties } from "@hub/lib/scopeParties";
 import { useReportAccess } from "@hub/lib/reportAccess";
 import { appBasePath } from "@/apps/appInfo";
@@ -53,7 +62,7 @@ export const ORANGE_REPORT_ID = "bushra-orange-customers";
 export const ORANGE_REPORT_PATH = "reports/bushra-orange-customers";
 
 /** Orange is the company's own colour; Non-Orange a blue that is told apart from it at a glance. */
-const COLOR: Record<Bucket, string> = { Orange: "#ea580c", "Non-Orange": "#2563eb" };
+const COLOR: Record<Placement, string> = { Orange: "#ea580c", "Non-Orange": "#2563eb", [UNCLASSIFIED]: "#6b7280" };
 const CHART_GRID = "hsl(220 15% 92%)";
 const AXIS_TICK = { fontSize: 11, fill: "hsl(220 10% 45%)" };
 const LABEL_FILL = "hsl(220 20% 30%)";
@@ -68,7 +77,7 @@ type Row = BushraRegisterRow;
 
 /** The filter bar. Bucket and Customer are read off the customer; Company and Location off the line. */
 const FILTERS = {
-  bucket: { label: "Bucket", all: "Both buckets", unit: "Buckets" },
+  bucket: { label: "Bucket", all: "All buckets", unit: "Buckets" },
   company: { label: "Company", all: "All Companies", unit: "Companies" },
   location: { label: "Location", all: "All Locations", unit: "Locations" },
   group: { label: "Customer", all: "All Customers", unit: "Customers" },
@@ -79,7 +88,7 @@ const FILTER_KEYS = Object.keys(FILTERS) as FilterKey[];
 const NO_FILTERS: Record<FilterKey, string[]> = { bucket: [], company: [], location: [], group: [], month: [] };
 
 /** A line with the customer it belongs to and that customer's bucket. */
-interface Tagged { r: Row; group: string; bucket: Bucket; month: string }
+interface Tagged { r: Row; group: string; bucket: Placement; month: string }
 
 export default function BushraOrangeCustomers({ mode }: { mode: "dashboard" | "report" }) {
   const { canSee } = useReportAccess();
@@ -107,13 +116,29 @@ export default function BushraOrangeCustomers({ mode }: { mode: "dashboard" | "r
     queryFn: loadGroupLink,
     staleTime: 30 * 60 * 1000,
   });
-  const err = lookupError ?? rowsError ?? linkError;
+  // The buckets set by hand. Not ready = the table is not in the database yet; the rule alone decides.
+  const { data: overrides, error: overridesError } = useQuery({
+    queryKey: ["bushraOrangeCustomers", "overrides"],
+    queryFn: loadBucketOverrides,
+    staleTime: 60 * 1000,
+  });
+  const err = lookupError ?? rowsError ?? linkError ?? overridesError;
   const errText = err ? (err as Error).message : null;
-  const loading = (isLoading || !lookup || !link) && !errText;
+  const loading = (isLoading || !lookup || !link || !overrides) && !errText;
+  const { isAdmin, user } = useSession();
+  const qc = useQueryClient();
+  /** Put customers in a bucket by hand, or (null) back to the rule — then everything recomputes. */
+  const saveBuckets = async (groups: string[], bucket: Bucket | null) => {
+    await saveBucketOverrides(groups, bucket, user.id);
+    await qc.invalidateQueries({ queryKey: ["bushraOrangeCustomers", "overrides"] });
+  };
 
   /* -------- who is in which bucket: the WHOLE window, every company, no filter -------- */
   const pure = useMemo(() => (data ?? []).filter(isPureSale), [data]);
-  const buckets = useMemo(() => (link ? classify(pure, link) : new Map()), [pure, link]);
+  const buckets = useMemo(
+    () => (link ? classify(pure, link, overrides?.byGroup) : new Map()),
+    [pure, link, overrides],
+  );
   const tagged = useMemo<Tagged[]>(() => {
     if (!link) return [];
     const out: Tagged[] = [];
@@ -163,6 +188,7 @@ export default function BushraOrangeCustomers({ mode }: { mode: "dashboard" | "r
     const k = Object.fromEntries(BUCKETS.map((b) => [b, { customers: 0, noInk: 0, inkVal: 0, inkQty: 0, machineQty: 0, machineVal: 0, total: 0 }])) as
       Record<Bucket, { customers: number; noInk: number; inkVal: number; inkQty: number; machineQty: number; machineVal: number; total: number }>;
     for (const c of customers) {
+      if (c.bucket === UNCLASSIFIED) continue;
       const x = k[c.bucket];
       x.customers++; if (c.noInk) x.noInk++;
       x.inkVal += c.inkVal; x.inkQty += c.inkQty; x.machineQty += c.machineQty; x.machineVal += c.machineVal; x.total += c.total;
@@ -171,6 +197,8 @@ export default function BushraOrangeCustomers({ mode }: { mode: "dashboard" | "r
   }, [customers]);
   const inkTotal = kpi.Orange.inkVal + kpi["Non-Orange"].inkVal;
   const ungrouped = customers.filter((c) => !c.grouped).length;
+  const unclassified = customers.filter((c) => c.bucket === UNCLASSIFIED).length;
+  const byHand = customers.filter((c) => c.manual).length;
 
   /** Ink revenue per month, one stacked bar per month: Orange under Non-Orange. */
   const byMonth = useMemo(() => {
@@ -186,7 +214,7 @@ export default function BushraOrangeCustomers({ mode }: { mode: "dashboard" | "r
     for (const t of shown) {
       if (productOf(t.r.sales_type) !== "Ink") continue;
       const p = m.get(t.month);
-      if (p) p[t.bucket] += t.r.revenue;
+      if (p && t.bucket !== UNCLASSIFIED) p[t.bucket] += t.r.revenue;
     }
     return [...m.values()];
   }, [shown, thisFyStart, to]);
@@ -308,6 +336,19 @@ export default function BushraOrangeCustomers({ mode }: { mode: "dashboard" | "r
           );
         })}
       </div>
+      {!loading && (byHand > 0 || unclassified > 0) && (
+        <p className="text-[11px] text-muted-foreground">
+          {byHand > 0 && <>{fmtInt(byHand)} customer{byHand === 1 ? " is" : "s are"} in a bucket set by hand (tagged "set by hand"). </>}
+          {unclassified > 0 && <>{fmtInt(unclassified)} bought neither a machine nor ink in the window — "Unclassified" in the list, in neither card{isAdmin ? "; set them by hand there" : ""}.</>}
+        </p>
+      )}
+      {isAdmin && overrides && !overrides.ready && (
+        <div className="rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-[12px] text-amber-900 dark:border-amber-700 dark:bg-amber-950/40 dark:text-amber-200">
+          Setting a customer's bucket by hand needs the database table first: run migration
+          <code className="mx-1 rounded bg-black/5 px-1">20270115120000_bushra_orange_customer_overrides.sql</code>
+          in the Supabase SQL editor. Until then the rule alone decides.
+        </div>
+      )}
       {ungrouped > 0 && !loading && (
         <p className="text-[11px] text-muted-foreground">
           {fmtInt(ungrouped)} customer{ungrouped === 1 ? " is" : "s are"} a ledger with no Customer Group, counted on its own
@@ -386,7 +427,8 @@ export default function BushraOrangeCustomers({ mode }: { mode: "dashboard" | "r
       )}
 
       {/* ── The customer list ─────────────────────────────────────────────── */}
-      <CustomerTable customers={customers} loading={loading} windowLabel={windowLabel} from={from} to={to} />
+      <CustomerTable customers={customers} loading={loading} windowLabel={windowLabel} from={from} to={to}
+                     canEdit={isAdmin && !!overrides?.ready} onSetBucket={saveBuckets} />
     </div>
   );
 }
@@ -417,11 +459,20 @@ const COLS: Col[] = [
     cell: (c) => (
       <span className="inline-flex flex-wrap items-center gap-1">
         <span className="rounded-pill px-2 py-0.5 text-[11px] font-semibold text-white" style={{ background: COLOR[c.bucket] }}>{c.bucket}</span>
+        {c.manual && (
+          <span className="inline-flex items-center gap-0.5 rounded-pill border border-primary/40 bg-primary/5 px-1.5 py-0.5 text-[10px] text-primary"
+                title={`Set by hand — the rule says ${c.auto}`}>
+            <Hand className="h-2.5 w-2.5" /> set by hand
+          </span>
+        )}
         {c.noInk && <span className="rounded-pill border border-border px-1.5 py-0.5 text-[10px] text-muted-foreground">no ink yet</span>}
         {!c.grouped && <span className="rounded-pill border border-dashed border-border px-1.5 py-0.5 text-[10px] text-muted-foreground">not grouped</span>}
       </span>
     ),
     xl: (c) => c.bucket },
+  { key: "auto", header: "By Rule", sort: (c) => c.auto,
+    cell: (c) => <span className={cn(c.manual && c.auto !== c.bucket ? "text-muted-foreground line-through decoration-1" : "text-muted-foreground")}>{c.auto}</span>,
+    xl: (c) => c.auto },
   { key: "group", header: "Customer Group", sort: (c) => c.group, cell: (c) => <span className="font-medium">{c.group}</span>, xl: (c) => c.group },
   { key: "ledgers", header: "Ledgers", right: true, sort: (c) => c.ledgers.length, cell: (c) => fmtInt(c.ledgers.length), xl: (c) => c.ledgers.length },
   { key: "company", header: "Company", sort: (c) => c.companies.join(", "), cell: (c) => c.companies.join(", "), xl: (c) => c.companies.join(", ") },
@@ -447,9 +498,34 @@ const readCols = (): string[] => {
   } catch { return COLS.map((c) => c.key); }
 };
 
-function CustomerTable({ customers, loading, windowLabel, from, to }: {
+function CustomerTable({ customers, loading, windowLabel, from, to, canEdit, onSetBucket }: {
   customers: CustomerFigures[]; loading: boolean; windowLabel: string; from: string; to: string;
+  /** An admin, and the overrides table is there. */
+  canEdit: boolean;
+  onSetBucket: (groups: string[], bucket: Bucket | null) => Promise<void>;
 }) {
+  /** Ticked for a bulk change — by Customer Group. */
+  const [ticked, setTicked] = useState<Set<string>>(new Set());
+  const [saving, setSaving] = useState(false);
+  const [saveErr, setSaveErr] = useState<string | null>(null);
+  const apply = async (groups: string[], bucket: Bucket | null) => {
+    if (!groups.length) return;
+    setSaving(true);
+    setSaveErr(null);
+    try {
+      await onSetBucket(groups, bucket);
+      setTicked(new Set());
+    } catch (e) {
+      setSaveErr((e as Error).message);
+    } finally {
+      setSaving(false);
+    }
+  };
+  const tick = (g: string) => setTicked((t) => {
+    const n = new Set(t);
+    if (n.has(g)) n.delete(g); else n.add(g);
+    return n;
+  });
   const [q, setQ] = useState("");
   const [visible, setVisible] = useState<string[]>(readCols);
   const pickCols = (v: string[]) => {
@@ -510,7 +586,7 @@ function CustomerTable({ customers, loading, windowLabel, from, to }: {
 
   return (
     <SalesPanel title="Customer list" icon={Table2} loading={loading}
-                subtitle={`${fmtInt(searched.length)} customers · click a row for its ledgers`}
+                subtitle={`${fmtInt(searched.length)} customers · click a row for its ledgers${canEdit ? " · click a bucket to change it" : ""}`}
                 actions={
                   <div className="flex items-center gap-2">
                     <div className="relative">
@@ -525,10 +601,41 @@ function CustomerTable({ customers, loading, windowLabel, from, to }: {
                     </Button>
                   </div>
                 }>
+      {canEdit && (ticked.size > 0 || saving || saveErr) && (
+        <div className="mb-2 flex flex-wrap items-center gap-2 rounded-md border border-primary/30 bg-primary/5 px-3 py-2 text-[12px]">
+          <span className="font-semibold text-foreground">{fmtInt(ticked.size)} ticked</span>
+          <span className="text-muted-foreground">— set them as</span>
+          {BUCKETS.map((b) => (
+            <Button key={b} size="sm" disabled={saving || !ticked.size} onClick={() => apply([...ticked], b)}
+                    className="h-7 rounded-button px-2.5 text-[12px] text-white hover:opacity-90" style={{ background: COLOR[b] }}>
+              {b}
+            </Button>
+          ))}
+          <Button size="sm" variant="outline" disabled={saving || !ticked.size} onClick={() => apply([...ticked], null)}
+                  className="h-7 rounded-button px-2.5 text-[12px]" title="Hand them back to the rule">
+            Auto (rule)
+          </Button>
+          <button type="button" onClick={() => setTicked(new Set())} disabled={saving}
+                  className="text-[11.5px] text-muted-foreground hover:text-foreground hover:underline">Clear ticks</button>
+          {saving && <Loader2 className="h-3.5 w-3.5 animate-spin text-primary" />}
+          {saveErr && <span className="text-destructive">Couldn’t save: {saveErr}</span>}
+        </div>
+      )}
       <ScrollableTable className="rounded-md border border-border" maxHeight="max-h-[62vh]" resizeKey="bushra-orange-customers">
         <table className="w-full border-collapse text-[12.5px]" style={{ minWidth: Math.max(900, cols.length * 110) }}>
           <thead className="sticky top-0 z-10 bg-muted/80">
             <tr className="border-b border-border">
+              {canEdit && (
+                <th className="w-8 px-2 py-2">
+                  <Checkbox aria-label="Tick every customer on this page"
+                            checked={page.pageItems.length > 0 && page.pageItems.every((c) => ticked.has(c.group))}
+                            onCheckedChange={(on) => setTicked((t) => {
+                              const n = new Set(t);
+                              for (const c of page.pageItems) { if (on) n.add(c.group); else n.delete(c.group); }
+                              return n;
+                            })} />
+                </th>
+              )}
               {cols.map((c) => (
                 <th key={c.key} className={cn("whitespace-nowrap px-3 py-2 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground", c.right ? "text-right" : "text-left")}>
                   <button type="button" onClick={() => toggleSort(c.key, c.right)} title={`Sort by ${c.header}`}
@@ -543,27 +650,37 @@ function CustomerTable({ customers, loading, windowLabel, from, to }: {
           </thead>
           <tbody>
             {page.pageItems.length === 0 ? (
-              <tr><td colSpan={cols.length} className="py-8 text-center text-[12px] text-muted-foreground">
+              <tr><td colSpan={cols.length + (canEdit ? 1 : 0)} className="py-8 text-center text-[12px] text-muted-foreground">
                 {customers.length ? "No customer matches that search." : "No customers match those filters."}
               </td></tr>
             ) : page.pageItems.map((c) => (
               <Fragment key={c.group}>
                 <tr onClick={() => setOpen((o) => (o === c.group ? null : c.group))}
-                    className={cn("cursor-pointer border-b border-border/40 hover:bg-muted/40", open === c.group && "bg-muted/30")}>
+                    className={cn("cursor-pointer border-b border-border/40 hover:bg-muted/40", open === c.group && "bg-muted/30",
+                                  ticked.has(c.group) && "bg-primary/5")}>
+                  {canEdit && (
+                    <td className="w-8 px-2 py-1.5" onClick={(e) => e.stopPropagation()}>
+                      <Checkbox aria-label={`Tick ${c.group}`} checked={ticked.has(c.group)} onCheckedChange={() => tick(c.group)} />
+                    </td>
+                  )}
                   {cols.map((col, i) => (
                     <td key={col.key} className={cn(td, col.right && "text-right tabular-nums")}>
                       {i === 0 ? (
                         <span className="inline-flex items-center gap-1">
                           <ChevronRight className={cn("h-3.5 w-3.5 shrink-0 text-muted-foreground transition-transform", open === c.group && "rotate-90")} />
-                          {col.cell(c)}
+                          {col.key === "bucket" && canEdit
+                            ? <BucketPicker c={c} disabled={saving} onPick={(b) => apply([c.group], b)} />
+                            : col.cell(c)}
                         </span>
-                      ) : col.cell(c)}
+                      ) : col.key === "bucket" && canEdit
+                        ? <BucketPicker c={c} disabled={saving} onPick={(b) => apply([c.group], b)} />
+                        : col.cell(c)}
                     </td>
                   ))}
                 </tr>
                 {open === c.group && (
                   <tr className="border-b border-border/60 bg-muted/20">
-                    <td colSpan={cols.length} className="px-6 py-2">
+                    <td colSpan={cols.length + (canEdit ? 1 : 0)} className="px-6 py-2">
                       <table className="w-full text-[12px]">
                         <thead>
                           <tr className="text-[10.5px] uppercase tracking-wide text-muted-foreground">
@@ -609,3 +726,48 @@ function CustomerTable({ customers, loading, windowLabel, from, to }: {
   );
 }
 
+/** An admin's bucket control: the badge (as everyone sees it) opens Orange / Non-Orange / Auto. */
+function BucketPicker({ c, disabled, onPick }: {
+  c: CustomerFigures; disabled: boolean; onPick: (b: Bucket | null) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const pick = (b: Bucket | null) => { setOpen(false); onPick(b); };
+  return (
+    <span onClick={(e) => e.stopPropagation()} className="inline-flex flex-wrap items-center gap-1">
+      <Popover open={open} onOpenChange={setOpen}>
+        <PopoverTrigger asChild>
+          <button type="button" disabled={disabled} title="Change this customer's bucket"
+                  className="inline-flex items-center gap-0.5 rounded-pill px-2 py-0.5 text-[11px] font-semibold text-white hover:opacity-90 disabled:opacity-50"
+                  style={{ background: COLOR[c.bucket] }}>
+            {c.bucket} <ChevronDown className="h-3 w-3" />
+          </button>
+        </PopoverTrigger>
+        <PopoverContent align="start" className="w-56 p-1.5">
+          <div className="px-2 pb-1 pt-0.5 text-[10.5px] text-muted-foreground">
+            {c.group} · the rule says <b>{c.auto}</b>
+          </div>
+          {BUCKETS.map((b) => (
+            <button key={b} type="button" onClick={() => pick(b)}
+                    className={cn("flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-[12.5px] hover:bg-muted/60",
+                                  c.manual && c.bucket === b && "font-semibold")}>
+              <CircleDot className="h-3.5 w-3.5" style={{ color: COLOR[b] }} /> {b}
+              {c.manual && c.bucket === b && <span className="ml-auto text-[10px] text-muted-foreground">set by hand</span>}
+            </button>
+          ))}
+          <button type="button" onClick={() => pick(null)} disabled={!c.manual}
+                  className="mt-0.5 flex w-full items-center gap-2 rounded-md border-t border-border/60 px-2 py-1.5 text-left text-[12.5px] hover:bg-muted/60 disabled:opacity-40">
+            <RotateCcw className="h-3.5 w-3.5 text-muted-foreground" /> Auto — follow the rule ({c.auto})
+          </button>
+        </PopoverContent>
+      </Popover>
+      {c.manual && (
+        <span className="inline-flex items-center gap-0.5 rounded-pill border border-primary/40 bg-primary/5 px-1.5 py-0.5 text-[10px] text-primary"
+              title={`Set by hand — the rule says ${c.auto}`}>
+          <Hand className="h-2.5 w-2.5" /> set by hand
+        </span>
+      )}
+      {c.noInk && <span className="rounded-pill border border-border px-1.5 py-0.5 text-[10px] text-muted-foreground">no ink yet</span>}
+      {!c.grouped && <span className="rounded-pill border border-dashed border-border px-1.5 py-0.5 text-[10px] text-muted-foreground">not grouped</span>}
+    </span>
+  );
+}

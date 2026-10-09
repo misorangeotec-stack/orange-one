@@ -5,7 +5,12 @@
  *                One who has a machine but no ink yet is still Orange, tagged "no ink yet" — the
  *                machine base the ink team should be chasing.
  *   Non-Orange   bought our INK in the window, but no machine from us.
- *   (neither)    no machine and no ink (heads / spares / paper only) — in neither bucket.
+ *   (neither)    no machine and no ink (heads / spares / paper only) — "Unclassified": listed, in
+ *                neither bucket card.
+ *
+ * THE BUSINESS HAS THE LAST WORD. The rule cannot see a machine sold before the window, so an
+ * admin can put any customer in either bucket by hand (lib/bushraOrangeOverrides.ts); that wins
+ * over the rule everywhere, until it is set back to auto.
  *
  * THE CUSTOMER IS THE HUB CUSTOMER GROUP, not the Tally ledger. A machine goes out on the
  * customer's machine-order ledger and the ink on a separate ink ledger, so ledger by ledger every
@@ -32,6 +37,23 @@ type Row = BushraRegisterRow;
 
 export type Bucket = "Orange" | "Non-Orange";
 export const BUCKETS: Bucket[] = ["Orange", "Non-Orange"];
+/**
+ * Neither bucket by the rule (heads / spares / paper only). Listed so the business can place them by
+ * hand, but kept out of the two bucket cards and their charts.
+ */
+export const UNCLASSIFIED = "Unclassified";
+export type Placement = Bucket | typeof UNCLASSIFIED;
+
+/** Where a customer sits: the hand-set bucket if there is one, else the rule's. */
+export interface Classified {
+  bucket: Placement;
+  /** What the rule alone says — shown beside a hand-set bucket, so a reader can see it was moved. */
+  auto: Placement;
+  /** Set by hand (bushra_orange_customer_overrides). */
+  manual: boolean;
+  /** Orange, with a machine but no ink bought in the window. */
+  noInk: boolean;
+}
 
 /* --------------------------------------------------------------- the link */
 
@@ -110,7 +132,9 @@ export interface CustomerFigures {
   group: string;
   /** False when no ledger of this customer is mapped to a Customer Group. */
   grouped: boolean;
-  bucket: Bucket;
+  bucket: Placement;
+  auto: Placement;
+  manual: boolean;
   /** Orange, with a machine but no ink bought in the window. */
   noInk: boolean;
   ledgers: LedgerLine[];
@@ -128,7 +152,7 @@ export interface CustomerFigures {
   lastSale: string;
 }
 
-type Acc = Omit<CustomerFigures, "bucket" | "noInk" | "ledgers" | "companies" | "locations"> & {
+type Acc = Omit<CustomerFigures, "bucket" | "auto" | "manual" | "noInk" | "ledgers" | "companies" | "locations"> & {
   ledgerMap: Map<string, LedgerLine>; companySet: Set<string>; locationSet: Set<string>;
 };
 
@@ -183,30 +207,30 @@ export const bucketOf = (a: { machineQty: number; inkVal: number }): Bucket | nu
   (a.machineQty > 0 ? "Orange" : a.inkVal > 0 ? "Non-Orange" : null);
 
 /**
- * Each customer's bucket, from every pure-sale line in the window regardless of any filter.
- * Keyed by Customer Group.
+ * Each customer's place, from every pure-sale line in the window regardless of any filter, with a
+ * bucket the business set by hand (`overrides`, Customer Group → bucket) winning over the rule.
+ * Keyed by Customer Group; every customer in the window is in it, Unclassified included.
  */
-export function classify(rows: Row[], link: GroupLink): Map<string, { bucket: Bucket; noInk: boolean }> {
-  const out = new Map<string, { bucket: Bucket; noInk: boolean }>();
+export function classify(rows: Row[], link: GroupLink, overrides: Map<string, Bucket> = new Map()): Map<string, Classified> {
+  const out = new Map<string, Classified>();
   for (const [g, a] of aggregate(rows.filter(isPureSale), link)) {
-    const b = bucketOf(a);
-    if (b) out.set(g, { bucket: b, noInk: b === "Orange" && a.inkVal <= 0 });
+    const auto: Placement = bucketOf(a) ?? UNCLASSIFIED;
+    const hand = overrides.get(g);
+    const bucket = hand ?? auto;
+    out.set(g, { bucket, auto, manual: !!hand, noInk: bucket === "Orange" && a.inkVal <= 0 });
   }
   return out;
 }
 
-/**
- * The figures for the lines a reader's filters leave, each customer carrying the bucket its
- * WHOLE window gave it. Customers in neither bucket are dropped.
- */
-export function customerFigures(rows: Row[], link: GroupLink, buckets: Map<string, { bucket: Bucket; noInk: boolean }>): CustomerFigures[] {
+/** The figures for the lines a reader's filters leave, each customer carrying its WHOLE window's place. */
+export function customerFigures(rows: Row[], link: GroupLink, buckets: Map<string, Classified>): CustomerFigures[] {
   const out: CustomerFigures[] = [];
   for (const [g, a] of aggregate(rows, link)) {
     const c = buckets.get(g);
     if (!c) continue;
     const { ledgerMap, companySet, locationSet, ...rest } = a;
     out.push({
-      ...rest, bucket: c.bucket, noInk: c.noInk,
+      ...rest, bucket: c.bucket, auto: c.auto, manual: c.manual, noInk: c.noInk,
       ledgers: [...ledgerMap.values()].sort((x, y) => y.total - x.total),
       companies: [...companySet].sort(), locations: [...locationSet].sort(),
     });
