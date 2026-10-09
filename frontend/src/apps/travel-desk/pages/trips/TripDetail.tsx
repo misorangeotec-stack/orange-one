@@ -6,6 +6,7 @@ import { Field, SECTION_HEADING_CLASS } from "@/shared/components/ui/Readout";
 import { formatDateDMY } from "@/shared/lib/date";
 import { useOrgPersonById } from "@/core/platform/orgPeople";
 import { useDirectory } from "@/core/platform/store";
+import { useTravellerProfiles } from "../../data/travellerDirectory";
 import { useTravelStore } from "../../store";
 import TripStepper from "../../components/TripStepper";
 import StatusPill from "../../components/StatusPill";
@@ -47,7 +48,8 @@ export default function TripDetail() {
   const [params] = useSearchParams();
   const s = useTravelStore();
   const personById = useOrgPersonById();
-  const { profiles, bandById, departmentById, designationById } = useDirectory();
+  const { bandById, departmentById, designationById } = useDirectory();
+  const profiles = useTravellerProfiles();
 
   const trip = s.tripById(id ?? null);
   const passengers = useMemo(() => (trip ? s.passengersOf(trip.id) : []), [trip, s]);

@@ -96,7 +96,17 @@ export const APPS: Record<string, AppInfo> = {
   sampling: {
     name: "Ink / RM Sampling",
     basePath: "/sampling",
-    category: "sampling",
+    category: "plant",
+  },
+  /**
+   * INK IMS — ink inventory planning. Its own module, filed under its own menu group.
+   * Deliberately NOT part of the Receivables Hub: different report, different owners.
+   */
+  "ink-mis": {
+    name: "Ink IMS",
+    basePath: "/ink-mis",
+    // Its own menu group, "IMS Sheet", next to Purchase — asked for by the planner.
+    category: "ims",
   },
   /**
    * BUSHRA CENTRAL MASTER — a private mirror of Central Masters' items. Changes stay
@@ -107,13 +117,50 @@ export const APPS: Record<string, AppInfo> = {
     basePath: "/bushra-central-master",
     category: "control",
   },
+  /**
+   * ALL DRAFTS — every saved draft of every FMS raise form, on one page. Admins
+   * see it without a grant; anyone else needs it granted in Admin -> Module
+   * Access, and the grant is read-only (RLS on public.fms_drafts).
+   */
+  "all-drafts": {
+    name: "All Drafts",
+    basePath: "/all-drafts",
+    category: "control",
+  },
+  /**
+   * INK STABILISATION — Enterprises Surat's manufactured ink lots and their 3 / 6 / 9-month
+   * retests. Read-only from ConnectWave.
+   */
+  "ink-stabilisation": {
+    name: "Ink Stabilisation",
+    basePath: "/ink-stabilisation",
+    category: "plant",
+  },
+  /**
+   * INK EXPIRY — every ink lot in stock, in every company, and whether Tally has its expiry
+   * date; the lots without one are the accountant's list. Read-only from ConnectWave.
+   */
+  "ink-expiry": {
+    name: "Ink Expiry Date",
+    basePath: "/ink-expiry",
+    category: "plant",
+  },
+  /**
+   * TRAINING VIDEOS — the training recordings, each a OneDrive / SharePoint link that opens in a new
+   * tab. Open to all staff; each sees the videos of the modules they hold. Only admins edit.
+   */
+  "training-videos": {
+    name: "Training Videos",
+    basePath: "/training-videos",
+    category: "training",
+  },
   "production-entry": {
     name: "Production Entry",
     basePath: "/production-entry",
-    category: "production",
+    category: "plant",
   },
   /**
-   * The post-sale (and post-purchase) grievance, filed under QUALITY rather than
+   * The post-sale (and post-purchase) grievance, filed under PLANT OPERATIONS rather than
    * under Sales or Production because it is genuinely both: a FINISHED GOOD
    * complaint arrives from a customer against a sales invoice, and a RAW
    * MATERIAL one goes out to a vendor against a purchase invoice. Filing it
@@ -122,7 +169,7 @@ export const APPS: Record<string, AppInfo> = {
   complaint: {
     name: "Complaint (RM/FG)",
     basePath: "/complaint",
-    category: "quality",
+    category: "plant",
   },
   // Picks up where Production Entry ends: that module closes at "FG Transfer to
   // Godown", this one takes the goods from the godown to the customer.
@@ -181,7 +228,8 @@ export const APPS: Record<string, AppInfo> = {
   "asset-maintenance": {
     name: "Asset Maintenance",
     basePath: "/asset-maintenance",
-    category: "asset",
+    // Filed under HR in the menu, at the business's request (its own "Asset" group before).
+    category: "hr",
   },
   /**
    * Learning & Development. Filed under HR beside Recruitment and Exit — it is the
@@ -217,6 +265,14 @@ export const APPS: Record<string, AppInfo> = {
   "travel-desk": {
     name: "Travel Desk",
     basePath: "/travel-desk",
+    category: "hr",
+  },
+  // KB-1 · HR's side of the handbook Knowledge Base. ⚠ Holding this module is what lets
+  // somebody ASK and READ at all while HR trials the feature (01-10-2026); full access
+  // also opens the question log and the section notes.
+  "knowledge-base": {
+    name: "Knowledge Base",
+    basePath: "/knowledge-base",
     category: "hr",
   },
   // The HR front door: one place to ask HR anything, routed by the category the

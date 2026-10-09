@@ -604,6 +604,7 @@ export async function fetchTravelData(): Promise<TravelData> {
   const config: TravelConfig = {
     stepSla: (cfg.get("step_sla") as Record<string, unknown> | undefined) ?? null,
     processCoordinators: (cfg.get("process_coordinators")?.user_ids as string[] | undefined) ?? [],
+    raiseFor: (cfg.get("raise_for")?.user_ids as string[] | undefined) ?? [],
     approvalMatrix: mapMatrix(cfg.get("approval_matrix")),
     policy: mapPolicy(cfg.get("policy")),
     reassignPoolDepartmentIds: (cfg.get("reassign_pool")?.department_ids as string[] | undefined) ?? [],

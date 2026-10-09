@@ -1,6 +1,7 @@
 import MasterOwnersSection from "./MasterOwnersSection";
 import StepOwnersSection from "./StepOwnersSection";
 import CoordinatorsSection from "./CoordinatorsSection";
+import RaiseForSection from "./RaiseForSection";
 import ReassignmentSection from "./ReassignmentSection";
 import ApprovalMatrixSection from "./ApprovalMatrixSection";
 import StepDueDatesSection from "./StepDueDatesSection";
@@ -34,6 +35,7 @@ export default function Setup() {
           work - asked for one trip instead of for the module. */}
       <ReassignmentSection />
       <CoordinatorsSection />
+      <RaiseForSection />
       <ApprovalMatrixSection />
       <MasterOwnersSection />
       <StepDueDatesSection />

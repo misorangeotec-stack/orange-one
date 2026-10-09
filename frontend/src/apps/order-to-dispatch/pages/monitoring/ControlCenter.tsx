@@ -264,13 +264,21 @@ export default function ControlCenter() {
         who chases an invoice that has been left live in Tally, so the number
         belongs on this page even though the machinery behind it does not.
       */}
-      {s.salesReturnPending.length > 0 && (
+      {(s.salesReturnPending.length > 0 || s.roundReturnsPending.length > 0) && (
         <Card className="p-3.5 border-l-4 border-l-ryg-red">
           <p className="text-[13px] text-navy">
             <span className="font-semibold">
-              {s.salesReturnPending.length} cancelled{" "}
-              {s.salesReturnPending.length === 1 ? "order has" : "orders have"} a sales bill still to
-              be unwound in Tally.
+              {s.salesReturnPending.length > 0 &&
+                `${s.salesReturnPending.length} cancelled ${
+                  s.salesReturnPending.length === 1 ? "order has" : "orders have"
+                } a sales bill still to be unwound in Tally.`}
+              {s.salesReturnPending.length > 0 && s.roundReturnsPending.length > 0 && " "}
+              {/* Returns against invoices that already went out — paperwork only,
+                  but just as live in Tally until somebody records them. */}
+              {s.roundReturnsPending.length > 0 &&
+                `${s.roundReturnsPending.length} delivered ${
+                  s.roundReturnsPending.length === 1 ? "invoice is" : "invoices are"
+                } waiting on a sales return.`}
             </span>{" "}
             <Link to={`${B}/queues/sales-return`} className="font-semibold text-orange hover:underline">
               Open Sales Return

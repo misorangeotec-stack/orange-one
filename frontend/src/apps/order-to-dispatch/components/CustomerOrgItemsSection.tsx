@@ -3,12 +3,26 @@ import { useQueries, useQuery } from "@tanstack/react-query";
 import Button from "@/shared/components/ui/Button";
 import MultiSelect, { type MultiOption } from "@/shared/components/ui/MultiSelect";
 import { TextInput } from "@/shared/components/ui/Form";
+import { itemTypeLabel, type ItemType } from "@/core/platform/liveMasters";
 import { useDispatchStore } from "../store";
 import { COMPANY_ITEMS_QK, fetchCompanyItems } from "../data/dispatchFetch";
-import { fetchOrgItems, orgItemsQueryKey, type OrgItemRow } from "../data/customerOrgs";
+import { fetchPortalItems, portalItemsQueryKey, type OrgItemRow } from "../data/customerOrgs";
 
 /** The one normalisation. Must match `MapCustomerItemModal`'s. */
 const norm = (s: string) => s.trim().toUpperCase();
+
+/**
+ * The bucket an UNCLASSIFIED item falls in.
+ *
+ * `item_type` is nullable and plenty of live rows carry null, so the filter needs
+ * a value to stand for them — a chip that cannot be clicked would leave those
+ * items unreachable by type, which is the one thing this filter exists to fix.
+ * Sentinel rather than "" so it cannot collide with a real type key.
+ */
+const NO_TYPE = "__none__";
+
+const typeLabel = (t: string | null | undefined): string =>
+  !t || t === NO_TYPE ? "Unclassified" : itemTypeLabel(t as ItemType) || "Unclassified";
 
 export interface OrgItemEdits {
   add: string[];
@@ -16,6 +30,12 @@ export interface OrgItemEdits {
 }
 
 export const NO_ITEM_EDITS: OrgItemEdits = { add: [], remove: [] };
+
+/** The list a save writes: what was stored, less what was taken off, plus what was added. */
+export const applyItemEdits = (base: readonly string[], edits: OrgItemEdits): string[] => {
+  const removed = new Set(edits.remove);
+  return [...new Set([...base.filter((id) => !removed.has(id)), ...edits.add])];
+};
 
 /** One line as the reader sees it: a product, and the books that can supply it. */
 interface NameRow {
@@ -26,11 +46,28 @@ interface NameRow {
   itemIds: string[];
   /** Company ids of the ticked LEDGERS carrying it — the books that can supply it. */
   bookIds: string[];
+  /**
+   * Every item type behind this name, `NO_TYPE` for the unclassified ones.
+   *
+   * ⚠ A LIST, NOT ONE VALUE, for the same reason `bookIds` is. One row is one
+   *   NAME and a name can be several stock items across books; nothing makes two
+   *   books agree on how they classified the same physical goods. Storing the
+   *   first one found would file a row under a type and hide it from the chip
+   *   that actually matches its twin.
+   */
+  itemTypes: string[];
   isNew: boolean;
 }
 
 /**
  * WHAT THIS CUSTOMER MAY ORDER — inside the form that creates them (OD-14).
+ *
+ * ⚠ THE ORDER DESK'S OWN LIST SINCE OD-17, NOT `mst_party_items`. That shared
+ *   mapping is filled by the Sales Register sync with everything a customer has
+ *   ever bought — heads, spare parts, inks — so ticking "only inks" here could
+ *   never stop the rest showing. `baseItemIds` is the org's `portal_item_ids`:
+ *   it starts empty and holds only what is chosen here. (Some notes below still
+ *   speak of "mapping"; read it as this list.)
  *
  * Setup could tick a customer's ledgers, name who is told and create their login,
  * and then not give them a single thing to order. Only 817 of 7,948 active
@@ -71,10 +108,14 @@ interface NameRow {
  */
 export default function CustomerOrgItemsSection({
   partyIds,
+  baseItemIds,
   edits,
   onChange,
 }: {
+  /** The ticked ledgers — only to know which books the Add picker searches. */
   partyIds: string[];
+  /** The saved Order Desk list. Empty for a new customer. */
+  baseItemIds: string[];
   edits: OrgItemEdits;
   onChange: (next: OrgItemEdits) => void;
 }) {
@@ -82,32 +123,32 @@ export default function CustomerOrgItemsSection({
   const [picking, setPicking] = useState(false);
   const [search, setSearch] = useState("");
   /**
-   * Which books the list is narrowed to. EMPTY MEANS ALL, not none — the same
-   * convention every filter in this app uses, and the reason the chips need no
-   * separate "show everything" control.
+   * Which item types the list is narrowed to. EMPTY MEANS ALL — the same
+   * convention every filter in this app uses.
+   *
+   * ⚠ THIS ONE ALSO NARROWS "Add items", AND THE BOOK CHIPS DO NOT. That looks
+   *   inconsistent and is the whole point of the control: the job it was added for
+   *   is "put every ink on this customer and nothing else", which is a question
+   *   about the PICKER, not about the list of what they already have. The book is
+   *   already in every picker option's label, so narrowing by it there would only
+   *   re-state what the reader can see; the type is not written anywhere on the
+   *   option, so without this there is no way to reach "all the inks" at all.
    */
-  const [bookFilter, setBookFilter] = useState<string[]>([]);
+  const [typeFilter, setTypeFilter] = useState<string[]>([]);
 
-  /** Ticked ledger → its book, and the book list itself. */
-  const { books, bookOfParty } = useMemo(() => {
-    const ofParty = new Map<string, string>();
+  /** The books of the ticked ledgers — where the Add picker searches. */
+  const books = useMemo(() => {
     const seen = new Map<string, string>();
     s.customers
       .filter((c) => partyIds.includes(c.id) && c.companyId)
-      .forEach((c) => {
-        ofParty.set(c.id, c.companyId as string);
-        seen.set(c.companyId as string, s.masterName("company", c.companyId));
-      });
-    return {
-      books: [...seen].map(([id, name]) => ({ id, name })).sort((a, b) => a.name.localeCompare(b.name)),
-      bookOfParty: ofParty,
-    };
+      .forEach((c) => seen.set(c.companyId as string, s.masterName("company", c.companyId)));
+    return [...seen].map(([id, name]) => ({ id, name })).sort((a, b) => a.name.localeCompare(b.name));
   }, [partyIds, s]);
 
   const mapped = useQuery({
-    queryKey: orgItemsQueryKey(partyIds),
-    queryFn: () => fetchOrgItems(partyIds),
-    enabled: partyIds.length > 0,
+    queryKey: portalItemsQueryKey(baseItemIds),
+    queryFn: () => fetchPortalItems(baseItemIds),
+    enabled: baseItemIds.length > 0,
     staleTime: 30_000,
   });
 
@@ -153,66 +194,112 @@ export default function CustomerOrgItemsSection({
   /** What the customer would be able to order if this were saved now, by name. */
   const rows = useMemo(() => {
     const by = new Map<string, NameRow>();
-    const push = (name: string, code: string | null, itemId: string, bookId: string | null, isNew: boolean) => {
+    const push = (
+      name: string,
+      code: string | null,
+      itemId: string,
+      bookId: string | null,
+      itemType: string | null,
+      isNew: boolean,
+    ) => {
       const key = norm(name);
       if (!key) return;
       let r = by.get(key);
       if (!r) {
-        r = { key, name, code, itemIds: [], bookIds: [], isNew };
+        r = { key, name, code, itemIds: [], bookIds: [], itemTypes: [], isNew };
         by.set(key, r);
       }
       if (!r.itemIds.includes(itemId)) r.itemIds.push(itemId);
       if (bookId && !r.bookIds.includes(bookId)) r.bookIds.push(bookId);
+      const t = itemType || NO_TYPE;
+      if (!r.itemTypes.includes(t)) r.itemTypes.push(t);
       // A name is only "new" if nothing already mapped carries it.
       r.isNew = r.isNew && isNew;
       if (!r.code && code) r.code = code;
     };
 
     (mapped.data ?? []).forEach((m) => {
-      if (removeSet.has(m.itemId)) return;
-      push(m.itemName, m.itemCode, m.itemId, bookOfParty.get(m.partyId) ?? null, false);
+      if (removeSet.has(m.id)) return;
+      push(m.name, m.code, m.id, m.companyId, m.itemType, false);
     });
     edits.add.forEach((id) => {
       const it = bookItems.get(id);
-      if (it) push(it.itemName, it.itemCode, it.itemId, it.companyId, true);
+      if (it) push(it.itemName, it.itemCode, it.itemId, it.companyId, it.itemType, true);
     });
 
     return [...by.values()].sort((a, b) => a.name.localeCompare(b.name));
-  }, [mapped.data, removeSet, edits.add, bookItems, bookOfParty]);
+  }, [mapped.data, removeSet, edits.add, bookItems]);
 
-  const takenNames = useMemo(() => new Set(rows.map((r) => r.key)), [rows]);
+  /** Names already on the saved list. Names only just added stay selectable in the picker. */
+  const takenNames = useMemo(
+    () => new Set(rows.filter((r) => !r.isNew).map((r) => r.key)),
+    [rows],
+  );
 
+  /**
+   * The type chips on offer — the union of what the MAPPED list and the ticked
+   * BOOKS actually carry, never the full thirteen.
+   *
+   * ⚠ IT HAS TO INCLUDE THE BOOKS, not just `rows`, and that is the difference
+   *   between this and the same idea in `SalesOrderFields`. There the list is what
+   *   the customer already holds; here the filter's main job is to reach items
+   *   they do NOT hold yet, so a type present only in the picker still needs its
+   *   chip. Before the books load there is nothing to add anyway, so the list
+   *   simply grows when they arrive.
+   */
+  const types = useMemo(() => {
+    const seen = new Set<string>();
+    rows.forEach((r) => r.itemTypes.forEach((t) => seen.add(t)));
+    if (wantBooks) bookItems.forEach((it) => seen.add(it.itemType || NO_TYPE));
+    return [...seen]
+      .map((value) => ({ value, label: typeLabel(value) }))
+      /* Unclassified last: it is a residue, not a category, and it is the one
+         bucket nobody is ever looking for on purpose. */
+      .sort((a, b) =>
+        a.value === NO_TYPE ? 1 : b.value === NO_TYPE ? -1 : a.label.localeCompare(b.label),
+      );
+  }, [rows, bookItems, wantBooks]);
+
+  /*
+    ONE OPTION PER ITEM NAME, WITH NO COMPANY IN IT (OD-17).
+
+    Tally files the same ink as a separate stock item in every book, so listing
+    per book showed "EP SUBLIMATION HD BLACK" once for O-tec and again for
+    Enterprise. The customer's list is matched BY NAME everywhere — their picker,
+    the line check, and the re-point when our team chooses the billing company —
+    so which book's copy is stored does not matter. One tick is the whole item.
+  */
   const options: MultiOption[] = useMemo(() => {
-    const out: MultiOption[] = [];
-    bookQueries.forEach((q, i) => {
-      const book = books[i];
-      if (!book) return;
+    const byName = new Map<string, MultiOption>();
+    bookQueries.forEach((q) => {
       (q.data ?? []).forEach((it) => {
-        if (takenNames.has(norm(it.name))) return;
-        out.push({
-          value: it.id,
-          // The book is in the label because it is where the item will land, and
-          // the admin is not asked for it anywhere else.
-          label: `${it.code ? `${it.name} · ${it.code}` : it.name} — ${book.name}`,
-        });
+        const k = norm(it.name);
+        if (!k || takenNames.has(k) || byName.has(k)) return;
+        if (typeFilter.length && !typeFilter.includes(it.itemType || NO_TYPE)) return;
+        byName.set(k, { value: it.id, label: it.name.trim() });
       });
     });
-    return out.sort((a, b) => a.label.localeCompare(b.label));
-  }, [bookQueries, books, takenNames]);
+    // Keep a ticked option in the list, so its chip can still be cleared.
+    edits.add.forEach((id) => {
+      const it = bookItems.get(id);
+      if (it && !byName.has(norm(it.itemName))) byName.set(norm(it.itemName), { value: id, label: it.itemName.trim() });
+    });
+    return [...byName.values()].sort((a, b) => a.label.localeCompare(b.label));
+  }, [bookQueries, takenNames, typeFilter, edits.add, bookItems]);
 
   const shown = useMemo(() => {
     const q = norm(search);
     return rows.filter((r) => {
-      if (bookFilter.length && !r.bookIds.some((b) => bookFilter.includes(b))) return false;
+      if (typeFilter.length && !r.itemTypes.some((t) => typeFilter.includes(t))) return false;
       if (!q) return true;
       return r.key.includes(q) || norm(r.code ?? "").includes(q);
     });
-  }, [rows, search, bookFilter]);
+  }, [rows, search, typeFilter]);
 
-  const toggleBook = (id: string) =>
-    setBookFilter((cur) => (cur.includes(id) ? cur.filter((x) => x !== id) : [...cur, id]));
+  const toggleType = (t: string) =>
+    setTypeFilter((cur) => (cur.includes(t) ? cur.filter((x) => x !== t) : [...cur, t]));
 
-  const filtering = bookFilter.length > 0 || !!search.trim();
+  const filtering = typeFilter.length > 0 || !!search.trim();
 
   /**
    * Removing takes the NAME away, across every ticked ledger and both books.
@@ -229,6 +316,28 @@ export default function CustomerOrgItemsSection({
     onChange({ add: stillAdded, remove: [...edits.remove, ...alreadyMapped] });
   };
 
+  /**
+   * Clear the list in one press — "take it all off and I will add back the four
+   * they actually buy", which by hand is eighty-odd clicks on the ×.
+   *
+   * ⚠ IT DROPS WHAT IS ON SCREEN, NOT WHAT EXISTS, and the label says which. With
+   *   a filter on, "remove all" meaning "also the ones I filtered away" is a
+   *   destructive surprise that the buffered save would carry out without ever
+   *   showing the reader what went. `shown` is the honest subject: the button
+   *   reads "Remove all 81" with nothing narrowed and "Remove these 12" when it
+   *   is, so the number in the label is always the number that goes.
+   *
+   * Buffered like every other edit here — nothing is written until the dialog
+   * saves, so Cancel still cancels.
+   */
+  const dropAll = () => {
+    const ids = new Set(shown.flatMap((r) => r.itemIds));
+    onChange({
+      add: edits.add.filter((id) => !ids.has(id)),
+      remove: [...edits.remove, ...[...ids].filter((id) => !addSet.has(id))],
+    });
+  };
+
   if (partyIds.length === 0) {
     return (
       <Section count={null}>
@@ -242,62 +351,61 @@ export default function CustomerOrgItemsSection({
   return (
     <Section count={rows.length} showing={filtering ? shown.length : null}>
       {/*
-        THE CHIPS ARE THE BOOK FILTER, and they multi-select: tick one, tick
-        several, or leave them all off to see everything. Nothing is hidden from
-        the reader by default, which is why there is no separate "all" chip — the
-        off state IS all, the same convention every other filter here follows.
+        THE TYPE CHIPS, on their own row and reading the same way as the books:
+        multi-select, off means all.
 
-        ⚠ AN ITEM CAN SIT UNDER TWO CHIPS AT ONCE. A name mapped on two ledgers is
-          one row with two books, so the per-chip counts deliberately add up to
-          more than the total. Filtering keeps a row if ANY of its books is
-          selected, which is what "show me what Noida can supply" means.
+        ⚠ THE COUNT ON A CHIP IS OF THE MAPPED LIST, not of the books behind it.
+          A chip can therefore read · 0 while still being worth pressing — that is
+          a type this customer has none of YET, which is precisely the state
+          somebody bulk-adding a type is in. The title text says so rather than
+          leaving a zero looking like a dead control.
       */}
-      <div className="flex flex-wrap items-center gap-2">
-        {books.map((b) => {
-          const n = rows.filter((r) => r.bookIds.includes(b.id)).length;
-          const on = bookFilter.includes(b.id);
-          return (
-            <button
-              key={b.id}
-              type="button"
-              aria-pressed={on}
-              onClick={() => toggleBook(b.id)}
-              className={`rounded-full border px-2 py-0.5 text-[11.5px] transition ${
-                on
-                  ? "border-orange bg-orange/10 font-semibold text-orange"
-                  : n === 0
-                    ? "border-ryg-red/40 text-ryg-red hover:border-ryg-red"
+      {types.length > 1 && (
+        <div className="flex flex-wrap items-center gap-2">
+          {types.map((t) => {
+            const n = rows.filter((r) => r.itemTypes.includes(t.value)).length;
+            const on = typeFilter.includes(t.value);
+            return (
+              <button
+                key={t.value}
+                type="button"
+                aria-pressed={on}
+                onClick={() => toggleType(t.value)}
+                className={`rounded-full border px-2 py-0.5 text-[11.5px] transition ${
+                  on
+                    ? "border-navy bg-navy/10 font-semibold text-navy"
                     : "border-line text-grey hover:border-grey-2"
-              }`}
-              title={
-                on
-                  ? `Showing only ${b.name} — click to stop filtering by it`
-                  : n === 0
-                    ? `${b.name} cannot supply this customer anything yet`
-                    : `${b.name} can supply ${n} of their items — click to show only these`
-              }
+                }`}
+                title={
+                  on
+                    ? `Showing only ${t.label} — click to stop filtering by it`
+                    : n === 0
+                      ? `They have no ${t.label} yet — click to add from this type`
+                      : `They can order ${n} ${t.label} — click to show only these`
+                }
+              >
+                {t.label} · {n}
+              </button>
+            );
+          })}
+          {typeFilter.length > 0 && (
+            <button
+              type="button"
+              onClick={() => setTypeFilter([])}
+              className="text-[11.5px] text-grey-2 underline hover:text-ink"
             >
-              {b.name} · {n}
+              Show all types
             </button>
-          );
-        })}
-        {bookFilter.length > 0 && (
-          <button
-            type="button"
-            onClick={() => setBookFilter([])}
-            className="text-[11.5px] text-grey-2 underline hover:text-ink"
-          >
-            Show all books
-          </button>
-        )}
-      </div>
+          )}
+        </div>
+      )}
 
-      {mapped.isLoading ? (
+      {mapped.isLoading && baseItemIds.length > 0 ? (
         <p className="text-[12.5px] text-grey-2">Loading their list…</p>
       ) : rows.length === 0 ? (
         <p className="text-[12.5px] text-ryg-red">
-          Nothing mapped yet — their order screen would be empty, and this customer cannot be
-          switched on until at least one item is here.
+          Nothing chosen yet — their order screen would be empty, and this customer cannot be
+          switched on until at least one item is here. Only what you add here is shown to them.
         </p>
       ) : (
         <>
@@ -317,16 +425,16 @@ export default function CustomerOrgItemsSection({
                   again to get back. Same rule the grids follow.
               */
               <p className="px-3 py-3 text-[12.5px] text-grey-2">
-                {search.trim() ? <>Nothing matches “{search.trim()}”</> : <>Nothing in the books you picked</>}
-                {bookFilter.length > 0 && (
+                {search.trim() ? <>Nothing matches “{search.trim()}”</> : <>Nothing in what you picked</>}
+                {typeFilter.length > 0 && (
                   <>
                     {" — "}
                     <button
                       type="button"
-                      onClick={() => setBookFilter([])}
+                      onClick={() => setTypeFilter([])}
                       className="underline hover:text-ink"
                     >
-                      show all books
+                      clear the filters
                     </button>
                   </>
                 )}
@@ -341,9 +449,6 @@ export default function CustomerOrgItemsSection({
                   <span className="min-w-0 flex-1 truncate text-ink" title={r.name}>
                     {r.name}
                     {r.code && <span className="text-grey-2"> · {r.code}</span>}
-                  </span>
-                  <span className="shrink-0 text-[11px] text-grey-2">
-                    {r.bookIds.map((id) => s.masterName("company", id)).sort().join(", ")}
                   </span>
                   {r.isNew && <span className="shrink-0 text-[11px] font-semibold text-ryg-green">new</span>}
                   <button
@@ -368,7 +473,13 @@ export default function CustomerOrgItemsSection({
             values={edits.add}
             onChange={(v) => onChange({ add: v, remove: edits.remove })}
             options={options}
-            placeholder={booksLoading ? "Loading their books…" : "Search every item in their books…"}
+            placeholder={
+              booksLoading
+                ? "Loading their books…"
+                : typeFilter.length
+                  ? `Search items — ${typeFilter.map((t) => typeLabel(t)).join(", ")} only…`
+                  : "Search items…"
+            }
             disabled={booksLoading}
             searchable
             chips
@@ -381,7 +492,31 @@ export default function CustomerOrgItemsSection({
           <Button size="sm" variant="ghost" onClick={() => setPicking(false)}>Done adding</Button>
         </div>
       ) : (
-        <Button size="sm" variant="ghost" onClick={() => setPicking(true)}>Add items</Button>
+        <div className="flex flex-wrap items-center gap-2">
+          <Button size="sm" variant="ghost" onClick={() => setPicking(true)}>Add items</Button>
+          {/*
+            Hidden when there is nothing to take off, so an empty list offers a
+            button that would do nothing. The count is `shown`, matching what
+            `dropAll` actually removes — see the note on it.
+          */}
+          {shown.length > 0 && (
+            <button
+              type="button"
+              onClick={dropAll}
+              className="rounded-lg border border-line px-2.5 py-1 text-[12px] text-grey-2 transition hover:border-ryg-red hover:text-ryg-red"
+              title={
+                filtering
+                  ? "Take the items you are looking at off this customer's list"
+                  : "Take every item off this customer's list"
+              }
+            >
+              {/* "Clear all" matches the ledger dropdown's own wording, so the two
+                  bulk controls on this dialog read the same way. It still says
+                  "these" under a filter, because that is what it does. */}
+              {filtering ? `Clear these ${shown.length}` : `Clear all ${shown.length}`}
+            </button>
+          )}
+        </div>
       )}
 
       {(edits.add.length > 0 || edits.remove.length > 0) && (

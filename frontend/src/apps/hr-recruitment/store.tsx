@@ -1190,8 +1190,15 @@ export function HrStoreProvider({ children }: { children: ReactNode }) {
       list.push(k);
       checksByOnb.set(k.onboardingId, list);
     }
-    for (const list of checksByOnb.values()) {
-      list.sort((a, b) => a.sortOrder - b.sortOrder || a.name.localeCompare(b.name));
+    // An open onboarding follows the order HR sets in Masters today; the snapshotted
+    // sort_order is only the fallback (item deleted from the master). A completed
+    // onboarding keeps the order it was worked in.
+    const itemOrder = new Map(onboardingItems.map((i) => [i.id, i.sortOrder]));
+    for (const [oid, list] of checksByOnb) {
+      const open = !onbById.get(oid)?.completedAt;
+      const order = (k: OnboardingCheck) =>
+        (open && k.itemId != null ? itemOrder.get(k.itemId) : undefined) ?? k.sortOrder;
+      list.sort((a, b) => order(a) - order(b) || a.name.localeCompare(b.name));
     }
 
     const canActOnOnboarding = (o: Onboarding): boolean => {

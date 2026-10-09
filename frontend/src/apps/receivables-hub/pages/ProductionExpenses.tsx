@@ -12,13 +12,19 @@
  * ─── HOW THE FULL COST IS BUILT ─────────────────────────────────────────────────────────────────
  *
  *   material / KG   Tally's own cost of what each batch consumed, weighted by batch size
- *   + direct / KG   the period's Direct Expenses ÷ the period's output
- *   + indirect / KG the period's Indirect Expenses ÷ the period's output
+ *   + direct / KG   the period's ticked Direct Expenses ÷ the period's output
+ *   + indirect / KG the period's ticked Indirect Expenses ÷ the period's output
+ *   + purchase / KG the period's ticked Purchase Accounts ledgers ÷ the period's output
  *
  * Straight absorption, and deliberately so: nothing in Tally ties an expense to a batch, an item or
  * a colour, so any split by product would be an assumption dressed as a number. Every panel here is
- * therefore cut by YEAR and MONTH only. Purchase Accounts are excluded — that is the material
- * itself, already counted on the batch.
+ * therefore cut by YEAR and MONTH only.
+ *
+ * WHICH LEDGERS COUNT is picked in the filter bar (Direct GL / Indirect GL / Purchase GL — see
+ * components/CostingGlPicker.tsx). Direct and Indirect start all ticked; Purchase Accounts starts
+ * all unticked, since most of it is the material already counted on the batch. The ticks are
+ * shared with the Production Dashboard. Every figure on the page uses only the ticked ledgers;
+ * the ledger table lists the unticked ones too, greyed, with a box to switch them back on.
  *
  * CHART RULES (dataviz skill): rupees and ₹/KG never share an axis; Direct keeps one colour and
  * Indirect another wherever they appear; every bar carries its value.
@@ -30,15 +36,13 @@ import {
   Bar, BarChart, CartesianGrid, Cell, LabelList, Legend, ResponsiveContainer, Tooltip, XAxis, YAxis,
 } from "recharts";
 import {
-  ArrowDown, ArrowLeft, ArrowUp, IndianRupee, Layers, Package, Receipt, RotateCcw, Scale, Wallet,
+  ArrowDown, ArrowLeft, ArrowUp, IndianRupee, Layers, Package, Receipt, RotateCcw, Scale, ShoppingCart, Wallet,
 } from "lucide-react";
 import { cn } from "@hub/lib/utils";
 import { Button } from "@hub/components/ui/button";
 import SalesPanel from "@hub/components/masterreports/SalesPanel";
 import { MultiSelectFilter, type MultiSelectOption } from "@hub/components/MultiSelectFilter";
 import { ScrollableTable } from "@/core/shared/components/ScrollableTable";
-import { FitTh, ResetWidths } from "@/shared/components/ui/ColumnResizer";
-import { useColumnWidths } from "@/shared/lib/useColumnWidths";
 import { usePagination } from "@/shared/lib/usePagination";
 import Pagination from "@/shared/components/ui/Pagination";
 import { fmtSales, salesFyOptions, tickSales } from "@hub/lib/salesReport";
@@ -49,9 +53,13 @@ import {
   fmtInt, fmtPct, fmtPerKg, kpis, monthLabel, monthsSpanning, summariseBatches,
 } from "@hub/lib/batchCostingDashboard";
 import {
-  EXPENSE_BLOCKS, costPerKg, expenseTotals, expensesByLedger, expensesByMonth,
-  loadProductionExpenses, type ExpenseBlock, type ExpenseMonth,
+  BLOCK_SHORT, EXPENSE_BLOCKS, blockPerKg, blockTotal, costPerKg, expenseTotals, expensesByLedger,
+  expensesByMonth, glOptions, loadProductionExpenses, overheadOf, useCostingGls,
+  type ExpenseBlock, type ExpenseMonth,
 } from "@hub/lib/productionExpenses";
+import { CostingGlPicker } from "@hub/components/CostingGlPicker";
+import { PanelFill, ResetLayout, ResizeTh, bodyResize, cellStyle, useTableLayout } from "@hub/components/ResizeKit";
+import { Checkbox } from "@hub/components/ui/checkbox";
 import { loadPackingMaterial, packingPerKg, packingTotals } from "@hub/lib/packingMaterial";
 import { useReportAccess } from "@hub/lib/reportAccess";
 import { appBasePath } from "@/apps/appInfo";
@@ -68,9 +76,15 @@ const LABEL_FILL = "hsl(220 20% 30%)";
 const TOOLTIP_BOX = "rounded-lg border border-border bg-surface px-3 py-2 text-[12px] shadow-md";
 
 /** One colour per block, everywhere on the page — and a third for the material it sits on top of. */
+const BLOCK_ICON: Record<ExpenseBlock, typeof Receipt> = {
+  "Direct Expenses": Receipt,
+  "Indirect Expenses": Wallet,
+  "Purchase Accounts": ShoppingCart,
+};
 const BLOCK_COLOR: Record<ExpenseBlock, string> = {
   "Direct Expenses": "#a16207",
   "Indirect Expenses": "#7c3aed",
+  "Purchase Accounts": "#be185d",
 };
 const MATERIAL_COLOR = "#e77e23";
 /** Packing keeps the same teal it has on its own page. */
@@ -80,7 +94,7 @@ const collator = new Intl.Collator("en", { numeric: true, sensitivity: "base" })
 const opts = (vals: Iterable<string>): MultiSelectOption[] =>
   [...new Set(vals)].filter(Boolean).sort(collator.compare).map((v) => ({ value: v, label: v }));
 
-type SortKey = "block" | "group" | "ledger" | "amount" | "share" | "lines";
+type SortKey = "counted" | "block" | "group" | "ledger" | "amount" | "share" | "lines";
 
 export default function ProductionExpenses() {
   const fyOptions = useMemo(() => productionFyOptions(salesFyOptions()), []);
@@ -115,14 +129,26 @@ export default function ProductionExpenses() {
   const [blocks, setBlocks] = useState<string[]>([]);
   const [groups, setGroups] = useState<string[]>([]);
 
+  // Which ledgers go into the cost — picked in the filter bar, shared with the dashboard.
+  const gls = useCostingGls();
+
   const pick = (sel: string[], v: string) => !sel.length || sel.includes(v);
-  const inPeriod = useMemo(
+  /** Every line of the period, ticked or not — what the pickers and the ledger table list. */
+  const periodAll = useMemo(
     () => rows.filter((r) => pick(years, `FY ${r.fy}`) && pick(months, r.month)),
     [rows, years, months],
   );
+  /** Only the ticked ledgers: every total and per-KG figure is built from this. */
+  const inPeriod = useMemo(() => periodAll.filter((r) => gls.isOn(r.block, r.ledger)), [periodAll, gls]);
+  const glOpts = useMemo(() => glOptions(periodAll), [periodAll]);
   const shown = useMemo(
     () => inPeriod.filter((r) => pick(blocks, r.block) && pick(groups, r.group)),
     [inPeriod, blocks, groups],
+  );
+  /** The ledger table's rows: the Type/Group view, ticked or not. */
+  const shownAll = useMemo(
+    () => periodAll.filter((r) => pick(blocks, r.block) && pick(groups, r.group)),
+    [periodAll, blocks, groups],
   );
 
   const yearOptions = useMemo(() => opts(rows.map((r) => `FY ${r.fy}`)), [rows]);
@@ -130,10 +156,10 @@ export default function ProductionExpenses() {
     () => opts(rows.filter((r) => pick(years, `FY ${r.fy}`)).map((r) => r.month)),
     [rows, years],
   );
-  const blockOptions = useMemo(() => opts(inPeriod.map((r) => r.block)), [inPeriod]);
+  const blockOptions = useMemo(() => opts(periodAll.map((r) => r.block)), [periodAll]);
   const groupOptions = useMemo(
-    () => opts(inPeriod.filter((r) => pick(blocks, r.block)).map((r) => r.group)),
-    [inPeriod, blocks],
+    () => opts(periodAll.filter((r) => pick(blocks, r.block)).map((r) => r.group)),
+    [periodAll, blocks],
   );
   const filterCount = years.length + months.length + blocks.length + groups.length;
   const resetAll = () => { setYears([]); setMonths([]); setBlocks([]); setGroups([]); };
@@ -155,9 +181,7 @@ export default function ProductionExpenses() {
     (packingRows ?? []).filter((r) => pick(years, `FY ${r.fy}`) && pick(months, r.month))),
     [packingRows, years, months]);
   const packPerKg = packingPerKg(packing, production.fgKgs) ?? 0;
-  const fullPerKg = perKg.materialPerKg == null
-    ? null
-    : perKg.materialPerKg + packPerKg + (perKg.directPerKg ?? 0) + (perKg.indirectPerKg ?? 0);
+  const fullPerKg = perKg.materialPerKg == null ? null : perKg.materialPerKg + packPerKg + overheadOf(perKg);
 
   /** Packing consumed per month, to sit in the per-KG stack beside material and overhead. */
   const packByMonth = useMemo(() => {
@@ -188,11 +212,12 @@ export default function ProductionExpenses() {
     });
   }, [inPeriod, periodBatches, batches, packByMonth]);
 
-  const ledgers = useMemo(() => expensesByLedger(shown), [shown]);
+  const ledgers = useMemo(() => expensesByLedger(shownAll, gls.isOn), [shownAll, gls]);
 
   const loading = (expLoading || prodLoading) && !expenseRows;
   const errText = error ? (error as Error).message : null;
   const empty = !loading && !errText && !shown.length;
+  const tableEmpty = !loading && !errText && !shownAll.length;
 
   return (
     <div className="p-4 lg:p-6 max-w-[1700px] mx-auto space-y-3">
@@ -221,7 +246,7 @@ export default function ProductionExpenses() {
         <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
           <Filter label="Year" options={yearOptions} value={years} onChange={setYears} all="All Years" unit="Years" />
           <Filter label="Month" options={monthOptions} value={months} onChange={setMonths} all="All Months" unit="Months" searchable />
-          <Filter label="Type" options={blockOptions} value={blocks} onChange={setBlocks} all="Direct + Indirect" unit="Types" />
+          <Filter label="Type" options={blockOptions} value={blocks} onChange={setBlocks} all="All Types" unit="Types" />
           <Filter label="Group" options={groupOptions} value={groups} onChange={setGroups} all="All Groups" unit="Groups" searchable />
           <Button onClick={resetAll} disabled={!filterCount}
                   className="h-8 gap-1.5 rounded-button bg-primary px-3 text-[12px] text-primary-foreground hover:bg-primary/90 disabled:opacity-40">
@@ -231,6 +256,12 @@ export default function ProductionExpenses() {
             {fmtSales(shownTotals.total)} · {fmtInt(shown.length)} lines
           </span>
         </div>
+        <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-2 border-t border-border/60 pt-2">
+          <span className="text-[10px] font-semibold uppercase tracking-wide text-foreground/70">Count in costing</span>
+          {EXPENSE_BLOCKS.map((b) => (
+            <CostingGlPicker key={b} block={b} options={glOpts} gls={gls} accent={BLOCK_COLOR[b]} />
+          ))}
+        </div>
       </div>
 
       {errText && (
@@ -238,18 +269,20 @@ export default function ProductionExpenses() {
       )}
 
       {/* ── KPI row ───────────────────────────────────────────────────────── */}
-      <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-2">
+      <div className="grid grid-cols-2 md:grid-cols-4 xl:grid-cols-7 gap-2">
         <Kpi accent={BLOCK_COLOR["Direct Expenses"]} icon={Receipt} label="Direct expenses" loading={loading}
              value={fmtSales(totals.direct)} exact={`${fmtPerKg(perKg.directPerKg)} / KG`} sub="freight, duty, labour, packing" />
         <Kpi accent={BLOCK_COLOR["Indirect Expenses"]} icon={Wallet} label="Indirect expenses" loading={loading}
              value={fmtSales(totals.indirect)} exact={`${fmtPerKg(perKg.indirectPerKg)} / KG`} sub="salaries, power, selling, finance" />
+        <Kpi accent={BLOCK_COLOR["Purchase Accounts"]} icon={ShoppingCart} label="Purchase accounts" loading={loading}
+             value={fmtSales(totals.purchase)} exact={`${fmtPerKg(perKg.purchasePerKg)} / KG`} sub="only the ledgers you ticked" />
         <Kpi accent="#0d9488" icon={IndianRupee} label="Total expenses" loading={loading}
-             value={fmtSales(totals.total)} exact={`${fmtPerKg((perKg.directPerKg ?? 0) + (perKg.indirectPerKg ?? 0))} / KG`}
+             value={fmtSales(totals.total)} exact={`${fmtPerKg(overheadOf(perKg))} / KG`}
              sub="the overhead on top of material" />
         <Kpi accent={MATERIAL_COLOR} icon={Layers} label="Material / KG" loading={loading}
              value={fmtPerKg(perKg.materialPerKg)} exact={fmtTonnes(production.fgKgs)} sub="what the batches consumed" />
         <Kpi accent="#2563eb" icon={Scale} label="Full cost / KG" loading={loading}
-             value={fmtPerKg(fullPerKg)} exact="material + packing + direct + indirect"
+             value={fmtPerKg(fullPerKg)} exact="material + packing + ticked expenses"
              sub="absorbed over the period's output" />
         <Kpi accent="#0d9488" icon={Package} label="Packing / KG" loading={loading}
              value={fmtPerKg(packPerKg)} exact={fmtSales(packing.consumedValue)} sub="caps, cans and stickers consumed" />
@@ -258,11 +291,10 @@ export default function ProductionExpenses() {
       {/* ── Expense analysis ──────────────────────────────────────────────── */}
       <SectionHeading>Expense analysis</SectionHeading>
       <div className="grid gap-3 lg:grid-cols-2">
-        <SalesPanel title="Direct vs Indirect by month" icon={IndianRupee} loading={loading} empty={empty}
+        <SalesPanel title="Expenses by month" sizeKey="month-expenses" bodyHeight={304} icon={IndianRupee} loading={loading} empty={empty}
                     emptyMessage="No expense lines in this period."
-                    subtitle="what the company spent each month, in rupees" resizable bars>
-          {(sz) => (
-          <ResponsiveContainer width="100%" height={sz.h(280)}>
+                    subtitle="what the company spent each month, in rupees">
+          <PanelFill base={280}>{(bar) => (<ResponsiveContainer width="100%" height="100%">
             <BarChart data={monthly} margin={{ top: 18, right: 8, left: 4, bottom: 14 }} barGap={2}>
               <CartesianGrid stroke={CHART_GRID} vertical={false} />
               <XAxis dataKey="label" tick={{ ...AXIS_TICK, fontSize: 10 }} tickLine={false}
@@ -270,18 +302,19 @@ export default function ProductionExpenses() {
               <YAxis tick={AXIS_TICK} tickLine={false} axisLine={false} tickFormatter={tickSales} width={54} />
               <Tooltip cursor={{ fill: "hsl(220 15% 95%)" }} content={<MonthTooltip />} />
               <Legend iconType="circle" iconSize={8} wrapperStyle={{ fontSize: 11 }} />
-              <Bar dataKey="direct" name="Direct" fill={BLOCK_COLOR["Direct Expenses"]} maxBarSize={sz.bar(18)} radius={[4, 4, 0, 0]} />
-              <Bar dataKey="indirect" name="Indirect" fill={BLOCK_COLOR["Indirect Expenses"]} maxBarSize={sz.bar(18)} radius={[4, 4, 0, 0]} />
+              <Bar dataKey="direct" name="Direct" fill={BLOCK_COLOR["Direct Expenses"]} maxBarSize={bar(18)} radius={[4, 4, 0, 0]} />
+              <Bar dataKey="indirect" name="Indirect" fill={BLOCK_COLOR["Indirect Expenses"]} maxBarSize={bar(18)} radius={[4, 4, 0, 0]} />
+              {totals.purchase !== 0 && (
+                <Bar dataKey="purchase" name="Purchase" fill={BLOCK_COLOR["Purchase Accounts"]} maxBarSize={bar(18)} radius={[4, 4, 0, 0]} />
+              )}
             </BarChart>
-          </ResponsiveContainer>
-          )}
+          </ResponsiveContainer>)}</PanelFill>
         </SalesPanel>
 
-        <SalesPanel title="What a kilogram cost, month by month" icon={Scale} loading={loading} empty={empty}
+        <SalesPanel title="What a kilogram cost, month by month" sizeKey="month-perkg" bodyHeight={304} icon={Scale} loading={loading} empty={empty}
                     emptyMessage="No production in this period."
-                    subtitle="material on the batch, then the month's overhead spread over the month's output" resizable bars>
-          {(sz) => (
-          <ResponsiveContainer width="100%" height={sz.h(280)}>
+                    subtitle="material on the batch, then the month's overhead spread over the month's output">
+          <PanelFill base={280}>{(bar) => (<ResponsiveContainer width="100%" height="100%">
             <BarChart data={monthly} margin={{ top: 18, right: 8, left: 4, bottom: 14 }}>
               <CartesianGrid stroke={CHART_GRID} vertical={false} />
               <XAxis dataKey="label" tick={{ ...AXIS_TICK, fontSize: 10 }} tickLine={false}
@@ -290,18 +323,18 @@ export default function ProductionExpenses() {
                      tickFormatter={(v: number) => `₹${Math.round(v)}`} />
               <Tooltip cursor={{ fill: "hsl(220 15% 95%)" }} content={<PerKgTooltip />} />
               <Legend iconType="circle" iconSize={8} wrapperStyle={{ fontSize: 11 }} />
-              <Bar dataKey="materialPerKg" name="Material" stackId="k" fill={MATERIAL_COLOR} maxBarSize={sz.bar(26)} />
-              <Bar dataKey="packingPerKg" name="Packing" stackId="k" fill={PACKING_COLOR} maxBarSize={sz.bar(26)} />
-              <Bar dataKey="directPerKg" name="Direct" stackId="k" fill={BLOCK_COLOR["Direct Expenses"]} maxBarSize={sz.bar(26)} />
-              <Bar dataKey="indirectPerKg" name="Indirect" stackId="k" fill={BLOCK_COLOR["Indirect Expenses"]} maxBarSize={sz.bar(26)}
+              <Bar dataKey="materialPerKg" name="Material" stackId="k" fill={MATERIAL_COLOR} maxBarSize={bar(26)} />
+              <Bar dataKey="packingPerKg" name="Packing" stackId="k" fill={PACKING_COLOR} maxBarSize={bar(26)} />
+              <Bar dataKey="directPerKg" name="Direct" stackId="k" fill={BLOCK_COLOR["Direct Expenses"]} maxBarSize={bar(26)} />
+              <Bar dataKey="indirectPerKg" name="Indirect" stackId="k" fill={BLOCK_COLOR["Indirect Expenses"]} maxBarSize={bar(26)} />
+              <Bar dataKey="purchasePerKg" name="Purchase" stackId="k" fill={BLOCK_COLOR["Purchase Accounts"]} maxBarSize={bar(26)}
                    radius={[4, 4, 0, 0]}>
                 <LabelList dataKey="fullPerKg" position="top"
                            formatter={(v: number) => (v ? `₹${Math.round(v)}` : "")}
                            style={{ fontSize: 9.5, fill: LABEL_FILL, fontWeight: 600 }} />
               </Bar>
             </BarChart>
-          </ResponsiveContainer>
-          )}
+          </ResponsiveContainer>)}</PanelFill>
         </SalesPanel>
       </div>
 
@@ -310,21 +343,21 @@ export default function ProductionExpenses() {
           const data = totals.groups
             .filter((g) => g.block === block && (!groups.length || groups.includes(g.group)))
             .map((g) => ({ ...g, value: Math.abs(g.amount) }));
-          const blockTotal = block === "Direct Expenses" ? totals.direct : totals.indirect;
           return (
             <SalesPanel
               key={block}
               title={`${block} by group`}
-              icon={block === "Direct Expenses" ? Receipt : Wallet}
+              sizeKey={`block-${block}`}
+              bodyHeight={380}
+              icon={BLOCK_ICON[block]}
               loading={loading}
               empty={!data.length}
-              emptyMessage="Nothing booked in this period."
-              subtitle={`${fmtSales(blockTotal)} · ${fmtPerKg(block === "Direct Expenses" ? perKg.directPerKg : perKg.indirectPerKg)} / KG · as Tally's P&L groups them`}
-              resizable
-              bars
+              emptyMessage={block === "Purchase Accounts"
+                ? "No purchase ledger ticked — pick one under Purchase GL to add it to the cost."
+                : "Nothing counted in this period."}
+              subtitle={`${fmtSales(blockTotal(totals, block))} · ${fmtPerKg(blockPerKg(perKg, block))} / KG · ticked ledgers, as Tally's P&L groups them`}
             >
-              {(sz) => (
-              <ResponsiveContainer width="100%" height={Math.max(sz.h(200), data.length * sz.bar(26) + 30)}>
+              <PanelFill base={Math.max(200, data.length * 26 + 30)} min={(bar) => data.length * (bar(16) + 10) + 30}>{(bar) => (<ResponsiveContainer width="100%" height="100%">
                 <BarChart data={data} layout="vertical" margin={{ top: 4, right: 96, left: 4, bottom: 4 }}>
                   <CartesianGrid stroke={CHART_GRID} horizontal={false} />
                   <XAxis type="number" tick={AXIS_TICK} tickLine={false} axisLine={false} tickFormatter={tickSales} />
@@ -332,7 +365,7 @@ export default function ProductionExpenses() {
                          axisLine={false} width={170} interval={0} />
                   <Tooltip cursor={{ fill: "hsl(220 15% 95%)" }}
                            content={<GroupTooltip kgs={production.fgKgs} />} />
-                  <Bar dataKey="value" maxBarSize={sz.bar(16)} radius={[0, 4, 4, 0]}>
+                  <Bar dataKey="value" maxBarSize={bar(16)} radius={[0, 4, 4, 0]}>
                     {data.map((g) => (
                       <Cell key={g.group} fill={BLOCK_COLOR[block]} fillOpacity={g.amount < 0 ? 0.45 : 1} />
                     ))}
@@ -340,8 +373,7 @@ export default function ProductionExpenses() {
                                style={{ fontSize: 10, fill: LABEL_FILL, fontWeight: 600 }} />
                   </Bar>
                 </BarChart>
-              </ResponsiveContainer>
-              )}
+              </ResponsiveContainer>)}</PanelFill>
             </SalesPanel>
           );
         })}
@@ -361,6 +393,8 @@ export default function ProductionExpenses() {
                       note={`${fmtSales(totals.direct)} ÷ ${fmtTonnes(production.fgKgs)}`} />
             <CostLine label="+ Indirect expenses" value={fmtPerKg(perKg.indirectPerKg)} accent={BLOCK_COLOR["Indirect Expenses"]}
                       note={`${fmtSales(totals.indirect)} ÷ ${fmtTonnes(production.fgKgs)}`} />
+            <CostLine label="+ Purchase accounts" value={fmtPerKg(perKg.purchasePerKg)} accent={BLOCK_COLOR["Purchase Accounts"]}
+                      note={`${fmtSales(totals.purchase)} ÷ ${fmtTonnes(production.fgKgs)} — ticked ledgers only`} />
             <div className="flex items-baseline justify-between gap-2 rounded-md bg-muted/50 px-2.5 py-2">
               <span className="text-[12px] font-semibold text-foreground">Full cost per KG</span>
               <span className="text-[19px] font-bold tabular-nums text-foreground">{fmtPerKg(fullPerKg)}</span>
@@ -368,9 +402,10 @@ export default function ProductionExpenses() {
             <p className="text-[10.5px] leading-snug text-muted-foreground">
               Straight absorption: nothing in Tally ties an expense or a cap to a batch, an item or a
               colour, so the period's packing and overhead are spread evenly over the period's output.
-              Splitting them by product would be an assumption dressed as a number. Purchase Accounts
-              are excluded — that is the material, already counted on the batch — and packing counts
-              what was consumed, not warehouse → production moves.{" "}
+              Splitting them by product would be an assumption dressed as a number. Only the ledgers
+              ticked under Direct / Indirect / Purchase GL are counted; Purchase Accounts start
+              unticked because most of it is the material, already counted on the batch. Packing
+              counts what was consumed, not warehouse → production moves.{" "}
               {canSee("packing-material") ? (
                 <Link to={`${BASE}/bushra-dashboard/packing-material`} className="text-primary hover:underline">
                   Packing material
@@ -383,9 +418,10 @@ export default function ProductionExpenses() {
         </SalesPanel>
 
         <SalesPanel className="lg:col-span-2" title="Every expense ledger" icon={IndianRupee} loading={loading}
-                    empty={empty} emptyMessage="No expense lines in this period." bodyClassName="p-0"
-                    subtitle="the ledgers behind each group, with what they add to a kilogram">
-          <LedgerTable rows={ledgers} kgs={production.fgKgs} />
+                    empty={tableEmpty} emptyMessage="No expense lines in this period." bodyClassName="p-0"
+                    subtitle="ticked ledgers count in the cost — untick one here or in the filter bar to leave it out">
+          <LedgerTable rows={ledgers} kgs={production.fgKgs}
+                       onToggle={(l) => gls.set([l], !l.counted)} />
         </SalesPanel>
       </div>
     </div>
@@ -468,6 +504,7 @@ function MonthTooltip({ active, payload }: { active?: boolean; payload?: Array<{
       <div className="font-semibold text-foreground">{m.label}</div>
       <Row label="Direct" value={fmtSales(m.direct)} colour={BLOCK_COLOR["Direct Expenses"]} />
       <Row label="Indirect" value={fmtSales(m.indirect)} colour={BLOCK_COLOR["Indirect Expenses"]} />
+      {m.purchase !== 0 && <Row label="Purchase" value={fmtSales(m.purchase)} colour={BLOCK_COLOR["Purchase Accounts"]} />}
       <div className="mt-1 flex justify-between gap-4 border-t border-border pt-1 font-medium">
         <span>Total</span><span className="tabular-nums">{fmtSales(m.total)}</span>
       </div>
@@ -486,6 +523,7 @@ function PerKgTooltip({ active, payload }: { active?: boolean; payload?: Array<{
       <Row label="Packing" value={fmtPerKg(m.packingPerKg ?? null)} colour={PACKING_COLOR} />
       <Row label="Direct" value={fmtPerKg(m.directPerKg)} colour={BLOCK_COLOR["Direct Expenses"]} />
       <Row label="Indirect" value={fmtPerKg(m.indirectPerKg)} colour={BLOCK_COLOR["Indirect Expenses"]} />
+      {m.purchase !== 0 && <Row label="Purchase" value={fmtPerKg(m.purchasePerKg)} colour={BLOCK_COLOR["Purchase Accounts"]} />}
       <div className="mt-1 flex justify-between gap-4 border-t border-border pt-1 font-medium">
         <span>Full cost / KG</span><span className="tabular-nums">{fmtPerKg(m.fullPerKg)}</span>
       </div>
@@ -526,7 +564,8 @@ function Row({ label, value, colour }: { label: string; value: string; colour: s
 /* ------------------------------------------------------------------ ledger table */
 
 const COLS: Array<{ key: SortKey; label: string; right?: boolean; w: number }> = [
-  { key: "block", label: "Type", w: 130 },
+  { key: "counted", label: "Cost", w: 64 },
+  { key: "block", label: "Type", w: 120 },
   { key: "group", label: "P&L group", w: 200 },
   { key: "ledger", label: "Ledger", w: 260 },
   { key: "amount", label: "Amount", right: true, w: 130 },
@@ -534,66 +573,76 @@ const COLS: Array<{ key: SortKey; label: string; right?: boolean; w: number }> =
   { key: "lines", label: "Lines", right: true, w: 80 },
 ];
 
-const COL_IDS: readonly string[] = [...COLS.map((c) => c.key), "perKg"];
-
-function LedgerTable({ rows, kgs }: { rows: ReturnType<typeof expensesByLedger>; kgs: number }) {
-  const fit = useColumnWidths("tb", COL_IDS, "production-expenses-ledgers");
+function LedgerTable({ rows, kgs, onToggle }: {
+  rows: ReturnType<typeof expensesByLedger>; kgs: number;
+  onToggle: (l: ReturnType<typeof expensesByLedger>[number]) => void;
+}) {
   const [sort, setSort] = useState<{ key: SortKey; dir: "asc" | "desc" }>({ key: "amount", dir: "desc" });
   const sorted = useMemo(() => {
     const s = sort.dir === "asc" ? 1 : -1;
     return [...rows].sort((a, b) => {
       const x = a[sort.key], y = b[sort.key];
-      const r = typeof x === "number" || typeof y === "number"
+      const r = typeof x === "number" || typeof y === "number" || typeof x === "boolean"
         ? (Number(x) || 0) - (Number(y) || 0)
         : collator.compare(String(x ?? ""), String(y ?? ""));
       return r * s || collator.compare(a.ledger, b.ledger);
     });
   }, [rows, sort]);
   const page = usePagination(sorted, { pageSize: 12, resetKey: `${rows.length}|${sort.key}|${sort.dir}` });
+  // Drag a column edge, a row edge or the heading's bottom edge — remembered per browser.
+  const layout = useTableLayout("ledgers");
+  const ids = [...COLS.map((c) => c.key), "perKg"];
+  const cs = (i: number) => cellStyle(layout, ids[i]);
 
   return (
     <div>
-      <ScrollableTable className="border-b border-border" maxHeight="max-h-[460px]" resizeKey="production-expenses-ledgers">
+      <ScrollableTable className="border-b border-border" maxHeight="max-h-[460px]">
         <table className="w-full min-w-[900px] border-collapse text-[12.5px]">
           <thead className="sticky top-0 z-10 bg-muted/70">
             <tr>
-              {COLS.map((c) => (
-                <FitTh key={c.key} fit={fit} col={c.key} {...(fit.width(c.key) === undefined ? { style: { width: c.w } } : {})}
+              {COLS.map((c, i) => (
+                <ResizeTh key={c.key} id={c.key} layout={layout} first={i === 0} width={c.w}
                     onClick={() => setSort((p) => ({ key: c.key, dir: p.key === c.key && p.dir === "desc" ? "asc" : "desc" }))}
-                    className={cn("cursor-pointer select-none whitespace-nowrap px-3 py-2 text-[10.5px] font-semibold uppercase tracking-wide text-foreground/70",
+                    className={cn("cursor-pointer select-none whitespace-nowrap px-3 text-[10.5px] font-semibold uppercase tracking-wide text-foreground/70",
                                   c.right ? "text-right" : "text-left")}>
                   <span className={cn("inline-flex items-center gap-1", c.right && "w-full justify-end")}>
                     {c.label}
                     {sort.key === c.key && (sort.dir === "asc" ? <ArrowUp className="h-3 w-3" /> : <ArrowDown className="h-3 w-3" />)}
                   </span>
-                </FitTh>
+                </ResizeTh>
               ))}
-              <FitTh fit={fit} col="perKg" className="w-[100px] px-3 py-2 text-right text-[10.5px] font-semibold uppercase tracking-wide text-foreground/70">₹ / KG</FitTh>
+              <ResizeTh id="perKg" layout={layout} width={100}
+                        className="px-3 text-right text-[10.5px] font-semibold uppercase tracking-wide text-foreground/70">₹ / KG</ResizeTh>
             </tr>
           </thead>
-          <tbody>
+          <tbody {...bodyResize(layout, ids)}>
             {page.pageItems.map((l) => (
-              <tr key={`${l.block}|${l.group}|${l.ledger}`} className="border-t border-border/50 hover:bg-muted/40">
-                <td className="px-3 py-1.5">
+              <tr key={`${l.block}|${l.group}|${l.ledger}`}
+                  className={cn("border-t border-border/50 hover:bg-muted/40", !l.counted && "text-muted-foreground opacity-60")}>
+                <td style={cs(0)} className="px-3">
+                  <Checkbox checked={l.counted} onCheckedChange={() => onToggle(l)}
+                            aria-label={`Count ${l.ledger} in costing`} />
+                </td>
+                <td style={cs(1)} className="px-3">
                   <span className="inline-flex items-center gap-1.5 whitespace-nowrap">
                     <span className="h-2 w-2 rounded-full" style={{ background: BLOCK_COLOR[l.block] }} />
-                    {l.block.replace(" Expenses", "")}
+                    {BLOCK_SHORT[l.block]}
                   </span>
                 </td>
-                <td className="max-w-0 truncate px-3 py-1.5 text-muted-foreground" title={l.group}>{l.group}</td>
-                <td className="max-w-0 truncate px-3 py-1.5 text-foreground" title={l.ledger}>{l.ledger}</td>
-                <td className="px-3 py-1.5 text-right tabular-nums font-medium">{fmtSales(l.amount)}</td>
-                <td className="px-3 py-1.5 text-right tabular-nums text-muted-foreground">{fmtPct(l.share)}</td>
-                <td className="px-3 py-1.5 text-right tabular-nums text-muted-foreground">{l.lines}</td>
-                <td className="px-3 py-1.5 text-right tabular-nums">{kgs > 0 ? fmtPerKg(l.amount / kgs) : "—"}</td>
+                <td style={cs(2)} className="max-w-0 truncate px-3 text-muted-foreground" title={l.group}>{l.group}</td>
+                <td style={cs(3)} className="max-w-0 truncate px-3 text-foreground" title={l.ledger}>{l.ledger}</td>
+                <td style={cs(4)} className="px-3 text-right tabular-nums font-medium">{fmtSales(l.amount)}</td>
+                <td style={cs(5)} className="px-3 text-right tabular-nums text-muted-foreground">{l.counted ? fmtPct(l.share) : "—"}</td>
+                <td style={cs(6)} className="px-3 text-right tabular-nums text-muted-foreground">{l.lines}</td>
+                <td style={cs(7)} className="px-3 text-right tabular-nums">{l.counted && kgs > 0 ? fmtPerKg(l.amount / kgs) : "not counted"}</td>
               </tr>
             ))}
           </tbody>
         </table>
       </ScrollableTable>
-      <div className="px-3 py-2">
-        <ResetWidths fit={fit} cols={COL_IDS} className="inline-flex items-center gap-1 text-[11px] text-primary hover:underline" />
-        <Pagination state={page} rowsLabel="ledgers" />
+      <div className="flex items-center gap-2 px-3 py-2">
+        <div className="min-w-0 flex-1"><Pagination state={page} rowsLabel="ledgers" /></div>
+        <ResetLayout layout={layout} />
       </div>
     </div>
   );

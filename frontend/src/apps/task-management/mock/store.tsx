@@ -10,6 +10,7 @@ import { supabase } from "@/core/platform/supabase";
 import { isoWeekOf, weekEndOf, weekStartOf, todayIso } from "@/shared/lib/time";
 import { fetchTaskData, fetchTaskActivity, fetchTasksByIds, fetchActivityByTaskIds, type TaskData, type TaskActivityData } from "../data/fetchTaskData";
 import { useMyNotifications, markReadOptimistic, TASK_NOTIF_KEY } from "../lib/useMyNotifications";
+import { saveKraReview } from "../lib/kraTasks";
 import {
   insertTask,
   updatePersonalTask as updatePersonalTaskWrite,
@@ -78,7 +79,9 @@ interface TaskStoreValue {
   getTask: (id: string) => Task | undefined;
   activityFor: (taskId: string) => TaskActivity[];
   revisionInfo: (task: Task) => RevisionInfo;
-  createTask: (input: { title: string; description?: string; assignedTo: string | null; departmentId: string | null; dueDate: string | null; locationIds?: string[]; isPeerAssignment?: boolean }) => Promise<string>;
+  createTask: (input: { title: string; description?: string; assignedTo: string | null; departmentId: string | null; dueDate: string | null; locationIds?: string[]; isPeerAssignment?: boolean; kraId?: string | null; kraWeight?: number | null; kraCompletionWeight?: number | null }) => Promise<string>;
+  /** The assignee's direct HOD rates a completed KRA task 1-10 (lib/kraTasks.ts). */
+  reviewKraTask: (id: string, rating: number, note?: string) => Promise<void>;
   /** Create a personal (self-tracking) task. Self-assigned and excluded from every score/RYG/dashboard metric. */
   createPersonalTask: (input: { title: string; description?: string; dueDate: string | null }) => Promise<string>;
   /** Edit a personal task's title/description/due date. */
@@ -495,8 +498,12 @@ export function TaskStoreProvider({ children }: { children: ReactNode }) {
     // every HOD and Sub-HOD, minus me, whichever of the two the viewer is. No
     // data migration needed — is_peer_assignment is stamped per task and says
     // nothing about roles, so this stays a filter change.
+    // Widened again (05-10-2026) to Admins as RECEIVERS: a HOD/Sub-HOD can hand
+    // a one-off task up to an admin. Admins still never get the peer picker
+    // themselves (CreateTask gates on the viewer's role), so admin → HOD work
+    // stays ordinary downward work.
     const peerAssignableUsers = (userId: string): OrgPerson[] =>
-      (orgPeople ?? []).filter((p) => (p.role === "hod" || p.role === "sub_hod") && p.id !== userId);
+      (orgPeople ?? []).filter((p) => (p.role === "hod" || p.role === "sub_hod" || p.role === "admin") && p.id !== userId);
 
     const visibleTasks = (role: AppRole, userId: string): Task[] => {
       if (role === "admin") return tasks;
@@ -610,6 +617,10 @@ export function TaskStoreProvider({ children }: { children: ReactNode }) {
         await reopenTaskWrite(id, user.id);
         await refreshTasks(id);
       },
+      reviewKraTask: async (id, rating, note) => {
+        await saveKraReview(id, rating, user.id, note);
+        await refreshTasks(id);
+      },
       // setTaskNotApplicable: LIVE. A plain not_applicable column update under the
       // task UPDATE RLS (same path as complete). Reversible; excluded from reports
       // in the selectors. Only offered for "when" instances (see isWhenTask).
@@ -721,6 +732,7 @@ export function TaskStoreProvider({ children }: { children: ReactNode }) {
           departmentId: input.departmentId,
           active: input.active,
           locationIds: input.locationIds ?? [],
+          notify: input.notifyRequired ? { required: true, daysBefore: input.notifyDaysBefore } : undefined,
           createdBy: user.id,
         });
         // Materialise today's instance immediately if the template is active and
@@ -752,6 +764,10 @@ export function TaskStoreProvider({ children }: { children: ReactNode }) {
           departmentId: m.departmentId,
           active: m.active,
           locationIds: m.locationIds ?? [],
+          // Named only when the reminder is on now or was on before (so turning it off is saved).
+          notify: m.notifyRequired || cur.notifyRequired
+            ? { required: m.notifyRequired, daysBefore: m.notifyDaysBefore }
+            : undefined,
         });
         // If the edit leaves the template active, ensure today's instance exists
         // (e.g. activating via the edit form). Idempotent, so no duplicate if it
@@ -966,8 +982,8 @@ export function TaskStoreProvider({ children }: { children: ReactNode }) {
 
   // The realtime notification subscription used to live here. It now belongs to
   // useMyNotifications (called above) so the portal home screen gets the same
-  // live bell without mounting this provider — and so there is only ever one
-  // subscription to the `notifications:<uid>` channel.
+  // live bell without mounting this provider. Each caller gets its own uniquely
+  // named channel — see `channelSeq` there for why a shared topic crashed.
 
   if (isLoading) {
     return (

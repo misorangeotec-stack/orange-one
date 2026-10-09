@@ -1,6 +1,6 @@
-import { createContext, useContext, useEffect } from "react";
+import { createContext, useContext, useEffect, useRef } from "react";
 import { Routes, Route, Navigate } from "react-router-dom";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useSession } from "@/core/platform/session";
 import { appName } from "@/apps/appInfo";
 import OrderDeskShell from "./components/OrderDeskShell";
@@ -104,13 +104,32 @@ function useOrderDeskTitle() {
 }
 
 export default function CustomerOrdersApp() {
-  const { isAdmin, isExternal } = useSession();
+  const { isAdmin, isExternal, user } = useSession();
+  const qc = useQueryClient();
   useOrderDeskTitle();
+
+  /*
+    ⚠ A DIFFERENT LOGIN STARTS FROM NOTHING. The Order Desk's query keys carry no
+      user, and one browser shares one sign-in across its tabs — so signing in as
+      staff in another tab left this tab with the customer's NAME (cached) over
+      the staff login's ORDERS (re-fetched: none). It read "You have not placed an
+      order yet" under "GANGA FASHION", with the order safe in the database. Reset
+      every order-desk query the moment the signed-in user changes.
+  */
+  const lastUser = useRef(user?.id);
+  useEffect(() => {
+    if (lastUser.current === user?.id) return;
+    lastUser.current = user?.id;
+    void qc.resetQueries({ queryKey: ["order-desk"] });
+  }, [user?.id, qc]);
 
   const { data: profile, isLoading, error } = useQuery({
     queryKey: PROFILE_QK,
     queryFn: fetchCustomerProfile,
     staleTime: 5 * 60_000,
+    // Coming back to the tab re-checks WHO is signed in, so a login changed in
+    // another tab shows as that login rather than as a stale customer name.
+    refetchOnWindowFocus: true,
   });
 
   if (isLoading) return <Loading />;

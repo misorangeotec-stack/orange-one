@@ -1,16 +1,21 @@
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
-import MrfForm from "../../components/MrfForm";
+import { useSavedDrafts } from "@/shared/lib/useSavedDrafts";
+import MrfForm, { type MrfDraft } from "../../components/MrfForm";
 import AccessDenied from "../system/AccessDenied";
 import { useHrStore } from "../../store";
 import type { MrfInput } from "../../data/hrWrites";
 
-/** Raise a new Manpower Requisition. Gated to whoever Setup lists as owning `mrf`. */
+/**
+ * Raise a new Manpower Requisition. Gated to whoever Setup lists as owning `mrf`.
+ * Saved drafts sit above the form; submitting a continued draft deletes it.
+ */
 export default function NewMrf() {
   const s = useHrStore();
   const navigate = useNavigate();
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
+  const drafts = useSavedDrafts<MrfDraft>("hr-recruitment:mrf");
 
   // canEdit first: a view-only grant must not reach the form even by URL.
   if (!s.canEdit || !s.isStepOwner("mrf")) return <AccessDenied />;
@@ -29,6 +34,7 @@ export default function NewMrf() {
           setErr(`Requisition created, but the JD didn't attach: ${(e as Error).message}`);
         }
       }
+      await drafts.finish();
       navigate(`/hr-recruitment/requisitions/${id}`);
     } catch (e) {
       setErr((e as Error).message);
@@ -51,6 +57,7 @@ export default function NewMrf() {
         submitLabel="Submit requisition"
         onSubmit={submit}
         onCancel={() => navigate("/hr-recruitment/requisitions")}
+        drafts={drafts}
       />
     </div>
   );

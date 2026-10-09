@@ -9,12 +9,16 @@ import Account from "@/core/account/Account";
 import AnnouncementsHistory from "@/core/announcements/AnnouncementsHistory";
 import MyProbation from "@/core/probation/MyProbation";
 import MyBuddy from "@/core/probation/MyBuddy";
-import { ANNOUNCEMENTS_PATH } from "@/shared/components/layout/types";
+import HandbookPage from "@/core/knowledge-base/HandbookPage";
+import AskHrBubble from "@/core/knowledge-base/AskHrBubble";
+import { WorkPanel, useWorkPanelState } from "@/core/workspace/WorkPanel";
+import { ANNOUNCEMENTS_PATH, HANDBOOK_PATH } from "@/shared/components/layout/types";
 import AdminApp from "@/core/admin/AdminApp";
 import RequireRole from "@/core/platform/RequireRole";
 import { RequireAuth } from "@/core/platform/auth";
 import { useSession } from "@/core/platform/session";
 import { liveApps } from "@/apps/registry";
+import { knowledgeBaseApp } from "@/apps/knowledge-base/meta";
 import type { AppManifest } from "@/apps/types";
 import { canOpenApp } from "@/core/workspace/homeNav";
 import { appBasePath } from "@/apps/appInfo";
@@ -127,8 +131,31 @@ function OfficeSuppliesLegacyRedirect() {
 }
 
 export default function App() {
+  const location = useLocation();
+  /*
+   * My Control Center's work panel (core/workspace/WorkPanel.tsx). While it is
+   * open the URL is the item's, but the main routes keep rendering WHERE THE PANEL
+   * WAS OPENED FROM, so the home screen stays put underneath; the item's own route
+   * renders a second time, inside the panel.
+   */
+  const { background } = useWorkPanelState();
+
+  // Each registered app owns everything under its basePath, gated by auth + access.
+  // A list, not inline, because the work panel renders the same routes.
+  const appRoutes = liveApps.map((app) => {
+    const Component = app.Component!;
+    return (
+      <Route
+        key={app.id}
+        path={`${app.basePath}/*`}
+        element={<RequireAuth><RequireModule app={app}><Component /></RequireModule></RequireAuth>}
+      />
+    );
+  });
+
   return (
-    <Routes>
+    <>
+    <Routes location={background ?? location}>
       {/* ---- Public (landing + auth) ---- */}
       <Route path="/" element={<Landing />} />
       <Route path="/login" element={<Login />} />
@@ -159,19 +186,33 @@ export default function App() {
       <Route path="/my-buddy" element={<RequireAuth><StaffOnly><HomeLayout /></StaffOnly></RequireAuth>}>
         <Route index element={<MyBuddy />} />
       </Route>
+      {/* KB-1 · The HR handbook. Reached three ways: the "HR Handbook" row under Home, the
+          "Open the handbook" link in the Ask HR bubble, and a citation chip in an answer.
+          ⚠ NOT staff furniture any more. It was (anyone signed in could read it, because
+          the handbook is issued to every employee at joining), but on 01-10-2026 it was
+          gated on the `knowledge-base` grant so HR can check the whole feature before the
+          company sees it. RequireModule here matters: without it, typing the URL would
+          walk straight past the hidden menu row. The DATABASE refuses the rows too, so
+          this guard is the courtesy, not the lock.
+          To reopen it to everyone: grant 'view' to all staff. Do not remove this guard. */}
+      <Route
+        path={HANDBOOK_PATH}
+        element={
+          <RequireAuth>
+            <StaffOnly>
+              <RequireModule app={knowledgeBaseApp}>
+                <HomeLayout />
+              </RequireModule>
+            </StaffOnly>
+          </RequireAuth>
+        }
+      >
+        <Route index element={<HandbookPage />} />
+      </Route>
       <Route path="/admin/*" element={<RequireAuth><RequireRole roles={["admin"]}><AdminApp /></RequireRole></RequireAuth>} />
 
       {/* ---- Registered apps, each owns everything under its basePath, gated by auth + access ---- */}
-      {liveApps.map((app) => {
-        const Component = app.Component!;
-        return (
-          <Route
-            key={app.id}
-            path={`${app.basePath}/*`}
-            element={<RequireAuth><RequireModule app={app}><Component /></RequireModule></RequireAuth>}
-          />
-        );
-      })}
+      {appRoutes}
 
       {/* ---- Moved on 29-07-2026: General Purchase left /office-supplies ---- */}
       <Route path={LEGACY_SUPPLIES_BASE} element={<OfficeSuppliesLegacyRedirect />} />
@@ -179,5 +220,20 @@ export default function App() {
 
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
+
+    {background && (
+      <WorkPanel>
+        <Routes>{appRoutes}</Routes>
+      </WorkPanel>
+    )}
+
+    {/* KB-1 · The Ask HR bubble, on every screen of the hub.
+        ⚠ MOUNTED HERE, NOT IN AppShell, and not by accident. Each app renders its OWN
+        AppShell, so a widget living inside one would be torn down and rebuilt on every
+        move between apps, throwing away the conversation mid-thread. Out here it never
+        unmounts, and it also reaches /account, which does not use AppShell at all.
+        It renders nothing without the knowledge-base grant, and never for a customer. */}
+    <AskHrBubble />
+    </>
   );
 }

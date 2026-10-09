@@ -16,9 +16,9 @@
  * import-free leaves; that is what keeps this safe to call from anywhere.
  */
 
-import { APPS } from "./appInfo";
+import { APPS, appBasePath } from "./appInfo";
 import { CATEGORIES, UNCATEGORISED_LABEL } from "./categories";
-import { ANNOUNCEMENTS_LABEL, ANNOUNCEMENTS_PATH, HOME_LABEL, HOME_PATH } from "@/shared/components/layout/types";
+import { ANNOUNCEMENTS_LABEL, ANNOUNCEMENTS_PATH, HANDBOOK_LABEL, HANDBOOK_PATH, HOME_LABEL, HOME_PATH } from "@/shared/components/layout/types";
 
 export interface Crumb {
   label: string;
@@ -37,6 +37,8 @@ export interface Crumb {
  * manifest to read a family/name from. Their page step still comes from the nav
  * (e.g. Admin → Users), so these are the leading steps only.
  */
+const REPORT_DASHBOARD_PATH = `${appBasePath("reports")}/bushra-dashboard`;
+
 const STATIC_TRAILS: { prefix: string; crumbs: Crumb[] }[] = [
   {
     prefix: "/admin",
@@ -46,6 +48,13 @@ const STATIC_TRAILS: { prefix: string; crumbs: Crumb[] }[] = [
   // PF-18's history page. A PREFIX match, which is why the posting module lives at
   // /post-announcements and not under /announcements — it would be swallowed here.
   { prefix: ANNOUNCEMENTS_PATH, crumbs: [{ label: "Orange One", collapsible: true }, { label: ANNOUNCEMENTS_LABEL }] },
+  // KB-1's reader. Also a PREFIX match, and /handbook/read is the only route under
+  // /handbook, so nothing else can be swallowed by it. Keep it that way.
+  { prefix: HANDBOOK_PATH, crumbs: [{ label: "Orange One", collapsible: true }, { label: HANDBOOK_LABEL }] },
+  // The Report Dashboard screens are served by the Reports app but have their own menu group,
+  // so their trail starts at "Report Dashboard", not at "Reports" (08-10-2026). Listed here
+  // because a prefix inside another app's basePath has no manifest of its own to read.
+  { prefix: REPORT_DASHBOARD_PATH, crumbs: [{ label: "Report Dashboard", to: REPORT_DASHBOARD_PATH }] },
 ];
 
 /** Display label for a category key, e.g. "sales" → "Sales & Receivables". */

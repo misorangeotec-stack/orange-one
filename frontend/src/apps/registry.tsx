@@ -15,7 +15,11 @@ import { officeSuppliesApp } from "./office-supplies/meta";
 import { samplingApp } from "./sampling/meta";
 import { complaintApp } from "./complaint/meta";
 import { productionEntryApp } from "./production-entry/meta";
+import { inkMisApp } from "./ink-mis/meta";
 import { bushraCentralMasterApp } from "./bushra-central-master/meta";
+import { allDraftsApp } from "./all-drafts/meta";
+import { inkStabilisationApp } from "./ink-stabilisation/meta";
+import { inkExpiryApp } from "./ink-expiry/meta";
 import { orderToDispatchApp } from "./order-to-dispatch/meta";
 import { customerOrdersApp } from "./customer-orders/meta";
 import { customerOnboardingApp } from "./customer-onboarding/meta";
@@ -28,6 +32,8 @@ import { processCoordinatorApp } from "./process-coordinator/meta";
 import { masterReportApp } from "./master-report/meta";
 import { dailyReportApp } from "./daily-report/meta";
 import { announcementsApp } from "./announcements/meta";
+import { knowledgeBaseApp } from "./knowledge-base/meta";
+import { trainingVideosApp } from "./training-videos/meta";
 import { isUniversalApp } from "./universal";
 import { appCategory, appName } from "./appInfo";
 
@@ -90,9 +96,18 @@ export const apps: AppManifest[] = [
   // Production Entry FMS — separate module (own fms_production_* tables), granted per
   // user to the production team (not universal). Ink production job-card tracker.
   productionEntryApp,
+  // INK IMS — ink inventory planning across the four ink books. Its own module on purpose:
+  // it is not part of the Receivables Hub and must not be folded back into it.
+  inkMisApp,
   // BUSHRA CENTRAL MASTER — a private mirror of Central Masters' items. Reads the
   // central master live and keeps every change in the browser; nothing is written back.
   bushraCentralMasterApp,
+  // ALL DRAFTS — every FMS's saved raise-form drafts on one page; admins, or by grant (view only).
+  allDraftsApp,
+  // Ink Stabilisation — Surat ink lots and their 3/6/9-month retests; read-only ConnectWave.
+  inkStabilisationApp,
+  // Ink Expiry — in-stock ink lots and whether Tally has their expiry; read-only ConnectWave.
+  inkExpiryApp,
   // Order to Dispatch FMS — separate module (own fms_dispatch_* tables), granted
   // per user to the sales, stores, accounts and plant teams. Sales order through
   // credit, stock, LOT, sales bill and gate-out to the delivery confirmation.
@@ -153,6 +168,14 @@ export const apps: AppManifest[] = [
   // see it; anyone else only once granted. Every member of staff READS them with
   // no grant, in the strip and on /announcements.
   announcementsApp,
+  // KB-1 · The Knowledge Base over the HR handbook. The grant gates the WHOLE feature
+  // while HR trials it: no grant means no Ask HR bubble and no handbook. View asks and
+  // reads; full access also opens the question log and the section notes. Opening it to
+  // the company later is granting 'view' to everyone, not a code change.
+  knowledgeBaseApp,
+  // Training Videos — the training recordings as OneDrive / SharePoint links, in their own menu
+  // group. Open to all staff with no grant (universal); only admins maintain the links.
+  trainingVideosApp,
 ];
 
 export const liveApps = apps.filter((a) => a.status === "live" && a.Component);
@@ -226,6 +249,12 @@ export const NO_VIEW_ONLY_APP_IDS = new Set<string>([
   // no grant, so a view-only Announcements grant would give nothing while looking
   // like access. Only Full access is offered.
   "announcements",
+  // INK IMS: everything the planner types (the numbering, lead times, consignments,
+  // godown picks) is held in THEIR OWN BROWSER, not in a table this app could gate.
+  // The screens have no read-only mode to fall back on, so a view-only grant would
+  // have let its holder change every one of those values while the admin form said
+  // otherwise. Only Full access is offered, and it is honest.
+  "ink-mis",
 ]);
 
 /** The access levels a module offers, in display order. */

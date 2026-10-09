@@ -34,7 +34,9 @@ import { FitFilter, FitTh, ResetWidths } from "@/shared/components/ui/ColumnResi
 import { useColumnWidths } from "@/shared/lib/useColumnWidths";
 import { usePagination } from "@/shared/lib/usePagination";
 import Pagination from "@/shared/components/ui/Pagination";
-import SalesPanel, { usePanelSizing } from "@hub/components/masterreports/SalesPanel";
+import SalesPanel from "@hub/components/masterreports/SalesPanel";
+import { useCardSizing } from "@hub/components/BushraCardSizing";
+import { PanelFill } from "@hub/components/ResizeKit";
 import { MultiSelectFilter, type MultiSelectOption } from "@hub/components/MultiSelectFilter";
 import { fmtSales, salesFyOptions } from "@hub/lib/salesReport";
 import { currentFy, ymd } from "@hub/lib/salesRegister";
@@ -480,7 +482,7 @@ function MixPanel({ title, subtitle, data, measure, colorOf, selected, onPick, n
   const gross = rows.reduce((s, p) => s + Math.max(0, p[measure]), 0);
   const max = Math.max(1, ...rows.map((p) => Math.abs(p[measure])));
   // The strip opens the list's window; Bars − / + thickens the hand-drawn bars.
-  const { size: sz, barControl, grip, bodyRef } = usePanelSizing(title, { resizable: true, bars: true, sizeKey: `mix-${title}` });
+  const { size: sz, barControl, grip, bodyRef } = useCardSizing(title, { resizable: true, bars: true, sizeKey: `mix-${title}` });
 
   return (
     <div className="rounded-xl border border-border bg-surface p-4 pb-1 shadow-sm">
@@ -568,7 +570,7 @@ function ColumnChart({ title, data, measure, color, selected, onPick, note, fmtQ
   const total = data.reduce((s, p) => s + p[measure], 0);
   const many = data.length > 8;
   // Reader-sized, like every SalesPanel: drag the strip for height, Bars − / + for thickness.
-  const { size: sz, barControl, grip, bodyRef } = usePanelSizing(title, { resizable: true, bars: true });
+  const { size: sz, barControl, grip, bodyRef } = useCardSizing(title, { resizable: true, bars: true });
   return (
     <div className="rounded-xl border border-border bg-surface p-4 pb-1 shadow-sm">
       <div className="mb-2 flex items-baseline justify-between gap-2">

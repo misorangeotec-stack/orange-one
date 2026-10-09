@@ -6,6 +6,7 @@ import Combobox from "@/shared/components/ui/Combobox";
 import { FieldLabel, TextInput, TextArea, Select } from "@/shared/components/ui/Form";
 import { SECTION_HEADING_CLASS } from "@/shared/components/ui/Readout";
 import { useDirectory } from "@/core/platform/store";
+import { useTravellerProfiles } from "../data/travellerDirectory";
 import { todayLocalIso } from "@/shared/lib/dueBuckets";
 import { useTravelStore } from "../store";
 import { money } from "../lib/format";
@@ -39,7 +40,10 @@ import { TIME_SLOTS, type Trip, type JourneyType, type TimeSlot } from "../types
 export default function TripForm({ draft }: { draft?: Trip }) {
   const s = useTravelStore();
   const nav = useNavigate();
-  const { profiles, bandById } = useDirectory();
+  const { bandById } = useDirectory();
+  // Directory + the Settings "Can raise for" list, so a coordinator outside the
+  // traveller's department can still pick them.
+  const profiles = useTravellerProfiles();
   const today = todayLocalIso();
 
   const isNew = !draft;

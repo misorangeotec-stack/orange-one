@@ -59,6 +59,13 @@ export const setCoordinators = (userIds: string[]): Promise<void> =>
   setConfig("process_coordinators", { user_ids: userIds });
 
 /**
+ * The people a coordinator may raise for (Settings → Setup). Admin only, by RLS.
+ * They need no Travel Desk access of their own — they are travellers, not users.
+ */
+export const setRaiseFor = (userIds: string[]): Promise<void> =>
+  setConfig("raise_for", { user_ids: userIds });
+
+/**
  * The per-step due-date map.
  *
  * ⚠ `days` MUST BE >= 0 EVEN FOR A "BEFORE" STEP. The advance is due BEFORE

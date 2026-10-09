@@ -581,7 +581,17 @@ var APPS = {
   sampling: {
     name: "Ink / RM Sampling",
     basePath: "/sampling",
-    category: "sampling"
+    category: "plant"
+  },
+  /**
+   * INK IMS — ink inventory planning. Its own module, filed under its own menu group.
+   * Deliberately NOT part of the Receivables Hub: different report, different owners.
+   */
+  "ink-mis": {
+    name: "Ink IMS",
+    basePath: "/ink-mis",
+    // Its own menu group, "IMS Sheet", next to Purchase — asked for by the planner.
+    category: "ims"
   },
   /**
    * BUSHRA CENTRAL MASTER — a private mirror of Central Masters' items. Changes stay
@@ -592,13 +602,50 @@ var APPS = {
     basePath: "/bushra-central-master",
     category: "control"
   },
+  /**
+   * ALL DRAFTS — every saved draft of every FMS raise form, on one page. Admins
+   * see it without a grant; anyone else needs it granted in Admin -> Module
+   * Access, and the grant is read-only (RLS on public.fms_drafts).
+   */
+  "all-drafts": {
+    name: "All Drafts",
+    basePath: "/all-drafts",
+    category: "control"
+  },
+  /**
+   * INK STABILISATION — Enterprises Surat's manufactured ink lots and their 3 / 6 / 9-month
+   * retests. Read-only from ConnectWave.
+   */
+  "ink-stabilisation": {
+    name: "Ink Stabilisation",
+    basePath: "/ink-stabilisation",
+    category: "plant"
+  },
+  /**
+   * INK EXPIRY — every ink lot in stock, in every company, and whether Tally has its expiry
+   * date; the lots without one are the accountant's list. Read-only from ConnectWave.
+   */
+  "ink-expiry": {
+    name: "Ink Expiry Date",
+    basePath: "/ink-expiry",
+    category: "plant"
+  },
+  /**
+   * TRAINING VIDEOS — the training recordings, each a OneDrive / SharePoint link that opens in a new
+   * tab. Open to all staff; each sees the videos of the modules they hold. Only admins edit.
+   */
+  "training-videos": {
+    name: "Training Videos",
+    basePath: "/training-videos",
+    category: "training"
+  },
   "production-entry": {
     name: "Production Entry",
     basePath: "/production-entry",
-    category: "production"
+    category: "plant"
   },
   /**
-   * The post-sale (and post-purchase) grievance, filed under QUALITY rather than
+   * The post-sale (and post-purchase) grievance, filed under PLANT OPERATIONS rather than
    * under Sales or Production because it is genuinely both: a FINISHED GOOD
    * complaint arrives from a customer against a sales invoice, and a RAW
    * MATERIAL one goes out to a vendor against a purchase invoice. Filing it
@@ -607,7 +654,7 @@ var APPS = {
   complaint: {
     name: "Complaint (RM/FG)",
     basePath: "/complaint",
-    category: "quality"
+    category: "plant"
   },
   // Picks up where Production Entry ends: that module closes at "FG Transfer to
   // Godown", this one takes the goods from the godown to the customer.
@@ -666,7 +713,8 @@ var APPS = {
   "asset-maintenance": {
     name: "Asset Maintenance",
     basePath: "/asset-maintenance",
-    category: "asset"
+    // Filed under HR in the menu, at the business's request (its own "Asset" group before).
+    category: "hr"
   },
   /**
    * Learning & Development. Filed under HR beside Recruitment and Exit — it is the
@@ -702,6 +750,14 @@ var APPS = {
   "travel-desk": {
     name: "Travel Desk",
     basePath: "/travel-desk",
+    category: "hr"
+  },
+  // KB-1 · HR's side of the handbook Knowledge Base. ⚠ Holding this module is what lets
+  // somebody ASK and READ at all while HR trials the feature (01-10-2026); full access
+  // also opens the question log and the section notes.
+  "knowledge-base": {
+    name: "Knowledge Base",
+    basePath: "/knowledge-base",
     category: "hr"
   },
   // The HR front door: one place to ask HR anything, routed by the category the
@@ -5650,6 +5706,7 @@ var mapRequest3 = (r) => ({
   firstApprovedAt: r.first_approved_at ?? null,
   firstApproverId: r.first_approver_id ?? null,
   assignedApproverId: r.assigned_approver_id ?? null,
+  secondAssignedApproverId: r.second_assigned_approver_id ?? null,
   firstRemarks: r.first_remarks ?? null,
   secondApprovedAt: r.second_approved_at ?? null,
   secondApproverId: r.second_approver_id ?? null,
@@ -5765,6 +5822,11 @@ async function fetchSuppliesData() {
 function supplySnapshotFrom(data) {
   return { requests: data.requests, stepSla: data.stepSla };
 }
+function holderForStep(r, step) {
+  if (step === "first_approval") return r.assignedApproverId;
+  if (step === "second_approval") return r.secondAssignedApproverId;
+  return null;
+}
 function openStep2(r) {
   switch (r.status) {
     case "pending_first_approval":
@@ -5854,7 +5916,7 @@ function buildHeldEntries3(snap) {
       dueIso: supplyDueIso(snap, r, step),
       departmentId: r.departmentId,
       requestId: r.id,
-      assignedApproverId: r.assignedApproverId
+      assignedApproverId: holderForStep(r, step)
     });
   }
   return out;
@@ -5872,7 +5934,7 @@ function buildQueueEntries6(snap) {
       dueIso: supplyDueIso(snap, r, step),
       departmentId: r.departmentId,
       requestId: r.id,
-      assignedApproverId: r.assignedApproverId
+      assignedApproverId: holderForStep(r, step)
     });
   }
   return out;
@@ -5890,8 +5952,8 @@ function officeSuppliesWorkItems(data, uid, isAdmin) {
     data.departments.filter((d) => d.hodUserId === uid).map((d) => d.id)
   );
   const mine = (stepKey, departmentId, holderId) => {
-    if (stepKey !== "first_approval") return isMineByStepOwners(stepKey, uid, owners);
     if (holderId) return holderId === uid;
+    if (stepKey !== "first_approval") return isMineByStepOwners(stepKey, uid, owners);
     return myHodDepartmentIds.has(departmentId);
   };
   const snap = supplySnapshotFrom({ requests: data.requests, stepSla: data.config.stepSla });
@@ -5969,14 +6031,28 @@ var STEPS10 = [
 ];
 var stepByKey8 = (key) => STEPS10.find((s) => s.key === key);
 var SALES_RETURN_KEY = "sales_return";
+var SALES_RETURN_REQUEST_KEY = "sales_return_request";
+var SALES_RETURN_REQUEST_STEP = {
+  key: SALES_RETURN_REQUEST_KEY,
+  index: 7,
+  title: "Raise Sales Return",
+  short: "Raise return",
+  scope: "order"
+};
 var SALES_RETURN_STEP = {
   key: SALES_RETURN_KEY,
-  index: 7,
-  title: "Sales Return",
+  index: 8,
+  // Named like the chain's own "Generate Sales Bill": the owner makes the sales
+  // return in Tally, enters its number and attaches it, and that closes it.
+  title: "Generate Sales Return (Tally)",
   short: "Return",
   scope: "order"
 };
-var OWNER_STEPS3 = [...STEPS10, SALES_RETURN_STEP];
+var OWNER_STEPS3 = [
+  ...STEPS10,
+  SALES_RETURN_REQUEST_STEP,
+  SALES_RETURN_STEP
+];
 
 // frontend/src/apps/order-to-dispatch/lib/sla.ts
 var model8 = createStepSlaModel(STEPS10, {
@@ -6112,6 +6188,7 @@ var mapRound = (r) => ({
   goActualDate: r.go_actual_date ?? null,
   goOutwardNo: str2(r.go_outward_no),
   goRemarks: str2(r.go_remarks),
+  goCustomerRemark: str2(r.go_customer_remark),
   goAt: r.go_at ?? null,
   goBy: r.go_by ?? null,
   dcActualDate: r.dc_actual_date ?? null,
@@ -6184,6 +6261,7 @@ var mapOrder = (r) => ({
   goActualDate: r.go_actual_date ?? null,
   goOutwardNo: str2(r.go_outward_no),
   goRemarks: str2(r.go_remarks),
+  goCustomerRemark: str2(r.go_customer_remark),
   goAt: r.go_at ?? null,
   goBy: r.go_by ?? null,
   dcActualDate: r.dc_actual_date ?? null,
@@ -6397,6 +6475,7 @@ function currentRoundView(order) {
     goActualDate: order.goActualDate,
     goOutwardNo: order.goOutwardNo,
     goRemarks: order.goRemarks,
+    goCustomerRemark: order.goCustomerRemark,
     goAt: order.goAt,
     goBy: order.goBy,
     dcActualDate: order.dcActualDate,
@@ -6449,6 +6528,7 @@ function archivedRoundView(r) {
     goActualDate: r.goActualDate,
     goOutwardNo: r.goOutwardNo,
     goRemarks: r.goRemarks,
+    goCustomerRemark: r.goCustomerRemark,
     goAt: r.goAt,
     goBy: r.goBy,
     dcActualDate: r.dcActualDate,
@@ -7600,6 +7680,7 @@ var resolveStepSla10 = model10.resolveStepSla;
 
 // frontend/src/apps/procurement/data/procFetch.ts
 var PAGE10 = 1e3;
+var db6 = supabase;
 async function fetchAll10(table, orderBy = "created_at") {
   const out = [];
   for (let from = 0; ; from += PAGE10) {
@@ -7620,20 +7701,101 @@ async function fetchAllOptional2(table, orderBy = "created_at") {
     throw e;
   }
 }
+var MST_COLS = {
+  companies: "id,name,alias,location,active,sort_order,created_at",
+  vendors: "id,name,company_id,gstin,contact_name,phone,email,address,active,created_at",
+  items: "id,name,company_id,unit_id,item_type,active,sort_order,created_at",
+  units: "id,name"
+};
+async function fetchMst(table, cols, where) {
+  const out = [];
+  for (let from = 0; ; from += PAGE10) {
+    let q = db6.from(table).select(cols);
+    if (where) q = where(q);
+    const { data, error } = await q.order("id", { ascending: true }).range(from, from + PAGE10 - 1);
+    if (error) throw new Error(error.message);
+    const rows = data ?? [];
+    out.push(...rows);
+    if (rows.length < PAGE10) break;
+  }
+  return out;
+}
+async function fetchMstByIds(table, cols, ids) {
+  const CHUNK2 = 200;
+  const chunks = [];
+  for (let i = 0; i < ids.length; i += CHUNK2) chunks.push(ids.slice(i, i + CHUNK2));
+  const results = await Promise.all(chunks.map((c) => db6.from(table).select(cols).in("id", c)));
+  const out = [];
+  for (const { data, error } of results) {
+    if (error) throw new Error(error.message);
+    out.push(...data ?? []);
+  }
+  return out;
+}
+var str3 = (v) => v === null || v === void 0 || v === "" ? null : String(v);
 var mapCompany4 = (r) => ({
   id: r.id,
-  name: r.name,
-  location: r.location ?? null,
+  name: str3(r.alias) ?? r.name,
+  location: str3(r.location),
   active: r.active,
   sortOrder: r.sort_order ?? 0,
   createdAt: r.created_at
 });
+var mapVendor3 = (r) => ({
+  id: r.id,
+  companyId: r.company_id ?? null,
+  name: r.name,
+  gstin: str3(r.gstin),
+  contactName: str3(r.contact_name),
+  phone: str3(r.phone),
+  email: str3(r.email),
+  address: str3(r.address),
+  active: r.active,
+  createdAt: r.created_at
+});
+var mapItem3 = (r, unitName) => ({
+  id: r.id,
+  name: r.name,
+  // mst_items points at mst_units; a Purchase line carries the unit's NAME.
+  unit: r.unit_id && unitName.get(r.unit_id) || "",
+  companyId: r.company_id ?? null,
+  itemType: str3(r.item_type),
+  active: r.active,
+  sortOrder: r.sort_order ?? 0,
+  createdAt: r.created_at
+});
+async function fetchLegacyByIds(table, ids) {
+  if (ids.length === 0) return [];
+  const CHUNK2 = 200;
+  const chunks = [];
+  for (let i = 0; i < ids.length; i += CHUNK2) chunks.push(ids.slice(i, i + CHUNK2));
+  const results = await Promise.all(chunks.map((c) => db6.from(table).select("*").in("id", c)));
+  const out = [];
+  for (const { data, error } of results) if (!error) out.push(...data ?? []);
+  return out;
+}
+var mapLegacyItem = (r) => ({
+  id: r.id,
+  name: r.name,
+  unit: r.unit ?? "",
+  companyId: null,
+  itemType: null,
+  active: false,
+  sortOrder: r.sort_order ?? 0,
+  createdAt: r.created_at
+});
+async function fetchUnitNames() {
+  const units = await fetchMst("mst_units", MST_COLS.units);
+  return new Map(units.map((u) => [u.id, u.name]));
+}
 var mapCategory5 = (r) => ({
   id: r.id,
   name: r.name,
   active: r.active,
   sortOrder: r.sort_order ?? 0,
   qcRequired: r.qc_required ?? false,
+  // Absent until migration 20261217120000 is applied — [] means "no narrowing".
+  itemTypes: r.item_types ?? [],
   createdAt: r.created_at
 });
 var mapItemGroup2 = (r) => ({
@@ -7642,26 +7804,6 @@ var mapItemGroup2 = (r) => ({
   name: r.name,
   active: r.active,
   sortOrder: r.sort_order ?? 0,
-  createdAt: r.created_at
-});
-var mapItem3 = (r) => ({
-  id: r.id,
-  categoryId: r.category_id,
-  name: r.name,
-  unit: r.unit ?? "",
-  active: r.active,
-  sortOrder: r.sort_order ?? 0,
-  createdAt: r.created_at
-});
-var mapVendor3 = (r) => ({
-  id: r.id,
-  name: r.name,
-  gstin: r.gstin ?? null,
-  contactName: r.contact_name ?? null,
-  phone: r.phone ?? null,
-  email: r.email ?? null,
-  address: r.address ?? null,
-  active: r.active,
   createdAt: r.created_at
 });
 var mapManager3 = (r) => ({
@@ -7735,7 +7877,11 @@ var mapRequest5 = (r) => ({
   cancelledAt: r.cancelled_at ?? null,
   cancelledBy: r.cancelled_by ?? null,
   editedAt: r.edited_at ?? null,
-  editedBy: r.edited_by ?? null
+  editedBy: r.edited_by ?? null,
+  poRemarks: r.po_remarks ?? null,
+  poRemarksUpdatedAt: r.po_remarks_updated_at ?? null,
+  poOnHoldAt: r.po_on_hold_at ?? null,
+  poOnHoldBy: r.po_on_hold_by ?? null
 });
 var mapSourcingDoc2 = (r) => ({
   id: r.id,
@@ -7992,11 +8138,9 @@ var mapNotification7 = (r) => ({
 });
 async function fetchProcurementData() {
   const [
-    companies,
     categories,
     itemGroups,
-    items,
-    vendors,
+    unitName,
     managers,
     masterReqs,
     poCancelReqs,
@@ -8022,13 +8166,13 @@ async function fetchProcurementData() {
     followups,
     activity,
     notifications,
-    sourcingDocs
+    sourcingDocs,
+    requestDocs,
+    followupItems
   ] = await Promise.all([
-    fetchAll10("fms_purchase_companies"),
     fetchAll10("fms_purchase_categories"),
     fetchAll10("fms_purchase_item_groups"),
-    fetchAll10("fms_purchase_items"),
-    fetchAll10("fms_purchase_vendors"),
+    fetchUnitNames(),
     fetchAll10("fms_purchase_master_managers"),
     fetchAll10("fms_purchase_master_requests"),
     fetchAll10("fms_purchase_po_cancel_requests"),
@@ -8054,7 +8198,11 @@ async function fetchProcurementData() {
     fetchAll10("fms_purchase_followups"),
     fetchAll10("fms_purchase_activity"),
     fetchAll10("fms_purchase_notifications"),
-    fetchAllOptional2("fms_purchase_sourcing_docs")
+    fetchAllOptional2("fms_purchase_sourcing_docs"),
+    // Optional for the same reason: migration 20261217140000 may not be applied yet.
+    fetchAllOptional2("fms_purchase_request_docs"),
+    // Optional: migration 20261217160000 may not be applied yet.
+    fetchAllOptional2("fms_purchase_followup_items")
   ]);
   const configByKey = new Map(configRows.map((r) => [r.key, r.value ?? {}]));
   const config = {
@@ -8065,12 +8213,34 @@ async function fetchProcurementData() {
     reassignPoolDepartmentIds: configByKey.get("reassign_pool")?.department_ids ?? [],
     reassignPoolUserIds: configByKey.get("reassign_pool")?.user_ids ?? []
   };
+  const itemIds = /* @__PURE__ */ new Set();
+  for (const r of requestItems) if (r.item_id) itemIds.add(r.item_id);
+  for (const r of vendorItemPrices) if (r.item_id) itemIds.add(r.item_id);
+  const companyIds = /* @__PURE__ */ new Set();
+  for (const r of [...requests, ...pos]) if (r.company_id) companyIds.add(r.company_id);
+  const vendorIds = /* @__PURE__ */ new Set();
+  for (const r of [...requestVendors, ...quotations, ...pos, ...vendorItemPrices]) if (r.vendor_id) vendorIds.add(r.vendor_id);
+  for (const r of requestItems) if (r.final_vendor_id) vendorIds.add(r.final_vendor_id);
+  const [items, mstCompanies, mstVendors] = await Promise.all([
+    itemIds.size ? fetchMstByIds("mst_items", MST_COLS.items, [...itemIds]) : Promise.resolve([]),
+    companyIds.size ? fetchMstByIds("mst_companies", "id", [...companyIds]) : Promise.resolve([]),
+    vendorIds.size ? fetchMstByIds("mst_parties", "id", [...vendorIds]) : Promise.resolve([])
+  ]);
+  const missing = (want, found) => {
+    const have = new Set(found.map((r) => r.id));
+    return [...want].filter((id) => !have.has(id));
+  };
+  const [legacyCompanies, legacyVendors, legacyItems] = await Promise.all([
+    fetchLegacyByIds("fms_purchase_companies", missing(companyIds, mstCompanies)),
+    fetchLegacyByIds("fms_purchase_vendors", missing(vendorIds, mstVendors)),
+    fetchLegacyByIds("fms_purchase_items", missing(itemIds, items))
+  ]);
   return {
-    companies: companies.map(mapCompany4),
     categories: categories.map(mapCategory5),
     itemGroups: itemGroups.map(mapItemGroup2),
-    items: items.map(mapItem3),
-    vendors: vendors.map(mapVendor3),
+    items: [...items.map((r) => mapItem3(r, unitName)), ...legacyItems.map(mapLegacyItem)],
+    legacyCompanies: legacyCompanies.map(mapCompany4),
+    legacyVendors: legacyVendors.map(mapVendor3),
     masterManagers: managers.map(mapManager3),
     masterRequests: masterReqs.map(mapMasterRequest7),
     poCancelRequests: poCancelReqs.map(mapPoCancelRequest2),
@@ -8082,6 +8252,7 @@ async function fetchProcurementData() {
     requestItems: requestItems.map(mapRequestItem2),
     requestVendors: requestVendors.map(mapRequestVendor),
     sourcingDocs: sourcingDocs.map(mapSourcingDoc2),
+    requestDocs: requestDocs.map(mapSourcingDoc2),
     vendorItemPrices: vendorItemPrices.map(mapVendorItemPrice2),
     quotations: quotations.map(mapQuotation2),
     pos: pos.map(mapPo2),
@@ -8095,6 +8266,12 @@ async function fetchProcurementData() {
     qcItems: qcItems.map(mapQcItem2),
     payments: payments.map(mapPayment2),
     followups: followups.map(mapFollowup2),
+    followupItems: followupItems.map((r) => ({
+      id: r.id,
+      followupId: r.followup_id,
+      poItemId: r.po_item_id,
+      qty: Number(r.qty)
+    })),
     activity: activity.map(mapActivity6),
     notifications: notifications.map(mapNotification7)
   };
@@ -8172,7 +8349,10 @@ function anyReceived2(idx, p) {
   return (idx.poItemsByPo.get(p.id) ?? []).some((it) => it.receivedQty > 0);
 }
 function isDispatched2(idx, p) {
-  return (idx.followupsByPo.get(p.id) ?? []).some((f) => f.dispatchStatus === "dispatched") || (idx.pisByPo.get(p.id) ?? []).some((pi) => pi.dispatchStatus === "dispatched");
+  return (
+    // A partial lot counts: its goods can be received while the rest is still owed.
+    (idx.followupsByPo.get(p.id) ?? []).some((f) => f.dispatchStatus === "dispatched" || f.dispatchStatus === "partial") || (idx.pisByPo.get(p.id) ?? []).some((pi) => pi.dispatchStatus === "dispatched")
+  );
 }
 function piCoverage(idx, p) {
   const items = idx.poItemsByPo.get(p.id) ?? [];
@@ -8361,6 +8541,7 @@ function paymentLockReason(data, idx, pay) {
 function followupLockReason2(data, idx, f) {
   const t = terminalReason2(poOf2(data, f.poId), "follow-up");
   if (t) return t;
+  if (f.dispatchStatus === "partial") return "A partial-dispatch lot cannot be edited. Record the next lot instead.";
   if ((idx.grnsByPo.get(f.poId) ?? []).length > 0) return "Goods have already been received against this PO.";
   return null;
 }
@@ -8862,12 +9043,12 @@ var anchorOptions11 = model11.anchorOptions;
 var resolveStepSla11 = model11.resolveStepSla;
 
 // frontend/src/apps/sampling/data/samplingFetch.ts
-var db6 = supabase;
+var db7 = supabase;
 var PAGE11 = 1e3;
 async function fetchAll11(table, orderBy = "created_at") {
   const out = [];
   for (let from = 0; ; from += PAGE11) {
-    const { data, error } = await db6.from(table).select("*").order(orderBy, { ascending: true }).range(from, from + PAGE11 - 1);
+    const { data, error } = await db7.from(table).select("*").order(orderBy, { ascending: true }).range(from, from + PAGE11 - 1);
     if (error) throw new Error(error.message);
     const rows = data ?? [];
     out.push(...rows);
@@ -9451,12 +9632,12 @@ var samplingScorer = {
 };
 
 // frontend/src/apps/travel-desk/data/travelFetch.ts
-var db7 = supabase;
+var db8 = supabase;
 var PAGE12 = 1e3;
 async function fetchAll12(table, orderBy = "created_at") {
   const out = [];
   for (let from = 0; ; from += PAGE12) {
-    const { data, error } = await db7.from(table).select("*").order(orderBy, { ascending: true }).range(from, from + PAGE12 - 1);
+    const { data, error } = await db8.from(table).select("*").order(orderBy, { ascending: true }).range(from, from + PAGE12 - 1);
     if (error) throw new Error(error.message);
     const rows = data ?? [];
     out.push(...rows);
@@ -9483,7 +9664,7 @@ var num9 = (v, fallback) => {
   const n = Number(v);
   return Number.isFinite(n) ? n : fallback;
 };
-var str3 = (v) => typeof v === "string" ? v : "";
+var str4 = (v) => typeof v === "string" ? v : "";
 function mapPolicy(raw) {
   const p = raw ?? {};
   return {
@@ -9875,17 +10056,18 @@ async function fetchTravelData() {
   const config = {
     stepSla: cfg.get("step_sla") ?? null,
     processCoordinators: cfg.get("process_coordinators")?.user_ids ?? [],
+    raiseFor: cfg.get("raise_for")?.user_ids ?? [],
     approvalMatrix: mapMatrix(cfg.get("approval_matrix")),
     policy: mapPolicy(cfg.get("policy")),
     reassignPoolDepartmentIds: cfg.get("reassign_pool")?.department_ids ?? [],
     reassignPoolUserIds: cfg.get("reassign_pool")?.user_ids ?? [],
     companyIdentity: {
-      legalName: str3(identity.legal_name),
+      legalName: str4(identity.legal_name),
       // ⚠ Blank until Finance confirms it. Policy Section 7.1 and Section 11.3 both carry the
       //   GSTIN as "[⚠ CONFIRM with Finance]", and a placeholder number printed
       //   on guidance an employee hands a hotel is worse than a visible gap.
-      gstin: str3(identity.gstin),
-      address: str3(identity.address)
+      gstin: str4(identity.gstin),
+      address: str4(identity.address)
     }
   };
   return {

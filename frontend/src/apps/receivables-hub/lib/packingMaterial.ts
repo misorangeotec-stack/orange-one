@@ -316,6 +316,33 @@ export function packingFor(rows: PackingRow[], keep?: (p: PackedInto) => boolean
   return total;
 }
 
+/** One packing line as far as a selection is concerned: the part of it `packingFor` counted. */
+export interface PackingLineFor {
+  row: PackingRow;
+  /** This selection's share of the line's consumption. */
+  value: number;
+  qty: number;
+  /** The finished goods it was charged to, within the selection. */
+  packedInto: PackedInto[];
+}
+
+/** The lines behind `packingFor` — same rules, so the list always adds up to that total. */
+export function packingLinesFor(rows: PackingRow[], keep?: (p: PackedInto) => boolean): PackingLineFor[] {
+  const out: PackingLineFor[] = [];
+  for (const r of rows) {
+    if (r.isTransfer) continue;
+    if (!r.packed.length) {
+      if (!keep) out.push({ row: r, value: r.consumedValue, qty: r.consumedQty, packedInto: [] });
+      continue;
+    }
+    const kept = keep ? r.packed.filter(keep) : r.packed;
+    if (!kept.length) continue;
+    const share = kept.reduce((s, p) => s + p.share, 0);
+    out.push({ row: r, value: r.consumedValue * share, qty: r.consumedQty * share, packedInto: kept });
+  }
+  return out;
+}
+
 export interface PackingSlice {
   name: string;
   consumedValue: number;

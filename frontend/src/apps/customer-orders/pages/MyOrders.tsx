@@ -1,13 +1,14 @@
 import { useMemo, useState } from "react";
-import { Link } from "react-router-dom";
+import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { TextInput } from "@/shared/components/ui/Form";
 import { cn } from "@/shared/lib/cn";
 import OrderDeskShell from "../components/OrderDeskShell";
 import { useCustomer } from "../CustomerOrdersApp";
-import { customerStatus, callUs, type CustomerStatusKey } from "../lib/customerLabels";
+import { customerStatus, callUs, CUSTOMER_STATUS, type CustomerStatusKey } from "../lib/customerLabels";
 import { fetchDeskOrders, ORDERS_QK, type DeskOrder } from "../data/orderDesk";
 import { deskPaths } from "../lib/paths";
+import { savedLabel, useDeskDrafts } from "../lib/deskDrafts";
 
 /**
  * My orders.
@@ -26,14 +27,23 @@ import { deskPaths } from "../lib/paths";
  *   items; a card shows all of them at once and a row does not.
  */
 
+/**
+ * ⚠ ONE TAB PER STATE, IN THE ORDER AN ORDER PASSES THROUGH THEM — not alphabetical
+ *   and not by how often each is used. The row doubles as the customer's picture of
+ *   the journey, so Cancelled goes last: it is where an order leaves the line, not
+ *   a stage on it.
+ *
+ *   Labels are NOT repeated from `CUSTOMER_STATUS` by hand. Drifting copy between
+ *   a filter tab and the pill it filters for is the exact bug this file caused when
+ *   the eight states became four — the tabs still read "Being prepared" for a key
+ *   the server had stopped sending, so the tab was permanently empty and nothing
+ *   said why.
+ */
 const FILTERS: { key: "all" | CustomerStatusKey; label: string }[] = [
   { key: "all", label: "All" },
-  { key: "placed", label: "Placed" },
-  { key: "preparing", label: "Being prepared" },
-  { key: "part_dispatched", label: "Partly dispatched" },
-  { key: "dispatched", label: "Dispatched" },
-  { key: "delivered", label: "Delivered" },
-  { key: "cancelled", label: "Cancelled" },
+  ...(["request_raised", "accepted", "out_for_delivery", "delivered", "cancelled"] as const).map(
+    (key) => ({ key, label: CUSTOMER_STATUS[key].label }),
+  ),
 ];
 
 /** "12 Aug 2026" from an ISO date, with no timezone shifting it a day. */
@@ -60,9 +70,25 @@ export function itemSummary(o: DeskOrder): string {
   return names.join(", ") + (rest > 0 ? ` +${rest} more` : "");
 }
 
+type Folder = "all" | CustomerStatusKey | "drafts";
+
+/**
+ * THE INBOX (OD-18). A panel of folders down the side — every state with its
+ * count, and Drafts — so a customer sees at a glance how many orders they have
+ * placed, how many are on their way, how many they cancelled, and what they
+ * saved without placing. On a phone the panel becomes a row above the list.
+ *
+ * ⚠ EVERY FOLDER SHOWS, ZEROES INCLUDED. The old chips hid empty states because a
+ *   chip that only ever filters to nothing is a dead control. Here the count IS
+ *   the information — "Cancelled 0" answers a question the customer asked — so a
+ *   zero is greyed, not hidden.
+ */
 export default function MyOrders() {
   const customer = useCustomer();
-  const [tab, setTab] = useState<"all" | CustomerStatusKey>("all");
+  const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
+  const folder = (searchParams.get("folder") as Folder | null) ?? "all";
+  const setFolder = (f: Folder) => setSearchParams(f === "all" ? {} : { folder: f }, { replace: true });
   const [q, setQ] = useState("");
 
   const { data: orders, isLoading, error } = useQuery({
@@ -70,29 +96,70 @@ export default function MyOrders() {
     queryFn: fetchDeskOrders,
     staleTime: 30_000,
   });
+  const drafts = useDeskDrafts();
 
-  /**
-   * The filter chips offer only what is actually there — plus "All", always.
-   *
-   * A chip that can only ever produce an empty list is a dead control, and this
-   * list is short enough that a customer will try every one of them.
-   */
-  const tabs = useMemo(() => {
-    const present = new Set((orders ?? []).map((o) => o.statusKey));
-    return FILTERS.filter((f) => f.key === "all" || present.has(f.key));
+  const counts = useMemo(() => {
+    const by = new Map<string, number>();
+    (orders ?? []).forEach((o) => by.set(o.statusKey, (by.get(o.statusKey) ?? 0) + 1));
+    return by;
   }, [orders]);
+
+  /** The three numbers a customer asks about first. */
+  const stats = useMemo(() => {
+    const all = orders ?? [];
+    const now = new Date();
+    const ym = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
+    return {
+      placed: all.length,
+      thisMonth: all.filter((o) => (o.orderDate ?? "").startsWith(ym)).length,
+      last: all.reduce<string | null>((m, o) => (o.orderDate && (!m || o.orderDate > m) ? o.orderDate : m), null),
+    };
+  }, [orders]);
+
+  const folders: { key: Folder; label: string; count: number }[] = [
+    { key: "all", label: "All orders", count: orders?.length ?? 0 },
+    ...FILTERS.filter((f) => f.key !== "all").map((f) => ({
+      key: f.key as Folder,
+      label: f.label,
+      count: counts.get(f.key) ?? 0,
+    })),
+    { key: "drafts", label: "Drafts", count: drafts.mine.length },
+  ];
 
   const shown = useMemo(() => {
     const needle = q.trim().toLowerCase();
     return (orders ?? []).filter((o) => {
-      if (tab !== "all" && o.statusKey !== tab) return false;
+      if (folder !== "all" && folder !== "drafts" && o.statusKey !== folder) return false;
       if (!needle) return true;
       return (
         o.orderNo.toLowerCase().includes(needle) ||
         o.lines.some((l) => l.name.toLowerCase().includes(needle))
       );
     });
-  }, [orders, tab, q]);
+  }, [orders, folder, q]);
+
+  const shownDrafts = useMemo(() => {
+    const needle = q.trim().toLowerCase();
+    return drafts.mine.filter(
+      (d) =>
+        !needle ||
+        d.title.toLowerCase().includes(needle) ||
+        d.summary.some((s) => s.toLowerCase().includes(needle)),
+    );
+  }, [drafts.mine, q]);
+
+  const [draftErr, setDraftErr] = useState("");
+  const discardDraft = async (d: (typeof drafts.mine)[number]) => {
+    if (!window.confirm(`Discard the draft "${d.title || "Untitled"}"? This cannot be undone.`)) return;
+    setDraftErr("");
+    try {
+      await drafts.discard(d);
+    } catch (e) {
+      setDraftErr((e as Error).message);
+    }
+  };
+
+  const nothingAtAll = !isLoading && !drafts.loading && (orders ?? []).length === 0 && drafts.mine.length === 0;
 
   return (
     <OrderDeskShell title="My orders" subtitle={customer.displayName}>
@@ -103,7 +170,7 @@ export default function MyOrders() {
           We could not load your orders just now. Please refresh the page, and {callUs("call us")} if
           it keeps happening.
         </div>
-      ) : (orders ?? []).length === 0 ? (
+      ) : nothingAtAll ? (
         <div className="rounded-2xl border border-line bg-white p-8 max-w-2xl">
           <p className="text-[15px] font-semibold">You have not placed an order yet.</p>
           <p className="text-[14px] text-grey mt-2">
@@ -117,50 +184,114 @@ export default function MyOrders() {
           </Link>
         </div>
       ) : (
-        <>
-          <div className="flex flex-wrap items-center gap-2 mb-5">
-            {tabs.map((f) => (
-              <button
-                key={f.key}
-                onClick={() => setTab(f.key)}
-                className={cn(
-                  "rounded-full px-3.5 py-1.5 text-[13px] font-semibold border transition",
-                  tab === f.key
-                    ? "bg-navy text-white border-navy"
-                    : "bg-white text-grey border-line hover:text-ink"
-                )}
-              >
-                {f.label}
-              </button>
-            ))}
-            <div className="ml-auto w-full sm:w-64">
-              <TextInput
-                value={q}
-                onChange={(e) => setQ(e.target.value)}
-                placeholder="Search order number or item"
-              />
+        <div className="grid grid-cols-1 gap-5 md:grid-cols-[230px_minmax(0,1fr)]">
+          {/* ---- the panel ---- */}
+          <aside className="min-w-0 space-y-3">
+            <div className="rounded-2xl border border-line bg-white p-4 grid grid-cols-3 md:grid-cols-1 gap-3 shadow-soft">
+              <Stat label="Orders placed" value={String(stats.placed)} accent="#00AEEF" />
+              <Stat label="This month" value={String(stats.thisMonth)} accent="#EC008C" />
+              <Stat label="Last order" value={stats.last ? orderDate(stats.last) : "—"} accent="#F6891F" />
             </div>
-          </div>
+            <nav className="rounded-2xl border border-line bg-white p-2 flex md:flex-col gap-1 overflow-x-auto shadow-soft">
+              {folders.map((f) => (
+                <button
+                  key={f.key}
+                  type="button"
+                  onClick={() => setFolder(f.key)}
+                  className={cn(
+                    "flex items-center justify-between gap-3 rounded-xl px-3 py-2 text-[13.5px] font-semibold whitespace-nowrap transition",
+                    f.key === "drafts" && "md:mt-1 md:border-t md:border-line md:rounded-t-none md:pt-3",
+                    folder === f.key ? "bg-navy text-white" : "text-ink hover:bg-[#F3F6FB]",
+                  )}
+                >
+                  <span>{f.label}</span>
+                  <span
+                    className={cn(
+                      "min-w-[1.75rem] rounded-full px-2 py-0.5 text-center text-[12px]",
+                      folder === f.key ? "bg-white/20 text-white" : f.count ? "bg-[#EEF2F8] text-navy" : "text-grey-2",
+                    )}
+                  >
+                    {f.count}
+                  </span>
+                </button>
+              ))}
+            </nav>
+          </aside>
 
-          {shown.length === 0 ? (
-            /*
-              An empty RESULT, never an empty screen: the chips and the search box
-              stay exactly where they are, because they are the only way back. See
-              the house rule about swapping a filtered-empty table for a full-page
-              empty state — it takes away the control that caused it.
-            */
-            <div className="rounded-2xl border border-line bg-white p-8 text-center">
-              <p className="text-[14px] text-grey">Nothing matches what you are looking for.</p>
-              <button
-                onClick={() => { setTab("all"); setQ(""); }}
-                className="mt-3 text-[13.5px] font-semibold text-orange hover:text-orange-2"
-              >
-                Show all my orders
-              </button>
-            </div>
-          ) : (
-            <div className="space-y-3">
-              {shown.map((o) => (
+          {/* ---- the list ---- */}
+          <section className="min-w-0 space-y-3">
+            <TextInput
+              value={q}
+              onChange={(e) => setQ(e.target.value)}
+              placeholder={folder === "drafts" ? "Search your drafts" : "Search order number or item"}
+            />
+
+            {folder === "drafts" ? (
+              <>
+                {draftErr ? (
+                  <p className="rounded-xl border border-[#f6d2d3] bg-[#FDECEC] px-4 py-3 text-[13.5px] text-[#B3282C]">{draftErr}</p>
+                ) : null}
+                {drafts.loading ? (
+                  <div className="rounded-2xl border border-line bg-white p-8 text-[14px] text-grey">Loading…</div>
+                ) : shownDrafts.length === 0 ? (
+                  <div className="rounded-2xl border border-line bg-white p-8 text-center text-[14px] text-grey">
+                    {drafts.mine.length === 0
+                      ? "No drafts. Use “Save as draft” on Place an order to keep an order for later."
+                      : "Nothing matches what you are looking for."}
+                  </div>
+                ) : (
+                  shownDrafts.map((d) => (
+                    <div key={d.id} className="rounded-2xl border border-line bg-white p-5">
+                      <div className="flex items-start justify-between gap-4 flex-wrap">
+                        <div className="min-w-0">
+                          <div className="flex items-center gap-3 flex-wrap">
+                            <span className="text-[15px] font-bold tracking-tight truncate">{d.title || "Untitled"}</span>
+                            <span className="inline-block rounded-full border border-line bg-[#F3F6FB] px-2.5 py-1 text-[12px] font-semibold text-grey">
+                              Draft — not placed
+                            </span>
+                          </div>
+                          <p className="text-[13px] text-grey-2 mt-1.5">
+                            {savedLabel(d.updatedAt)} · {d.payload?.lines?.length ?? 0} item
+                            {(d.payload?.lines?.length ?? 0) === 1 ? "" : "s"}
+                          </p>
+                        </div>
+                        <div className="flex gap-2">
+                          <button
+                            type="button"
+                            onClick={() => navigate(`${deskPaths.place}?draft=${d.id}`)}
+                            className="rounded-lg bg-orange-grad px-3.5 py-1.5 text-[13px] font-semibold text-white shadow-cta"
+                          >
+                            Continue
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => void discardDraft(d)}
+                            className="rounded-lg border border-line px-3.5 py-1.5 text-[13px] font-semibold text-grey hover:text-[#B3282C] hover:border-[#f6d2d3]"
+                          >
+                            Discard
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  ))
+                )}
+              </>
+            ) : shown.length === 0 ? (
+              <div className="rounded-2xl border border-line bg-white p-8 text-center">
+                <p className="text-[14px] text-grey">
+                  {q.trim() ? "Nothing matches what you are looking for." : "No orders here."}
+                </p>
+                {folder !== "all" || q.trim() ? (
+                  <button
+                    onClick={() => { setFolder("all"); setQ(""); }}
+                    className="mt-3 text-[13.5px] font-semibold text-orange hover:text-orange-2"
+                  >
+                    Show all my orders
+                  </button>
+                ) : null}
+              </div>
+            ) : (
+              shown.map((o) => (
                 <Link
                   key={o.id}
                   to={deskPaths.order(o.id)}
@@ -172,10 +303,24 @@ export default function MyOrders() {
                         <span className="text-[15px] font-bold tracking-tight">{o.orderNo}</span>
                         <StatusPill statusKey={o.statusKey} />
                         {o.canChange ? (
-                          <span className="text-[12px] font-semibold text-orange">Still changeable</span>
+                          /* A button, not a word: "Still changeable" read as a link and
+                             only opened the order. This opens it straight into editing.
+                             Inside the card's link, so it stops the card's own click. */
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.preventDefault();
+                              e.stopPropagation();
+                              navigate(`${deskPaths.order(o.id)}?edit=1`);
+                            }}
+                            className="rounded-lg border border-orange px-2.5 py-1 text-[12px] font-semibold text-orange hover:bg-orange hover:text-white transition"
+                          >
+                            Edit order
+                          </button>
                         ) : null}
                       </div>
                       <p className="text-[13.5px] text-grey mt-1.5 truncate">{itemSummary(o)}</p>
+                      {o.ledgerName ? <p className="text-[12.5px] text-grey-2 mt-0.5 truncate">For {o.ledgerName}</p> : null}
                     </div>
                     <div className="text-right shrink-0">
                       <div className="text-[13px] text-grey-2">{orderDate(o.orderDate)}</div>
@@ -185,11 +330,20 @@ export default function MyOrders() {
                     </div>
                   </div>
                 </Link>
-              ))}
-            </div>
-          )}
-        </>
+              ))
+            )}
+          </section>
+        </div>
       )}
     </OrderDeskShell>
+  );
+}
+
+function Stat({ label, value, accent }: { label: string; value: string; accent: string }) {
+  return (
+    <div className="border-l-[3px] pl-3" style={{ borderColor: accent }}>
+      <div className="text-[11.5px] font-semibold uppercase tracking-wide text-grey-2">{label}</div>
+      <div className="text-[18px] font-bold text-navy mt-0.5 truncate">{value}</div>
+    </div>
   );
 }

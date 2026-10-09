@@ -42,7 +42,9 @@ import { useColumnWidths } from "@/shared/lib/useColumnWidths";
 import { usePagination } from "@/shared/lib/usePagination";
 import Pagination from "@/shared/components/ui/Pagination";
 import { exportSalesRegisterXlsx, type ExtraColumn } from "@hub/lib/exportSalesRegister";
-import SalesPanel, { usePanelSizing } from "@hub/components/masterreports/SalesPanel";
+import SalesPanel from "@hub/components/masterreports/SalesPanel";
+import { useCardSizing } from "@hub/components/BushraCardSizing";
+import { PanelFill } from "@hub/components/ResizeKit";
 import { MultiSelectFilter, type MultiSelectOption } from "@hub/components/MultiSelectFilter";
 import { fmtSales, salesFyOptions } from "@hub/lib/salesReport";
 import { currentFy, ymd } from "@hub/lib/salesRegister";
@@ -909,7 +911,7 @@ function MixPanel({ title, subtitle, data, measure, colorOf, selected, onPick, n
   /** The ring shows what ADDS to the total; a negative stays in the list beside it. */
   const positives = rows.filter((p) => p[ringOn] > 0).map((p) => ({ name: p.name, value: p[ringOn] }));
   // The strip under the card opens the list's window taller or shorter.
-  const { size: sz, grip, bodyRef } = usePanelSizing(title, { resizable: true, sizeKey: `mix-${title}` });
+  const { size: sz, grip, bodyRef } = useCardSizing(title, { resizable: true, sizeKey: `mix-${title}` });
 
   return (
     <div className="rounded-xl border border-border bg-surface p-4 pb-1 shadow-sm">
@@ -1296,7 +1298,7 @@ function PeriodMix({ rows, months, grain, setGrain, measure, fmtQ, selectedProdu
 
   const grandTotal = data.reduce((s, p) => s + p.total, 0);
   // Reader-sized, like every SalesPanel: drag the strip for height, Bars − / + for thickness.
-  const { size: sz, barControl, grip, bodyRef } = usePanelSizing("period", { resizable: true, bars: true, sizeKey: `period-${measure}` });
+  const { size: sz, barControl, grip, bodyRef } = useCardSizing("period", { resizable: true, bars: true, sizeKey: `period-${measure}` });
 
   return (
     <div className="rounded-xl border border-border bg-surface p-4 pb-1 shadow-sm">
@@ -2131,10 +2133,10 @@ function SliceChart({ title, icon, colorOf, slices, total, fmt, selected, onPick
     <SalesPanel
       title={title} icon={icon} loading={loading} empty={empty} emptyMessage={emptyMessage}
       subtitle={note}
-      resizable bars bodyMaxHeight={560} sizeKey={sizeKey}
+      sizeKey={sizeKey ?? `slice-${title}`} bodyHeight={284}
     >
-      {(sz) => (
-      <ResponsiveContainer width="100%" height={Math.max(sz.h(260), slices.length * sz.bar(barH) + 40)}>
+      <PanelFill base={260} min={(bar) => slices.length * bar(barH) + 40}>{(bar) => (
+      <ResponsiveContainer width="100%" height="100%">
         <BarChart data={slices} layout="vertical" margin={{ top: 4, right: 130, left: 8, bottom: 0 }}>
           <CartesianGrid stroke={CHART_GRID} horizontal={false} />
           <XAxis type="number" tick={AXIS_TICK} tickLine={false} axisLine={false} tickFormatter={(v: number) => fmt(v).replace("₹ ", "")} />
@@ -2142,7 +2144,7 @@ function SliceChart({ title, icon, colorOf, slices, total, fmt, selected, onPick
                  axisLine={{ stroke: CHART_GRID }} width={190} interval={0} />
           <ReferenceLine x={0} stroke="hsl(220 10% 75%)" />
           <Tooltip cursor={{ fill: "hsl(220 15% 95%)" }} content={<SliceTooltip total={total} fmt={fmt} />} />
-          <Bar dataKey="value" maxBarSize={sz.bar(barH > 30 ? 28 : 20)} radius={4} className="cursor-pointer"
+          <Bar dataKey="value" maxBarSize={bar(barH > 30 ? 28 : 20)} radius={4} className="cursor-pointer"
                onClick={(d: { name?: string }, _i: number, e?: { stopPropagation?: () => void }) => {
                  e?.stopPropagation?.();
                  if (d?.name) onPick(d.name);
@@ -2153,8 +2155,7 @@ function SliceChart({ title, icon, colorOf, slices, total, fmt, selected, onPick
                        style={{ fontSize: 10.5, fill: LABEL_FILL, fontWeight: 600 }} />
           </Bar>
         </BarChart>
-      </ResponsiveContainer>
-      )}
+      </ResponsiveContainer>)}</PanelFill>
     </SalesPanel>
   );
 }

@@ -15,6 +15,8 @@ interface Props {
    * browser under this key; double-click resets to `maxHeight`). Without it, nothing changes.
    */
   resizeKey?: string;
+  /** Drop the hint + ‹ › bar for tight screens; the keys and the scrollbar still work. */
+  hideControls?: boolean;
 }
 
 /**
@@ -27,7 +29,7 @@ interface Props {
  * div, which would otherwise capture horizontal scroll. `[&>div]:!overflow-visible`
  * neutralises that so THIS element is the single scroll container for both axes.
  */
-export function ScrollableTable({ children, className, maxHeight, step = 320, resizeKey }: Props) {
+export function ScrollableTable({ children, className, maxHeight, step = 320, resizeKey, hideControls = false }: Props) {
   const ref = useRef<HTMLDivElement>(null);
   const [height, setHeight] = usePersistedSize(resizeKey ? `table.${resizeKey}` : undefined);
   const dragFrom = useRef(0);
@@ -75,7 +77,7 @@ export function ScrollableTable({ children, className, maxHeight, step = 320, re
 
   return (
     <div>
-      {overflow && (
+      {overflow && !hideControls && (
         <div className="flex items-center justify-end gap-2 mb-1.5">
           <span className="text-[11px] text-muted-foreground mr-auto">Use arrow keys ← ↑ → ↓ (or the buttons) to scroll the table.</span>
           <button

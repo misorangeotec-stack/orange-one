@@ -2,6 +2,7 @@ import { useMemo, useState } from "react";
 import type { ReactNode } from "react";
 import { Outlet, useLocation } from "react-router-dom";
 import { cn } from "@/shared/lib/cn";
+import { useInPanel } from "@/shared/lib/embedded";
 import { pageLabelFor } from "@/apps/currentApp";
 import AnnouncementStrip from "@/core/announcements/AnnouncementStrip";
 import Sidebar from "./Sidebar";
@@ -65,6 +66,18 @@ export default function AppShell({
   // opened an exit case read "Dashboard" at the top of the screen. The trail now
   // stops at the module rather than naming the page wrongly.
   const pageLabel = useMemo(() => pageLabelFor(pathname, items), [pathname, items]);
+  const inPanel = useInPanel();
+
+  // Inside My Control Center's work panel: the page alone, no sidebar or topbar —
+  // the panel scrolls it. See shared/lib/embedded.ts.
+  if (inPanel) {
+    return (
+      <div className="px-4 sm:px-5 py-4">
+        {banner}
+        <Outlet />
+      </div>
+    );
+  }
 
   return (
     <div className="h-screen flex bg-page-grad overflow-hidden">

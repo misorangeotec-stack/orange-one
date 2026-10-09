@@ -17,11 +17,13 @@
 import type { ReactNode } from "react";
 import type { AppManifest } from "@/apps/types";
 import type { Profile } from "@/core/platform/types";
-import { groupByCategory } from "@/apps/categories";
+import { CATEGORIES, groupByCategory } from "@/apps/categories";
 import { GROUP_ICONS } from "./groupIcons";
 import {
   ANNOUNCEMENTS_LABEL,
   ANNOUNCEMENTS_PATH,
+  HANDBOOK_LABEL,
+  HANDBOOK_PATH,
   HOME_LABEL,
   HOME_PATH,
   type NavItem,
@@ -45,6 +47,12 @@ const ic: Record<string, ReactNode> = {
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
       <circle cx="12" cy="8" r="4" />
       <path d="M4 20c0-4 3.5-6 8-6s8 2 8 6" />
+    </svg>
+  ),
+  handbook: (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M2 5.5h7a3 3 0 0 1 3 3V20a2.5 2.5 0 0 0-2.5-2.5H2Z" />
+      <path d="M22 5.5h-7a3 3 0 0 0-3 3V20a2.5 2.5 0 0 1 2.5-2.5H22Z" />
     </svg>
   ),
   announcements: (
@@ -103,32 +111,66 @@ export function buildHomeNav(apps: AppManifest[], opts: AppAccess): NavItem[] {
     { label: ANNOUNCEMENTS_LABEL, to: ANNOUNCEMENTS_PATH, icon: ic.announcements },
   ];
 
+  // KB-1 · The HR handbook. Two decisions are layered here, both deliberate:
+  //   30-09-2026  it got a menu row at all, reversing KB-1 §0's "deliberately in no menu".
+  //               That rule was about not making ASKING a menu item (asking is still only
+  //               the floating bubble); being unable to BROWSE the manual was the first
+  //               thing raised once the module went in front of anyone.
+  //   01-10-2026  it was gated on the grant, reversing "reading needs no grant", so HR can
+  //               check it before the whole company sees it. Granting everyone 'view' puts
+  //               it back in front of all staff with no code change.
+  //   02-10-2026  it moved from under Home into the HR group, as that group's first row,
+  //               at the business's request. The grant rule is unchanged. Holding
+  //               'knowledge-base' always brings the HR group with it, because the
+  //               Knowledge Base app is itself filed under HR.
+  const showHandbook = opts.hasModule("knowledge-base");
+
   // Every category becomes a COLLAPSIBLE group (see Sidebar), which is why these
   // carry `group` rather than `section`. An empty category never reaches here, so
   // a user with no Purchase access never sees an orphan "Purchase" heading — and
   // a category left holding ONE app is collapsed back to a plain link by the
   // sidebar, so "Sampling → Ink / RM Sampling" doesn't cost a click to say one
   // thing twice.
-  for (const group of groupByCategory(visibleApps(apps, opts))) {
-    for (const app of group.rows) {
-      // One row per app, unless the app says otherwise. Reports is the only one that does:
-      // it is a catalogue, so its group lists the sections the reader holds rather than a
-      // single link they would have to open to find out what is inside (see
-      // AppManifest.menuEntries). A group of several rows is not collapsed back to a plain
-      // link by the sidebar, which is what makes the heading appear at all.
-      const rows = app.menuEntries?.(opts) ?? [{ label: app.name, to: app.basePath, icon: app.icon }];
-      for (const row of rows) {
-        // Second level inside a category, rendered as a dropdown. A row may claim its own —
-        // that is how Reports folds its Bushra-Dashboard subjects behind one label — and
-        // otherwise it inherits the app's, which nothing sets today (see apps/appInfo.ts).
-        const subGroup = row.subGroup ?? app.subGroup;
-        nav.push({
-          ...row,
-          group: group.label,
-          groupIcon: GROUP_ICONS[group.key],
-          ...(subGroup ? { subGroup } : {}),
-        });
-      }
+  //
+  // One row per app, unless the app says otherwise. Reports is the only one that does: it is
+  // a catalogue, so it lists the sections the reader holds rather than a single link they
+  // would have to open to find out what is inside (see AppManifest.menuEntries). Rows are
+  // expanded BEFORE grouping because a row may name a group of its own — Reports sends its
+  // dashboards to "Report Dashboard" — and otherwise inherits its app's.
+  const rows = visibleApps(apps, opts).flatMap((app) => {
+    const own: NonNullable<ReturnType<NonNullable<AppManifest["menuEntries"]>>> = app.menuEntries?.(opts) ?? [
+      { label: app.name, to: app.basePath, icon: app.icon },
+    ];
+    return own.map(({ category, subGroup, ...row }) => ({
+      ...row,
+      category: category ?? app.category,
+      // Second level inside a category, rendered as a dropdown. A row may claim its own, and
+      // otherwise it inherits the app's, which nothing sets today (see apps/appInfo.ts).
+      subGroup: subGroup ?? app.subGroup,
+    }));
+  });
+
+  for (const group of groupByCategory(rows)) {
+    const keepGroup = CATEGORIES.some((c) => c.key === group.key && c.keepHeading);
+    if (group.key === "hr" && showHandbook) {
+      nav.push({
+        label: HANDBOOK_LABEL,
+        to: HANDBOOK_PATH,
+        icon: ic.handbook,
+        group: group.label,
+        groupIcon: GROUP_ICONS[group.key],
+      });
+    }
+    // A group of several rows is not collapsed back to a plain link by the sidebar, which is
+    // what makes the heading appear at all.
+    for (const { category: _category, subGroup, ...row } of group.rows) {
+      nav.push({
+        ...row,
+        group: group.label,
+        groupIcon: GROUP_ICONS[group.key],
+        ...(subGroup ? { subGroup } : {}),
+        ...(keepGroup ? { keepGroup } : {}),
+      });
     }
   }
 

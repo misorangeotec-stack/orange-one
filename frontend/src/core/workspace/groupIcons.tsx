@@ -34,6 +34,15 @@ export const GROUP_ICONS: Partial<Record<AppCategory | "other", ReactNode>> = {
       <path d="M9 17v-3M12 17v-5M15 17v-2" />
     </svg>
   ),
+  // Four tiles of unequal size — a dashboard, the charts the Reports app serves.
+  "report-dashboard": (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <rect x="3" y="3" width="7" height="9" rx="1" />
+      <rect x="14" y="3" width="7" height="5" rx="1" />
+      <rect x="14" y="12" width="7" height="9" rx="1" />
+      <rect x="3" y="16" width="7" height="5" rx="1" />
+    </svg>
+  ),
   // Clipboard with a tick — personal work, checked off.
   productivity: (
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -50,27 +59,20 @@ export const GROUP_ICONS: Partial<Record<AppCategory | "other", ReactNode>> = {
       <circle cx="17" cy="20" r="1.6" />
     </svg>
   ),
-  // Conical flask — the lab.
-  sampling: (
+  // Stacked sheet with a drop — the ink planning sheets.
+  ims: (
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-      <path d="M9 3h6" />
-      <path d="M10 3v6.5L5.2 17.4A2 2 0 0 0 7 20.5h10a2 2 0 0 0 1.8-3.1L14 9.5V3" />
-      <path d="M7.5 14h9" />
+      <rect x="4" y="3" width="13" height="17" rx="2" />
+      <path d="M8 8h5M8 12h3" />
+      <path d="M17.5 12.5s2.5 2.6 2.5 4.3a2.5 2.5 0 0 1-5 0c0-1.7 2.5-4.3 2.5-4.3Z" />
     </svg>
   ),
   // Factory roofline — the plant.
-  production: (
+  plant: (
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
       <path d="M3 21V10l5 3.5V10l5 3.5V10l5 3.5V21z" />
       <path d="M18 10V4h3v17" />
       <path d="M7 17.5h2M13 17.5h2" />
-    </svg>
-  ),
-  // Shield with a tick — goods judged and passed, or found wanting.
-  quality: (
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-      <path d="M12 3 5 6v6c0 4.2 2.9 7.6 7 9 4.1-1.4 7-4.8 7-9V6l-7-3Z" />
-      <path d="m9 12 2 2 4-4" />
     </svg>
   ),
   // Rising bars — the sales book and what it collects.
@@ -90,13 +92,15 @@ export const GROUP_ICONS: Partial<Record<AppCategory | "other", ReactNode>> = {
       <path d="M17 5.2a3.2 3.2 0 0 1 0 6M18.5 15.4c2 .7 3 2.2 3 4.6" />
     </svg>
   ),
-  // Spanner — plant and equipment kept running.
-  asset: (
+  // Sliders — the levers over everything else.
+  // A play button in a screen — the training recordings.
+  training: (
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-      <path d="M15.5 3.5a5.5 5.5 0 0 0-6.9 7L3 16.1V21h4.9l5.6-5.6a5.5 5.5 0 0 0 7-6.9L17.6 11 13 6.4z" />
+      <rect x="2" y="4" width="20" height="14" rx="2" />
+      <path d="m10 8 5 3-5 3Z" />
+      <path d="M8 21h8" />
     </svg>
   ),
-  // Sliders — the levers over everything else.
   control: (
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
       <path d="M4 6h16M4 12h16M4 18h16" />

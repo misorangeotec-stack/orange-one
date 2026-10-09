@@ -29,8 +29,7 @@
  * around it (buy it, then sell it and collect for it), and finally the functions
  * that support all of the above.
  *
- * Note this is NOT strict process order: Asset sits with the plant rather than
- * with the other support functions, and Purchase follows production rather than
+ * Note this is NOT strict process order: Purchase follows production rather than
  * leading it. That is deliberate and was asked for — order these by how often
  * people open them, not by where they fall in the workflow.
  *
@@ -44,17 +43,22 @@
 export type AppCategory =
   | "productivity"
   | "reports"
-  | "sampling"
-  | "production"
-  | "quality"
-  | "asset"
+  | "report-dashboard"
+  | "plant"
   | "purchase"
+  | "ims"
   | "sales"
   | "hr"
+  | "training"
   | "control"
   | "mobile";
 
-export const CATEGORIES: { key: AppCategory; label: string }[] = [
+/**
+ * `keepHeading`: show the group's heading even while it holds a single app. Normally the
+ * sidebar folds a one-app group back into a plain link (see Sidebar's buildNodes). A
+ * group meant to fill up over time sets this, so it reads as a group from day one.
+ */
+export const CATEGORIES: { key: AppCategory; label: string; keepHeading?: boolean }[] = [
   { key: "productivity", label: "Productivity" },
   // Second, and belonging to no department on purpose. The report catalogue spent its life
   // as a menu inside the Outstanding Dashboard, where finance, inventory and Tally reports
@@ -66,23 +70,37 @@ export const CATEGORIES: { key: AppCategory; label: string }[] = [
   // The group carries ONE app (apps/reports/) but many rows: it is a catalogue, so the
   // sidebar lists its sections rather than a single link — see `menuEntries` in apps/types.
   { key: "reports", label: "Reports" },
-  // ── the plant floor: sample it, make it, and the machines that do the making ─
-  { key: "sampling", label: "Sampling" },
-  { key: "production", label: "Production" },
-  // Judging what came off the line — and what came in from a supplier. Sits with
-  // the plant rather than with Sales because the investigation and the corrective
-  // action are plant work, whichever side the complaint arrived from.
-  { key: "quality", label: "Quality" },
-  { key: "asset", label: "Asset" },
+  // The dashboards (Sales, Purchase, …), lifted out of the Reports group onto a heading of
+  // their own straight under it (08-10-2026) — they were a dropdown inside Reports, which
+  // cost two clicks to reach screens opened every day. No app is tagged here: the Reports
+  // app sends its dashboard rows to this group (`category` on AppManifest.menuEntries).
+  { key: "report-dashboard", label: "Report Dashboard", keepHeading: true },
+  // ── the plant floor: sample it, make it, judge it, and the machines that do the making ─
+  // One group for the whole plant, asked for by the business: Sampling, Production Entry
+  // and the quality apps (Complaint, Ink Stabilisation, Ink Expiry) used to sit in three
+  // separate groups — "Sampling", "Production" and "Quality" — each one or two rows deep.
+  // Complaint stays here rather than under Sales because the investigation and the
+  // corrective action are plant work, whichever side the complaint arrived from.
+  { key: "plant", label: "Plant Operations" },
   // ── the commercial chain wrapped around it ─────────────────────────────────
   { key: "purchase", label: "Purchase" },
+  // Inventory planning sheets — stock cover across the books and what to reorder. Placed
+  // straight after Purchase because the decision these sheets serve is the next purchase.
+  // Ink IMS is the first of several IMS sheets. Every new one is tagged `ims` and lands here,
+  // so the heading is kept even while the group holds just one (02-10-2026).
+  { key: "ims", label: "IMS Sheet", keepHeading: true },
   // Everything customer-facing, from the lead through onboarding and dispatch to
   // collecting the money. Order to Dispatch and New Customer Onboarding live here
   // rather than in a process group of their own: both are steps in the sales book,
   // and a reader looking for "where did that order go?" starts from sales.
   { key: "sales", label: "Sales & Receivables" },
   // ── the functions that support all of it ───────────────────────────────────
+  // HR also carries Asset Maintenance (its own "Asset" group until 02-10-2026, moved here
+  // at the business's request) and the HR Handbook row (core/workspace/homeNav.tsx).
   { key: "hr", label: "HR" },
+  // The training recordings, one group of their own (asked for 02-10-2026). Each video is a
+  // OneDrive / SharePoint link — the portal keeps the link, never the file (apps/training-videos/).
+  { key: "training", label: "Training Videos" },
   { key: "control", label: "Control" },
   // Not a web app — the mobile grant gates login to the Orange One mobile Leads
   // app. It appears in the permission screens only, never in the left menu.

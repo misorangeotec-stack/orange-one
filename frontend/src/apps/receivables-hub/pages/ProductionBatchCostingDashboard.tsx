@@ -30,7 +30,7 @@ import {
 } from "recharts";
 import {
   ArrowDown, ArrowLeft, ArrowUp, Boxes, CalendarRange, ChevronRight, Factory, FlaskConical, IndianRupee,
-  Layers, Palette, Percent, Receipt, Recycle, RotateCcw, Scale, Table2, TrendingUp, Wallet, X,
+  Layers, Palette, Percent, Receipt, Recycle, RotateCcw, Scale, ShoppingCart, Table2, TrendingUp, Wallet, X,
 } from "lucide-react";
 import { cn } from "@hub/lib/utils";
 import { Button } from "@hub/components/ui/button";
@@ -38,8 +38,6 @@ import SalesPanel from "@hub/components/masterreports/SalesPanel";
 import { Sheet, SheetContent } from "@hub/components/ui/sheet";
 import { MultiSelectFilter, type MultiSelectOption } from "@hub/components/MultiSelectFilter";
 import { ScrollableTable } from "@/core/shared/components/ScrollableTable";
-import { FitTh, ResetWidths } from "@/shared/components/ui/ColumnResizer";
-import { useColumnWidths } from "@/shared/lib/useColumnWidths";
 import { usePagination } from "@/shared/lib/usePagination";
 import Pagination from "@/shared/components/ui/Pagination";
 import { fmtSales, salesFyOptions } from "@hub/lib/salesReport";
@@ -55,9 +53,19 @@ import {
   type BatchSummary, type MonthPoint,
 } from "@hub/lib/batchCostingDashboard";
 import {
-  EXPENSE_BLOCKS, costPerKg, expenseTotals, loadProductionExpenses, type ExpenseBlock,
+  EXPENSE_BLOCKS, blockPerKg, blockTotal, costPerKg, expenseTotals, glOptions, loadProductionExpenses,
+  overheadOf, useCostingGls, type ExpenseBlock,
 } from "@hub/lib/productionExpenses";
-import { loadPackingMaterial, packingFor, packingTotals } from "@hub/lib/packingMaterial";
+import { CostingGlPicker } from "@hub/components/CostingGlPicker";
+import {
+  batchPurchaseCost, loadLotPurchases, purchaseNote, purchaseOf, type BatchPurchaseCost, type LotPurchase,
+} from "@hub/lib/lotRates";
+import {
+  PanelFill, ResetLayout, ResizeTh, bodyResize, cellStyle, usePanelSize, useTableLayout,
+} from "@hub/components/ResizeKit";
+import {
+  loadPackingMaterial, packingFor, packingLinesFor, packingTotals, type PackedInto, type PackingLineFor,
+} from "@hub/lib/packingMaterial";
 import { useReportAccess } from "@hub/lib/reportAccess";
 import { appBasePath } from "@/apps/appInfo";
 
@@ -90,6 +98,17 @@ const tLabel = (n: number) => fmtTonnes(n);
 
 /** One accent per KPI tile — identity, not rank, so a tile keeps its colour whatever the filters. */
 const KPI_COLORS = ["#2563eb", "#16a34a", "#ea580c", "#a16207", "#7c3aed", "#0d9488"];
+/** The expense blocks keep the Expenses page's colours: Direct, Indirect, Purchase. */
+const BLOCK_ACCENT: Record<ExpenseBlock, string> = {
+  "Direct Expenses": KPI_COLORS[3],
+  "Indirect Expenses": KPI_COLORS[4],
+  "Purchase Accounts": "#be185d",
+};
+const BLOCK_ICON: Record<ExpenseBlock, typeof Receipt> = {
+  "Direct Expenses": Receipt,
+  "Indirect Expenses": Wallet,
+  "Purchase Accounts": ShoppingCart,
+};
 /** Year bars: the FY is the entity, so the colour follows the year, oldest first. */
 const FY_COLORS = ["#7c3aed", "#2563eb", "#0d9488", "#ea580c"];
 
@@ -110,7 +129,7 @@ const partOf = (b: BatchSummary) => b.fg_item || "(No finished good)";
 const batchOf = (b: BatchSummary) => b.voucher_no || "(No number)";
 
 type SortKey = "vch_date" | "voucher_no" | "fg_item" | "item_category" | "colour" | "fg_kgs" |
-  "cost_per_kg" | "rm_value" | "scrap_out" | "scrap_in";
+  "cost_per_kg" | "pur_per_kg" | "rm_value" | "rm_purchase" | "scrap_out" | "scrap_in";
 
 export default function ProductionBatchCostingDashboard() {
   const [params, setParams] = useSearchParams();
@@ -133,7 +152,7 @@ export default function ProductionBatchCostingDashboard() {
     queryFn: () => loadLatestProductionDate(fyOptions[0]),
     staleTime: 5 * 60 * 1000,
   });
-  // The P&L side: Direct & Indirect Expenses of this company (lib/productionExpenses.ts).
+  // The P&L side: Direct, Indirect and Purchase Accounts of this company (lib/productionExpenses.ts).
   const { data: expenseRows, isLoading: expLoading } = useQuery({
     queryKey: ["productionExpenses", fyOptions.join(",")],
     queryFn: () => loadProductionExpenses(fyOptions),
@@ -166,6 +185,24 @@ export default function ProductionBatchCostingDashboard() {
    */
   const [showExpenses, setShowExpenses] = useState(false);
   const [showBreakdowns, setShowBreakdowns] = useState(false);
+  /**
+   * Each consumed lot's own purchase rate (lib/lotRates.ts): the production entry charges the
+   * item's AVERAGE cost, so the Batches table and the batch panel show the lot's purchase rate
+   * beside it.
+   */
+  const { data: lotPurchases } = useQuery({
+    queryKey: ["lotPurchases", fyOptions.join(","), rows.length],
+    queryFn: () => loadLotPurchases(rows),
+    enabled: rows.length > 0,
+    staleTime: 10 * 60 * 1000,
+  });
+  /** Batch key → its RM re-valued at lot purchase rates. */
+  const purchaseByBatch = useMemo(() => {
+    if (!lotPurchases) return undefined;
+    const m = new Map<string, BatchPurchaseCost>();
+    for (const [key, lines] of linesByBatch) m.set(key, batchPurchaseCost(lines, lotPurchases));
+    return m;
+  }, [lotPurchases, linesByBatch]);
 
   /* -------- filters: one bar, everything below it obeys -------- */
   const [years, setYears] = useState<string[]>(() => {
@@ -286,6 +323,7 @@ export default function ProductionBatchCostingDashboard() {
   const colourSlices = useMemo(() => sliceBy(without("colour"), colourOf).filter((s) => s.kgs > 0), [without]);
   const rm = useMemo(() => topRawMaterials(rows, new Set(batches.map((b) => b.key))), [rows, batches]);
 
+
   /**
    * EXPENSES FOLLOW YEAR AND MONTH, NOTHING ELSE. An expense belongs to the company and a date, not
    * to a batch — so the colour/category/sub-group/particular/batch filters cannot narrow it, and the
@@ -293,9 +331,15 @@ export default function ProductionBatchCostingDashboard() {
    * slices of the year.
    */
   const batchFilterOn = !!(colours.length || cats.length || subs.length || parts.length || batchNos.length);
-  const expenses = useMemo(() => expenseTotals(
-    (expenseRows ?? []).filter((e) => pick(years, `FY ${e.fy}`) && pick(months, e.month))),
+  /** Which ledgers count — the Direct / Indirect / Purchase GL pickers, shared with the Expenses page. */
+  const gls = useCostingGls();
+  const expensesInPeriod = useMemo(
+    () => (expenseRows ?? []).filter((e) => pick(years, `FY ${e.fy}`) && pick(months, e.month)),
     [expenseRows, years, months]);
+  const glOpts = useMemo(() => glOptions(expensesInPeriod), [expensesInPeriod]);
+  const expenses = useMemo(
+    () => expenseTotals(expensesInPeriod.filter((e) => gls.isOn(e.block, e.ledger))),
+    [expensesInPeriod, gls]);
   const periodKgs = useMemo(() => kpis(
     allBatches.filter((b) => pick(years, yearOf(b)) && pick(months, monthOf(b)))), [allBatches, years, months]);
   /**
@@ -305,6 +349,43 @@ export default function ProductionBatchCostingDashboard() {
    * picking a sub-group changes the material line and the full cost; the overhead rate holds.
    */
   const perKg = useMemo(() => costPerKg(k.costPerKg, expenses, periodKgs.fgKgs), [k, expenses, periodKgs]);
+  /**
+   * RM vs EXPENSE COST PER KG, MONTH BY MONTH. Three bars a month:
+   *   RM — production rate  Tally's own ₹ / KG of the selected batches (the average-cost value)
+   *   RM — purchase rate    the same batches with each lot at its purchase / conversion rate
+   *   Expenses              the month's ticked expenses ÷ the company's output that month
+   * Expenses follow year/month only (see above); RM follows every filter.
+   */
+  const costMonths = useMemo(() => {
+    const expByMonth = new Map<string, number>();
+    for (const e of expensesInPeriod) {
+      if (!gls.isOn(e.block, e.ledger)) continue;
+      const ym = e.vch_date.slice(0, 6);
+      expByMonth.set(ym, (expByMonth.get(ym) ?? 0) + e.amount);
+    }
+    const companyKgs = new Map<string, number>();
+    for (const b of allBatches) {
+      if (!pick(years, yearOf(b)) || !pick(months, monthOf(b))) continue;
+      companyKgs.set(b.month, (companyKgs.get(b.month) ?? 0) + b.fg_kgs);
+    }
+    return monthPoints.map((m) => {
+      const mb = batches.filter((b) => b.month === m.month);
+      let rm = 0, rmPur = 0;
+      for (const b of mb) {
+        rm += b.rm_value;
+        rmPur += purchaseByBatch?.get(b.key)?.rmAtPurchase ?? b.rm_value;
+      }
+      const rmProd = m.costPerKg;
+      const kgs = companyKgs.get(m.month) ?? 0;
+      return {
+        month: m.month,
+        label: m.label,
+        rmProd,
+        rmPur: rmProd == null || !purchaseByBatch ? null : rmProd * (rm ? rmPur / rm : 1),
+        expense: kgs > 0 ? (expByMonth.get(m.month) ?? 0) / kgs : null,
+      };
+    });
+  }, [expensesInPeriod, gls, allBatches, years, months, monthPoints, batches, purchaseByBatch]);
   /**
    * PACKING DOES FOLLOW THE PRODUCT FILTERS — unlike the expenses above. The voucher that issues a
    * cap also brings the packed goods back in, so the cap is charged to the colour, category and
@@ -317,42 +398,49 @@ export default function ProductionBatchCostingDashboard() {
     [packingRows, years, months]);
   const packing = useMemo(() => packingTotals(packInPeriod), [packInPeriod]);
   const productFilterOn = !!(colours.length || cats.length || subs.length || parts.length);
-  const packingForSelection = useMemo(() => packingFor(
-    packInPeriod,
-    productFilterOn
-      ? (pk) => pick(colours, pk.colour || "(No colour)") &&
-                pick(cats, (pk.group ?? "Others") as string) &&
-                pick(subs, pk.category || "(None)") &&
-                pick(parts, pk.item || "(No finished good)")
-      : undefined),
-    [packInPeriod, productFilterOn, colours, cats, subs, parts]);
+  /** Which finished goods the product filters keep — shared by the total and its entry list. */
+  const packKeep = useMemo(() => productFilterOn
+    ? (pk: PackedInto) => pick(colours, pk.colour || "(No colour)") &&
+                          pick(cats, (pk.group ?? "Others") as string) &&
+                          pick(subs, pk.category || "(None)") &&
+                          pick(parts, pk.item || "(No finished good)")
+    : undefined,
+    [productFilterOn, colours, cats, subs, parts]);
+  const packingForSelection = useMemo(() => packingFor(packInPeriod, packKeep), [packInPeriod, packKeep]);
+  /** The entries behind that total, for the panel "+ Packing material" opens. */
+  const [showPacking, setShowPacking] = useState(false);
+  const packingLines = useMemo(
+    () => (showPacking ? packingLinesFor(packInPeriod, packKeep) : []),
+    [showPacking, packInPeriod, packKeep]);
   /** The output the packing above went on: every filter except batch no. */
   const productKgs = useMemo(() => kpis(allBatches.filter((b) =>
     pick(years, yearOf(b)) && pick(months, monthOf(b)) && pick(colours, colourOf(b)) &&
     pick(cats, catOf(b)) && pick(subs, subOf(b)) && pick(parts, partOf(b)))),
     [allBatches, years, months, colours, cats, subs, parts]);
   const packPerKg = productKgs.fgKgs > 0 ? packingForSelection / productKgs.fgKgs : 0;
-  const fullPerKg = perKg.materialPerKg == null
-    ? null
-    : perKg.materialPerKg + packPerKg + (perKg.directPerKg ?? 0) + (perKg.indirectPerKg ?? 0);
+  const fullPerKg = perKg.materialPerKg == null ? null : perKg.materialPerKg + packPerKg + overheadOf(perKg);
 
   /**
    * COST BY COLOUR. Each colour carries its own material rate — Tally's, weighted by batch size —
    * and its own packing rate, because the packing voucher names the goods it packed. What it cannot
    * carry of its own is the overhead: Tally ties no expense to a colour, so every colour takes the
-   * period's Direct + Indirect over the period's output, and spreading it any other way (by value,
+   * period's ticked expenses over the period's output, and spreading it any other way (by value,
    * by batch count) would be an assumption rather than a figure from the books.
    */
-  const overheadPerKg = (perKg.directPerKg ?? 0) + (perKg.indirectPerKg ?? 0);
+  const overheadPerKg = overheadOf(perKg);
   /** Packing per KG for ONE colour: what was packed onto it, over what that colour produced. */
   const packingByColour = useMemo(() => {
     const m = new Map<string, number>();
     for (const c of colourSlices) {
-      const v = packingFor(packInPeriod, (pk) => (pk.colour || "(No colour)") === c.name);
+      // The colour's packing on the SAME product slice as its KGS (category, sub-group, particular),
+      // or a filtered colour divides the whole company's packing of it by one category's output.
+      const v = packingFor(packInPeriod, (pk) => (pk.colour || "(No colour)") === c.name &&
+        pick(cats, (pk.group ?? "Others") as string) && pick(subs, pk.category || "(None)") &&
+        pick(parts, pk.item || "(No finished good)"));
       m.set(c.name, c.kgs > 0 ? v / c.kgs : 0);
     }
     return m;
-  }, [colourSlices, packInPeriod]);
+  }, [colourSlices, packInPeriod, cats, subs, parts]);
   const colourFull = (name: string, costPerKg: number | null) =>
     costPerKg == null ? null : costPerKg + (packingByColour.get(name) ?? 0) + overheadPerKg;
   const catTotal = catSlices.reduce((s, c) => s + c.kgs, 0);
@@ -417,6 +505,12 @@ export default function ProductionBatchCostingDashboard() {
             {fmtInt(batches.length)} batches{span ? ` · ${span}` : ""}
           </span>
         </div>
+        <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-2 border-t border-border/60 pt-2">
+          <span className="text-[10px] font-semibold uppercase tracking-wide text-foreground/70">Count in costing</span>
+          {EXPENSE_BLOCKS.map((b) => (
+            <CostingGlPicker key={b} block={b} options={glOpts} gls={gls} accent={BLOCK_ACCENT[b]} />
+          ))}
+        </div>
       </div>
 
       {errText && (
@@ -442,16 +536,15 @@ export default function ProductionBatchCostingDashboard() {
       {/* ── Output analysis ───────────────────────────────────────────────── */}
       <SectionHeading>Output analysis</SectionHeading>
       <div className="grid gap-3 lg:grid-cols-3">
-        <SalesPanel title="Year-wise output (T)" icon={CalendarRange} loading={loading} empty={empty} emptyMessage={emptyMsg}
-                    subtitle={pickedNote(years, "year", barPicked.includes("year"))} resizable bars>
-          {(sz) => (
-          <ResponsiveContainer width="100%" height={sz.h(300)}>
+        <SalesPanel title="Year-wise output (T)" sizeKey="year-output" icon={CalendarRange} loading={loading} empty={empty} emptyMessage={emptyMsg}
+                    subtitle={pickedNote(years, "year", barPicked.includes("year"))}>
+          <PanelFill base={300}>{(bar) => (<ResponsiveContainer width="100%" height="100%">
             <BarChart data={fyPoints} margin={{ top: 22, right: 12, left: -4, bottom: 0 }}>
               <CartesianGrid stroke={CHART_GRID} vertical={false} />
               <XAxis dataKey="label" tick={AXIS_TICK} tickLine={false} axisLine={{ stroke: CHART_GRID }} />
               <YAxis tick={AXIS_TICK} tickLine={false} axisLine={false} tickFormatter={tickTonnes} width={52} />
               <Tooltip cursor={{ fill: "hsl(220 15% 95%)" }} content={<FyTooltip />} />
-              <Bar dataKey="kgs" maxBarSize={sz.bar(90)} radius={[4, 4, 0, 0]} className="cursor-pointer"
+              <Bar dataKey="kgs" maxBarSize={bar(90)} radius={[4, 4, 0, 0]} className="cursor-pointer"
                    onClick={(d: { label?: string }, _i: number, e?: { stopPropagation?: () => void }) => {
                      e?.stopPropagation?.();
                      if (d?.label) fromBar("year", years)(d.label);
@@ -463,22 +556,20 @@ export default function ProductionBatchCostingDashboard() {
                            style={{ fontSize: 11, fill: LABEL_FILL, fontWeight: 600 }} />
               </Bar>
             </BarChart>
-          </ResponsiveContainer>
-          )}
+          </ResponsiveContainer>)}</PanelFill>
         </SalesPanel>
 
-        <SalesPanel title="Monthly output (T)" icon={TrendingUp} loading={loading} empty={empty} emptyMessage={emptyMsg}
+        <SalesPanel title="Monthly output (T)" sizeKey="month-output" icon={TrendingUp} loading={loading} empty={empty} emptyMessage={emptyMsg}
                     subtitle={months.length ? pickedNote(months, "month", barPicked.includes("month"))
-                              : "every month since production began — click a bar to filter"} resizable bars>
-          {(sz) => (
-          <ResponsiveContainer width="100%" height={sz.h(300)}>
+                              : "every month since production began — click a bar to filter"}>
+          <PanelFill base={300}>{(bar) => (<ResponsiveContainer width="100%" height="100%">
             <BarChart data={monthBars} margin={{ top: 22, right: 8, left: -4, bottom: 14 }}>
               <CartesianGrid stroke={CHART_GRID} vertical={false} />
               <XAxis dataKey="label" tick={{ ...AXIS_TICK, fontSize: 10 }} tickLine={false}
                      axisLine={{ stroke: CHART_GRID }} interval={0} angle={-40} textAnchor="end" height={44} />
               <YAxis tick={AXIS_TICK} tickLine={false} axisLine={false} tickFormatter={tickTonnes} width={52} />
               <Tooltip cursor={{ fill: "hsl(220 15% 95%)" }} content={<MonthTooltip />} />
-              <Bar dataKey="totalKgs" fill={KPI_COLORS[0]} maxBarSize={sz.bar(26)} radius={[4, 4, 0, 0]} className="cursor-pointer"
+              <Bar dataKey="totalKgs" fill={KPI_COLORS[0]} maxBarSize={bar(26)} radius={[4, 4, 0, 0]} className="cursor-pointer"
                    onClick={(d: { label?: string }, _i: number, e?: { stopPropagation?: () => void }) => {
                      e?.stopPropagation?.();
                      if (d?.label) fromBar("month", months)(d.label);
@@ -488,20 +579,18 @@ export default function ProductionBatchCostingDashboard() {
                            style={{ fontSize: 9.5, fill: LABEL_FILL }} />
               </Bar>
             </BarChart>
-          </ResponsiveContainer>
-          )}
+          </ResponsiveContainer>)}</PanelFill>
         </SalesPanel>
 
-        <SalesPanel title="Output by product category (T)" icon={Layers} loading={loading} empty={empty} emptyMessage={emptyMsg}
-                    subtitle={pickedNote(cats, "category", barPicked.includes("cat"))} resizable bars>
-          {(sz) => (
-          <ResponsiveContainer width="100%" height={sz.h(300)}>
+        <SalesPanel title="Output by product category (T)" sizeKey="category-output" icon={Layers} loading={loading} empty={empty} emptyMessage={emptyMsg}
+                    subtitle={pickedNote(cats, "category", barPicked.includes("cat"))}>
+          <PanelFill base={300}>{(bar) => (<ResponsiveContainer width="100%" height="100%">
             <BarChart data={catSlices} margin={{ top: 22, right: 12, left: -4, bottom: 0 }}>
               <CartesianGrid stroke={CHART_GRID} vertical={false} />
               <XAxis dataKey="name" tick={AXIS_TICK} tickLine={false} axisLine={{ stroke: CHART_GRID }} interval={0} />
               <YAxis tick={AXIS_TICK} tickLine={false} axisLine={false} tickFormatter={tickTonnes} width={52} />
               <Tooltip cursor={{ fill: "hsl(220 15% 95%)" }} content={<CatTooltip total={catTotal} />} />
-              <Bar dataKey="kgs" maxBarSize={sz.bar(70)} radius={[4, 4, 0, 0]} className="cursor-pointer"
+              <Bar dataKey="kgs" maxBarSize={bar(70)} radius={[4, 4, 0, 0]} className="cursor-pointer"
                    onClick={(d: { name?: string }, _i: number, e?: { stopPropagation?: () => void }) => {
                      e?.stopPropagation?.();
                      if (d?.name) fromBar("cat", cats)(d.name);
@@ -518,15 +607,14 @@ export default function ProductionBatchCostingDashboard() {
                 />
               </Bar>
             </BarChart>
-          </ResponsiveContainer>
-          )}
+          </ResponsiveContainer>)}</PanelFill>
         </SalesPanel>
       </div>
 
       {/* ── Expenses & the full cost of a kilogram ────────────────────────── */}
       <Fold title="Expenses & full cost" open={showExpenses} onToggle={() => setShowExpenses((v) => !v)}
-            hint="what a kilogram cost, and the direct and indirect expenses behind it">
-      <div className="grid gap-3 lg:grid-cols-3">
+            hint="what a kilogram cost, and the ticked expenses behind it">
+      <div className="grid gap-3 lg:grid-cols-2 2xl:grid-cols-4">
         <SalesPanel className="lg:col-span-1" title="What a kilogram cost" icon={Scale} loading={expLoading}
                     subtitle={batchFilterOn
                       ? "the selection's material + the company's overhead rate for the period"
@@ -538,46 +626,45 @@ export default function ProductionBatchCostingDashboard() {
                         ? "the Avg cost / KG above — Tally's own cost of what these batches consumed"
                         : "Tally's own cost of what each batch consumed"} />
             <CostLine label="+ Packing material" value={fmtPerKg(packPerKg)} accent={KPI_COLORS[5]}
+                      onOpen={() => setShowPacking(true)}
                       note={productFilterOn
                         ? `${fmtSales(packingForSelection)} of caps, cans and stickers packed onto this selection`
                         : `${fmtSales(packing.consumedValue)} of caps, cans and stickers — company-wide`} />
-            <CostLine label="+ Direct expenses" value={fmtPerKg(perKg.directPerKg)} accent={KPI_COLORS[3]}
+            <CostLine label="+ Direct expenses" value={fmtPerKg(perKg.directPerKg)} accent={BLOCK_ACCENT["Direct Expenses"]}
                       note={`${fmtSales(expenses.direct)} over ${fmtTonnes(perKg.kgs)} — company-wide`} />
-            <CostLine label="+ Indirect expenses" value={fmtPerKg(perKg.indirectPerKg)} accent={KPI_COLORS[4]}
+            <CostLine label="+ Indirect expenses" value={fmtPerKg(perKg.indirectPerKg)} accent={BLOCK_ACCENT["Indirect Expenses"]}
                       note={`${fmtSales(expenses.indirect)} over ${fmtTonnes(perKg.kgs)} — company-wide`} />
+            <CostLine label="+ Purchase accounts" value={fmtPerKg(perKg.purchasePerKg)} accent={BLOCK_ACCENT["Purchase Accounts"]}
+                      note={`${fmtSales(expenses.purchase)} over ${fmtTonnes(perKg.kgs)} — ticked ledgers only`} />
             <div className="flex items-baseline justify-between gap-2 rounded-md bg-muted/50 px-2.5 py-2">
               <span className="text-[12px] font-semibold text-foreground">Full cost per KG</span>
               <span className="text-[19px] font-bold tabular-nums text-foreground">{fmtPerKg(fullPerKg)}</span>
             </div>
-            <p className="text-[10.5px] leading-snug text-muted-foreground">
-              Absorption, the plainest kind: nothing in Tally ties an expense or a cap to a batch, an
-              item or a colour, so the period's packing and overhead are spread evenly over the
-              period's output and added to whichever product is selected. Purchase Accounts are left
-              out — that is the material, already counted on the batch — and so are warehouse →
-              production moves of packing, which come straight back in on the same voucher.
-            </p>
           </div>
         </SalesPanel>
 
         {EXPENSE_BLOCKS.map((block) => {
           const rowsFor = expenses.groups.filter((g) => g.block === block);
-          const total = block === "Direct Expenses" ? expenses.direct : expenses.indirect;
           return (
             <SalesPanel
               key={block}
               title={block}
-              icon={block === "Direct Expenses" ? Receipt : Wallet}
+              sizeKey={`block-${block}`}
+              bodyHeight={380}
+              icon={BLOCK_ICON[block]}
               loading={expLoading}
               empty={!rowsFor.length}
-              emptyMessage="No expense lines in this period."
-              subtitle={`${fmtSales(total)} · ${fmtPerKg(block === "Direct Expenses" ? perKg.directPerKg : perKg.indirectPerKg)} / KG · as Tally's P&L groups them`}
+              emptyMessage={block === "Purchase Accounts"
+                ? "No purchase ledger ticked — pick one under Purchase GL to add it."
+                : "Nothing counted in this period."}
+              subtitle={`${fmtSales(blockTotal(expenses, block))} · ${fmtPerKg(blockPerKg(perKg, block))} / KG · ticked ledgers`}
             >
               <BarList
                 rows={rowsFor.map((g) => ({
                   key: g.group,
                   name: g.group,
                   value: Math.abs(g.amount),
-                  color: block === "Direct Expenses" ? KPI_COLORS[3] : KPI_COLORS[4],
+                  color: BLOCK_ACCENT[block],
                   right: fmtPct(g.share),
                   detail: fmtSales(g.amount),
                   title: `${g.group}\n${fmtSales(g.amount)} · ${g.lines} line${g.lines === 1 ? "" : "s"} · ${fmtPct(g.share)} of ${block.toLowerCase()}`,
@@ -590,12 +677,12 @@ export default function ProductionBatchCostingDashboard() {
       </div>
       {batchFilterOn && (
         <p className="text-[11px] text-muted-foreground">
-          <b className="font-semibold text-foreground">The two expense panels do not react to this filter, and cannot.</b>{" "}
+          <b className="font-semibold text-foreground">The expense panels do not react to this filter, and cannot.</b>{" "}
           Packing does — a packing voucher names the goods it packed, so a cap is charged to the
           colour and sub-group it went on.{" "}
           An expense is booked against the company and a date, never against a batch — Tally holds no
-          link from electricity or salaries to a sub-group — so they stay the company's Direct and
-          Indirect expenses for the selected year/month, spread over everything it produced
+          link from electricity or salaries to a sub-group — so they stay the company's ticked
+          expenses for the selected year/month, spread over everything it produced
           ({fmtTonnes(perKg.kgs)}). The material line above does follow the filter, so the full cost
           reads: this product's own material plus the company's overhead rate.
         </p>
@@ -606,7 +693,7 @@ export default function ProductionBatchCostingDashboard() {
       <Fold title="Breakdowns" open={showBreakdowns} onToggle={() => setShowBreakdowns((v) => !v)}
             hint="by sub-group, and the raw materials the batches consumed">
       <div className="grid gap-3 lg:grid-cols-2">
-        <SalesPanel title="By sub-group" icon={FlaskConical} loading={loading} empty={empty} emptyMessage={emptyMsg}
+        <SalesPanel title="By sub-group" sizeKey="sub-group" bodyHeight={380} icon={FlaskConical} loading={loading} empty={empty} emptyMessage={emptyMsg}
                     subtitle={subs.length
                       ? `filtered to ${subs.join(", ")} — click it again, or any blank space, to clear`
                       : "click a bar to filter every panel by that sub-group"}
@@ -632,7 +719,7 @@ export default function ProductionBatchCostingDashboard() {
           </div>
         </SalesPanel>
 
-        <SalesPanel title="Top raw materials by value" icon={IndianRupee} loading={loading} empty={empty} emptyMessage={emptyMsg}
+        <SalesPanel title="Top raw materials by value" sizeKey="raw-materials" bodyHeight={380} icon={IndianRupee} loading={loading} empty={empty} emptyMessage={emptyMsg}
                     subtitle="what the batches consumed, ranked by ₹ — the top ten and everything else">
           <BarList
             rows={rm.map((r, i) => ({
@@ -648,9 +735,22 @@ export default function ProductionBatchCostingDashboard() {
       </div>
       </Fold>
 
+      {showPacking && (
+        <PackingSheet
+          lines={packingLines}
+          total={packingForSelection}
+          kgs={productKgs.fgKgs}
+          scope={productFilterOn
+            ? [colours, cats, subs, parts].flat().join(", ")
+            : "all products"}
+          onClose={() => setShowPacking(false)}
+        />
+      )}
+
       <BatchSheet
         batch={openBatch}
         lines={openBatch ? linesByBatch.get(openBatch.key) ?? [] : []}
+        purchases={lotPurchases}
         onClose={() => setOpenBatch(null)}
       />
 
@@ -658,7 +758,7 @@ export default function ProductionBatchCostingDashboard() {
         {/* The same ten colours, twice over: what each made and what its material cost, then the
             very same list costed at FULL cost — material plus the company's overhead per KG. Two
             panels rather than one with a toggle, so the two figures can be read side by side. */}
-        <SalesPanel title="By colour" icon={Palette} loading={loading} empty={empty} emptyMessage={emptyMsg}
+        <SalesPanel title="By colour" sizeKey="colour" bodyHeight={380} icon={Palette} loading={loading} empty={empty} emptyMessage={emptyMsg}
                     subtitle={pickedNote(colours, "colour", barPicked.includes("colour"))}>
           <BarList
             what="colour"
@@ -673,7 +773,7 @@ export default function ProductionBatchCostingDashboard() {
           />
         </SalesPanel>
 
-        <SalesPanel title="By colour — full cost" icon={Scale} loading={loading} empty={empty} emptyMessage={emptyMsg}
+        <SalesPanel title="By colour — full cost" sizeKey="colour-full" bodyHeight={380} icon={Scale} loading={loading} empty={empty} emptyMessage={emptyMsg}
                     subtitle={`material + the colour's own packing + ${fmtPerKg(overheadPerKg)} per KG of overhead`}>
           <BarList
             what="colour"
@@ -692,11 +792,39 @@ export default function ProductionBatchCostingDashboard() {
 
       {/* ── Cost & scrap ──────────────────────────────────────────────────── */}
       <SectionHeading>Cost &amp; scrap</SectionHeading>
+      <SalesPanel title="RM cost vs expense cost per KG, by month" icon={Scale} sizeKey="rm-vs-expense" bodyHeight={324}
+                  loading={loading} empty={empty} emptyMessage={emptyMsg}
+                  subtitle={purchaseByBatch
+                    ? "RM at Tally's production rate, RM at each lot's purchase rate, and the month's ticked expenses per KG"
+                    : "RM at Tally's production rate and expenses per KG — looking up lot purchase rates…"}>
+        <PanelFill base={300}>{(bar) => (<ResponsiveContainer width="100%" height="100%">
+          <BarChart data={costMonths} margin={{ top: 18, right: 8, left: -4, bottom: 14 }} barGap={2}>
+            <CartesianGrid stroke={CHART_GRID} vertical={false} />
+            <XAxis dataKey="label" tick={{ ...AXIS_TICK, fontSize: 10 }} tickLine={false}
+                   axisLine={{ stroke: CHART_GRID }} interval={0} angle={-40} textAnchor="end" height={44} />
+            <YAxis tick={AXIS_TICK} tickLine={false} axisLine={false} width={52}
+                   tickFormatter={(v: number) => `₹${Math.round(v)}`} />
+            <Tooltip cursor={{ fill: "hsl(220 15% 95%)" }} content={<RmExpenseTooltip />} />
+            <Legend iconType="circle" iconSize={8} wrapperStyle={{ fontSize: 11 }} />
+            <Bar dataKey="rmProd" name="RM — production rate" fill={SERIES_1} maxBarSize={bar(18)} radius={[4, 4, 0, 0]}>
+              <LabelList dataKey="rmProd" position="top" formatter={(v: number) => (v ? `${Math.round(v)}` : "")}
+                         style={{ fontSize: 9, fill: LABEL_FILL }} />
+            </Bar>
+            <Bar dataKey="rmPur" name="RM — purchase rate" fill={KPI_COLORS[0]} maxBarSize={bar(18)} radius={[4, 4, 0, 0]}>
+              <LabelList dataKey="rmPur" position="top" formatter={(v: number) => (v ? `${Math.round(v)}` : "")}
+                         style={{ fontSize: 9, fill: LABEL_FILL }} />
+            </Bar>
+            <Bar dataKey="expense" name="Expenses" fill={KPI_COLORS[4]} maxBarSize={bar(18)} radius={[4, 4, 0, 0]}>
+              <LabelList dataKey="expense" position="top" formatter={(v: number) => (v ? `${Math.round(v)}` : "")}
+                         style={{ fontSize: 9, fill: LABEL_FILL }} />
+            </Bar>
+          </BarChart>
+        </ResponsiveContainer>)}</PanelFill>
+      </SalesPanel>
       <div className="grid gap-3 lg:grid-cols-2">
-        <SalesPanel title="Average cost per KG by month" icon={Scale} loading={loading} empty={empty} emptyMessage={emptyMsg}
-                    subtitle="value-weighted ₹ / KG — narrow to one sub-group or particular to follow a single product" resizable>
-          {(sz) => (
-          <ResponsiveContainer width="100%" height={sz.h(240)}>
+        <SalesPanel title="Average cost per KG by month" sizeKey="cost-month" bodyHeight={264} icon={Scale} loading={loading} empty={empty} emptyMessage={emptyMsg}
+                    subtitle="value-weighted ₹ / KG — narrow to one sub-group or particular to follow a single product">
+          <PanelFill base={240}>{(bar) => (<ResponsiveContainer width="100%" height="100%">
             <LineChart data={monthPoints} margin={{ top: 16, right: 16, left: -4, bottom: 14 }}>
               <CartesianGrid stroke={CHART_GRID} vertical={false} />
               <XAxis dataKey="label" tick={{ ...AXIS_TICK, fontSize: 10 }} tickLine={false}
@@ -709,14 +837,12 @@ export default function ProductionBatchCostingDashboard() {
                     dot={{ r: 3.5, fill: SERIES_1, stroke: "#fff", strokeWidth: 2 }}
                     activeDot={{ r: 6, fill: SERIES_1, stroke: "#fff", strokeWidth: 2 }} />
             </LineChart>
-          </ResponsiveContainer>
-          )}
+          </ResponsiveContainer>)}</PanelFill>
         </SalesPanel>
 
-        <SalesPanel title="Scrap by month" icon={Recycle} loading={loading} empty={empty} emptyMessage={emptyMsg}
-                    subtitle="produced on the output side vs re-used on the consumption side" resizable bars>
-          {(sz) => (
-          <ResponsiveContainer width="100%" height={sz.h(240)}>
+        <SalesPanel title="Scrap by month" sizeKey="scrap-month" bodyHeight={264} icon={Recycle} loading={loading} empty={empty} emptyMessage={emptyMsg}
+                    subtitle="produced on the output side vs re-used on the consumption side">
+          <PanelFill base={240}>{(bar) => (<ResponsiveContainer width="100%" height="100%">
             <BarChart data={monthPoints} margin={{ top: 10, right: 8, left: -4, bottom: 14 }} barGap={2}>
               <CartesianGrid stroke={CHART_GRID} vertical={false} />
               <XAxis dataKey="label" tick={{ ...AXIS_TICK, fontSize: 10 }} tickLine={false}
@@ -724,11 +850,10 @@ export default function ProductionBatchCostingDashboard() {
               <YAxis tick={AXIS_TICK} tickLine={false} axisLine={false} tickFormatter={tickTonnes} width={52} />
               <Tooltip cursor={{ fill: "hsl(220 15% 95%)" }} content={<ScrapTooltip />} />
               <Legend iconType="circle" iconSize={8} wrapperStyle={{ fontSize: 11 }} />
-              <Bar dataKey="scrapOut" name="Scrap produced" fill={KPI_COLORS[2]} maxBarSize={sz.bar(16)} radius={[4, 4, 0, 0]} />
-              <Bar dataKey="scrapIn" name="Scrap consumed" fill={SERIES_2} maxBarSize={sz.bar(16)} radius={[4, 4, 0, 0]} />
+              <Bar dataKey="scrapOut" name="Scrap produced" fill={KPI_COLORS[2]} maxBarSize={bar(16)} radius={[4, 4, 0, 0]} />
+              <Bar dataKey="scrapIn" name="Scrap consumed" fill={SERIES_2} maxBarSize={bar(16)} radius={[4, 4, 0, 0]} />
             </BarChart>
-          </ResponsiveContainer>
-          )}
+          </ResponsiveContainer>)}</PanelFill>
         </SalesPanel>
       </div>
 
@@ -736,7 +861,7 @@ export default function ProductionBatchCostingDashboard() {
         <SalesPanel title="Batches" icon={Table2} loading={loading} empty={empty}
                     emptyMessage={emptyMsg} bodyClassName="p-0"
                     subtitle="every batch in the selection — click a batch no. to see what it produced and consumed">
-          <BatchTable batches={batches} onOpen={setOpenBatch} />
+          <BatchTable batches={batches} onOpen={setOpenBatch} purchase={purchaseByBatch} />
         </SalesPanel>
       </div>
     </div>
@@ -843,12 +968,14 @@ function BarList({ rows, rightHeader, selected, onSelect, what = "value" }: {
   what?: string;
 }) {
   const max = Math.max(1, ...rows.map((r) => r.value));
+  // Inside a reader-sized panel, Bars − / + thickens the bars and opens the rows up with them.
+  const bs = usePanelSize()?.barScale ?? 1;
   const picking = !!onSelect;
   const isOn = (name: string) => !selected?.length || selected.includes(name);
   return (
     <div className="text-[12px]">
       <div className="mb-1 flex justify-end text-[10px] font-medium uppercase tracking-wide text-muted-foreground">{rightHeader}</div>
-      <ul className="space-y-1.5">
+      <ul className="flex flex-col" style={{ gap: Math.round(6 * bs) }}>
         {rows.map((r) => (
           <li
             key={r.key}
@@ -871,7 +998,7 @@ Click to filter every panel by this ${what}` : r.title}
                 </span>
                 <span className="shrink-0 text-[11px] text-muted-foreground tabular-nums">{r.detail}</span>
               </div>
-              <div className="mt-0.5 h-1.5 w-full rounded-full bg-muted/50">
+              <div className="mt-0.5 w-full rounded-full bg-muted/50" style={{ height: Math.max(2, Math.round(6 * bs)) }}>
                 <div className="h-full rounded-full" style={{ width: `${(r.value / max) * 100}%`, background: r.color }} />
               </div>
             </div>
@@ -886,6 +1013,37 @@ Click to filter every panel by this ${what}` : r.title}
 /* ------------------------------------------------------------------ tooltips */
 
 interface MonthTip { active?: boolean; payload?: Array<{ payload: MonthPoint }> }
+
+/** RM at both rates and expenses for one month — with the gap between the two RM rates. */
+function RmExpenseTooltip({ active, payload }: {
+  active?: boolean;
+  payload?: Array<{ payload: { label: string; rmProd: number | null; rmPur: number | null; expense: number | null } }>;
+}) {
+  const m = active && payload?.[0]?.payload;
+  if (!m) return null;
+  const gap = m.rmProd != null && m.rmPur != null ? m.rmProd - m.rmPur : null;
+  const row = (label: string, v: number | null, colour: string) => (
+    <div className="flex items-center justify-between gap-4">
+      <span className="inline-flex items-center gap-1.5 text-muted-foreground">
+        <span className="h-2 w-2 rounded-full" style={{ background: colour }} />{label}
+      </span>
+      <span className="tabular-nums text-foreground">{fmtPerKg(v)}</span>
+    </div>
+  );
+  return (
+    <div className="rounded-lg border border-border bg-surface px-3 py-2 text-[12px] shadow-md">
+      <div className="font-semibold text-foreground">{m.label}</div>
+      {row("RM — production rate", m.rmProd, SERIES_1)}
+      {row("RM — purchase rate", m.rmPur, KPI_COLORS[0])}
+      {row("Expenses", m.expense, KPI_COLORS[4])}
+      {gap != null && Math.abs(gap) >= 0.01 && (
+        <div className="mt-1 border-t border-border pt-1" style={{ color: gap > 0 ? "#dc2626" : "#16a34a" }}>
+          Production rate is {fmtPerKg(Math.abs(gap))} / KG {gap > 0 ? "above" : "below"} the lots' purchase rate
+        </div>
+      )}
+    </div>
+  );
+}
 
 function MonthTooltip({ active, payload }: MonthTip) {
   const m = active && payload?.[0]?.payload;
@@ -983,16 +1141,18 @@ const CATEGORY_PILL: Record<BatchCostingRow["category"], string> = {
  * consumed (negative) — under a strip of the batch's own figures. Closes on the X, on Escape and
  * on a click outside, all of which the Sheet handles.
  */
-const SHEET_COL_IDS = ["particulars", "category", "quantity", "rate", "amount", "lot"] as const;
-
-function BatchSheet({ batch, lines, onClose }: {
+function BatchSheet({ batch, lines, purchases, onClose }: {
   batch: BatchSummary | null; lines: BatchCostingRow[]; onClose: () => void;
+  /** Each lot's own purchase rate, beside the average rate Tally charged on the line. */
+  purchases?: Map<string, LotPurchase>;
 }) {
   const { canSee } = useReportAccess();
-  const fit = useColumnWidths("tb", SHEET_COL_IDS, "production-batch-costing-dash-batch-sheet");
   if (!batch) return null;
   const fg = lines.filter((l) => l.category === "Finished Good");
   const rm = lines.filter((l) => l.category === "RM Consumption");
+  const pc = purchases ? batchPurchaseCost(lines, purchases) : null;
+  const purPerKg = pc && batch.cost_per_kg != null && batch.rm_value
+    ? batch.cost_per_kg * (pc.rmAtPurchase / batch.rm_value) : null;
   return (
     <Sheet open onOpenChange={(o) => !o && onClose()}>
       <SheetContent side="right" className="w-full p-0 sm:max-w-[840px] flex flex-col gap-0">
@@ -1017,27 +1177,27 @@ function BatchSheet({ batch, lines, onClose }: {
           </button>
         </div>
 
-        <div className="grid grid-cols-2 gap-2 border-b border-border px-4 py-3 sm:grid-cols-4">
+        <div className="grid grid-cols-2 gap-2 border-b border-border px-4 py-3 sm:grid-cols-5">
           <SheetFigure label="Output" value={fmtTonnes3(batch.fg_kgs)} sub={fmtKgs(batch.fg_kgs)} />
-          <SheetFigure label="Cost / KG" value={fmtPerKg(batch.cost_per_kg)} sub={`${fmtSales(batch.fg_value)} value`} />
+          <SheetFigure label="Production ₹ / KG" value={fmtPerKg(batch.cost_per_kg)} sub={`${fmtSales(batch.fg_value)} · Tally's average rate`} />
+          <SheetFigure label="Purchase ₹ / KG" value={pc ? fmtPerKg(purPerKg) : "…"}
+                       sub={pc ? `${fmtSales(pc.rmAtPurchase)} · lot rates, ${pc.covered.toFixed(0)}% matched` : "looking up lots"} />
           <SheetFigure label="RM consumed" value={fmtSales(batch.rm_value)} sub={`${rm.length} material${rm.length === 1 ? "" : "s"}`} />
           <SheetFigure label="Scrap" value={fmtTonnes3(batch.scrap_out)}
                        sub={batch.scrap_in ? `${fmtTonnes3(batch.scrap_in)} re-used` : "none re-used"} />
         </div>
 
         <div className="min-h-0 flex-1 overflow-auto px-4 py-3">
-          <div className="flex justify-end">
-            <ResetWidths fit={fit} cols={SHEET_COL_IDS} className="inline-flex items-center gap-1 text-[11px] text-primary hover:underline" />
-          </div>
           <table className="w-full border-collapse text-[12.5px]">
             <thead className="sticky top-0 bg-surface">
               <tr className="border-b border-border text-[10.5px] uppercase tracking-wide text-muted-foreground">
-                <FitTh fit={fit} col="particulars" className="py-1.5 pr-2 text-left font-semibold">Particulars</FitTh>
-                <FitTh fit={fit} col="category" className="px-2 py-1.5 text-left font-semibold">Category</FitTh>
-                <FitTh fit={fit} col="quantity" className="px-2 py-1.5 text-right font-semibold">Quantity</FitTh>
-                <FitTh fit={fit} col="rate" className="px-2 py-1.5 text-right font-semibold">Rate</FitTh>
-                <FitTh fit={fit} col="amount" className="px-2 py-1.5 text-right font-semibold">Amount</FitTh>
-                <FitTh fit={fit} col="lot" className="pl-2 py-1.5 text-left font-semibold">Lot</FitTh>
+                <th className="py-1.5 pr-2 text-left font-semibold">Particulars</th>
+                <th className="px-2 py-1.5 text-left font-semibold">Category</th>
+                <th className="px-2 py-1.5 text-right font-semibold">Quantity</th>
+                <th className="px-2 py-1.5 text-right font-semibold">Rate</th>
+                <th className="px-2 py-1.5 text-right font-semibold" title="The lot's own purchase rate">Lot purchase rate</th>
+                <th className="px-2 py-1.5 text-right font-semibold">Amount</th>
+                <th className="pl-2 py-1.5 text-left font-semibold">Lot</th>
               </tr>
             </thead>
             <tbody>
@@ -1056,6 +1216,7 @@ function BatchSheet({ batch, lines, onClose }: {
                   </td>
                   <td className="px-2 py-1.5 text-right tabular-nums whitespace-nowrap">{fmtRegisterQty(l.qty, l.uom)}</td>
                   <td className="px-2 py-1.5 text-right tabular-nums italic text-muted-foreground">{fmtMoney(l.rate)}</td>
+                  <LotRateCell line={l} purchases={purchases} />
                   <td className="px-2 py-1.5 text-right tabular-nums whitespace-nowrap">{l.amount ? fmtMoney(l.amount) : ""}</td>
                   <td className="pl-2 py-1.5 text-[11.5px] text-muted-foreground" title={l.batches.join("\n")}>
                     {l.batches.length > 1 ? `${l.batches[0]} +${l.batches.length - 1}` : l.batches[0] ?? ""}
@@ -1084,14 +1245,154 @@ function BatchSheet({ batch, lines, onClose }: {
   );
 }
 
+/**
+ * The packing entries behind "+ Packing material" — opened like a batch. Each line shows the part
+ * of it charged to the current selection (a line that packed two colours counts only the picked
+ * colour's share), so the list adds up to the figure on the card. Godown moves are left out.
+ */
+function PackingSheet({ lines, total, kgs, scope, onClose }: {
+  lines: PackingLineFor[]; total: number; kgs: number; scope: string; onClose: () => void;
+}) {
+  const { canSee } = useReportAccess();
+  const sorted = useMemo(
+    () => [...lines].sort((a, b) => b.row.vch_date.localeCompare(a.row.vch_date) || b.value - a.value),
+    [lines]);
+  const byGroup = useMemo(() => {
+    const m = new Map<string, number>();
+    for (const l of lines) m.set(l.row.group || "(No group)", (m.get(l.row.group || "(No group)") ?? 0) + l.value);
+    return [...m.entries()].sort((a, b) => b[1] - a[1]);
+  }, [lines]);
+  const vouchers = new Set(lines.map((l) => l.row.voucher_guid)).size;
+  const packedNames = (l: PackingLineFor) =>
+    l.packedInto.map((p) => `${p.item}${p.colour ? ` · ${p.colour}` : ""}`).join("\n");
+
+  return (
+    <Sheet open onOpenChange={(o) => !o && onClose()}>
+      <SheetContent side="right" className="w-full p-0 sm:max-w-[960px] flex flex-col gap-0">
+        <div className="flex items-start justify-between gap-3 border-b border-border px-4 py-3">
+          <div className="min-w-0">
+            <div className="text-[11px] uppercase tracking-wide text-muted-foreground">Packing material consumed</div>
+            <h2 className="truncate text-[17px] font-bold text-foreground">{fmtSales(total)}</h2>
+            <div className="mt-0.5 truncate text-[12px] text-muted-foreground" title={scope}>for {scope}</div>
+          </div>
+          <button type="button" onClick={onClose} aria-label="Close"
+                  className="rounded-button p-1 text-muted-foreground hover:bg-muted hover:text-foreground">
+            <X className="h-4 w-4" />
+          </button>
+        </div>
+
+        <div className="grid grid-cols-2 gap-2 border-b border-border px-4 py-3 sm:grid-cols-4">
+          <SheetFigure label="Consumed" value={fmtSales(total)} sub={`${fmtInt(lines.length)} lines`} />
+          <SheetFigure label="Packing / KG" value={fmtPerKg(kgs > 0 ? total / kgs : null)} sub={`over ${fmtTonnes(kgs)}`} />
+          <SheetFigure label="Vouchers" value={fmtInt(vouchers)} sub="production entries" />
+          <SheetFigure label="Biggest group" value={byGroup[0]?.[0] ?? "—"}
+                       sub={byGroup[0] ? fmtSales(byGroup[0][1]) : ""} />
+        </div>
+
+        <div className="min-h-0 flex-1 overflow-auto px-4 py-3">
+          <table className="w-full border-collapse text-[12.5px]">
+            <thead className="sticky top-0 bg-surface">
+              <tr className="border-b border-border text-[10.5px] uppercase tracking-wide text-muted-foreground">
+                <th className="py-1.5 pr-2 text-left font-semibold">Date</th>
+                <th className="px-2 py-1.5 text-left font-semibold">Voucher</th>
+                <th className="px-2 py-1.5 text-left font-semibold">Packing item</th>
+                <th className="px-2 py-1.5 text-left font-semibold">Group</th>
+                <th className="px-2 py-1.5 text-right font-semibold">Quantity</th>
+                <th className="px-2 py-1.5 text-right font-semibold">Rate</th>
+                <th className="px-2 py-1.5 text-right font-semibold">Amount</th>
+                <th className="pl-2 py-1.5 text-left font-semibold">Packed into</th>
+              </tr>
+            </thead>
+            <tbody>
+              {sorted.map((l, i) => (
+                <tr key={`${l.row.voucher_guid}|${l.row.item}|${i}`} className="border-b border-border/50 align-top">
+                  <td className="py-1.5 pr-2 whitespace-nowrap text-muted-foreground">{tallyDate(l.row.vch_date)}</td>
+                  <td className="px-2 py-1.5 whitespace-nowrap" title={l.row.voucher_type}>{l.row.voucher_no}</td>
+                  <td className="px-2 py-1.5 max-w-[240px] truncate text-foreground" title={l.row.item}>{l.row.item}</td>
+                  <td className="px-2 py-1.5 max-w-[150px] truncate text-muted-foreground" title={l.row.group}>{l.row.group}</td>
+                  <td className="px-2 py-1.5 text-right tabular-nums whitespace-nowrap">{fmtRegisterQty(l.qty, l.row.uom)}</td>
+                  <td className="px-2 py-1.5 text-right tabular-nums italic text-muted-foreground">{fmtMoney(l.row.rate)}</td>
+                  <td className="px-2 py-1.5 text-right tabular-nums whitespace-nowrap font-medium"
+                      title={l.value !== l.row.consumedValue ? `${fmtMoney(l.row.consumedValue)} on the voucher — this selection's share shown` : ""}>
+                    {fmtMoney(l.value)}
+                  </td>
+                  <td className="pl-2 py-1.5 max-w-[220px] truncate text-[11.5px] text-muted-foreground" title={packedNames(l)}>
+                    {l.packedInto.length
+                      ? `${l.packedInto[0].item}${l.packedInto.length > 1 ? ` +${l.packedInto.length - 1}` : ""}`
+                      : "no finished good"}
+                  </td>
+                </tr>
+              ))}
+              {!sorted.length && (
+                <tr><td colSpan={8} className="py-10 text-center text-muted-foreground">No packing consumed for this selection.</td></tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+
+        <div className="flex items-center justify-between gap-3 border-t border-border px-4 py-2 text-[11px] text-muted-foreground">
+          <span>Warehouse → production moves are left out — they come straight back in on the same voucher.</span>
+          {canSee("packing-material") && (
+            <Link to={`${BASE}/bushra-dashboard/packing-material`} className="text-primary hover:underline">
+              Open Packing material
+            </Link>
+          )}
+        </div>
+      </SheetContent>
+    </Sheet>
+  );
+}
+
+/**
+ * A consumption line's lot purchase rate: the qty-weighted rate of the lots it drew, red when the
+ * production entry charged more than that, green when less. Hover for each lot.
+ */
+function LotRateCell({ line, purchases }: { line: BatchCostingRow; purchases?: Map<string, LotPurchase> }) {
+  const cls = "px-2 py-1.5 text-right tabular-nums whitespace-nowrap";
+  if (line.category !== "RM Consumption" || !line.batches.length) return <td className={cls} />;
+  if (!purchases) return <td className={cn(cls, "text-muted-foreground")}>…</td>;
+  let qty = 0, value = 0, converted = false;
+  const tips: string[] = [];
+  for (const lot of line.batches) {
+    const p = purchaseOf(purchases, line.item, lot);
+    const q = line.lot_qty?.[lot] ?? Math.abs(line.qty) / line.batches.length;
+    if (!p) { tips.push(`${lot}: no purchase or conversion found`); continue; }
+    qty += q;
+    value += q * p.rate;
+    if (p.conversion) converted = true;
+    tips.push(purchaseNote(p, lot));
+  }
+  if (!qty) return <td className={cn(cls, "text-[11px] text-muted-foreground")} title={tips.join("\n")}>not found</td>;
+  const rate = value / qty;
+  const charged = line.rate ?? 0;
+  const off = Math.abs(charged - rate) >= 0.01;
+  return (
+    <td className={cn(cls, "font-medium")} title={tips.join("\n")}
+        style={{ color: !off ? undefined : charged > rate ? "#dc2626" : "#16a34a" }}>
+      {fmtMoney(rate)}
+      {converted && <span className="ml-1 rounded bg-sky-100 px-1 text-[9.5px] font-semibold text-sky-800" title="Converted from another item / lot — hover the rate">conv.</span>}
+    </td>
+  );
+}
+
 /** One line of the cost build-up: a coloured tick, what it is, and what it adds per KG. */
-function CostLine({ label, value, note, accent }: { label: string; value: string; note?: string; accent: string }) {
+function CostLine({ label, value, note, accent, onOpen }: {
+  label: string; value: string; note?: string; accent: string;
+  /** Makes the label a link that opens the entries behind the figure. */
+  onOpen?: () => void;
+}) {
   return (
     <div className="flex items-start justify-between gap-3 border-b border-border/60 pb-1.5">
       <div className="min-w-0">
         <div className="flex items-center gap-1.5 text-[12px] text-foreground">
           <span className="h-2 w-2 shrink-0 rounded-full" style={{ background: accent }} />
-          <span className="truncate">{label}</span>
+          {onOpen ? (
+            <button type="button" onClick={(e) => { e.stopPropagation(); onOpen(); }}
+                    title="Click to see the packing entries behind this figure"
+                    className="truncate text-primary hover:underline">{label}</button>
+          ) : (
+            <span className="truncate">{label}</span>
+          )}
         </div>
         {note && <div className="pl-3.5 text-[10.5px] text-muted-foreground truncate" title={note}>{note}</div>}
       </div>
@@ -1120,78 +1421,110 @@ const COLS: Array<{ key: SortKey; label: string; right?: boolean; w: number }> =
   { key: "colour", label: "Colour", w: 80 },
   { key: "fg_kgs", label: "Output T", right: true, w: 110 },
   { key: "cost_per_kg", label: "₹ / KG", right: true, w: 90 },
+  { key: "pur_per_kg", label: "Purchase ₹ / KG", right: true, w: 120 },
   { key: "rm_value", label: "RM value", right: true, w: 120 },
+  { key: "rm_purchase", label: "RM at purchase", right: true, w: 130 },
   { key: "scrap_out", label: "Scrap T", right: true, w: 90 },
   { key: "scrap_in", label: "Scrap used T", right: true, w: 100 },
 ];
 
-const COL_IDS: readonly string[] = COLS.map((c) => c.key);
+/** A batch with its RM re-valued at lot purchase rates, for the two purchase columns. */
+type BatchRow = BatchSummary & { pur_per_kg: number | null; rm_purchase: number | null; covered: number };
 
-function BatchTable({ batches, onOpen }: { batches: BatchSummary[]; onOpen: (b: BatchSummary) => void }) {
-  const fit = useColumnWidths("tb", COL_IDS, "production-batch-costing-dash-batches");
+function BatchTable({ batches, onOpen, purchase }: {
+  batches: BatchSummary[]; onOpen: (b: BatchSummary) => void;
+  /** Batch key → RM at lot purchase rates; undefined while it loads. */
+  purchase?: Map<string, BatchPurchaseCost>;
+}) {
   const [sort, setSort] = useState<{ key: SortKey; dir: "asc" | "desc" }>({ key: "vch_date", dir: "desc" });
+  /**
+   * Purchase ₹ / KG keeps the batch's own basis: Tally's ₹ / KG scaled by how the RM value moves
+   * when each lot is priced at its purchase rate. A lot with no purchase keeps Tally's value, so
+   * the two rates differ only where a real lot rate exists.
+   */
+  const rowsWithPurchase: BatchRow[] = useMemo(() => batches.map((b) => {
+    const p = purchase?.get(b.key);
+    if (!p) return { ...b, pur_per_kg: null, rm_purchase: null, covered: 0 };
+    const ratio = b.rm_value ? p.rmAtPurchase / b.rm_value : 1;
+    return { ...b, rm_purchase: p.rmAtPurchase, covered: p.covered,
+             pur_per_kg: b.cost_per_kg == null ? null : b.cost_per_kg * ratio };
+  }), [batches, purchase]);
   const sorted = useMemo(() => {
     const s = sort.dir === "asc" ? 1 : -1;
-    return [...batches].sort((a, b) => {
+    return [...rowsWithPurchase].sort((a, b) => {
       const x = a[sort.key], y = b[sort.key];
       const r = typeof x === "number" || typeof y === "number"
         ? (Number(x) || 0) - (Number(y) || 0)
         : collator.compare(String(x ?? ""), String(y ?? ""));
       return r * s || collator.compare(a.voucher_no, b.voucher_no);
     });
-  }, [batches, sort]);
+  }, [rowsWithPurchase, sort]);
   const page = usePagination(sorted, { pageSize: 10, resetKey: `${batches.length}|${sort.key}|${sort.dir}` });
+  const diffColour = (b: BatchRow) =>
+    b.pur_per_kg == null || b.cost_per_kg == null || Math.abs(b.cost_per_kg - b.pur_per_kg) < 0.01 ? undefined
+      : b.cost_per_kg > b.pur_per_kg ? "#dc2626" : "#16a34a";
+  const purTip = (b: BatchRow) => b.rm_purchase == null ? "Looking up lot purchase rates…"
+    : `${b.covered.toFixed(0)}% of this batch's RM value has a lot purchase rate; the rest keeps Tally's rate.\n` +
+      `Red: production charged more than the lots cost · green: less.`;
   const nf2 = (n: number) => n.toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  // Drag a column edge, a row edge or the heading's bottom edge — remembered per browser.
+  const layout = useTableLayout("batches");
+  const ids = COLS.map((c) => c.key);
+  const cs = (i: number) => cellStyle(layout, ids[i]);
 
   return (
     <div>
-      <ScrollableTable className="border-b border-border" maxHeight="max-h-[420px]" resizeKey="production-batch-costing-dash-batches">
-        <table className="w-full min-w-[1220px] border-collapse text-[12.5px]">
+      <ScrollableTable className="border-b border-border" maxHeight="max-h-[420px]">
+        <table className="w-full min-w-[1470px] border-collapse text-[12.5px]">
           <thead className="sticky top-0 z-10 bg-muted/70">
             <tr>
-              {COLS.map((c) => (
-                <FitTh key={c.key} fit={fit} col={c.key} {...(fit.width(c.key) === undefined ? { style: { width: c.w } } : {})}
+              {COLS.map((c, i) => (
+                <ResizeTh key={c.key} id={c.key} layout={layout} first={i === 0} width={c.w}
                     onClick={() => setSort((p) => ({ key: c.key, dir: p.key === c.key && p.dir === "desc" ? "asc" : "desc" }))}
-                    className={cn("cursor-pointer select-none whitespace-nowrap px-3 py-2 text-[10.5px] font-semibold uppercase tracking-wide text-foreground/70",
+                    className={cn("cursor-pointer select-none whitespace-nowrap px-3 text-[10.5px] font-semibold uppercase tracking-wide text-foreground/70",
                                   c.right ? "text-right" : "text-left")}>
                   <span className={cn("inline-flex items-center gap-1", c.right && "justify-end w-full")}>
                     {c.label}
                     {sort.key === c.key && (sort.dir === "asc" ? <ArrowUp className="h-3 w-3" /> : <ArrowDown className="h-3 w-3" />)}
                   </span>
-                </FitTh>
+                </ResizeTh>
               ))}
             </tr>
           </thead>
-          <tbody>
+          <tbody {...bodyResize(layout, ids)}>
             {page.pageItems.map((b) => (
               <tr key={b.key} className="border-t border-border/50 hover:bg-muted/40">
-                <td className="px-3 py-1.5 text-muted-foreground whitespace-nowrap">{tallyDate(b.vch_date)}</td>
-                <td className="px-3 py-1.5 truncate max-w-0" title={`${b.voucher_no} - click to open this batch`}>
+                <td style={cs(0)} className="px-3 text-muted-foreground whitespace-nowrap">{tallyDate(b.vch_date)}</td>
+                <td style={cs(1)} className="px-3 truncate max-w-0" title={`${b.voucher_no} - click to open this batch`}>
                   <button type="button" onClick={() => onOpen(b)} className="truncate text-primary hover:underline">
                     {b.voucher_no}
                   </button>
                 </td>
-                <td className="px-3 py-1.5 truncate max-w-0 text-foreground" title={b.fg_item}>
+                <td style={cs(2)} className="px-3 truncate max-w-0 text-foreground" title={b.fg_item}>
                   <span className="inline-flex items-center gap-1.5">
                     {b.item_group && <span className="h-2 w-2 shrink-0 rounded-full" style={{ background: GROUP_COLOR[b.item_group] }} />}
                     {b.fg_item || "—"}
                   </span>
                 </td>
-                <td className="px-3 py-1.5 truncate max-w-0 text-muted-foreground" title={b.item_category}>{b.item_category}</td>
-                <td className="px-3 py-1.5 text-muted-foreground">{b.colour}</td>
-                <td className="px-3 py-1.5 text-right tabular-nums" title={b.fg_kgs ? fmtKgs(b.fg_kgs) : ""}>{b.fg_kgs ? fmtTonnes3(b.fg_kgs) : "—"}</td>
-                <td className="px-3 py-1.5 text-right tabular-nums font-medium">{b.cost_per_kg == null ? "—" : nf2(b.cost_per_kg)}</td>
-                <td className="px-3 py-1.5 text-right tabular-nums">{nf2(b.rm_value)}</td>
-                <td className="px-3 py-1.5 text-right tabular-nums text-muted-foreground" title={b.scrap_out ? fmtKgs(b.scrap_out) : ""}>{b.scrap_out ? fmtTonnes3(b.scrap_out) : ""}</td>
-                <td className="px-3 py-1.5 text-right tabular-nums text-muted-foreground" title={b.scrap_in ? fmtKgs(b.scrap_in) : ""}>{b.scrap_in ? fmtTonnes3(b.scrap_in) : ""}</td>
+                <td style={cs(3)} className="px-3 truncate max-w-0 text-muted-foreground" title={b.item_category}>{b.item_category}</td>
+                <td style={cs(4)} className="px-3 text-muted-foreground">{b.colour}</td>
+                <td style={cs(5)} className="px-3 text-right tabular-nums" title={b.fg_kgs ? fmtKgs(b.fg_kgs) : ""}>{b.fg_kgs ? fmtTonnes3(b.fg_kgs) : "—"}</td>
+                <td style={cs(6)} className="px-3 text-right tabular-nums font-medium">{b.cost_per_kg == null ? "—" : nf2(b.cost_per_kg)}</td>
+                <td style={{ ...cs(7), color: diffColour(b) }} className="px-3 text-right tabular-nums font-medium" title={purTip(b)}>
+                  {b.rm_purchase == null ? "…" : b.pur_per_kg == null ? "—" : nf2(b.pur_per_kg)}
+                </td>
+                <td style={cs(8)} className="px-3 text-right tabular-nums">{nf2(b.rm_value)}</td>
+                <td style={cs(9)} className="px-3 text-right tabular-nums" title={purTip(b)}>{b.rm_purchase == null ? "…" : nf2(b.rm_purchase)}</td>
+                <td style={cs(10)} className="px-3 text-right tabular-nums text-muted-foreground" title={b.scrap_out ? fmtKgs(b.scrap_out) : ""}>{b.scrap_out ? fmtTonnes3(b.scrap_out) : ""}</td>
+                <td style={cs(11)} className="px-3 text-right tabular-nums text-muted-foreground" title={b.scrap_in ? fmtKgs(b.scrap_in) : ""}>{b.scrap_in ? fmtTonnes3(b.scrap_in) : ""}</td>
               </tr>
             ))}
           </tbody>
         </table>
       </ScrollableTable>
-      <div className="px-3 py-2">
-        <ResetWidths fit={fit} cols={COL_IDS} className="inline-flex items-center gap-1 text-[11px] text-primary hover:underline" />
-        <Pagination state={page} rowsLabel="batches" />
+      <div className="flex items-center gap-2 px-3 py-2">
+        <div className="min-w-0 flex-1"><Pagination state={page} rowsLabel="batches" /></div>
+        <ResetLayout layout={layout} />
       </div>
     </div>
   );
