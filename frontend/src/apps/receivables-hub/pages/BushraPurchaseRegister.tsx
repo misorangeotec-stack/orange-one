@@ -326,7 +326,7 @@ export default function BushraPurchaseRegister() {
                   {TABLE_COLUMNS.map((c) => (
                     <th key={c.header} className="py-1.5 px-2 font-normal">
                       {c.filter && (
-                        <FitFilter dragged={fit.width(c.header) !== undefined}>
+                        <FitFilter fitPicker dragged={fit.width(c.header) !== undefined}>
                           <MultiSelectFilter
                             options={options[c.filter]}
                             value={sel[c.filter]}

@@ -239,9 +239,17 @@ export function FitHead({ width, children }: { width: number | undefined; childr
   );
 }
 
-export function FitFilter({ dragged, children }: { dragged: boolean; children: ReactNode }) {
+/**
+ * `fitPicker` (opt-in, the Bushra tables): a dragged column's filter fits the column — a picker's
+ * own minimum width (min-w-[110px] there) would otherwise spill it across the next column.
+ */
+export function FitFilter({ dragged, fitPicker = false, children }: { dragged: boolean; fitPicker?: boolean; children: ReactNode }) {
   if (!dragged) return <>{children}</>;
-  return <div style={{ width: 0, minWidth: "100%" }}>{children}</div>;
+  return (
+    <div className={fitPicker ? "overflow-hidden [&_button]:!min-w-0" : undefined} style={{ width: 0, minWidth: "100%" }}>
+      {children}
+    </div>
+  );
 }
 
 /**

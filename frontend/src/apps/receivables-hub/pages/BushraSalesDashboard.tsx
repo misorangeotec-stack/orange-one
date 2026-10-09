@@ -2072,7 +2072,7 @@ function SalesReportTable({ storeId, rows, base, from, to, loading, fmtQ, sel, s
             <tr className="border-b-2 border-border bg-muted/30">
               {cols.map(({ c }) => (
                 <th key={c.header} className="px-2 py-1.5 font-normal">
-                  {c.filter && <FitFilter dragged={fit.width(c.header) !== undefined}>{"dash" in c.filter ? (
+                  {c.filter && <FitFilter fitPicker dragged={fit.width(c.header) !== undefined}>{"dash" in c.filter ? (
                     <MultiSelectFilter
                       options={dashOptions[c.filter.dash]}
                       value={sel[c.filter.dash]}

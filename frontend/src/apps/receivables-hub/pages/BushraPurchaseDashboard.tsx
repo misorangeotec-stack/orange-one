@@ -785,7 +785,7 @@ function PurchaseReportTable({ storeId, rows, base, from, to, loading, fmtQ, sel
               {REPORT_COLUMNS.map((c) => (
                 <th key={c.header} className="px-2 py-1.5 font-normal">
                   {c.filter && (
-                  <FitFilter dragged={fit.width(c.header) !== undefined}>
+                  <FitFilter fitPicker dragged={fit.width(c.header) !== undefined}>
                   {"dash" in c.filter ? (
                     <MultiSelectFilter
                       options={dashOptions[c.filter.dash]}
