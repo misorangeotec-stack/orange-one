@@ -2,6 +2,9 @@ import { useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import Button from "@/shared/components/ui/Button";
 import Combobox, { type ComboOption } from "@/shared/components/ui/Combobox";
+import { TextInput, PasswordInput } from "@/shared/components/ui/Form";
+import { setUserEmailViaFunction, setUserPasswordViaFunction } from "@/core/platform/adminUserApi";
+import { updateUserProfile } from "@/core/platform/directoryWrites";
 import { useDispatchStore } from "../store";
 import { fetchCustomerLogins, linkCustomerLogin } from "../data/customerOrgs";
 
@@ -59,6 +62,43 @@ export default function CustomerOrgLoginSection({ orgId }: { orgId: string }) {
 
   const profileById = useMemo(() => new Map(s.profiles.map((p) => [p.id, p])), [s.profiles]);
 
+  /** The login being re-emailed or re-passworded, if any. */
+  const [editing, setEditing] = useState<{ profileId: string; kind: "email" | "password"; value: string } | null>(null);
+  const [done, setDone] = useState<string | null>(null);
+  const openEdit = (profileId: string, kind: "email" | "password", value: string) => {
+    setErr(null);
+    setDone(null);
+    setEditing({ profileId, kind, value });
+  };
+
+  const saveEdit = useMutation({
+    mutationFn: async (e: { profileId: string; kind: "email" | "password"; value: string }) => {
+      const v = e.value.trim();
+      if (e.kind === "email") {
+        if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v)) throw new Error("Enter a valid email address.");
+        await setUserEmailViaFunction(e.profileId, v);
+      } else {
+        if (v.length < 6) throw new Error("The password must be at least 6 characters.");
+        // ⚠ An admin-users deploy older than this change copies the new password
+        //   into profiles.phone (the staff "password = mobile" rule). Put the
+        //   customer's phone back, so their password never shows on a staff screen
+        //   whichever version of the function is live.
+        const phoneBefore = profileById.get(e.profileId)?.phone ?? null;
+        await setUserPasswordViaFunction(e.profileId, v);
+        await updateUserProfile(e.profileId, { phone: phoneBefore });
+      }
+      return e.kind;
+    },
+    onSuccess: async (kind) => {
+      setErr(null);
+      setEditing(null);
+      setDone(kind === "email" ? "Sign-in email changed." : "Password reset.");
+      // The email shown here comes from the directory's profiles.
+      if (kind === "email") await qc.invalidateQueries({ queryKey: ["directory"] });
+    },
+    onError: (e) => setErr(e instanceof Error ? e.message : String(e)),
+  });
+
   /** The logins already on THIS customer. */
   const mine = useMemo(
     () => rows.filter((r) => r.orgId === orgId).map((r) => ({ ...r, profile: profileById.get(r.profileId) })),
@@ -89,10 +129,69 @@ export default function CustomerOrgLoginSection({ orgId }: { orgId: string }) {
               </span>
               <span className="min-w-0 flex-1 truncate text-grey-2">{r.profile?.email ?? ""}</span>
               {!r.active && <span className="shrink-0 text-[11.5px] text-ryg-red">switched off</span>}
+              {r.profile && (
+                <div className="flex shrink-0 gap-1.5">
+                  <Button size="sm" variant="ghost" className="px-2.5 py-1 text-[12px]" onClick={() => openEdit(r.profileId, "email", r.profile?.email ?? "")}>
+                    Change email
+                  </Button>
+                  <Button size="sm" variant="ghost" className="px-2.5 py-1 text-[12px]" onClick={() => openEdit(r.profileId, "password", "")}>
+                    Reset password
+                  </Button>
+                </div>
+              )}
             </div>
           ))}
         </div>
-      ) : (
+      ) : null}
+
+      {/*
+        CHANGE EMAIL / RESET PASSWORD (admin only — Setup is admin-only, and the
+        admin-users function refuses anyone else). Inline rather than a second
+        modal: this already sits inside the Edit dialog.
+
+        ⚠ autoComplete="new-password" for the same reason as "Add a customer":
+          Chrome otherwise fills the ADMIN'S own email and password in here.
+      */}
+      {editing && (
+        <div className="space-y-2 rounded-lg border border-line bg-surface px-3 py-3">
+          <div className="text-[12.5px] font-semibold text-ink">
+            {editing.kind === "email" ? "New sign-in email" : "New password"}
+          </div>
+          <div className="flex flex-wrap items-start gap-2">
+            <div className="min-w-[260px] flex-1">
+              {editing.kind === "email" ? (
+                <TextInput
+                  value={editing.value}
+                  onChange={(e) => setEditing({ ...editing, value: e.target.value })}
+                  placeholder="orders@customer.example"
+                  autoComplete="new-password"
+                  name="od-customer-new-email"
+                />
+              ) : (
+                <PasswordInput
+                  value={editing.value}
+                  onChange={(e) => setEditing({ ...editing, value: e.target.value })}
+                  autoComplete="new-password"
+                  name="od-customer-new-password"
+                />
+              )}
+            </div>
+            <Button size="sm" onClick={() => saveEdit.mutate(editing)} disabled={saveEdit.isPending}>
+              {saveEdit.isPending ? "Saving…" : "Save"}
+            </Button>
+            <Button size="sm" variant="ghost" onClick={() => setEditing(null)} disabled={saveEdit.isPending}>
+              Cancel
+            </Button>
+          </div>
+          <p className="text-[11.5px] text-grey-2">
+            {editing.kind === "email"
+              ? "Takes effect at once — the customer signs in with the new address from now on; the old one stops working."
+              : "At least 6 characters. Takes effect at once — tell the customer the new password."}
+          </p>
+        </div>
+      )}
+
+      {logins.isLoading || mine.length > 0 ? null : (
         <>
           {/*
             The one state worth spelling out, because the customer's symptom does
@@ -126,6 +225,7 @@ export default function CustomerOrgLoginSection({ orgId }: { orgId: string }) {
       )}
 
       {err && <p className="text-[12.5px] text-ryg-red">{err}</p>}
+      {done && !err && <p className="text-[12.5px] text-ryg-green">{done}</p>}
     </div>
   );
 }

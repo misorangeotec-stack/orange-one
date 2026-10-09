@@ -83,16 +83,20 @@ const TableHead = React.forwardRef<HTMLTableCellElement, React.ThHTMLAttributes<
     // sitting over six of them on the disputed-bills report — is not a column edge, and the
     // filter row below carries pickers with no text of their own, so it is skipped already.
     const on = !!fit?.on && !!id && (props.colSpan ?? 1) === 1;
+    // A dragged width beats the page's own width/min-width (Batch Costing fixes both), so a
+    // column can be dragged NARROWER than it starts; undragged, the page's style stands as it was.
+    const dragged = on && fit ? thFitStyle(fit, id) : undefined;
+    const { style: ownStyle, ...thProps } = props;
     return (
       <th
         ref={ref}
-        style={on && fit ? thFitStyle(fit, id) : undefined}
+        style={dragged ? { ...ownStyle, ...dragged, minWidth: 0, maxWidth: "none" } : ownStyle}
         className={cn(
           "h-12 px-4 text-left align-middle font-medium text-muted-foreground [&:has([role=checkbox])]:pr-0",
           on && "relative",
           className,
         )}
-        {...props}
+        {...thProps}
       >
         {/* The width goes on a wrapper INSIDE the th, not on the th: these tables lay out
             automatically and a th's own width is ignored once the columns already fill the card.
