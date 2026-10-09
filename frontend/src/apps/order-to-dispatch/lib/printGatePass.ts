@@ -54,6 +54,8 @@ export function renderGatePassHtml(d: GatePassData): string {
     item name spanning both. The quantity is per lot when the split adds up to the
     billed figure (see gatePassFromRound); otherwise it is printed once, spanning
     the line's lots, so the slip never states a split no invoice backs.
+
+    A lot with no known expiry prints a BLANK cell, not a dash (user, 09-10-2026).
   */
   const lines = d.lines.length
     ? d.lines
@@ -70,14 +72,14 @@ export function renderGatePassHtml(d: GatePassData): string {
               return `<tr>
             ${nameCell}
             <td>${esc(x.lotNo)}</td>
-            <td>${x.expiryIso ? esc(dmy(x.expiryIso)) : "—"}</td>
+            <td>${x.expiryIso ? esc(dmy(x.expiryIso)) : ""}</td>
             ${qtyCell}
           </tr>`;
             })
             .join("");
         })
         .join("")
-    : `<tr><td>—</td><td>—</td><td>—</td><td class="r">—</td></tr>`;
+    : `<tr><td>—</td><td>—</td><td></td><td class="r">—</td></tr>`;
 
   const total = d.lines.reduce((a, l) => a + l.qty, 0);
   // Same rule as every other total in this app: no unit when the lines disagree,
