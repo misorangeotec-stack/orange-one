@@ -77,6 +77,8 @@ export default function HrLayout() {
         // a screen that then refuses you — or hides one you are allowed to work.
         canSeePositions: canSeeBoard(s),
         canSeePipeline: canSeePipeline(s),
+        canSeeFutureRef: s.canSeeFutureRef,
+        futureRefCount: s.futureRefCandidates.length,
         // Not just the interviewers: HR runs the schedule and coordinators chase it, so
         // both need the link to the page they are already allowed to open.
         canInterview:

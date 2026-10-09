@@ -965,6 +965,19 @@ export async function setCandidateTags(candidateId: string, tags: string[]): Pro
 }
 
 /**
+ * Save a candidate for future reference, or take them out of the bucket. A flag, not
+ * a stage move — the RPC never touches `stage`, and writes one activity row.
+ */
+export async function setFutureReference(candidateId: string, on: boolean, note?: string): Promise<void> {
+  const { error } = await supabase.rpc("fms_hr_set_future_reference", {
+    p_id: candidateId,
+    p_on: on,
+    p_note: note ?? "",
+  });
+  if (error) throw new Error(error.message);
+}
+
+/**
  * Record one AI fit score.
  *
  * The edge function deliberately does NOT write this — it holds no service-role

@@ -14,6 +14,7 @@ import CandidateDetailsCard from "./CandidateDetailsCard";
 import CandidateFit from "./CandidateFit";
 import CandidateMeetings from "./CandidateMeetings";
 import CandidateTimeline from "./CandidateTimeline";
+import FutureReferenceModal from "./FutureReferenceModal";
 import ResumeViewer from "./ResumeViewer";
 import { useHrStore } from "../../store";
 import { STAGE_LABEL, legalTargets, roundOf } from "../../lib/board";
@@ -97,6 +98,7 @@ export default function CandidateDetail({
   const [onboarding, setOnboarding] = useState<Onboarding | null>(null);
   const [result, setResult] = useState<0 | 1 | 2 | 3 | null>(null);
   const [book, setBook] = useState<0 | 1 | 2 | 3 | null>(null);
+  const [futureRef, setFutureRef] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -120,6 +122,13 @@ export default function CandidateDetail({
   const mine = s.canEdit && s.canActOnCandidate(c);
 
   const targets = mine ? legalTargets(c.stage) : [];
+
+  /**
+   * Future reference — whoever may move the card may save it; a bucket viewer may
+   * also take a saved candidate back out. Same split as fms_hr_set_future_reference.
+   */
+  const savedForFuture = !!c.futureRefAt;
+  const canFutureRef = mine || (savedForFuture && s.canEdit && s.canSeeFutureRef);
 
   /**
    * The interview round this candidate is sitting in, if any — and whether it has been
@@ -159,6 +168,11 @@ export default function CandidateDetail({
               <div className="flex flex-wrap items-center gap-x-2 text-[12.5px] text-grey-2">
                 {c.candidateNo && <span>{c.candidateNo}</span>}
                 <span className="font-medium text-navy">{STAGE_LABEL[c.stage]}</span>
+                {savedForFuture && (
+                  <span className="rounded-full bg-[#EAF1FE] px-2 py-0.5 text-[11px] font-semibold text-blue">
+                    Future reference
+                  </span>
+                )}
                 {r &&
                   (jobLink ? (
                     <Link to={jobLink} className="font-semibold text-orange hover:underline">
@@ -184,6 +198,14 @@ export default function CandidateDetail({
                 onClick={() => (needsScheduling ? setBook(round) : setResult(round))}
               >
                 {needsScheduling ? "Book it" : "Record result"}
+              </Button>
+            )}
+
+            {/* Not shortlisted for THIS vacancy, but worth keeping — goes to the
+                Future Reference bucket without moving the card. */}
+            {canFutureRef && (
+              <Button size="sm" variant={savedForFuture ? "progress" : "ghost"} onClick={() => setFutureRef(true)}>
+                {savedForFuture ? "✓ Future reference" : "Future reference"}
               </Button>
             )}
 
@@ -321,6 +343,9 @@ export default function CandidateDetail({
       )}
       {book !== null && (
         <ScheduleInterviewModal candidate={c} round={book} open onClose={() => setBook(null)} />
+      )}
+      {futureRef && (
+        <FutureReferenceModal candidate={c} open={futureRef} onClose={() => setFutureRef(false)} />
       )}
       {onboarding && (
         <OnboardingPanel onboarding={onboarding} open={!!onboarding} onClose={() => setOnboarding(null)} />

@@ -4,6 +4,7 @@ import EmptyState from "@/shared/components/ui/EmptyState";
 import { useRailWhileMounted } from "@/shared/components/layout/navRail";
 import { returnToFor } from "@/shared/lib/returnTo";
 import { CANDIDATES_ROUTE } from "./CandidatesList";
+import { FUTURE_REF_ROUTE } from "../futureReference/FutureReference";
 import CandidateDetail from "../../components/candidate/CandidateDetail";
 import AccessDenied from "../system/AccessDenied";
 import { useHrStore } from "../../store";
@@ -45,6 +46,15 @@ export default function CandidatePage() {
   const c = s.candidateById(id);
 
   /**
+   * Arrived from the Future Reference bucket? Then Back returns there and ‹ › walks the
+   * bucket, not a board column. A bucket viewer who works no board also lands here:
+   * RLS hands them saved candidates only, so the bucket is the only list they have.
+   */
+  const fromBucket =
+    (location.state as { from?: string } | null)?.from === "future-reference" ||
+    (!canSeeBoard(s) && !!c?.futureRefAt && s.canSeeFutureRef);
+
+  /**
    * Previous / next WITHIN THE SAME BOARD COLUMN, in the board's own order (oldest CV
    * first, matching CandidateBoard). Screening is a column at a time — fifteen new
    * CVs — and going back to the board between each one is the whole friction.
@@ -54,14 +64,15 @@ export default function CandidatePage() {
    */
   const siblings = useMemo(() => {
     if (!c) return [];
+    if (fromBucket) return s.futureRefCandidates;
     const col = columnOf(c);
     return s
       .candidatesFor(c.requisitionId)
       .filter((x) => columnOf(x) === col)
       .sort((a, b) => a.uploadedAt.localeCompare(b.uploadedAt));
-  }, [s, c]);
+  }, [s, c, fromBucket]);
 
-  if (!canSeeBoard(s)) return <AccessDenied />;
+  if (!canSeeBoard(s) && !(c?.futureRefAt && s.canSeeFutureRef)) return <AccessDenied />;
 
   /**
    * A real case, not a broken link: candidates load in a 24-month window, so an old
@@ -90,11 +101,13 @@ export default function CandidatePage() {
    * Router state is deliberately the signal: a pasted link has none, which is right.
    */
   const fromList = (location.state as { from?: string } | null)?.from === "candidates";
-  const backTo = fromList
-    ? returnToFor(CANDIDATES_ROUTE)
-    : r
-      ? `/hr-recruitment/positions/${r.id}`
-      : "/hr-recruitment/positions";
+  const backTo = fromBucket
+    ? returnToFor(FUTURE_REF_ROUTE)
+    : fromList
+      ? returnToFor(CANDIDATES_ROUTE)
+      : r
+        ? `/hr-recruitment/positions/${r.id}`
+        : "/hr-recruitment/positions";
 
   const idx = siblings.findIndex((x) => x.id === c.id);
   const prev = idx > 0 ? siblings[idx - 1] : null;
@@ -109,7 +122,7 @@ export default function CandidatePage() {
     <CandidateDetail
       candidate={c}
       onBack={() => navigate(backTo)}
-      backLabel="Back to the board"
+      backLabel={fromBucket ? "Back to Future Reference" : "Back to the board"}
       vacancyTo={backTo}
       pager={{
         index: idx + 1,
@@ -117,7 +130,7 @@ export default function CandidatePage() {
         prev,
         next,
         go,
-        label: "in this column",
+        label: fromBucket ? "in Future Reference" : "in this column",
       }}
     />
   );

@@ -27,6 +27,7 @@ import {
   postCandidateComment as postCandidateCommentWrite,
   setCandidateNote as setCandidateNoteWrite,
   setCandidateTags as setCandidateTagsWrite,
+  setFutureReference as setFutureReferenceWrite,
   saveCandidateScore as saveCandidateScoreWrite,
   reassignInterview as reassignInterviewWrite,
   reassignStep as reassignStepWrite,
@@ -260,6 +261,20 @@ interface HrStoreValue {
   /** Is the EFFECTIVE user on that list? Visibility half of the grant above. */
   isPipelineViewer: boolean;
   setPipelineViewers: (userIds: string[]) => Promise<void>;
+
+  /* ------------------------- Future Reference bucket ------------------------- */
+
+  /**
+   * Setup > Future Reference — the HR people who work the Future Reference bucket.
+   * The same config key fms_hr_is_future_ref_viewer() reads in SQL, which grants READ
+   * over SAVED candidates only (their row, trail, vacancy and CV).
+   */
+  futureRefViewerIds: string[];
+  setFutureRefViewers: (userIds: string[]) => Promise<void>;
+  /** May the EFFECTIVE user open the bucket? Admins, plus the Setup list. */
+  canSeeFutureRef: boolean;
+  /** Every candidate saved for future reference, newest first. */
+  futureRefCandidates: Candidate[];
 
   /* ---------------------- NR-3 — who acts as the HOD --------------------- */
 
@@ -606,6 +621,8 @@ interface HrStoreValue {
   /** The quick note and the tags — one column each, so neither can clobber the record. */
   setCandidateNote: (candidateId: string, note: string) => Promise<void>;
   setCandidateTags: (candidateId: string, tags: string[]) => Promise<void>;
+  /** Save for / remove from future reference. A flag — never moves the stage. */
+  setFutureReference: (candidateId: string, on: boolean, note?: string) => Promise<void>;
   /** Record one AI fit score. Append-only; never moves a stage and notifies nobody. */
   saveCandidateScore: (
     candidateId: string,
@@ -791,6 +808,7 @@ export function HrStoreProvider({ children }: { children: ReactNode }) {
   const reassignPoolDepartmentIds = data?.config.reassignPoolDepartmentIds ?? [];
   const reassignPoolUserIds = data?.config.reassignPoolUserIds ?? [];
   const pipelineViewerIds = data?.config.pipelineViewerIds ?? [];
+  const futureRefViewerIds = data?.config.futureRefViewerIds ?? [];
   const departmentHods = data?.departmentHods ?? [];
 
   // The REAL signed-in user, never the impersonated persona. RLS and RPC actor
@@ -881,6 +899,12 @@ export function HrStoreProvider({ children }: { children: ReactNode }) {
      *   predicate deliberately carries no admin arm — it answers "is on the list".
      */
     const isPipelineViewer = isAdmin || pipelineViewerIds.includes(user.id);
+
+    /** The Future Reference bucket — admins plus the Setup list; RLS agrees. */
+    const canSeeFutureRef = isAdmin || futureRefViewerIds.includes(user.id);
+    const futureRefCandidates = candidates
+      .filter((c) => c.futureRefAt)
+      .sort((a, b) => (b.futureRefAt ?? "").localeCompare(a.futureRefAt ?? ""));
 
     /** Who to notify when work lands at a step. */
     const ownerIdsOf = (stepKey: StepKey): string[] =>
@@ -1822,6 +1846,10 @@ export function HrStoreProvider({ children }: { children: ReactNode }) {
         await setCandidateTagsWrite(candidateId, tags);
         await invalidate();
       },
+      setFutureReference: async (candidateId, on, note) => {
+        await setFutureReferenceWrite(candidateId, on, note);
+        await invalidate();
+      },
       // Advisory only. It records what the model said and refreshes the snapshot —
       // it does NOT move a stage, notify anyone, or write an activity row.
       saveCandidateScore: async (candidateId, score) => {
@@ -2123,6 +2151,9 @@ export function HrStoreProvider({ children }: { children: ReactNode }) {
       canViewSalary,
       pipelineViewerIds,
       isPipelineViewer,
+      futureRefViewerIds,
+      canSeeFutureRef,
+      futureRefCandidates,
       departmentHods,
       departmentHodsFor,
       suggestedHodsFor,
@@ -2188,6 +2219,11 @@ export function HrStoreProvider({ children }: { children: ReactNode }) {
         // The SAME key fms_hr_is_pipeline_viewer() reads in SQL, so saving here moves
         // the RLS grant itself — not just what this browser draws.
         await setConfigWrite("pipeline_viewers", { user_ids: userIds });
+        await invalidate();
+      },
+      setFutureRefViewers: async (userIds) => {
+        // The SAME key fms_hr_is_future_ref_viewer() reads in SQL.
+        await setConfigWrite("future_ref_viewers", { user_ids: userIds });
         await invalidate();
       },
       setDepartmentHods: async (departmentId, hodIds) => {
@@ -2289,7 +2325,7 @@ export function HrStoreProvider({ children }: { children: ReactNode }) {
     stepAssignees, reassignPoolDepartmentIds, reassignPoolUserIds,
     // Same shape: without it Setup's Save would not redraw the list, and the pipeline
     // gate would keep the membership the memo was built with.
-    pipelineViewerIds,
+    pipelineViewerIds, futureRefViewerIds,
     requisitions, requisitionPlatforms, candidates, interviews, onboardings, onboardingChecks,
     probations, probationReviews,
     // NR-9 / NR-10, and load-bearing for the same reason as the three above: the
