@@ -4,6 +4,7 @@ import Button from "@/shared/components/ui/Button";
 import Combobox, { type ComboOption } from "@/shared/components/ui/Combobox";
 import { TextInput, PasswordInput } from "@/shared/components/ui/Form";
 import { setUserEmailViaFunction, setUserPasswordViaFunction } from "@/core/platform/adminUserApi";
+import { updateUserProfile } from "@/core/platform/directoryWrites";
 import { useDispatchStore } from "../store";
 import { fetchCustomerLogins, linkCustomerLogin } from "../data/customerOrgs";
 
@@ -59,6 +60,8 @@ export default function CustomerOrgLoginSection({ orgId }: { orgId: string }) {
     onError: (e) => setErr(e instanceof Error ? e.message : String(e)),
   });
 
+  const profileById = useMemo(() => new Map(s.profiles.map((p) => [p.id, p])), [s.profiles]);
+
   /** The login being re-emailed or re-passworded, if any. */
   const [editing, setEditing] = useState<{ profileId: string; kind: "email" | "password"; value: string } | null>(null);
   const [done, setDone] = useState<string | null>(null);
@@ -76,7 +79,13 @@ export default function CustomerOrgLoginSection({ orgId }: { orgId: string }) {
         await setUserEmailViaFunction(e.profileId, v);
       } else {
         if (v.length < 6) throw new Error("The password must be at least 6 characters.");
+        // ⚠ An admin-users deploy older than this change copies the new password
+        //   into profiles.phone (the staff "password = mobile" rule). Put the
+        //   customer's phone back, so their password never shows on a staff screen
+        //   whichever version of the function is live.
+        const phoneBefore = profileById.get(e.profileId)?.phone ?? null;
         await setUserPasswordViaFunction(e.profileId, v);
+        await updateUserProfile(e.profileId, { phone: phoneBefore });
       }
       return e.kind;
     },
@@ -89,8 +98,6 @@ export default function CustomerOrgLoginSection({ orgId }: { orgId: string }) {
     },
     onError: (e) => setErr(e instanceof Error ? e.message : String(e)),
   });
-
-  const profileById = useMemo(() => new Map(s.profiles.map((p) => [p.id, p])), [s.profiles]);
 
   /** The logins already on THIS customer. */
   const mine = useMemo(
