@@ -676,6 +676,13 @@ const REPORT_COLUMNS: {
 
 /** Column ids for the dragged widths — the headings themselves. */
 const COL_IDS = REPORT_COLUMNS.map((c) => c.header);
+/**
+ * How narrow a dragged column may go (px of content). The kit's default is 80, which on these
+ * tables — every column already ~120 wide — left a drag about 20 px of room and read as "it does
+ * not narrow". The user's call (09-10-2026): any width, hidden text is fine.
+ */
+const FIT_MIN = 30;
+
 
 function PurchaseReportTable({ storeId, rows, base, from, to, loading, fmtQ, sel, setFilter, onResetDashboard }: {
   /** Which dashboard this is — its column widths and table height are its own, not every dashboard's. */
@@ -764,19 +771,20 @@ function PurchaseReportTable({ storeId, rows, base, from, to, loading, fmtQ, sel
                   </div>
                 }>
       <ScrollableTable className="rounded-md border border-border" maxHeight="max-h-[60vh]" resizeKey={`bushra-purchase-dash-report.${storeId}`}>
-        <table className="w-full min-w-[1800px] border-collapse">
+        {/* Floor width only until a column is dragged — see the Sales dashboard's report table. */}
+        <table className={cn("w-full border-collapse", !fit.anyCustom(COL_IDS) && "min-w-[1800px]")}>
           <thead>
             <tr className="border-b border-border bg-muted/50">
               {REPORT_COLUMNS.map((c, i) => (
-                <FitTh key={c.header} fit={fit} col={c.header} className={cn(
+                <FitTh key={c.header} fit={fit} col={c.header} min={FIT_MIN} className={cn(
                   "whitespace-nowrap px-3 py-2 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground",
                   c.right ? "text-right" : "text-left",
                 )}>
                   <button type="button" onClick={() => toggleSort(i)} title={`Sort by ${c.header}`}
-                          className={cn("inline-flex items-center gap-1 uppercase hover:text-foreground", sort?.col === i && "text-foreground")}>
-                    {c.header}
-                    {sort?.col !== i ? <ArrowUpDown className="h-3 w-3 opacity-40" />
-                      : sort.dir === 1 ? <ArrowUp className="h-3 w-3" /> : <ArrowDown className="h-3 w-3" />}
+                          className={cn("inline-flex max-w-full items-center gap-1 whitespace-nowrap uppercase hover:text-foreground", sort?.col === i && "text-foreground")}>
+                    <span className="min-w-0 truncate">{c.header}</span>
+                    {sort?.col !== i ? <ArrowUpDown className="h-3 w-3 shrink-0 opacity-40" />
+                      : sort.dir === 1 ? <ArrowUp className="h-3 w-3 shrink-0" /> : <ArrowDown className="h-3 w-3 shrink-0" />}
                   </button>
                 </FitTh>
               ))}
