@@ -104,6 +104,7 @@ export default function Dashboard() {
   const open = s.requests.filter((r) => s.isOpenRequest(r));
   const openFg = open.filter((r) => r.complaintType === "finished_good").length;
   const openRm = open.filter((r) => r.complaintType === "raw_material").length;
+  const openOs = open.filter((r) => r.complaintType === "other_supplier").length;
 
   const kpiTiles: KpiTile[] = [
     {
@@ -116,6 +117,7 @@ export default function Dashboard() {
     },
     { key: "openFg", label: "Open — finished good", value: openFg, hint: "customer complaints", href: requestsHref() },
     { key: "openRm", label: "Open — raw material", value: openRm, hint: "supplier complaints", href: requestsHref() },
+    { key: "openOs", label: "Open — other supplier", value: openOs, hint: "other supplier complaints", href: requestsHref() },
     { key: "delayed", label: "Delayed", value: counts.delayed, hint: "past due", tone: counts.delayed > 0 ? "red" : undefined },
     { key: "done", label: "Closed (30d)", value: completed30, hint: "reviewed and closed" },
   ];
