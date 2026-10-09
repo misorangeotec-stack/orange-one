@@ -1,5 +1,6 @@
 import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import { ChevronLeft, ChevronRight } from "lucide-react";
+import { HeightGrip, usePersistedSize } from "./ResizeGrip";
 
 interface Props {
   children: ReactNode;
@@ -9,6 +10,11 @@ interface Props {
   maxHeight?: string;
   /** Pixels moved per key/button press. */
   step?: number;
+  /**
+   * Give the table a drag strip underneath, so the reader sets how tall it is (remembered per
+   * browser under this key; double-click resets to `maxHeight`). Without it, nothing changes.
+   */
+  resizeKey?: string;
 }
 
 /**
@@ -21,8 +27,10 @@ interface Props {
  * div, which would otherwise capture horizontal scroll. `[&>div]:!overflow-visible`
  * neutralises that so THIS element is the single scroll container for both axes.
  */
-export function ScrollableTable({ children, className, maxHeight, step = 320 }: Props) {
+export function ScrollableTable({ children, className, maxHeight, step = 320, resizeKey }: Props) {
   const ref = useRef<HTMLDivElement>(null);
+  const [height, setHeight] = usePersistedSize(resizeKey ? `table.${resizeKey}` : undefined);
+  const dragFrom = useRef(0);
   const [overflow, setOverflow] = useState(false);
 
   const check = () => {
@@ -92,10 +100,19 @@ export function ScrollableTable({ children, className, maxHeight, step = 320 }: 
         ref={ref}
         tabIndex={0}
         onKeyDown={onKeyDown}
+        style={height !== undefined ? { maxHeight: height } : undefined}
         className={`overflow-auto [&>div]:!overflow-visible focus:outline-none ${maxHeight ?? ""} ${className ?? ""}`}
       >
         {children}
       </div>
+      {resizeKey && (
+        <HeightGrip
+          label="Drag to make the table taller or shorter · double-click to reset"
+          onStart={() => { dragFrom.current = ref.current?.clientHeight ?? 400; }}
+          onMove={(dy) => setHeight(Math.max(120, Math.min(4000, dragFrom.current + dy)))}
+          onReset={() => setHeight(undefined)}
+        />
+      )}
     </div>
   );
 }

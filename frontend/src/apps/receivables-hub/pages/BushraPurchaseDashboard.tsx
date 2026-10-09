@@ -30,9 +30,11 @@ import { cn } from "@hub/lib/utils";
 import { Button } from "@hub/components/ui/button";
 import { Input } from "@hub/components/ui/input";
 import { ScrollableTable } from "@/core/shared/components/ScrollableTable";
+import { FitFilter, FitTh, ResetWidths } from "@/shared/components/ui/ColumnResizer";
+import { useColumnWidths } from "@/shared/lib/useColumnWidths";
 import { usePagination } from "@/shared/lib/usePagination";
 import Pagination from "@/shared/components/ui/Pagination";
-import SalesPanel from "@hub/components/masterreports/SalesPanel";
+import SalesPanel, { usePanelSizing } from "@hub/components/masterreports/SalesPanel";
 import { MultiSelectFilter, type MultiSelectOption } from "@hub/components/MultiSelectFilter";
 import { fmtSales, salesFyOptions } from "@hub/lib/salesReport";
 import { currentFy, ymd } from "@hub/lib/salesRegister";
@@ -158,7 +160,7 @@ export default function BushraPurchaseDashboard({ presetId }: { presetId: string
   // Same cache keys as the Purchase Register page, so every dashboard and the register share one load.
   // ⚠ The item lookup's key is the Sales side's: bump it WITH that one, or the lookup downloads twice.
   const { data: lookup, error: lookupError } = useQuery({
-    queryKey: ["bushraSalesRegister", "itemLookup", "v3"],
+    queryKey: ["bushraSalesRegister", "itemLookup", "v4"],
     queryFn: loadItemLookup,
     staleTime: 30 * 60 * 1000,
   });
@@ -477,12 +479,17 @@ function MixPanel({ title, subtitle, data, measure, colorOf, selected, onPick, n
   const net = rows.reduce((s, p) => s + p[measure], 0);
   const gross = rows.reduce((s, p) => s + Math.max(0, p[measure]), 0);
   const max = Math.max(1, ...rows.map((p) => Math.abs(p[measure])));
+  // The strip opens the list's window; Bars − / + thickens the hand-drawn bars.
+  const { size: sz, barControl, grip, bodyRef } = usePanelSizing(title, { resizable: true, bars: true, sizeKey: `mix-${title}` });
 
   return (
-    <div className="rounded-xl border border-border bg-surface p-4 shadow-sm">
+    <div className="rounded-xl border border-border bg-surface p-4 pb-1 shadow-sm">
       <div className="mb-3 flex items-baseline justify-between gap-2">
         <h3 className="text-[15px] font-bold text-foreground">{title}</h3>
-        <span className="text-[12px] text-muted-foreground">{subtitle}</span>
+        <span className="flex items-center gap-2">
+          <span className="text-[12px] text-muted-foreground">{subtitle}</span>
+          {barControl}
+        </span>
       </div>
       <div className="-mt-2 mb-2 truncate text-[11px] text-muted-foreground" title={note}>{note}</div>
       {loading ? (
@@ -491,7 +498,9 @@ function MixPanel({ title, subtitle, data, measure, colorOf, selected, onPick, n
         <div className="py-10 text-center text-xs text-muted-foreground">{emptyMessage}</div>
       ) : (
         <>
-          <ul className={cn("space-y-1", rows.length > 10 && "max-h-[420px] overflow-y-auto pr-1")}>
+          <div ref={bodyRef}>
+          <ul className={cn("space-y-1", rows.length > 10 && "overflow-y-auto pr-1")}
+              style={rows.length > 10 ? { maxHeight: sz.h(420) } : undefined}>
             {rows.map((p) => {
               const v = p[measure];
               const on = !selected.length || selected.includes(p.name);
@@ -512,7 +521,7 @@ function MixPanel({ title, subtitle, data, measure, colorOf, selected, onPick, n
                       <span className="h-3 w-3 shrink-0 rounded-full" style={{ background: color }} />
                       <span className="truncate text-[13.5px] text-foreground/80">{p.name}</span>
                     </span>
-                    <span className="h-2 w-full overflow-hidden rounded-full bg-muted/60">
+                    <span className="w-full overflow-hidden rounded-full bg-muted/60" style={{ height: sz.bar(8) }}>
                       <span
                         className="block h-full rounded-full"
                         style={{
@@ -532,6 +541,7 @@ function MixPanel({ title, subtitle, data, measure, colorOf, selected, onPick, n
               );
             })}
           </ul>
+          </div>
           <div className="mt-2 flex items-center justify-between border-t border-border/70 px-2 pt-2 text-[12.5px]">
             <span className="font-medium text-muted-foreground">
               {measure === "value" ? "Net total" : "Total"}
@@ -541,6 +551,7 @@ function MixPanel({ title, subtitle, data, measure, colorOf, selected, onPick, n
           </div>
         </>
       )}
+      {grip}
     </div>
   );
 }
@@ -556,18 +567,24 @@ function ColumnChart({ title, data, measure, color, selected, onPick, note, fmtQ
   const fmt = measure === "value" ? fmtSales : fmtQ;
   const total = data.reduce((s, p) => s + p[measure], 0);
   const many = data.length > 8;
+  // Reader-sized, like every SalesPanel: drag the strip for height, Bars − / + for thickness.
+  const { size: sz, barControl, grip, bodyRef } = usePanelSizing(title, { resizable: true, bars: true });
   return (
-    <div className="rounded-xl border border-border bg-surface p-4 shadow-sm">
+    <div className="rounded-xl border border-border bg-surface p-4 pb-1 shadow-sm">
       <div className="mb-2 flex items-baseline justify-between gap-2">
         <h3 className="text-[15px] font-bold text-foreground">{title}</h3>
-        <span className="truncate text-[12px] text-muted-foreground">{note}</span>
+        <span className="flex min-w-0 items-center gap-2">
+          <span className="truncate text-[12px] text-muted-foreground">{note}</span>
+          {barControl}
+        </span>
       </div>
       {loading ? (
         <div className="h-[300px] w-full animate-pulse rounded-md bg-muted/50" />
       ) : empty ? (
         <div className="py-10 text-center text-xs text-muted-foreground">{emptyMessage}</div>
       ) : (
-        <ResponsiveContainer width="100%" height={300}>
+        <div ref={bodyRef}>
+        <ResponsiveContainer width="100%" height={sz.h(300)}>
           <BarChart data={data} margin={{ top: 22, right: 8, left: 0, bottom: many ? 30 : 4 }}>
             <CartesianGrid stroke={CHART_GRID} vertical={false} />
             <XAxis dataKey="name" tick={{ ...AXIS_TICK, fontSize: many ? 10 : 11 }} tickLine={false}
@@ -577,7 +594,7 @@ function ColumnChart({ title, data, measure, color, selected, onPick, note, fmtQ
                    tickFormatter={(v: number) => fmt(v).replace("₹ ", "")} />
             <ReferenceLine y={0} stroke="hsl(220 10% 75%)" />
             <Tooltip cursor={{ fill: "hsl(220 15% 95%)" }} content={<PairTooltip fmtQ={fmtQ} />} />
-            <Bar dataKey={measure} maxBarSize={56} radius={[4, 4, 0, 0]} className="cursor-pointer"
+            <Bar dataKey={measure} maxBarSize={sz.bar(56)} radius={[4, 4, 0, 0]} className="cursor-pointer"
                  onClick={(d: { name?: string }, _i: number, e?: { stopPropagation?: () => void }) => {
                    e?.stopPropagation?.();
                    if (d?.name) onPick(d.name);
@@ -589,6 +606,7 @@ function ColumnChart({ title, data, measure, color, selected, onPick, note, fmtQ
             </Bar>
           </BarChart>
         </ResponsiveContainer>
+        </div>
       )}
       {!loading && !empty && total !== 0 && (
         <div className="mt-1 flex justify-between border-t border-border/70 px-1 pt-2 text-[12.5px]">
@@ -596,6 +614,7 @@ function ColumnChart({ title, data, measure, color, selected, onPick, note, fmtQ
           <span className="font-bold tabular-nums text-foreground">{fmt(total)}</span>
         </div>
       )}
+      {grip}
     </div>
   );
 }
@@ -650,6 +669,9 @@ const REPORT_COLUMNS: {
   { header: "Amount", filter: null, right: true, sort: (r) => r.amount },
 ];
 
+/** Column ids for the dragged widths — the headings themselves. */
+const COL_IDS = REPORT_COLUMNS.map((c) => c.header);
+
 function PurchaseReportTable({ rows, base, from, to, loading, fmtQ, sel, setFilter, onResetDashboard }: {
   /** The dashboard's filtered lines, and `base` — its slice before any filter, for the dropdowns. */
   rows: Row[]; base: Row[]; from: string; to: string; loading: boolean; fmtQ: QtyFmt;
@@ -658,6 +680,8 @@ function PurchaseReportTable({ rows, base, from, to, loading, fmtQ, sel, setFilt
   onResetDashboard: () => void;
 }) {
   const [q, setQ] = useState("");
+  /** Column widths the reader drags — header edge, double-click resets, "Reset widths" clears all. */
+  const fit = useColumnWidths("tb", COL_IDS, "bushra-purchase-dash-report");
   const [tsel, setTsel] = useState<Record<TableOnlyKey, string[]>>(NO_TABLE_FILTERS);
   const [sort, setSort] = useState<{ col: number; dir: 1 | -1 } | null>(null);
   const matchesSearch = useMemo(() => {
@@ -714,6 +738,7 @@ function PurchaseReportTable({ rows, base, from, to, loading, fmtQ, sel, setFilt
                 subtitle={`${fmtInt(shown.length)} lines · quantity ${fmtQ(totals.qty)} · amount ${fmtSales(totals.value)}`}
                 actions={
                   <div className="flex items-center gap-2">
+                    <ResetWidths fit={fit} cols={COL_IDS} className="inline-flex items-center gap-1 text-[11px] text-primary hover:underline" />
                     {tableFilterCount > 0 && (
                       <button type="button" onClick={() => setTsel(NO_TABLE_FILTERS)} className="text-[11px] text-primary hover:underline">
                         Clear table filters ({tableFilterCount})
@@ -731,12 +756,12 @@ function PurchaseReportTable({ rows, base, from, to, loading, fmtQ, sel, setFilt
                     </Button>
                   </div>
                 }>
-      <ScrollableTable className="rounded-md border border-border" maxHeight="max-h-[60vh]">
+      <ScrollableTable className="rounded-md border border-border" maxHeight="max-h-[60vh]" resizeKey="bushra-purchase-dash-report">
         <table className="w-full min-w-[1800px] border-collapse">
           <thead>
             <tr className="border-b border-border bg-muted/50">
               {REPORT_COLUMNS.map((c, i) => (
-                <th key={c.header} className={cn(
+                <FitTh key={c.header} fit={fit} col={c.header} className={cn(
                   "whitespace-nowrap px-3 py-2 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground",
                   c.right ? "text-right" : "text-left",
                 )}>
@@ -746,13 +771,15 @@ function PurchaseReportTable({ rows, base, from, to, loading, fmtQ, sel, setFilt
                     {sort?.col !== i ? <ArrowUpDown className="h-3 w-3 opacity-40" />
                       : sort.dir === 1 ? <ArrowUp className="h-3 w-3" /> : <ArrowDown className="h-3 w-3" />}
                   </button>
-                </th>
+                </FitTh>
               ))}
             </tr>
             <tr className="border-b-2 border-border bg-muted/30">
               {REPORT_COLUMNS.map((c) => (
                 <th key={c.header} className="px-2 py-1.5 font-normal">
-                  {c.filter && ("dash" in c.filter ? (
+                  {c.filter && (
+                  <FitFilter dragged={fit.width(c.header) !== undefined}>
+                  {"dash" in c.filter ? (
                     <MultiSelectFilter
                       options={dashOptions[c.filter.dash]}
                       value={sel[c.filter.dash]}
@@ -768,7 +795,9 @@ function PurchaseReportTable({ rows, base, from, to, loading, fmtQ, sel, setFilt
                       allLabel="Any" unit={c.header} searchable contentClassName="w-72"
                       triggerClassName="w-full min-w-[110px] h-8 text-xs rounded-input border-border bg-surface"
                     />
-                  ))}
+                  )}
+                  </FitFilter>
+                  )}
                 </th>
               ))}
             </tr>

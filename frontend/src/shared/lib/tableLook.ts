@@ -69,7 +69,24 @@ export const HUB_PAGES_ON: readonly string[] = [
   "/outstanding-dashboard/group/:id",
   "/reports/disputed-bills",
   "/reports/red-mark",
+  // Bushra-Report (30-09-2026, "resize the table … of all reports and dashboard"). Header handle
+  // only, as on the pages above: the hub tables do not wrap their cells, so no row changes.
+  "/reports/bushra-sales-register",
+  "/reports/bushra-purchase-register",
+  "/reports/batch-costing",
 ];
+
+/**
+ * Whole branches switched on at once, by path prefix: every Bushra-Dashboard — the Sales and
+ * Purchase dashboards are generated one per preset, so listing them singly would leave the next
+ * preset out.
+ */
+export const HUB_PREFIXES_ON: readonly string[] = ["/reports/bushra-dashboard/"];
+
+const hubPageOn = (pathname: string) => {
+  const p = normalisePath(pathname);
+  return HUB_PAGES_ON.includes(p) || HUB_PREFIXES_ON.some((pre) => p.startsWith(pre));
+};
 
 /** The two apps whose screens are listed one by one above. */
 const PAGE_GATED = ["outstanding-dashboard", "reports"];
@@ -77,14 +94,14 @@ const PAGE_GATED = ["outstanding-dashboard", "reports"];
 /** Whether the tables on this URL have the one-line look (which always includes the drag). */
 export function tableLookOn(pathname: string): boolean {
   const id = currentAppId(pathname) ?? "core";
-  if (PAGE_GATED.includes(id)) return HUB_PAGES_ON.includes(normalisePath(pathname));
+  if (PAGE_GATED.includes(id)) return hubPageOn(pathname);
   return TABLE_LOOK_ON.includes(id);
 }
 
 /** Whether the tables on this URL can be dragged — the look's modules, plus the drag-only ones. */
 export function tableDragOn(pathname: string): boolean {
   const id = currentAppId(pathname) ?? "core";
-  if (PAGE_GATED.includes(id)) return HUB_PAGES_ON.includes(normalisePath(pathname));
+  if (PAGE_GATED.includes(id)) return hubPageOn(pathname);
   return TABLE_LOOK_ON.includes(id) || TABLE_DRAG_ON.includes(id);
 }
 

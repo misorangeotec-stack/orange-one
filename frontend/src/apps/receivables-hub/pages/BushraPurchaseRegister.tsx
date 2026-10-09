@@ -15,6 +15,8 @@ import { Input } from "@hub/components/ui/input";
 import { MultiSelectFilter, type MultiSelectOption } from "@hub/components/MultiSelectFilter";
 import { FilterChips, type FilterChip } from "@hub/components/FilterChips";
 import { ScrollableTable } from "@/core/shared/components/ScrollableTable";
+import { FitFilter, FitTh, ResetWidths } from "@/shared/components/ui/ColumnResizer";
+import { useColumnWidths } from "@/shared/lib/useColumnWidths";
 import { usePagination } from "@/shared/lib/usePagination";
 import Pagination from "@/shared/components/ui/Pagination";
 import { defaultRange, ymdToIso, isoToYmd } from "@hub/lib/salesRegister";
@@ -94,8 +96,13 @@ const TABLE_COLUMNS: { header: string; filter: FilterKey | null; right?: boolean
   { header: "Colour", filter: "colour", sort: (r) => r.colour },
 ];
 
+/** Column ids for the dragged widths — the headings themselves. */
+const COL_IDS = TABLE_COLUMNS.map((c) => c.header);
+
 export default function BushraPurchaseRegister() {
   const init = useMemo(() => defaultRange(), []);
+  /** Column widths the reader drags — header edge, double-click resets, "Reset widths" clears all. */
+  const fit = useColumnWidths("tb", COL_IDS, "bushra-purchase-register");
   const [fromIso, setFromIso] = useState(ymdToIso(init.from));
   const [toIso, setToIso] = useState(ymdToIso(init.to));
   const from = isoToYmd(fromIso);
@@ -105,7 +112,7 @@ export default function BushraPurchaseRegister() {
   // Same query key as the Bushra Sales Register, so the ~14k Central Masters items are shared.
   // ⚠ Bump it WITH the Sales side's key, or the two screens download the lookup twice.
   const { data: lookup, error: lookupError } = useQuery({
-    queryKey: ["bushraSalesRegister", "itemLookup", "v3"],
+    queryKey: ["bushraSalesRegister", "itemLookup", "v4"],
     queryFn: loadItemLookup,
     staleTime: 30 * 60 * 1000,
   });
@@ -297,35 +304,38 @@ export default function BushraPurchaseRegister() {
             {notInMasters > 0 && (
               <> · {notInMasters.toLocaleString("en-IN")} item{notInMasters === 1 ? "" : "s"} not found in Central Masters</>
             )}
+            <ResetWidths fit={fit} cols={COL_IDS} className="ml-3 inline-flex items-center gap-1 text-primary hover:underline" />
           </div>
 
-          <ScrollableTable className="rounded-lg border border-border" maxHeight="max-h-[64vh]">
+          <ScrollableTable className="rounded-lg border border-border" maxHeight="max-h-[64vh]" resizeKey="bushra-purchase-register">
             <table className="w-full border-collapse min-w-[1800px]">
               <thead>
                 <tr className="border-b border-border bg-muted/50">
                   {TABLE_COLUMNS.map((c, i) => (
-                    <th key={c.header} className={`${c.right ? "text-right" : "text-left"} py-2 px-3 text-xs font-semibold uppercase tracking-wide text-muted-foreground whitespace-nowrap`}>
+                    <FitTh key={c.header} fit={fit} col={c.header} className={`${c.right ? "text-right" : "text-left"} py-2 px-3 text-xs font-semibold uppercase tracking-wide text-muted-foreground whitespace-nowrap`}>
                       <button type="button" onClick={() => toggleSort(i)} title={`Sort by ${c.header}`}
                               className={`inline-flex items-center gap-1 uppercase hover:text-foreground ${sort?.col === i ? "text-foreground" : ""}`}>
                         {c.header}
                         {sort?.col !== i ? <ArrowUpDown className="h-3 w-3 opacity-40" />
                           : sort.dir === 1 ? <ArrowUp className="h-3 w-3" /> : <ArrowDown className="h-3 w-3" />}
                       </button>
-                    </th>
+                    </FitTh>
                   ))}
                 </tr>
                 <tr className="border-b-2 border-border bg-muted/30">
                   {TABLE_COLUMNS.map((c) => (
                     <th key={c.header} className="py-1.5 px-2 font-normal">
                       {c.filter && (
-                        <MultiSelectFilter
-                          options={options[c.filter]}
-                          value={sel[c.filter]}
-                          onChange={setFilter(c.filter)}
-                          allLabel="Any"
-                          unit={c.header}
-                          triggerClassName="w-full min-w-[110px] h-8 text-xs rounded-input border-border bg-surface"
-                        />
+                        <FitFilter dragged={fit.width(c.header) !== undefined}>
+                          <MultiSelectFilter
+                            options={options[c.filter]}
+                            value={sel[c.filter]}
+                            onChange={setFilter(c.filter)}
+                            allLabel="Any"
+                            unit={c.header}
+                            triggerClassName="w-full min-w-[110px] h-8 text-xs rounded-input border-border bg-surface"
+                          />
+                        </FitFilter>
                       )}
                     </th>
                   ))}

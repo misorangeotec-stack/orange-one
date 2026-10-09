@@ -30,6 +30,9 @@ export const fyOfDate = (d: string) => {
 export const monthName = (yyyymm: string) => `${MONTHS[Number(yyyymm.slice(4, 6)) - 1]}-${yyyymm.slice(2, 4)}`;
 /** A year earlier, same month and day. "20260916" → "20250916". */
 export const yearBefore = (d: string) => `${Number(d.slice(0, 4)) - 1}${d.slice(4)}`;
+/** YYYYMMDD on the last day of its month — a month cut there is the whole month, not "1–N". */
+export const isMonthEnd = (d: string) =>
+  Number(d.slice(6)) >= new Date(Number(d.slice(0, 4)), Number(d.slice(4, 6)), 0).getDate();
 /** FY quarters: Q1 Apr-Jun, Q2 Jul-Sep, Q3 Oct-Dec, Q4 Jan-Mar. */
 export const quarterOf = (yyyymm: string) => {
   const m = Number(yyyymm.slice(4, 6));
@@ -49,7 +52,8 @@ export const growth = (cur: number, pre: number): number | null =>
  * themselves: the cards read Sales → Discount → Net.
  */
 const DISCOUNT_LINE = /DISCOUNT|RATE\s*DIFF/i;
-export const isDiscountLine = (r: Row) => DISCOUNT_LINE.test(r.particulars);
+export const isDiscountParticulars = (particulars: string) => DISCOUNT_LINE.test(particulars);
+export const isDiscountLine = (r: Row) => isDiscountParticulars(r.particulars);
 export const DISCOUNT_TYPE = "Discount";
 
 /** The five the business sells; everything else is one bucket. */

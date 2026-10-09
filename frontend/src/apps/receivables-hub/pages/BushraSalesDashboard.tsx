@@ -24,7 +24,7 @@
  */
 import { Fragment, useMemo, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   Bar, BarChart, CartesianGrid, Cell, LabelList, ReferenceLine, ResponsiveContainer, Tooltip, XAxis, YAxis,
 } from "recharts";
@@ -37,21 +37,25 @@ import { cn } from "@hub/lib/utils";
 import { Button } from "@hub/components/ui/button";
 import { Input } from "@hub/components/ui/input";
 import { ScrollableTable } from "@/core/shared/components/ScrollableTable";
+import { FitFilter, FitTh, ResetWidths } from "@/shared/components/ui/ColumnResizer";
+import { useColumnWidths } from "@/shared/lib/useColumnWidths";
 import { usePagination } from "@/shared/lib/usePagination";
 import Pagination from "@/shared/components/ui/Pagination";
 import { exportSalesRegisterXlsx, type ExtraColumn } from "@hub/lib/exportSalesRegister";
-import SalesPanel from "@hub/components/masterreports/SalesPanel";
+import SalesPanel, { usePanelSizing } from "@hub/components/masterreports/SalesPanel";
 import { MultiSelectFilter, type MultiSelectOption } from "@hub/components/MultiSelectFilter";
 import { fmtSales, salesFyOptions } from "@hub/lib/salesReport";
 import { currentFy, ymd } from "@hub/lib/salesRegister";
-import { loadBushraSalesRegister, loadItemLookup, type BushraRegisterRow } from "@hub/lib/bushraSalesRegister";
+import { copiesOf, loadBushraSalesRegister, loadItemLookup, type BushraRegisterRow } from "@hub/lib/bushraSalesRegister";
+import BushraItemEditDialog, { type EditSuggestions } from "@hub/components/BushraItemEditDialog";
+import { ColumnPicker, type ColumnOption } from "@hub/components/ColumnPicker";
 import {
   SALES_DASHBOARDS, salesPresetById, type Metric, type PrimaryDim, type QtyUnit, type SectionDim,
 } from "@hub/lib/bushraSalesDashboards";
 import {
   DIMS, DISCOUNT_TYPE, MAIN_PRODUCTS, MONTHS, NOT_SET, OTHER_PRODUCT, QUARTER_MONTHS, SALES_TYPE_UNIT,
   compareBy, fmtInt, fmtQty, fyOfDate, growth, isDiscountLine, makeQtyFmt, monthName, monthsOfFy, orNotSet,
-  pairBy, quarterOf, salesKpis, yearBefore, type Cmp, type Pair, type QtyFmt,
+  pairBy, quarterOf, salesKpis, yearBefore, isMonthEnd, type Cmp, type Pair, type QtyFmt,
 } from "@hub/lib/bushraSalesFigures";
 import { useScopedParties } from "@hub/lib/scopeParties";
 import { EMAILABLE_REPORTS, useReportAccess } from "@hub/lib/reportAccess";
@@ -191,12 +195,12 @@ export default function BushraSalesDashboard({ presetId }: { presetId: string })
 
   // Same cache keys as the Sales Register, so every dashboard and the register share one load.
   const { data: lookup, error: lookupError } = useQuery({
-    queryKey: ["bushraSalesRegister", "itemLookup", "v3"],
+    queryKey: ["bushraSalesRegister", "itemLookup", "v4"],
     queryFn: loadItemLookup,
     staleTime: 30 * 60 * 1000,
   });
   const { data, isLoading, isFetching, error: rowsError } = useQuery<Row[]>({
-    queryKey: ["bushraSalesRegister", "v7", from, to, scopeKey],
+    queryKey: ["bushraSalesRegister", "v8", from, to, scopeKey],
     queryFn: () => loadBushraSalesRegister(from, to, scope, lookup),
     enabled: !scopeLoading && !!lookup,
     staleTime: 5 * 60 * 1000,
@@ -348,8 +352,23 @@ export default function BushraSalesDashboard({ presetId }: { presetId: string })
     const fyEnd = `${Number(thisFy.slice(0, 4)) + 1}0331`;
     return today < fyEnd ? today : fyEnd;
   }, [compareRows, thisFy]);
-  /** The month both halves line up on: the one picked, else the month of that cut-off. */
-  const compareMonth = sel.month.length === 1 ? monthKey(sel.month[0]) : compareTo.slice(0, 6);
+  /**
+   * THE MONTH FILTER MOVES BOTH HALVES OF THE PERFORMANCE CARDS.
+   *
+   * Pick a month (or a quarter's three) and the cards compare the latest month picked, and the year
+   * to date runs 1-Apr to the end of that month, not to the last day with sales. Without a pick, or
+   * a pick outside this FY, both stay on the latest data. The period table keeps the full year.
+   */
+  const pickedKeys = useMemo(() => {
+    const fyFrom = `${thisFy.slice(0, 4)}04`;
+    return sel.month.map(monthKey).filter((k) => k >= fyFrom && k <= compareTo.slice(0, 6)).sort();
+  }, [sel.month, thisFy, compareTo]);
+  /** The month both halves line up on: the latest one picked, else the month of that cut-off. */
+  const compareMonth = pickedKeys.length ? pickedKeys[pickedKeys.length - 1] : compareTo.slice(0, 6);
+  /** The year-to-date cut-off the cards use: the picked month's last day, never past the data. */
+  const cardTo = compareMonth === compareTo.slice(0, 6)
+    ? compareTo
+    : `${compareMonth}${new Date(Number(compareMonth.slice(0, 4)), Number(compareMonth.slice(4)), 0).getDate()}`;
   /** Every month of this FY up to that cut-off — what the month cards run over. */
   const compareMonths = useMemo(() => monthsOfFy(thisFy, compareTo), [thisFy, compareTo]);
   const total = metric === "value" ? kpi.net : kpi.qty;
@@ -384,7 +403,7 @@ export default function BushraSalesDashboard({ presetId }: { presetId: string })
     const summary = buildSalesSummary({
       // FOC rides beside the cards on the Sales dashboard only, as on screen. Anywhere else it would
       // be every product's free issue on a one-product page, or on the FOC page the same lines twice.
-      rows, compareRows, focRows: foc ? focLines : [], thisFy, lastFy, ytdTo: compareTo, compareMonth,
+      rows, compareRows, focRows: foc ? focLines : [], thisFy, lastFy, ytdTo: cardTo, compareMonth,
       dims: COMPARE_DIMS[preset.id] ?? { bucket: "salesType", child: "category" },
       qtyUnit: preset.qtyUnit,
       title: preset.id === "bushra-sales-dashboard" ? "Sales Dashboard" : `Sales · ${preset.title}`,
@@ -622,7 +641,7 @@ export default function BushraSalesDashboard({ presetId }: { presetId: string })
       {/* ── Product performance: this year against last ───────────────────── */}
       <ProductPerformance
         rows={compareRows} dims={COMPARE_DIMS[preset.id] ?? { bucket: "salesType", child: "category" }}
-        month={compareMonth} ytdTo={compareTo} thisFy={thisFy} lastFy={lastFy} fmtQ={fmtQ} loading={loading}
+        month={compareMonth} ytdTo={cardTo} thisFy={thisFy} lastFy={lastFy} fmtQ={fmtQ} loading={loading}
       />
 
       {/* ── Quarter & month performance: one table, products across the top ─── */}
@@ -648,13 +667,13 @@ export default function BushraSalesDashboard({ presetId }: { presetId: string })
           title={`${metricWord} by ${primaryTitle}`} icon={ShoppingCart} colorOf={primaryColor}
           slices={byPrimary} total={total} fmt={fmtMeasure} selected={sel[preset.primary]}
           onPick={toggle(preset.primary)} what={primaryTitle} note={pickedNote(preset.primary, primaryTitle.toLowerCase())}
-          loading={loading} empty={empty} emptyMessage={emptyMsg}
+          sizeKey="slice-primary" loading={loading} empty={empty} emptyMessage={emptyMsg}
         />
         <SliceChart
           title={`${metricWord} by Category`} icon={Layers} colorOf={categoryColor}
           slices={byCategory} total={total} fmt={fmtMeasure} selected={sel.category}
           onPick={toggle("category")} what="Category" note={pickedNote("category", "category")}
-          loading={loading} empty={empty} emptyMessage={emptyMsg}
+          sizeKey="slice-category" loading={loading} empty={empty} emptyMessage={emptyMsg}
         />
       </div>
       </Section>
@@ -889,9 +908,11 @@ function MixPanel({ title, subtitle, data, measure, colorOf, selected, onPick, n
   const netQty = rows.reduce((s, p) => s + p.qty, 0);
   /** The ring shows what ADDS to the total; a negative stays in the list beside it. */
   const positives = rows.filter((p) => p[ringOn] > 0).map((p) => ({ name: p.name, value: p[ringOn] }));
+  // The strip under the card opens the list's window taller or shorter.
+  const { size: sz, grip, bodyRef } = usePanelSizing(title, { resizable: true, sizeKey: `mix-${title}` });
 
   return (
-    <div className="rounded-xl border border-border bg-surface p-4 shadow-sm">
+    <div className="rounded-xl border border-border bg-surface p-4 pb-1 shadow-sm">
       <div className="mb-3 flex items-baseline justify-between gap-2">
         <h3 className="text-[15px] font-bold text-foreground">{title}</h3>
         <span className="text-[12px] text-muted-foreground">{subtitle}</span>
@@ -903,10 +924,11 @@ function MixPanel({ title, subtitle, data, measure, colorOf, selected, onPick, n
         <div className="py-10 text-center text-xs text-muted-foreground">{emptyMessage}</div>
       ) : (
         <>
-          <div className="flex flex-col items-center gap-4 sm:flex-row sm:items-start">
+          <div ref={bodyRef} className="flex flex-col items-center gap-4 sm:flex-row sm:items-start">
             <Donut slices={positives} total={net} label={fmt(net)} colorOf={colorOf} selected={selected} onPick={onPick} />
             {/* A long list (every spare-parts category) scrolls beside the ring, largest first. */}
-            <ul className={cn("min-w-0 flex-1 space-y-0.5", rows.length > 8 && "max-h-[280px] overflow-y-auto pr-1")}>
+            <ul className={cn("min-w-0 flex-1 space-y-0.5", rows.length > 8 && "overflow-y-auto pr-1")}
+                style={rows.length > 8 ? { maxHeight: sz.h(280) } : undefined}>
               {rows.map((p) => {
                 const v = p[ringOn];
                 const on = !selected.length || selected.includes(p.name);
@@ -963,6 +985,7 @@ function MixPanel({ title, subtitle, data, measure, colorOf, selected, onPick, n
           </div>
         </>
       )}
+      {grip}
     </div>
   );
 }
@@ -1073,7 +1096,7 @@ function ProductPerformance({ rows, dims, month, ytdTo, thisFy, lastFy, fmtQ, lo
       : list;
   }, [rows, dims, windows]);
 
-  const monthLabel = `${monthName(month)} vs ${monthName(yearBefore(`${month}01`).slice(0, 6))}${monthCut ? ` · 1–${Number(ytdTo.slice(6))}` : ""}`;
+  const monthLabel = `${monthName(month)} vs ${monthName(yearBefore(`${month}01`).slice(0, 6))}${monthCut && !isMonthEnd(ytdTo) ? ` · 1–${Number(ytdTo.slice(6))}` : ""}`;
   const ytdLabel = `FY ${thisFy} to date vs FY ${lastFy}`;
 
   return (
@@ -1272,15 +1295,18 @@ function PeriodMix({ rows, months, grain, setGrain, measure, fmtQ, selectedProdu
   }, [rows, months, grain, measure]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const grandTotal = data.reduce((s, p) => s + p.total, 0);
+  // Reader-sized, like every SalesPanel: drag the strip for height, Bars − / + for thickness.
+  const { size: sz, barControl, grip, bodyRef } = usePanelSizing("period", { resizable: true, bars: true, sizeKey: `period-${measure}` });
 
   return (
-    <div className="rounded-xl border border-border bg-surface p-4 shadow-sm">
+    <div className="rounded-xl border border-border bg-surface p-4 pb-1 shadow-sm">
       <div className="mb-1 flex flex-wrap items-baseline justify-between gap-2">
         <h3 className="text-[15px] font-bold text-foreground">
           {measure === "value" ? "Revenue" : "Quantity"} by {grain === "month" ? "month" : "quarter"}
         </h3>
         <div className="flex items-center gap-2">
           <span className="text-[12px] text-muted-foreground">per product</span>
+          {barControl}
           <div className="flex h-7 overflow-hidden rounded-input border border-border text-[11.5px]">
             {(["month", "quarter"] as const).map((g) => (
               <button key={g} type="button" onClick={() => setGrain(g)}
@@ -1307,7 +1333,8 @@ function PeriodMix({ rows, months, grain, setGrain, measure, fmtQ, selectedProdu
       ) : empty ? (
         <div className="py-10 text-center text-xs text-muted-foreground">{emptyMessage}</div>
       ) : (
-        <ResponsiveContainer width="100%" height={310}>
+        <div ref={bodyRef}>
+        <ResponsiveContainer width="100%" height={sz.h(310)}>
           <BarChart data={data} margin={{ top: 20, right: 8, left: 0, bottom: grain === "month" ? 26 : 8 }}>
             <CartesianGrid stroke={CHART_GRID} vertical={false} />
             <XAxis dataKey="label" tick={{ ...AXIS_TICK, fontSize: grain === "month" ? 10 : 11 }} tickLine={false}
@@ -1319,7 +1346,7 @@ function PeriodMix({ rows, months, grain, setGrain, measure, fmtQ, selectedProdu
             <ReferenceLine y={0} stroke="hsl(220 10% 75%)" />
             <Tooltip cursor={{ fill: "hsl(220 15% 95%)" }} content={<PeriodTooltip fmt={fmt} products={products} />} />
             {products.map((n, i) => (
-              <Bar key={n} dataKey={n} stackId="p" fill={salesTypeColor(n)} maxBarSize={54}
+              <Bar key={n} dataKey={n} stackId="p" fill={salesTypeColor(n)} maxBarSize={sz.bar(54)}
                    stroke="hsl(0 0% 100%)" strokeWidth={1}
                    radius={i === products.length - 1 ? [4, 4, 0, 0] : undefined}
                    className="cursor-pointer"
@@ -1335,6 +1362,7 @@ function PeriodMix({ rows, months, grain, setGrain, measure, fmtQ, selectedProdu
             ))}
           </BarChart>
         </ResponsiveContainer>
+        </div>
       )}
       {!loading && !empty && (
         <div className="mt-1 flex justify-between border-t border-border/70 px-1 pt-2 text-[12.5px]">
@@ -1342,6 +1370,7 @@ function PeriodMix({ rows, months, grain, setGrain, measure, fmtQ, selectedProdu
           <span className="font-bold tabular-nums text-foreground">{fmt(grandTotal)}</span>
         </div>
       )}
+      {grip}
     </div>
   );
 }
@@ -1561,7 +1590,7 @@ function PeriodTable({ rows, months, thisFy, ytdTo, measure, setMeasure, fmtQ, p
       {loading ? (
         <div className="h-64 animate-pulse rounded-xl bg-muted/50" />
       ) : (
-        <ScrollableTable className="rounded-xl border border-border bg-surface" maxHeight="max-h-[70vh]">
+        <ScrollableTable className="rounded-xl border border-border bg-surface" maxHeight="max-h-[70vh]" resizeKey="bushra-sales-dash-performance">
           <table className="border-collapse" style={{ tableLayout: "fixed", width: tableWidth, minWidth: "100%" }}>
             <colgroup>
               <col style={{ width: widthOf("product", "product") }} />
@@ -1808,27 +1837,62 @@ const dateSortKey = (d: string) => d.split("-").reverse().join("");
 /**
  * Every column sorts (the house rule), each by `sort`: the date in calendar order and the amounts
  * as numbers, not by the text they print.
+ *
+ * THE ORDER IS THE USER'S (2026-10-08): Product right after Location, then the customer, the line
+ * itself and its figures (Particulars, Quantity, Rate, Revenue), and the item's classification
+ * (Category, Group, Ink Type, Colour) last. `cell` draws each column's cell, so header, filter row
+ * and body never drift out of step, and the Columns picker can drop any of them.
  */
+type EditCell = (r: Row, content: React.ReactNode) => React.ReactNode;
+const td = "whitespace-nowrap px-3 py-1.5";
 const REPORT_COLUMNS: {
   header: string; filter: { dash: FilterKey } | { table: TableOnlyKey } | null; right?: boolean;
   sort: (r: Row) => string | number;
+  cell: (r: Row, edit: EditCell) => React.ReactNode;
 }[] = [
-  { header: "Date", filter: { table: "date" }, sort: (r) => r.vch_date },
-  { header: "Voucher No.", filter: { table: "voucherNo" }, sort: (r) => r.voucher_no },
-  { header: "Type", filter: { dash: "type" }, sort: FILTERS.type.get },
-  { header: "Company", filter: { dash: "company" }, sort: (r) => r.company },
-  { header: "Location", filter: { dash: "location" }, sort: (r) => r.location_name },
-  { header: "Customer Name", filter: { dash: "party" }, sort: (r) => r.party },
-  { header: "Particulars", filter: { table: "particulars" }, sort: (r) => r.particulars },
-  { header: "Product", filter: { dash: "salesType" }, sort: FILTERS.salesType.get },
-  { header: "Category", filter: { dash: "category" }, sort: (r) => itemCell(FILTERS.category.get(r)) },
-  { header: "Group", filter: { dash: "group" }, sort: (r) => itemCell(FILTERS.group.get(r)) },
-  { header: "Ink Type", filter: { dash: "inkType" }, sort: (r) => itemCell(FILTERS.inkType.get(r)) },
-  { header: "Colour", filter: { dash: "colour" }, sort: (r) => itemCell(FILTERS.colour.get(r)) },
-  { header: "Quantity", filter: null, right: true, sort: (r) => r.quantity },
-  { header: "Rate", filter: null, right: true, sort: (r) => r.rate },
-  { header: "Revenue", filter: null, right: true, sort: (r) => r.revenue },
+  { header: "Date", filter: { table: "date" }, sort: (r) => r.vch_date,
+    cell: (r) => <td className={cn(td, "tabular-nums")}>{r.date_display}</td> },
+  { header: "Voucher No.", filter: { table: "voucherNo" }, sort: (r) => r.voucher_no,
+    cell: (r) => <td className={td}>{r.voucher_no}</td> },
+  // The derived type, so a discount line reads "Discount" here too.
+  { header: "Type", filter: { dash: "type" }, sort: FILTERS.type.get,
+    cell: (r) => <td className={td}>{FILTERS.type.get(r)}</td> },
+  { header: "Company", filter: { dash: "company" }, sort: (r) => r.company,
+    cell: (r) => <td className={td}>{r.company}</td> },
+  { header: "Location", filter: { dash: "location" }, sort: (r) => r.location_name,
+    cell: (r) => <td className={td}>{r.location_name}</td> },
+  { header: "Product", filter: { dash: "salesType" }, sort: FILTERS.salesType.get,
+    cell: (r, edit) => edit(r, FILTERS.salesType.get(r)) },
+  { header: "Customer Name", filter: { dash: "party" }, sort: (r) => r.party,
+    cell: (r) => <td className="px-3 py-1.5">{r.party}</td> },
+  { header: "Particulars", filter: { table: "particulars" }, sort: (r) => r.particulars,
+    cell: (r) => <td className="px-3 py-1.5">{r.particulars}</td> },
+  { header: "Quantity", filter: null, right: true, sort: (r) => r.quantity,
+    cell: (r) => <td className={cn(td, "text-right tabular-nums")}>{r.quantity ? nf2.format(r.quantity) : "—"}</td> },
+  { header: "Rate", filter: null, right: true, sort: (r) => r.rate,
+    cell: (r) => <td className={cn(td, "text-right tabular-nums")}>{r.rate ? nf2.format(r.rate) : "—"}</td> },
+  { header: "Revenue", filter: null, right: true, sort: (r) => r.revenue,
+    cell: (r) => <td className={cn(td, "text-right tabular-nums", r.revenue < 0 && "text-destructive")}>{nf2.format(r.revenue)}</td> },
+  { header: "Category", filter: { dash: "category" }, sort: (r) => itemCell(FILTERS.category.get(r)),
+    cell: (r, edit) => edit(r, itemCell(FILTERS.category.get(r))) },
+  { header: "Group", filter: { dash: "group" }, sort: (r) => itemCell(FILTERS.group.get(r)),
+    cell: (r, edit) => edit(r, itemCell(FILTERS.group.get(r))) },
+  { header: "Ink Type", filter: { dash: "inkType" }, sort: (r) => itemCell(FILTERS.inkType.get(r)),
+    cell: (r, edit) => edit(r, itemCell(FILTERS.inkType.get(r))) },
+  { header: "Colour", filter: { dash: "colour" }, sort: (r) => itemCell(FILTERS.colour.get(r)),
+    cell: (r, edit) => edit(r, itemCell(FILTERS.colour.get(r))) },
 ];
+const COL_IDS = REPORT_COLUMNS.map((c) => c.header);
+const COLUMN_OPTIONS: ColumnOption[] = COL_IDS.map((h) => ({ key: h, label: h }));
+/** The reader's own column choice, kept in this browser only — a convenience, never shared. */
+const COLS_KEY = "orangeone.cols.bushra-sales-dash-report";
+const readCols = (): string[] => {
+  try {
+    const v = JSON.parse(localStorage.getItem(COLS_KEY) ?? "null");
+    const kept = Array.isArray(v) ? COL_IDS.filter((h) => v.includes(h)) : [];
+    return kept.length ? kept : COL_IDS;
+  } catch { return COL_IDS; }
+};
 
 /** The full sales report: every line the filters leave, filterable and sortable per column, searchable, paged, exportable. */
 function SalesReportTable({ rows, base, from, to, loading, fmtQ, sel, setFilter, onResetDashboard }: {
@@ -1838,8 +1902,62 @@ function SalesReportTable({ rows, base, from, to, loading, fmtQ, sel, setFilter,
   setFilter: (k: FilterKey) => (v: string[]) => void;
   onResetDashboard: () => void;
 }) {
+  const fit = useColumnWidths("tb", COL_IDS, "bushra-sales-dash-report");
+  const [visible, setVisible] = useState<string[]>(readCols);
+  const pickCols = (v: string[]) => {
+    setVisible(v);
+    try { localStorage.setItem(COLS_KEY, JSON.stringify(v)); } catch { /* private window: just not kept */ }
+  };
+  /** The columns on show, each with its index in REPORT_COLUMNS, which sorting keys off. */
+  const cols = useMemo(
+    () => REPORT_COLUMNS.map((c, i) => ({ c, i })).filter(({ c }) => visible.includes(c.header)),
+    [visible],
+  );
   const [q, setQ] = useState("");
   const [tsel, setTsel] = useState<Record<TableOnlyKey, string[]>>(NO_TABLE_FILTERS);
+
+  /*
+   * ADMIN EDIT, the same editor as Reports → Sales Register: click a line's Sales-Type, Category,
+   * Group, Ink Type or Colour to correct its item in the Bushra Central Master, for every company's
+   * copy. The lookup is the dashboard's own cached one (same key), not a second load.
+   */
+  const { isAdmin, user } = useSession();
+  const qc = useQueryClient();
+  const { data: lookup } = useQuery({
+    queryKey: ["bushraSalesRegister", "itemLookup", "v4"],
+    queryFn: loadItemLookup,
+    staleTime: 30 * 60 * 1000,
+  });
+  const [editing, setEditing] = useState<Row | null>(null);
+  const noEditReason = (r: Row) =>
+    (r.is_discount ? "A discount ledger has no stock item — it always reads Discount."
+      : !r.in_masters ? "Not found in Central Masters, so there is no item to correct."
+        : null);
+  const onSaved = () => {
+    setEditing(null);
+    qc.invalidateQueries({ queryKey: ["bushraSalesRegister"] });
+    qc.invalidateQueries({ queryKey: ["bushra-central-master", "overrides"] });
+  };
+  const suggestions = useMemo<EditSuggestions>(() => {
+    const uniq = (get: (r: Row) => string) =>
+      [...new Set(base.map(get).filter((v) => v && v !== DISCOUNT_TYPE))].sort(collator.compare);
+    return {
+      inkType: uniq((r) => r.ink_type),
+      groupName: uniq((r) => r.item_group),
+      category: uniq((r) => r.item_category),
+      color: uniq((r) => r.colour),
+    };
+  }, [base]);
+  /** One classification cell — for an admin, a click opens the item's editor. */
+  const editCell = (r: Row, content: React.ReactNode) => {
+    const blocked = noEditReason(r);
+    const can = isAdmin && !blocked && !!lookup;
+    return (
+      <td className={cn("whitespace-nowrap px-3 py-1.5", can && "cursor-pointer hover:bg-primary/10 hover:underline decoration-dotted")}
+          title={isAdmin ? (blocked ?? "Click to edit this item") : undefined}
+          onClick={can ? () => setEditing(r) : undefined}>{content}</td>
+    );
+  };
   const [sort, setSort] = useState<{ col: number; dir: 1 | -1 } | null>(null);
   const matchesSearch = useMemo(() => {
     const s = q.trim().toLowerCase();
@@ -1897,6 +2015,7 @@ function SalesReportTable({ rows, base, from, to, loading, fmtQ, sel, setFilter,
                 subtitle={`${fmtInt(shown.length)} lines · quantity ${fmtQ(totals.qty)} · revenue ${fmtSales(totals.value)}`}
                 actions={
                   <div className="flex items-center gap-2">
+                    <ResetWidths fit={fit} cols={COL_IDS} className="inline-flex items-center gap-1 text-[11px] text-primary hover:underline" />
                     {tableFilterCount > 0 && (
                       <button type="button" onClick={() => setTsel(NO_TABLE_FILTERS)}
                               className="text-[11px] text-primary hover:underline">
@@ -1908,6 +2027,7 @@ function SalesReportTable({ rows, base, from, to, loading, fmtQ, sel, setFilter,
                       <Input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Customer, particulars, voucher…"
                              className="h-8 w-56 rounded-input pl-7 text-[12px]" />
                     </div>
+                    <ColumnPicker columns={COLUMN_OPTIONS} visible={visible} onChange={pickCols} triggerClassName="h-8 text-[12px]" />
                     <Button onClick={() => sorted.length && exportSalesRegisterXlsx(sorted, { from, to, extra: REPORT_EXTRA, filePrefix: "Bushra_Sales_Report" })}
                             disabled={!shown.length}
                             className="h-8 gap-1.5 rounded-button bg-primary px-3 text-[12px] text-primary-foreground hover:bg-primary/90">
@@ -1915,12 +2035,12 @@ function SalesReportTable({ rows, base, from, to, loading, fmtQ, sel, setFilter,
                     </Button>
                   </div>
                 }>
-      <ScrollableTable className="rounded-md border border-border" maxHeight="max-h-[60vh]">
-        <table className="w-full min-w-[1800px] border-collapse">
+      <ScrollableTable className="rounded-md border border-border" maxHeight="max-h-[60vh]" resizeKey="bushra-sales-dash-report">
+        <table className="w-full border-collapse" style={{ minWidth: Math.max(900, cols.length * 120) }}>
           <thead>
             <tr className="border-b border-border bg-muted/50">
-              {REPORT_COLUMNS.map((c, i) => (
-                <th key={c.header} className={cn(
+              {cols.map(({ c, i }) => (
+                <FitTh key={c.header} fit={fit} col={c.header} className={cn(
                   "whitespace-nowrap px-3 py-2 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground",
                   c.right ? "text-right" : "text-left",
                 )}>
@@ -1930,14 +2050,14 @@ function SalesReportTable({ rows, base, from, to, loading, fmtQ, sel, setFilter,
                     {sort?.col !== i ? <ArrowUpDown className="h-3 w-3 opacity-40" />
                       : sort.dir === 1 ? <ArrowUp className="h-3 w-3" /> : <ArrowDown className="h-3 w-3" />}
                   </button>
-                </th>
+                </FitTh>
               ))}
             </tr>
             {/* Filter row — an "Any" dropdown under each heading. */}
             <tr className="border-b-2 border-border bg-muted/30">
-              {REPORT_COLUMNS.map((c) => (
+              {cols.map(({ c }) => (
                 <th key={c.header} className="px-2 py-1.5 font-normal">
-                  {c.filter && ("dash" in c.filter ? (
+                  {c.filter && <FitFilter dragged={fit.width(c.header) !== undefined}>{"dash" in c.filter ? (
                     <MultiSelectFilter
                       options={dashOptions[c.filter.dash]}
                       value={sel[c.filter.dash]}
@@ -1959,7 +2079,7 @@ function SalesReportTable({ rows, base, from, to, loading, fmtQ, sel, setFilter,
                       contentClassName="w-72"
                       triggerClassName="w-full min-w-[110px] h-8 text-xs rounded-input border-border bg-surface"
                     />
-                  ))}
+                  )}</FitFilter>}
                 </th>
               ))}
             </tr>
@@ -1967,7 +2087,7 @@ function SalesReportTable({ rows, base, from, to, loading, fmtQ, sel, setFilter,
           <tbody>
             {page.pageItems.length === 0 ? (
               // The table stays standing when the filters match nothing, so the way back is right here.
-              <tr><td colSpan={REPORT_COLUMNS.length} className="py-8 text-center text-[12px] text-muted-foreground">
+              <tr><td colSpan={cols.length} className="py-8 text-center text-[12px] text-muted-foreground">
                 {base.length ? (
                   <span className="inline-flex items-center gap-3">
                     No lines match those filters.
@@ -1979,35 +2099,30 @@ function SalesReportTable({ rows, base, from, to, loading, fmtQ, sel, setFilter,
               </td></tr>
             ) : page.pageItems.map((r, i) => (
               <tr key={`${r.tenant_id}-${r.voucher_no}-${r.line_no}-${i}`} className="border-b border-border/40 text-[12.5px] hover:bg-muted/40">
-                <td className="whitespace-nowrap px-3 py-1.5 tabular-nums">{r.date_display}</td>
-                <td className="whitespace-nowrap px-3 py-1.5">{r.voucher_no}</td>
-                {/* The derived type, so a discount line reads "Discount" here too. */}
-                <td className="whitespace-nowrap px-3 py-1.5">{FILTERS.type.get(r)}</td>
-                <td className="whitespace-nowrap px-3 py-1.5">{r.company}</td>
-                <td className="whitespace-nowrap px-3 py-1.5">{r.location_name}</td>
-                <td className="px-3 py-1.5">{r.party}</td>
-                <td className="px-3 py-1.5">{r.particulars}</td>
-                <td className="whitespace-nowrap px-3 py-1.5">{FILTERS.salesType.get(r)}</td>
-                <td className="whitespace-nowrap px-3 py-1.5">{itemCell(FILTERS.category.get(r))}</td>
-                <td className="whitespace-nowrap px-3 py-1.5">{itemCell(FILTERS.group.get(r))}</td>
-                <td className="whitespace-nowrap px-3 py-1.5">{itemCell(FILTERS.inkType.get(r))}</td>
-                <td className="whitespace-nowrap px-3 py-1.5">{itemCell(FILTERS.colour.get(r))}</td>
-                <td className="whitespace-nowrap px-3 py-1.5 text-right tabular-nums">{r.quantity ? nf2.format(r.quantity) : "—"}</td>
-                <td className="whitespace-nowrap px-3 py-1.5 text-right tabular-nums">{r.rate ? nf2.format(r.rate) : "—"}</td>
-                <td className={cn("whitespace-nowrap px-3 py-1.5 text-right tabular-nums", r.revenue < 0 && "text-destructive")}>{nf2.format(r.revenue)}</td>
+                {cols.map(({ c }) => <Fragment key={c.header}>{c.cell(r, editCell)}</Fragment>)}
               </tr>
             ))}
           </tbody>
         </table>
       </ScrollableTable>
       <Pagination state={page} rowsLabel="lines" />
+      {isAdmin && (
+        <p className="mt-2 text-[11px] text-muted-foreground">
+          Admin: click a line's Product, Category, Group, Ink Type or Colour to correct that item in the
+          Bushra Central Master (every company's copy).
+        </p>
+      )}
+      {editing && lookup && (
+        <BushraItemEditDialog row={editing} copies={copiesOf(lookup, editing.particulars)} suggestions={suggestions}
+                              userId={user.id} onClose={() => setEditing(null)} onSaved={onSaved} />
+      )}
     </SalesPanel>
   );
 }
 
 /** One horizontal, single-series bar chart. Tall lists scroll inside the panel. */
-function SliceChart({ title, icon, colorOf, slices, total, fmt, selected, onPick, what, note, loading, empty, emptyMessage }: {
-  title: string; icon: typeof Layers; colorOf: (name: string) => string; slices: Slice[]; total: number;
+function SliceChart({ title, icon, colorOf, slices, total, fmt, selected, onPick, what, note, sizeKey, loading, empty, emptyMessage }: {
+  title: string; icon: typeof Layers; sizeKey?: string; colorOf: (name: string) => string; slices: Slice[]; total: number;
   fmt: (n: number) => string; selected: string[]; onPick: (name: string) => void; what: string; note: string;
   loading: boolean; empty: boolean; emptyMessage: string;
 }) {
@@ -2016,9 +2131,10 @@ function SliceChart({ title, icon, colorOf, slices, total, fmt, selected, onPick
     <SalesPanel
       title={title} icon={icon} loading={loading} empty={empty} emptyMessage={emptyMessage}
       subtitle={note}
-      bodyClassName="max-h-[560px] overflow-y-auto"
+      resizable bars bodyMaxHeight={560} sizeKey={sizeKey}
     >
-      <ResponsiveContainer width="100%" height={Math.max(260, slices.length * barH + 40)}>
+      {(sz) => (
+      <ResponsiveContainer width="100%" height={Math.max(sz.h(260), slices.length * sz.bar(barH) + 40)}>
         <BarChart data={slices} layout="vertical" margin={{ top: 4, right: 130, left: 8, bottom: 0 }}>
           <CartesianGrid stroke={CHART_GRID} horizontal={false} />
           <XAxis type="number" tick={AXIS_TICK} tickLine={false} axisLine={false} tickFormatter={(v: number) => fmt(v).replace("₹ ", "")} />
@@ -2026,7 +2142,7 @@ function SliceChart({ title, icon, colorOf, slices, total, fmt, selected, onPick
                  axisLine={{ stroke: CHART_GRID }} width={190} interval={0} />
           <ReferenceLine x={0} stroke="hsl(220 10% 75%)" />
           <Tooltip cursor={{ fill: "hsl(220 15% 95%)" }} content={<SliceTooltip total={total} fmt={fmt} />} />
-          <Bar dataKey="value" maxBarSize={barH > 30 ? 28 : 20} radius={4} className="cursor-pointer"
+          <Bar dataKey="value" maxBarSize={sz.bar(barH > 30 ? 28 : 20)} radius={4} className="cursor-pointer"
                onClick={(d: { name?: string }, _i: number, e?: { stopPropagation?: () => void }) => {
                  e?.stopPropagation?.();
                  if (d?.name) onPick(d.name);
@@ -2038,6 +2154,7 @@ function SliceChart({ title, icon, colorOf, slices, total, fmt, selected, onPick
           </Bar>
         </BarChart>
       </ResponsiveContainer>
+      )}
     </SalesPanel>
   );
 }

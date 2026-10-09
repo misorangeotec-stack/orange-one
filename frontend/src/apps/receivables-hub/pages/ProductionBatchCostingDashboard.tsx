@@ -38,6 +38,8 @@ import SalesPanel from "@hub/components/masterreports/SalesPanel";
 import { Sheet, SheetContent } from "@hub/components/ui/sheet";
 import { MultiSelectFilter, type MultiSelectOption } from "@hub/components/MultiSelectFilter";
 import { ScrollableTable } from "@/core/shared/components/ScrollableTable";
+import { FitTh, ResetWidths } from "@/shared/components/ui/ColumnResizer";
+import { useColumnWidths } from "@/shared/lib/useColumnWidths";
 import { usePagination } from "@/shared/lib/usePagination";
 import Pagination from "@/shared/components/ui/Pagination";
 import { fmtSales, salesFyOptions } from "@hub/lib/salesReport";
@@ -441,14 +443,15 @@ export default function ProductionBatchCostingDashboard() {
       <SectionHeading>Output analysis</SectionHeading>
       <div className="grid gap-3 lg:grid-cols-3">
         <SalesPanel title="Year-wise output (T)" icon={CalendarRange} loading={loading} empty={empty} emptyMessage={emptyMsg}
-                    subtitle={pickedNote(years, "year", barPicked.includes("year"))}>
-          <ResponsiveContainer width="100%" height={300}>
+                    subtitle={pickedNote(years, "year", barPicked.includes("year"))} resizable bars>
+          {(sz) => (
+          <ResponsiveContainer width="100%" height={sz.h(300)}>
             <BarChart data={fyPoints} margin={{ top: 22, right: 12, left: -4, bottom: 0 }}>
               <CartesianGrid stroke={CHART_GRID} vertical={false} />
               <XAxis dataKey="label" tick={AXIS_TICK} tickLine={false} axisLine={{ stroke: CHART_GRID }} />
               <YAxis tick={AXIS_TICK} tickLine={false} axisLine={false} tickFormatter={tickTonnes} width={52} />
               <Tooltip cursor={{ fill: "hsl(220 15% 95%)" }} content={<FyTooltip />} />
-              <Bar dataKey="kgs" maxBarSize={90} radius={[4, 4, 0, 0]} className="cursor-pointer"
+              <Bar dataKey="kgs" maxBarSize={sz.bar(90)} radius={[4, 4, 0, 0]} className="cursor-pointer"
                    onClick={(d: { label?: string }, _i: number, e?: { stopPropagation?: () => void }) => {
                      e?.stopPropagation?.();
                      if (d?.label) fromBar("year", years)(d.label);
@@ -461,19 +464,21 @@ export default function ProductionBatchCostingDashboard() {
               </Bar>
             </BarChart>
           </ResponsiveContainer>
+          )}
         </SalesPanel>
 
         <SalesPanel title="Monthly output (T)" icon={TrendingUp} loading={loading} empty={empty} emptyMessage={emptyMsg}
                     subtitle={months.length ? pickedNote(months, "month", barPicked.includes("month"))
-                              : "every month since production began — click a bar to filter"}>
-          <ResponsiveContainer width="100%" height={300}>
+                              : "every month since production began — click a bar to filter"} resizable bars>
+          {(sz) => (
+          <ResponsiveContainer width="100%" height={sz.h(300)}>
             <BarChart data={monthBars} margin={{ top: 22, right: 8, left: -4, bottom: 14 }}>
               <CartesianGrid stroke={CHART_GRID} vertical={false} />
               <XAxis dataKey="label" tick={{ ...AXIS_TICK, fontSize: 10 }} tickLine={false}
                      axisLine={{ stroke: CHART_GRID }} interval={0} angle={-40} textAnchor="end" height={44} />
               <YAxis tick={AXIS_TICK} tickLine={false} axisLine={false} tickFormatter={tickTonnes} width={52} />
               <Tooltip cursor={{ fill: "hsl(220 15% 95%)" }} content={<MonthTooltip />} />
-              <Bar dataKey="totalKgs" fill={KPI_COLORS[0]} maxBarSize={26} radius={[4, 4, 0, 0]} className="cursor-pointer"
+              <Bar dataKey="totalKgs" fill={KPI_COLORS[0]} maxBarSize={sz.bar(26)} radius={[4, 4, 0, 0]} className="cursor-pointer"
                    onClick={(d: { label?: string }, _i: number, e?: { stopPropagation?: () => void }) => {
                      e?.stopPropagation?.();
                      if (d?.label) fromBar("month", months)(d.label);
@@ -484,17 +489,19 @@ export default function ProductionBatchCostingDashboard() {
               </Bar>
             </BarChart>
           </ResponsiveContainer>
+          )}
         </SalesPanel>
 
         <SalesPanel title="Output by product category (T)" icon={Layers} loading={loading} empty={empty} emptyMessage={emptyMsg}
-                    subtitle={pickedNote(cats, "category", barPicked.includes("cat"))}>
-          <ResponsiveContainer width="100%" height={300}>
+                    subtitle={pickedNote(cats, "category", barPicked.includes("cat"))} resizable bars>
+          {(sz) => (
+          <ResponsiveContainer width="100%" height={sz.h(300)}>
             <BarChart data={catSlices} margin={{ top: 22, right: 12, left: -4, bottom: 0 }}>
               <CartesianGrid stroke={CHART_GRID} vertical={false} />
               <XAxis dataKey="name" tick={AXIS_TICK} tickLine={false} axisLine={{ stroke: CHART_GRID }} interval={0} />
               <YAxis tick={AXIS_TICK} tickLine={false} axisLine={false} tickFormatter={tickTonnes} width={52} />
               <Tooltip cursor={{ fill: "hsl(220 15% 95%)" }} content={<CatTooltip total={catTotal} />} />
-              <Bar dataKey="kgs" maxBarSize={70} radius={[4, 4, 0, 0]} className="cursor-pointer"
+              <Bar dataKey="kgs" maxBarSize={sz.bar(70)} radius={[4, 4, 0, 0]} className="cursor-pointer"
                    onClick={(d: { name?: string }, _i: number, e?: { stopPropagation?: () => void }) => {
                      e?.stopPropagation?.();
                      if (d?.name) fromBar("cat", cats)(d.name);
@@ -512,6 +519,7 @@ export default function ProductionBatchCostingDashboard() {
               </Bar>
             </BarChart>
           </ResponsiveContainer>
+          )}
         </SalesPanel>
       </div>
 
@@ -686,8 +694,9 @@ export default function ProductionBatchCostingDashboard() {
       <SectionHeading>Cost &amp; scrap</SectionHeading>
       <div className="grid gap-3 lg:grid-cols-2">
         <SalesPanel title="Average cost per KG by month" icon={Scale} loading={loading} empty={empty} emptyMessage={emptyMsg}
-                    subtitle="value-weighted ₹ / KG — narrow to one sub-group or particular to follow a single product">
-          <ResponsiveContainer width="100%" height={240}>
+                    subtitle="value-weighted ₹ / KG — narrow to one sub-group or particular to follow a single product" resizable>
+          {(sz) => (
+          <ResponsiveContainer width="100%" height={sz.h(240)}>
             <LineChart data={monthPoints} margin={{ top: 16, right: 16, left: -4, bottom: 14 }}>
               <CartesianGrid stroke={CHART_GRID} vertical={false} />
               <XAxis dataKey="label" tick={{ ...AXIS_TICK, fontSize: 10 }} tickLine={false}
@@ -701,11 +710,13 @@ export default function ProductionBatchCostingDashboard() {
                     activeDot={{ r: 6, fill: SERIES_1, stroke: "#fff", strokeWidth: 2 }} />
             </LineChart>
           </ResponsiveContainer>
+          )}
         </SalesPanel>
 
         <SalesPanel title="Scrap by month" icon={Recycle} loading={loading} empty={empty} emptyMessage={emptyMsg}
-                    subtitle="produced on the output side vs re-used on the consumption side">
-          <ResponsiveContainer width="100%" height={240}>
+                    subtitle="produced on the output side vs re-used on the consumption side" resizable bars>
+          {(sz) => (
+          <ResponsiveContainer width="100%" height={sz.h(240)}>
             <BarChart data={monthPoints} margin={{ top: 10, right: 8, left: -4, bottom: 14 }} barGap={2}>
               <CartesianGrid stroke={CHART_GRID} vertical={false} />
               <XAxis dataKey="label" tick={{ ...AXIS_TICK, fontSize: 10 }} tickLine={false}
@@ -713,10 +724,11 @@ export default function ProductionBatchCostingDashboard() {
               <YAxis tick={AXIS_TICK} tickLine={false} axisLine={false} tickFormatter={tickTonnes} width={52} />
               <Tooltip cursor={{ fill: "hsl(220 15% 95%)" }} content={<ScrapTooltip />} />
               <Legend iconType="circle" iconSize={8} wrapperStyle={{ fontSize: 11 }} />
-              <Bar dataKey="scrapOut" name="Scrap produced" fill={KPI_COLORS[2]} maxBarSize={16} radius={[4, 4, 0, 0]} />
-              <Bar dataKey="scrapIn" name="Scrap consumed" fill={SERIES_2} maxBarSize={16} radius={[4, 4, 0, 0]} />
+              <Bar dataKey="scrapOut" name="Scrap produced" fill={KPI_COLORS[2]} maxBarSize={sz.bar(16)} radius={[4, 4, 0, 0]} />
+              <Bar dataKey="scrapIn" name="Scrap consumed" fill={SERIES_2} maxBarSize={sz.bar(16)} radius={[4, 4, 0, 0]} />
             </BarChart>
           </ResponsiveContainer>
+          )}
         </SalesPanel>
       </div>
 
@@ -971,10 +983,13 @@ const CATEGORY_PILL: Record<BatchCostingRow["category"], string> = {
  * consumed (negative) — under a strip of the batch's own figures. Closes on the X, on Escape and
  * on a click outside, all of which the Sheet handles.
  */
+const SHEET_COL_IDS = ["particulars", "category", "quantity", "rate", "amount", "lot"] as const;
+
 function BatchSheet({ batch, lines, onClose }: {
   batch: BatchSummary | null; lines: BatchCostingRow[]; onClose: () => void;
 }) {
   const { canSee } = useReportAccess();
+  const fit = useColumnWidths("tb", SHEET_COL_IDS, "production-batch-costing-dash-batch-sheet");
   if (!batch) return null;
   const fg = lines.filter((l) => l.category === "Finished Good");
   const rm = lines.filter((l) => l.category === "RM Consumption");
@@ -1011,15 +1026,18 @@ function BatchSheet({ batch, lines, onClose }: {
         </div>
 
         <div className="min-h-0 flex-1 overflow-auto px-4 py-3">
+          <div className="flex justify-end">
+            <ResetWidths fit={fit} cols={SHEET_COL_IDS} className="inline-flex items-center gap-1 text-[11px] text-primary hover:underline" />
+          </div>
           <table className="w-full border-collapse text-[12.5px]">
             <thead className="sticky top-0 bg-surface">
               <tr className="border-b border-border text-[10.5px] uppercase tracking-wide text-muted-foreground">
-                <th className="py-1.5 pr-2 text-left font-semibold">Particulars</th>
-                <th className="px-2 py-1.5 text-left font-semibold">Category</th>
-                <th className="px-2 py-1.5 text-right font-semibold">Quantity</th>
-                <th className="px-2 py-1.5 text-right font-semibold">Rate</th>
-                <th className="px-2 py-1.5 text-right font-semibold">Amount</th>
-                <th className="pl-2 py-1.5 text-left font-semibold">Lot</th>
+                <FitTh fit={fit} col="particulars" className="py-1.5 pr-2 text-left font-semibold">Particulars</FitTh>
+                <FitTh fit={fit} col="category" className="px-2 py-1.5 text-left font-semibold">Category</FitTh>
+                <FitTh fit={fit} col="quantity" className="px-2 py-1.5 text-right font-semibold">Quantity</FitTh>
+                <FitTh fit={fit} col="rate" className="px-2 py-1.5 text-right font-semibold">Rate</FitTh>
+                <FitTh fit={fit} col="amount" className="px-2 py-1.5 text-right font-semibold">Amount</FitTh>
+                <FitTh fit={fit} col="lot" className="pl-2 py-1.5 text-left font-semibold">Lot</FitTh>
               </tr>
             </thead>
             <tbody>
@@ -1107,7 +1125,10 @@ const COLS: Array<{ key: SortKey; label: string; right?: boolean; w: number }> =
   { key: "scrap_in", label: "Scrap used T", right: true, w: 100 },
 ];
 
+const COL_IDS: readonly string[] = COLS.map((c) => c.key);
+
 function BatchTable({ batches, onOpen }: { batches: BatchSummary[]; onOpen: (b: BatchSummary) => void }) {
+  const fit = useColumnWidths("tb", COL_IDS, "production-batch-costing-dash-batches");
   const [sort, setSort] = useState<{ key: SortKey; dir: "asc" | "desc" }>({ key: "vch_date", dir: "desc" });
   const sorted = useMemo(() => {
     const s = sort.dir === "asc" ? 1 : -1;
@@ -1124,12 +1145,12 @@ function BatchTable({ batches, onOpen }: { batches: BatchSummary[]; onOpen: (b: 
 
   return (
     <div>
-      <ScrollableTable className="border-b border-border" maxHeight="max-h-[420px]">
+      <ScrollableTable className="border-b border-border" maxHeight="max-h-[420px]" resizeKey="production-batch-costing-dash-batches">
         <table className="w-full min-w-[1220px] border-collapse text-[12.5px]">
           <thead className="sticky top-0 z-10 bg-muted/70">
             <tr>
               {COLS.map((c) => (
-                <th key={c.key} style={{ width: c.w }}
+                <FitTh key={c.key} fit={fit} col={c.key} {...(fit.width(c.key) === undefined ? { style: { width: c.w } } : {})}
                     onClick={() => setSort((p) => ({ key: c.key, dir: p.key === c.key && p.dir === "desc" ? "asc" : "desc" }))}
                     className={cn("cursor-pointer select-none whitespace-nowrap px-3 py-2 text-[10.5px] font-semibold uppercase tracking-wide text-foreground/70",
                                   c.right ? "text-right" : "text-left")}>
@@ -1137,7 +1158,7 @@ function BatchTable({ batches, onOpen }: { batches: BatchSummary[]; onOpen: (b: 
                     {c.label}
                     {sort.key === c.key && (sort.dir === "asc" ? <ArrowUp className="h-3 w-3" /> : <ArrowDown className="h-3 w-3" />)}
                   </span>
-                </th>
+                </FitTh>
               ))}
             </tr>
           </thead>
@@ -1169,6 +1190,7 @@ function BatchTable({ batches, onOpen }: { batches: BatchSummary[]; onOpen: (b: 
         </table>
       </ScrollableTable>
       <div className="px-3 py-2">
+        <ResetWidths fit={fit} cols={COL_IDS} className="inline-flex items-center gap-1 text-[11px] text-primary hover:underline" />
         <Pagination state={page} rowsLabel="batches" />
       </div>
     </div>

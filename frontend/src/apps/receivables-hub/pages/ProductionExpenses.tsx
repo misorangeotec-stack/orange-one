@@ -37,6 +37,8 @@ import { Button } from "@hub/components/ui/button";
 import SalesPanel from "@hub/components/masterreports/SalesPanel";
 import { MultiSelectFilter, type MultiSelectOption } from "@hub/components/MultiSelectFilter";
 import { ScrollableTable } from "@/core/shared/components/ScrollableTable";
+import { FitTh, ResetWidths } from "@/shared/components/ui/ColumnResizer";
+import { useColumnWidths } from "@/shared/lib/useColumnWidths";
 import { usePagination } from "@/shared/lib/usePagination";
 import Pagination from "@/shared/components/ui/Pagination";
 import { fmtSales, salesFyOptions, tickSales } from "@hub/lib/salesReport";
@@ -258,8 +260,9 @@ export default function ProductionExpenses() {
       <div className="grid gap-3 lg:grid-cols-2">
         <SalesPanel title="Direct vs Indirect by month" icon={IndianRupee} loading={loading} empty={empty}
                     emptyMessage="No expense lines in this period."
-                    subtitle="what the company spent each month, in rupees">
-          <ResponsiveContainer width="100%" height={280}>
+                    subtitle="what the company spent each month, in rupees" resizable bars>
+          {(sz) => (
+          <ResponsiveContainer width="100%" height={sz.h(280)}>
             <BarChart data={monthly} margin={{ top: 18, right: 8, left: 4, bottom: 14 }} barGap={2}>
               <CartesianGrid stroke={CHART_GRID} vertical={false} />
               <XAxis dataKey="label" tick={{ ...AXIS_TICK, fontSize: 10 }} tickLine={false}
@@ -267,16 +270,18 @@ export default function ProductionExpenses() {
               <YAxis tick={AXIS_TICK} tickLine={false} axisLine={false} tickFormatter={tickSales} width={54} />
               <Tooltip cursor={{ fill: "hsl(220 15% 95%)" }} content={<MonthTooltip />} />
               <Legend iconType="circle" iconSize={8} wrapperStyle={{ fontSize: 11 }} />
-              <Bar dataKey="direct" name="Direct" fill={BLOCK_COLOR["Direct Expenses"]} maxBarSize={18} radius={[4, 4, 0, 0]} />
-              <Bar dataKey="indirect" name="Indirect" fill={BLOCK_COLOR["Indirect Expenses"]} maxBarSize={18} radius={[4, 4, 0, 0]} />
+              <Bar dataKey="direct" name="Direct" fill={BLOCK_COLOR["Direct Expenses"]} maxBarSize={sz.bar(18)} radius={[4, 4, 0, 0]} />
+              <Bar dataKey="indirect" name="Indirect" fill={BLOCK_COLOR["Indirect Expenses"]} maxBarSize={sz.bar(18)} radius={[4, 4, 0, 0]} />
             </BarChart>
           </ResponsiveContainer>
+          )}
         </SalesPanel>
 
         <SalesPanel title="What a kilogram cost, month by month" icon={Scale} loading={loading} empty={empty}
                     emptyMessage="No production in this period."
-                    subtitle="material on the batch, then the month's overhead spread over the month's output">
-          <ResponsiveContainer width="100%" height={280}>
+                    subtitle="material on the batch, then the month's overhead spread over the month's output" resizable bars>
+          {(sz) => (
+          <ResponsiveContainer width="100%" height={sz.h(280)}>
             <BarChart data={monthly} margin={{ top: 18, right: 8, left: 4, bottom: 14 }}>
               <CartesianGrid stroke={CHART_GRID} vertical={false} />
               <XAxis dataKey="label" tick={{ ...AXIS_TICK, fontSize: 10 }} tickLine={false}
@@ -285,10 +290,10 @@ export default function ProductionExpenses() {
                      tickFormatter={(v: number) => `₹${Math.round(v)}`} />
               <Tooltip cursor={{ fill: "hsl(220 15% 95%)" }} content={<PerKgTooltip />} />
               <Legend iconType="circle" iconSize={8} wrapperStyle={{ fontSize: 11 }} />
-              <Bar dataKey="materialPerKg" name="Material" stackId="k" fill={MATERIAL_COLOR} maxBarSize={26} />
-              <Bar dataKey="packingPerKg" name="Packing" stackId="k" fill={PACKING_COLOR} maxBarSize={26} />
-              <Bar dataKey="directPerKg" name="Direct" stackId="k" fill={BLOCK_COLOR["Direct Expenses"]} maxBarSize={26} />
-              <Bar dataKey="indirectPerKg" name="Indirect" stackId="k" fill={BLOCK_COLOR["Indirect Expenses"]} maxBarSize={26}
+              <Bar dataKey="materialPerKg" name="Material" stackId="k" fill={MATERIAL_COLOR} maxBarSize={sz.bar(26)} />
+              <Bar dataKey="packingPerKg" name="Packing" stackId="k" fill={PACKING_COLOR} maxBarSize={sz.bar(26)} />
+              <Bar dataKey="directPerKg" name="Direct" stackId="k" fill={BLOCK_COLOR["Direct Expenses"]} maxBarSize={sz.bar(26)} />
+              <Bar dataKey="indirectPerKg" name="Indirect" stackId="k" fill={BLOCK_COLOR["Indirect Expenses"]} maxBarSize={sz.bar(26)}
                    radius={[4, 4, 0, 0]}>
                 <LabelList dataKey="fullPerKg" position="top"
                            formatter={(v: number) => (v ? `₹${Math.round(v)}` : "")}
@@ -296,6 +301,7 @@ export default function ProductionExpenses() {
               </Bar>
             </BarChart>
           </ResponsiveContainer>
+          )}
         </SalesPanel>
       </div>
 
@@ -314,8 +320,11 @@ export default function ProductionExpenses() {
               empty={!data.length}
               emptyMessage="Nothing booked in this period."
               subtitle={`${fmtSales(blockTotal)} · ${fmtPerKg(block === "Direct Expenses" ? perKg.directPerKg : perKg.indirectPerKg)} / KG · as Tally's P&L groups them`}
+              resizable
+              bars
             >
-              <ResponsiveContainer width="100%" height={Math.max(200, data.length * 26 + 30)}>
+              {(sz) => (
+              <ResponsiveContainer width="100%" height={Math.max(sz.h(200), data.length * sz.bar(26) + 30)}>
                 <BarChart data={data} layout="vertical" margin={{ top: 4, right: 96, left: 4, bottom: 4 }}>
                   <CartesianGrid stroke={CHART_GRID} horizontal={false} />
                   <XAxis type="number" tick={AXIS_TICK} tickLine={false} axisLine={false} tickFormatter={tickSales} />
@@ -323,7 +332,7 @@ export default function ProductionExpenses() {
                          axisLine={false} width={170} interval={0} />
                   <Tooltip cursor={{ fill: "hsl(220 15% 95%)" }}
                            content={<GroupTooltip kgs={production.fgKgs} />} />
-                  <Bar dataKey="value" maxBarSize={16} radius={[0, 4, 4, 0]}>
+                  <Bar dataKey="value" maxBarSize={sz.bar(16)} radius={[0, 4, 4, 0]}>
                     {data.map((g) => (
                       <Cell key={g.group} fill={BLOCK_COLOR[block]} fillOpacity={g.amount < 0 ? 0.45 : 1} />
                     ))}
@@ -332,6 +341,7 @@ export default function ProductionExpenses() {
                   </Bar>
                 </BarChart>
               </ResponsiveContainer>
+              )}
             </SalesPanel>
           );
         })}
@@ -524,7 +534,10 @@ const COLS: Array<{ key: SortKey; label: string; right?: boolean; w: number }> =
   { key: "lines", label: "Lines", right: true, w: 80 },
 ];
 
+const COL_IDS: readonly string[] = [...COLS.map((c) => c.key), "perKg"];
+
 function LedgerTable({ rows, kgs }: { rows: ReturnType<typeof expensesByLedger>; kgs: number }) {
+  const fit = useColumnWidths("tb", COL_IDS, "production-expenses-ledgers");
   const [sort, setSort] = useState<{ key: SortKey; dir: "asc" | "desc" }>({ key: "amount", dir: "desc" });
   const sorted = useMemo(() => {
     const s = sort.dir === "asc" ? 1 : -1;
@@ -540,12 +553,12 @@ function LedgerTable({ rows, kgs }: { rows: ReturnType<typeof expensesByLedger>;
 
   return (
     <div>
-      <ScrollableTable className="border-b border-border" maxHeight="max-h-[460px]">
+      <ScrollableTable className="border-b border-border" maxHeight="max-h-[460px]" resizeKey="production-expenses-ledgers">
         <table className="w-full min-w-[900px] border-collapse text-[12.5px]">
           <thead className="sticky top-0 z-10 bg-muted/70">
             <tr>
               {COLS.map((c) => (
-                <th key={c.key} style={{ width: c.w }}
+                <FitTh key={c.key} fit={fit} col={c.key} {...(fit.width(c.key) === undefined ? { style: { width: c.w } } : {})}
                     onClick={() => setSort((p) => ({ key: c.key, dir: p.key === c.key && p.dir === "desc" ? "asc" : "desc" }))}
                     className={cn("cursor-pointer select-none whitespace-nowrap px-3 py-2 text-[10.5px] font-semibold uppercase tracking-wide text-foreground/70",
                                   c.right ? "text-right" : "text-left")}>
@@ -553,9 +566,9 @@ function LedgerTable({ rows, kgs }: { rows: ReturnType<typeof expensesByLedger>;
                     {c.label}
                     {sort.key === c.key && (sort.dir === "asc" ? <ArrowUp className="h-3 w-3" /> : <ArrowDown className="h-3 w-3" />)}
                   </span>
-                </th>
+                </FitTh>
               ))}
-              <th className="w-[100px] px-3 py-2 text-right text-[10.5px] font-semibold uppercase tracking-wide text-foreground/70">₹ / KG</th>
+              <FitTh fit={fit} col="perKg" className="w-[100px] px-3 py-2 text-right text-[10.5px] font-semibold uppercase tracking-wide text-foreground/70">₹ / KG</FitTh>
             </tr>
           </thead>
           <tbody>
@@ -579,6 +592,7 @@ function LedgerTable({ rows, kgs }: { rows: ReturnType<typeof expensesByLedger>;
         </table>
       </ScrollableTable>
       <div className="px-3 py-2">
+        <ResetWidths fit={fit} cols={COL_IDS} className="inline-flex items-center gap-1 text-[11px] text-primary hover:underline" />
         <Pagination state={page} rowsLabel="ledgers" />
       </div>
     </div>
