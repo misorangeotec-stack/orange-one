@@ -19,7 +19,7 @@
  * only the pages the viewer holds (groupPageIds below). A new page therefore also needs its catalogue
  * entry, or nobody but an admin can open it.
  */
-import { Factory, LayoutDashboard, Package, Receipt, ShoppingCart, Truck, Users, type LucideIcon } from "lucide-react";
+import { Factory, LayoutDashboard, Package, Receipt, ShoppingCart, Truck, UserCheck, Users, type LucideIcon } from "lucide-react";
 import { appBasePath } from "@/apps/appInfo";
 import { SALES_DASHBOARDS } from "./bushraSalesDashboards";
 import { PURCHASE_DASHBOARDS, purchaseDashboardTitle } from "./bushraPurchaseDashboards";
@@ -114,6 +114,15 @@ export const BUSHRA_DASHBOARDS: BushraDashboardGroup[] = [
         purpose: "Customers who bought our machine against those who buy only our ink — last two FYs, by Customer Group.",
         path: "bushra-dashboard/sales-orange-customers",
         icon: Users,
+        status: "live" as const,
+      },
+      // Its own screen too (pages/BushraSalespersonSales.tsx); id/path = SALESPERSON_DASHBOARD_* there.
+      {
+        id: "bushra-sales-salesperson",
+        title: "Salesperson Dashboard",
+        purpose: "The sales register read per salesperson — net sales, product mix and growth on last year, down to each line.",
+        path: "bushra-dashboard/sales-salesperson",
+        icon: UserCheck,
         status: "live" as const,
       },
     ],

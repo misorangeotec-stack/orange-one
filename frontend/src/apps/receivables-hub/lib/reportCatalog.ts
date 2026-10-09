@@ -944,6 +944,19 @@ export const REPORTS: ReportEntry[] = [
     keywords: ["orange", "non-orange", "machine customers", "ink customers", "customer group", "bushra"],
   },
   {
+    // The Salesperson Sales report (pages/BushraSalespersonSales.tsx, mode "report").
+    id: "bushra-salesperson-sales",
+    scoping: "party-server",
+    title: "Salesperson Sales Report",
+    purpose: "The sales register per salesperson: net sales, ink, machines and growth on last year, each salesperson's customers and every line.",
+    category: "bushra-report",
+    path: "reports/bushra-salesperson-sales",
+    icon: UserCheck,
+    source: "tally",
+    status: "live",
+    keywords: ["salesperson", "sales person", "rep", "sales register", "sales by salesperson", "bushra"],
+  },
+  {
     id: "bushra-purchase-register",
     // Vendors, not customers — the salesperson scope does not apply.
     scoping: "none",
@@ -1035,6 +1048,19 @@ export const REPORTS: ReportEntry[] = [
     source: "tally",
     status: "live",
     keywords: ["orange", "non-orange", "machine customers", "ink customers", "sales dashboard", "bushra"],
+  },
+  {
+    // Bushra-Dashboard → Sales → Salesperson (pages/BushraSalespersonSales.tsx, mode "dashboard").
+    id: "bushra-sales-salesperson",
+    scoping: "party-server",
+    title: "Sales — Salesperson Dashboard",
+    purpose: "The sales register read per salesperson — net sales, product mix and growth on last year, down to each line.",
+    category: "bushra-report",
+    path: "bushra-dashboard/sales-salesperson",
+    icon: UserCheck,
+    source: "tally",
+    status: "live",
+    keywords: ["salesperson", "sales person", "rep", "sales dashboard", "bushra"],
   },
   // Bushra-Dashboard → Purchase: one entry per dashboard, generated from lib/bushraPurchaseDashboards.ts
   // so each id and path matches its screen. All built on the Bushra Purchase Register (vendors — no scope).

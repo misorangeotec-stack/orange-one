@@ -27,7 +27,7 @@
  *
  * Kept free of React and the browser, like lib/bushraSalesFigures.ts.
  */
-import { getConnectwaveSupabase } from "./connectwaveSupabase";
+import { loadDebtorLedgers, makeLedgerLink } from "./bushraLedgerLink";
 import { fetchAll } from "./musterApi";
 import { isPureSale } from "./bushraSalesDashboards";
 import { DIMS, productOf } from "./bushraSalesFigures";
@@ -62,56 +62,18 @@ export interface GroupLink {
   of: (tenantId: string, ledger: string) => { group: string; grouped: boolean };
 }
 
-const linkKey = (tenantId: string, ledger: string) => `${tenantId}|${ledger.trim().toUpperCase()}`;
-
-/**
- * Customer Groups are keyed by the Tally ledger GUID; a register line carries only its book (tenant)
- * and the ledger NAME. v_ledger_detail joins the two. Names are not unique across books (387 repeat),
- * so the book is part of the key. A ledger the GUID route misses falls back to its name in
- * ext_ledger_group, but only when that name means ONE group everywhere — never a guess between two.
- */
+/** Customer Groups via the shared ledger link (lib/bushraLedgerLink.ts). */
 export async function loadGroupLink(): Promise<GroupLink> {
-  const cw = getConnectwaveSupabase();
-  const ledgers: { tenant_id: string; guid: string; ledger: string }[] = [];
-  const PAGE = 1000;
-  for (let from = 0; ; from += PAGE) {
-    const { data, error } = await cw.from("v_ledger_detail")
-      .select("tenant_id,guid,ledger")
-      .contains("group_chain", ["Sundry Debtors"])
-      .order("tenant_id", { ascending: true })
-      .order("guid", { ascending: true })
-      .range(from, from + PAGE - 1);
-    if (error) throw new Error(`Customer ledgers: ${error.message}`);
-    const page = (data ?? []) as typeof ledgers;
-    ledgers.push(...page);
-    if (page.length < PAGE) break;
-  }
-  const groups = await fetchAll<{ ledger_id: string; tally_name: string | null; group_name: string | null }>(
-    "ext_ledger_group", "ledger_id,tally_name,group_name", "ledger_id");
-
-  const byGuid = new Map<string, string>();
-  const byName = new Map<string, Set<string>>();
-  for (const g of groups) {
-    const name = g.group_name?.trim();
-    if (!name) continue;
-    if (g.ledger_id) byGuid.set(g.ledger_id, name);
-    if (g.tally_name) {
-      const k = g.tally_name.trim().toUpperCase();
-      (byName.get(k) ?? byName.set(k, new Set()).get(k)!).add(name);
-    }
-  }
-  const byLedger = new Map<string, string>();
-  for (const l of ledgers) {
-    const g = byGuid.get(l.guid);
-    if (g) byLedger.set(linkKey(l.tenant_id, l.ledger), g);
-  }
+  const [ledgers, groups] = await Promise.all([
+    loadDebtorLedgers(),
+    fetchAll<{ ledger_id: string; tally_name: string | null; group_name: string | null }>(
+      "ext_ledger_group", "ledger_id,tally_name,group_name", "ledger_id"),
+  ]);
+  const groupOf = makeLedgerLink(ledgers, groups.map((g) => ({ ...g, value: g.group_name })));
   return {
     of: (tenantId, ledger) => {
-      const hit = byLedger.get(linkKey(tenantId, ledger));
-      if (hit) return { group: hit, grouped: true };
-      const named = byName.get(ledger.trim().toUpperCase());
-      if (named?.size === 1) return { group: [...named][0], grouped: true };
-      return { group: ledger.trim(), grouped: false };
+      const g = groupOf(tenantId, ledger);
+      return g ? { group: g, grouped: true } : { group: ledger.trim(), grouped: false };
     },
   };
 }

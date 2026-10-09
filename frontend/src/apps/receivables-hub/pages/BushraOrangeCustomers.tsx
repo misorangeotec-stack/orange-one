@@ -263,6 +263,12 @@ export default function BushraOrangeCustomers({ mode }: { mode: "dashboard" | "r
           <span className="rounded-pill border border-primary bg-primary px-3 py-1 text-[12px] font-medium text-primary-foreground">
             Orange vs Non-Orange
           </span>
+          {canSee("bushra-sales-salesperson") && (
+            <Link to={`${BASE}/bushra-dashboard/sales-salesperson`}
+                  className="rounded-pill border border-border bg-surface px-3 py-1 text-[12px] font-medium text-muted-foreground transition-colors hover:bg-muted/50 hover:text-foreground">
+              Salesperson
+            </Link>
+          )}
         </nav>
       )}
 

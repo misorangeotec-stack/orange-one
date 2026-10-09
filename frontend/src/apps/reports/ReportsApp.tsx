@@ -85,6 +85,7 @@ import ProductionExpenses from "@hub/pages/ProductionExpenses";
 import PackingMaterial from "@hub/pages/PackingMaterial";
 import BushraSalesDashboard from "@hub/pages/BushraSalesDashboard";
 import BushraOrangeCustomers from "@hub/pages/BushraOrangeCustomers";
+import BushraSalespersonSales from "@hub/pages/BushraSalespersonSales";
 import BushraPurchaseDashboard from "@hub/pages/BushraPurchaseDashboard";
 import { SALES_DASHBOARDS } from "@hub/lib/bushraSalesDashboards";
 import { PURCHASE_DASHBOARDS } from "@hub/lib/bushraPurchaseDashboards";
@@ -251,6 +252,8 @@ function ReportRoutes() {
               <Route path="bushra-purchase-register" element={<BushraPurchaseRegister />} />
               {/* Bushra-Report → Orange vs Non-Orange Customers: the customer list on its own. */}
               <Route path="bushra-orange-customers" element={<BushraOrangeCustomers key="report" mode="report" />} />
+              {/* Bushra-Report → Salesperson Sales: the sales register per salesperson. */}
+              <Route path="bushra-salesperson-sales" element={<BushraSalespersonSales key="report" mode="report" />} />
             </Route>
           </Route>
 
@@ -288,6 +291,8 @@ function ReportRoutes() {
                   company, and the full cost of a kilogram once they are absorbed. */}
               {/* Sales → Orange vs Non-Orange: machine customers vs ink-only, by Customer Group. */}
               <Route path="bushra-dashboard/sales-orange-customers" element={<BushraOrangeCustomers key="dashboard" mode="dashboard" />} />
+              {/* Sales → Salesperson: the sales register per salesperson. */}
+              <Route path="bushra-dashboard/sales-salesperson" element={<BushraSalespersonSales key="dashboard" mode="dashboard" />} />
               <Route path="bushra-dashboard/production-expenses" element={<ProductionExpenses />} />
               {/* The third leg of the cost: caps, cans and stickers, which never touch a
                   production voucher. See lib/packingMaterial.ts for outward vs consumed. */}
