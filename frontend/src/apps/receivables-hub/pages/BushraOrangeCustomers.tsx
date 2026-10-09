@@ -26,11 +26,9 @@ import {
 import * as XLSX from "xlsx-js-style";
 import { saveAs } from "file-saver";
 import {
-  ArrowDown, ArrowLeft, ArrowUp, ArrowUpDown, ChevronDown, ChevronRight, CircleDot, Download, Droplet, Hand,
+  ArrowDown, ArrowLeft, ArrowUp, ArrowUpDown, ChevronRight, CircleDot, Download, Droplet, Hand,
   IndianRupee, Loader2, RotateCcw, Search, Table2, Users,
 } from "lucide-react";
-import { Popover, PopoverContent, PopoverTrigger } from "@hub/components/ui/popover";
-import { Checkbox } from "@hub/components/ui/checkbox";
 import { useSession } from "@/core/platform/session";
 import { cn } from "@hub/lib/utils";
 import { Button } from "@hub/components/ui/button";
@@ -506,28 +504,42 @@ function CustomerTable({ customers, loading, windowLabel, from, to, canEdit, rea
   ready: boolean;
   onSetBucket: (groups: string[], bucket: Bucket | null) => Promise<void>;
 }) {
-  /** Ticked for a bulk change — by Customer Group. */
-  const [ticked, setTicked] = useState<Set<string>>(new Set());
+  /**
+   * PENDING CHOICES, saved together. Each row's dropdown writes here; nothing reaches the database
+   * until Save. Keyed by Customer Group; "auto" = hand it back to the rule. A pick equal to what is
+   * already saved is dropped, so the count only ever shows real changes.
+   */
+  const [drafts, setDrafts] = useState<Map<string, Choice>>(new Map());
   const [saving, setSaving] = useState(false);
   const [saveErr, setSaveErr] = useState<string | null>(null);
-  const apply = async (groups: string[], bucket: Bucket | null) => {
-    if (!groups.length) return;
+  const [savedNote, setSavedNote] = useState<string | null>(null);
+  const savedChoice = (c: CustomerFigures): Choice => (c.manual ? (c.bucket as Bucket) : "auto");
+  const choose = (c: CustomerFigures, v: Choice) => {
+    setSavedNote(null);
+    setDrafts((d) => {
+      const n = new Map(d);
+      if (v === savedChoice(c)) n.delete(c.group); else n.set(c.group, v);
+      return n;
+    });
+  };
+  const saveAll = async () => {
+    if (!drafts.size) return;
     setSaving(true);
     setSaveErr(null);
     try {
-      await onSetBucket(groups, bucket);
-      setTicked(new Set());
+      const by: Record<Choice, string[]> = { Orange: [], "Non-Orange": [], auto: [] };
+      for (const [g, v] of drafts) by[v].push(g);
+      for (const v of ["Orange", "Non-Orange", "auto"] as Choice[]) {
+        if (by[v].length) await onSetBucket(by[v], v === "auto" ? null : v);
+      }
+      setSavedNote(`${fmtInt(drafts.size)} change${drafts.size === 1 ? "" : "s"} saved — every card and chart now follows them.`);
+      setDrafts(new Map());
     } catch (e) {
       setSaveErr((e as Error).message);
     } finally {
       setSaving(false);
     }
   };
-  const tick = (g: string) => setTicked((t) => {
-    const n = new Set(t);
-    if (n.has(g)) n.delete(g); else n.add(g);
-    return n;
-  });
   const [q, setQ] = useState("");
   const [visible, setVisible] = useState<string[]>(readCols);
   const pickCols = (v: string[]) => {
@@ -588,7 +600,7 @@ function CustomerTable({ customers, loading, windowLabel, from, to, canEdit, rea
 
   return (
     <SalesPanel title="Customer list" icon={Table2} loading={loading}
-                subtitle={`${fmtInt(searched.length)} customers · click a row for its ledgers${canEdit ? " · click a bucket to change it" : ""}`}
+                subtitle={`${fmtInt(searched.length)} customers · click a row for its ledgers${canEdit ? " · pick a bucket in the dropdown, then Save all changes" : ""}`}
                 actions={
                   <div className="flex items-center gap-2">
                     <div className="relative">
@@ -603,28 +615,36 @@ function CustomerTable({ customers, loading, windowLabel, from, to, canEdit, rea
                     </Button>
                   </div>
                 }>
-      {canEdit && !ready && ticked.size > 0 && (
-        <div className="mb-2 rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-[12px] text-amber-900 dark:border-amber-700 dark:bg-amber-950/40 dark:text-amber-200">
-          {fmtInt(ticked.size)} ticked — but nothing can be saved until migration 20270115120000 is run in Supabase.
-        </div>
-      )}
-      {canEdit && ready && (ticked.size > 0 || saving || saveErr) && (
-        <div className="mb-2 flex flex-wrap items-center gap-2 rounded-md border border-primary/30 bg-primary/5 px-3 py-2 text-[12px]">
-          <span className="font-semibold text-foreground">{fmtInt(ticked.size)} ticked</span>
-          <span className="text-muted-foreground">— set them as</span>
-          {BUCKETS.map((b) => (
-            <Button key={b} size="sm" disabled={saving || !ticked.size} onClick={() => apply([...ticked], b)}
-                    className="h-7 rounded-button px-2.5 text-[12px] text-white hover:opacity-90" style={{ background: COLOR[b] }}>
-              {b}
-            </Button>
-          ))}
-          <Button size="sm" variant="outline" disabled={saving || !ticked.size} onClick={() => apply([...ticked], null)}
-                  className="h-7 rounded-button px-2.5 text-[12px]" title="Hand them back to the rule">
-            Auto (rule)
-          </Button>
-          <button type="button" onClick={() => setTicked(new Set())} disabled={saving}
-                  className="text-[11.5px] text-muted-foreground hover:text-foreground hover:underline">Clear ticks</button>
-          {saving && <Loader2 className="h-3.5 w-3.5 animate-spin text-primary" />}
+      {canEdit && (drafts.size > 0 || saving || saveErr || savedNote || !ready) && (
+        <div className={cn("sticky top-0 z-20 mb-2 flex flex-wrap items-center gap-2 rounded-md border px-3 py-2 text-[12px]",
+                           !ready ? "border-amber-300 bg-amber-50 text-amber-900 dark:border-amber-700 dark:bg-amber-950/40 dark:text-amber-200"
+                             : "border-primary/30 bg-primary/5")}>
+          {drafts.size > 0 ? (
+            <span className="font-semibold text-foreground">
+              {fmtInt(drafts.size)} unsaved change{drafts.size === 1 ? "" : "s"}
+              <span className="ml-1 font-normal text-muted-foreground">
+                ({BUCKETS.map((b) => `${[...drafts.values()].filter((v) => v === b).length} → ${b}`).join(", ")}
+                {[...drafts.values()].some((v) => v === "auto") && `, ${[...drafts.values()].filter((v) => v === "auto").length} → Auto`})
+              </span>
+            </span>
+          ) : savedNote ? (
+            <span className="font-medium text-[#0ca30c]">{savedNote}</span>
+          ) : ready ? null : (
+            <span>Pick a bucket in any row's dropdown — Save stays off until migration 20270115120000 is run in Supabase.</span>
+          )}
+          {drafts.size > 0 && (
+            <>
+              <Button size="sm" disabled={saving || !ready} onClick={saveAll}
+                      className="h-7 gap-1.5 rounded-button bg-primary px-3 text-[12px] text-primary-foreground hover:bg-primary/90">
+                {saving && <Loader2 className="h-3.5 w-3.5 animate-spin" />} Save all changes
+              </Button>
+              <Button size="sm" variant="outline" disabled={saving} onClick={() => { setDrafts(new Map()); setSaveErr(null); }}
+                      className="h-7 rounded-button px-2.5 text-[12px]">
+                Discard
+              </Button>
+              {!ready && <span>— can't save until migration 20270115120000 is run in Supabase.</span>}
+            </>
+          )}
           {saveErr && <span className="text-destructive">Couldn’t save: {saveErr}</span>}
         </div>
       )}
@@ -632,17 +652,6 @@ function CustomerTable({ customers, loading, windowLabel, from, to, canEdit, rea
         <table className="w-full border-collapse text-[12.5px]" style={{ minWidth: Math.max(900, cols.length * 110) }}>
           <thead className="sticky top-0 z-10 bg-muted/80">
             <tr className="border-b border-border">
-              {canEdit && (
-                <th className="w-8 px-2 py-2">
-                  <Checkbox aria-label="Tick every customer on this page"
-                            checked={page.pageItems.length > 0 && page.pageItems.every((c) => ticked.has(c.group))}
-                            onCheckedChange={(on) => setTicked((t) => {
-                              const n = new Set(t);
-                              for (const c of page.pageItems) { if (on) n.add(c.group); else n.delete(c.group); }
-                              return n;
-                            })} />
-                </th>
-              )}
               {cols.map((c) => (
                 <th key={c.key} className={cn("whitespace-nowrap px-3 py-2 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground", c.right ? "text-right" : "text-left")}>
                   <button type="button" onClick={() => toggleSort(c.key, c.right)} title={`Sort by ${c.header}`}
@@ -657,37 +666,34 @@ function CustomerTable({ customers, loading, windowLabel, from, to, canEdit, rea
           </thead>
           <tbody>
             {page.pageItems.length === 0 ? (
-              <tr><td colSpan={cols.length + (canEdit ? 1 : 0)} className="py-8 text-center text-[12px] text-muted-foreground">
+              <tr><td colSpan={cols.length} className="py-8 text-center text-[12px] text-muted-foreground">
                 {customers.length ? "No customer matches that search." : "No customers match those filters."}
               </td></tr>
             ) : page.pageItems.map((c) => (
               <Fragment key={c.group}>
                 <tr onClick={() => setOpen((o) => (o === c.group ? null : c.group))}
                     className={cn("cursor-pointer border-b border-border/40 hover:bg-muted/40", open === c.group && "bg-muted/30",
-                                  ticked.has(c.group) && "bg-primary/5")}>
-                  {canEdit && (
-                    <td className="w-8 px-2 py-1.5" onClick={(e) => e.stopPropagation()}>
-                      <Checkbox aria-label={`Tick ${c.group}`} checked={ticked.has(c.group)} onCheckedChange={() => tick(c.group)} />
-                    </td>
-                  )}
+                                  drafts.has(c.group) && "bg-amber-50 dark:bg-amber-950/30")}>
                   {cols.map((col, i) => (
                     <td key={col.key} className={cn(td, col.right && "text-right tabular-nums")}>
                       {i === 0 ? (
                         <span className="inline-flex items-center gap-1">
                           <ChevronRight className={cn("h-3.5 w-3.5 shrink-0 text-muted-foreground transition-transform", open === c.group && "rotate-90")} />
                           {col.key === "bucket" && canEdit
-                            ? <BucketPicker c={c} disabled={saving} ready={ready} onPick={(b) => apply([c.group], b)} />
+                            ? <BucketSelect c={c} value={drafts.get(c.group) ?? savedChoice(c)} changed={drafts.has(c.group)}
+                                            disabled={saving} onChange={(v) => choose(c, v)} />
                             : col.cell(c)}
                         </span>
                       ) : col.key === "bucket" && canEdit
-                        ? <BucketPicker c={c} disabled={saving} ready={ready} onPick={(b) => apply([c.group], b)} />
+                        ? <BucketSelect c={c} value={drafts.get(c.group) ?? savedChoice(c)} changed={drafts.has(c.group)}
+                                        disabled={saving} onChange={(v) => choose(c, v)} />
                         : col.cell(c)}
                     </td>
                   ))}
                 </tr>
                 {open === c.group && (
                   <tr className="border-b border-border/60 bg-muted/20">
-                    <td colSpan={cols.length + (canEdit ? 1 : 0)} className="px-6 py-2">
+                    <td colSpan={cols.length} className="px-6 py-2">
                       <table className="w-full text-[12px]">
                         <thead>
                           <tr className="text-[10.5px] uppercase tracking-wide text-muted-foreground">
@@ -733,46 +739,30 @@ function CustomerTable({ customers, loading, windowLabel, from, to, canEdit, rea
   );
 }
 
-/** An admin's bucket control: the badge (as everyone sees it) opens Orange / Non-Orange / Auto. */
-function BucketPicker({ c, disabled, ready, onPick }: {
-  c: CustomerFigures; disabled: boolean; ready: boolean; onPick: (b: Bucket | null) => void;
+/** A row's pending choice: a bucket by hand, or "auto" to follow the rule. */
+type Choice = Bucket | "auto";
+
+/**
+ * An admin's bucket dropdown. It shows the bucket the customer would land in (coloured like the
+ * badge), and a change is only PENDING — highlighted until Save all changes.
+ */
+function BucketSelect({ c, value, changed, disabled, onChange }: {
+  c: CustomerFigures; value: Choice; changed: boolean; disabled: boolean; onChange: (v: Choice) => void;
 }) {
-  const [open, setOpen] = useState(false);
-  const pick = (b: Bucket | null) => { setOpen(false); onPick(b); };
+  const lands: Placement = value === "auto" ? c.auto : value;
   return (
     <span onClick={(e) => e.stopPropagation()} className="inline-flex flex-wrap items-center gap-1">
-      <Popover open={open} onOpenChange={setOpen}>
-        <PopoverTrigger asChild>
-          <button type="button" disabled={disabled} title="Change this customer's bucket"
-                  className="inline-flex items-center gap-0.5 rounded-pill px-2 py-0.5 text-[11px] font-semibold text-white hover:opacity-90 disabled:opacity-50"
-                  style={{ background: COLOR[c.bucket] }}>
-            {c.bucket} <ChevronDown className="h-3 w-3" />
-          </button>
-        </PopoverTrigger>
-        <PopoverContent align="start" className="w-56 p-1.5">
-          <div className="px-2 pb-1 pt-0.5 text-[10.5px] text-muted-foreground">
-            {c.group} · the rule says <b>{c.auto}</b>
-          </div>
-          {!ready && (
-            <div className="mx-1 mb-1 rounded bg-amber-50 px-2 py-1 text-[10.5px] text-amber-900 dark:bg-amber-950/40 dark:text-amber-200">
-              Can't save yet — migration 20270115120000 has to be run in Supabase first.
-            </div>
-          )}
-          {BUCKETS.map((b) => (
-            <button key={b} type="button" onClick={() => pick(b)} disabled={!ready}
-                    className={cn("flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-[12.5px] hover:bg-muted/60 disabled:opacity-40",
-                                  c.manual && c.bucket === b && "font-semibold")}>
-              <CircleDot className="h-3.5 w-3.5" style={{ color: COLOR[b] }} /> {b}
-              {c.manual && c.bucket === b && <span className="ml-auto text-[10px] text-muted-foreground">set by hand</span>}
-            </button>
-          ))}
-          <button type="button" onClick={() => pick(null)} disabled={!c.manual || !ready}
-                  className="mt-0.5 flex w-full items-center gap-2 rounded-md border-t border-border/60 px-2 py-1.5 text-left text-[12.5px] hover:bg-muted/60 disabled:opacity-40">
-            <RotateCcw className="h-3.5 w-3.5 text-muted-foreground" /> Auto — follow the rule ({c.auto})
-          </button>
-        </PopoverContent>
-      </Popover>
-      {c.manual && (
+      <select value={value} disabled={disabled} onChange={(e) => onChange(e.target.value as Choice)}
+              title={`The rule says ${c.auto}`}
+              className={cn("h-7 cursor-pointer rounded-pill border-0 pl-2 pr-6 text-[11.5px] font-semibold text-white outline-none",
+                            changed && "ring-2 ring-amber-400 ring-offset-1")}
+              style={{ background: COLOR[lands] }}>
+        <option value="auto" className="bg-surface text-foreground">Auto — rule says {c.auto}</option>
+        <option value="Orange" className="bg-surface text-foreground">Orange</option>
+        <option value="Non-Orange" className="bg-surface text-foreground">Non-Orange</option>
+      </select>
+      {changed && <span className="rounded-pill bg-amber-100 px-1.5 py-0.5 text-[10px] font-medium text-amber-900">unsaved</span>}
+      {!changed && c.manual && (
         <span className="inline-flex items-center gap-0.5 rounded-pill border border-primary/40 bg-primary/5 px-1.5 py-0.5 text-[10px] text-primary"
               title={`Set by hand — the rule says ${c.auto}`}>
           <Hand className="h-2.5 w-2.5" /> set by hand
