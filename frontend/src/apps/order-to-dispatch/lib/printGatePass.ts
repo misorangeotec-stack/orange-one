@@ -47,16 +47,39 @@ export function renderGatePassHtml(d: GatePassData): string {
     .map(([label, value]) => `<tr><th>${esc(label)}</th><td>${esc(value || "—")}</td></tr>`)
     .join("");
 
+  const q = (n: number, unit: string | null) => `${esc(qty(n))}${unit ? ` ${esc(unit)}` : ""}`;
+
+  /*
+    ONE ROW PER LOT. A line that went out from two lots prints two rows, with the
+    item name spanning both. The quantity is per lot when the split adds up to the
+    billed figure (see gatePassFromRound); otherwise it is printed once, spanning
+    the line's lots, so the slip never states a split no invoice backs.
+
+    A lot with no known expiry prints a BLANK cell, not a dash (user, 09-10-2026).
+  */
   const lines = d.lines.length
     ? d.lines
-        .map(
-          (l) => `<tr>
-            <td>${esc(l.name)}</td>
-            <td class="r">${esc(qty(l.qty))}${l.unit ? ` ${esc(l.unit)}` : ""}</td>
-          </tr>`,
-        )
+        .map((l) => {
+          const lots = l.lots.length ? l.lots : [{ lotNo: "—", expiryIso: null, qty: l.qty }];
+          const perLot = lots.every((x) => x.qty !== null);
+          const span = lots.length > 1 ? ` rowspan="${lots.length}"` : "";
+          return lots
+            .map((x, i) => {
+              const nameCell = i === 0 ? `<td${span}>${esc(l.name)}</td>` : "";
+              const qtyCell = perLot
+                ? `<td class="r">${q(x.qty ?? 0, l.unit)}</td>`
+                : i === 0 ? `<td class="r"${span}>${q(l.qty, l.unit)}</td>` : "";
+              return `<tr>
+            ${nameCell}
+            <td>${esc(x.lotNo)}</td>
+            <td>${x.expiryIso ? esc(dmy(x.expiryIso)) : ""}</td>
+            ${qtyCell}
+          </tr>`;
+            })
+            .join("");
+        })
         .join("")
-    : `<tr><td>—</td><td class="r">—</td></tr>`;
+    : `<tr><td>—</td><td>—</td><td></td><td class="r">—</td></tr>`;
 
   const total = d.lines.reduce((a, l) => a + l.qty, 0);
   // Same rule as every other total in this app: no unit when the lines disagree,
@@ -93,10 +116,16 @@ export function renderGatePassHtml(d: GatePassData): string {
   table.facts th { text-align: left; font-size: 10.5px; width: 38mm; padding: 2.2px 0; vertical-align: top; }
   table.facts td { font-size: 10.5px; padding: 2.2px 0; }
   .sec { margin-top: 8px; }
-  table.items th { text-align: left; font-size: 10.5px; border-bottom: 1px solid #000; padding: 3px 0; }
-  table.items td { font-size: 10.5px; padding: 3px 0; vertical-align: top; }
+  /* A ruled grid: four columns of different facts need lines between them to be
+     read across at the gate without a ruler. */
+  table.items th { text-align: left; font-size: 10px; border: 1px solid #000; padding: 3px 4px;
+                   background: #f2f2f2; }
+  table.items td { font-size: 10.5px; padding: 3px 4px; vertical-align: top; border: 1px solid #000; }
+  table.items .lot { width: 26mm; }
+  table.items .exp { width: 22mm; }
+  table.items .qty { width: 22mm; }
   table.items .r, table.items th.r { text-align: right; }
-  table.items tr.total td { border-top: 1px solid #000; font-weight: bold; padding-top: 4px; }
+  table.items tr.total td { font-weight: bold; padding-top: 4px; }
   .sign { margin-top: auto; padding-top: 14px; }
   table.sign th { text-align: left; font-size: 10.5px; white-space: nowrap; padding: 6px 6px 6px 0; width: 40mm; }
   table.sign td.rule { border-bottom: 0.6px solid #000; }
@@ -121,11 +150,13 @@ export function renderGatePassHtml(d: GatePassData): string {
 
   <div class="sec">
     <table class="items">
-      <thead><tr><th>PARTICULARS</th><th class="r">QTY</th></tr></thead>
+      <thead><tr>
+        <th>PARTICULARS</th><th class="lot">LOT NO.</th><th class="exp">EXPIRY DATE</th><th class="r qty">QTY</th>
+      </tr></thead>
       <tbody>
         ${lines}
         <tr class="total">
-          <td>TOTAL</td>
+          <td colspan="3">TOTAL</td>
           <td class="r">${esc(qty(total))}${unit ? ` ${esc(unit)}` : ""}</td>
         </tr>
       </tbody>

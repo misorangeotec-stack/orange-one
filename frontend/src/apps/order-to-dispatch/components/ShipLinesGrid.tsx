@@ -1,10 +1,11 @@
 import { TextInput } from "@/shared/components/ui/Form";
-import LotAllocField, { rowsFrom, type LotRow } from "./LotAllocField";
+import LotAllocField, { filledLots, rowsFrom, type LotRow } from "./LotAllocField";
+import { expiryKey, useLotExpiries } from "../data/lotExpiry";
 import { ScrollableTable } from "@/core/shared/components/ScrollableTable";
 import { useDispatchStore } from "../store";
 import { makeBookOf, useLotsForItems } from "../lib/lotPicker";
 import { creditHeadroomOf, pendingQtyOf } from "../lib/rounds";
-import { qtyTotals, sharedUnit } from "../lib/format";
+import { dmy, qtyTotals, sharedUnit } from "../lib/format";
 import type { DispatchOrder } from "../types";
 
 /**
@@ -54,6 +55,11 @@ import type { DispatchOrder } from "../types";
  *   OD-16 · and several lots ask only when they must: when the picked lots hold no more than Ship
  *     now, their boxes fill from Tally's balances (`autoFill`). On here, deliberately NOT on the
  *     coordinator's correction screen, which edits a line that has already gone out.
+ *
+ * EXPIRY, PER LOT (gate pass). Tally's date shows read-only when Tally has one. Where
+ *   it has none the store keeper may type it; edits are held by the caller
+ *   (`expiryEdits`, keyed `expiryKey(itemId, lot)`) and saved with the step. The box
+ *   only appears once the lot-expiry table exists on the database.
  */
 
 export interface ShipLineValue {
@@ -75,12 +81,15 @@ export function shipLinesFrom(order: DispatchOrder): ShipLineValue[] {
 }
 
 export default function ShipLinesGrid({
-  order, values, onChange, readOnly = false,
+  order, values, onChange, readOnly = false, expiryEdits, onExpiryEdits,
 }: {
   order: DispatchOrder;
   values: ShipLineValue[];
   onChange: (next: ShipLineValue[]) => void;
   readOnly?: boolean;
+  /** Typed expiries changed on this screen. Omit both to hide the Expiry column. */
+  expiryEdits?: Record<string, string>;
+  onExpiryEdits?: (next: Record<string, string>) => void;
 }) {
   const s = useDispatchStore();
   const byId = new Map(values.map((v) => [v.id, v]));
@@ -93,6 +102,17 @@ export default function ShipLinesGrid({
   const companyGuid = s.companies.find((c) => c.id === order.companyId)?.tallyGuid ?? null;
   const lots = useLotsForItems(order.lines.map((l) => s.itemName(l.itemId)), companyGuid);
   const bookOf = makeBookOf(s.companies);
+
+  const showExpiry = !!expiryEdits && !!onExpiryEdits;
+  const exp = useLotExpiries(
+    showExpiry
+      ? order.lines.flatMap((l) =>
+          filledLots(byId.get(l.id)?.lots ?? []).map((r) => ({
+            itemId: l.itemId, itemName: s.itemName(l.itemId), lot: r.lot_no,
+          })))
+      : [],
+    companyGuid,
+  );
 
   const patch = (id: string, part: Partial<ShipLineValue>) => {
     onChange(values.map((v) => (v.id === id ? { ...v, ...part } : v)));
@@ -119,6 +139,7 @@ export default function ShipLinesGrid({
               <th className="py-2 pr-3 font-semibold text-right">Pending</th>
               <th className="py-2 pr-3 font-semibold min-w-[120px]">Ship now</th>
               <th className="py-2 pr-3 font-semibold min-w-[230px]">LOT no.</th>
+              {showExpiry && <th className="py-2 pr-3 font-semibold min-w-[150px]">Expiry</th>}
             </tr>
           </thead>
           <tbody>
@@ -170,6 +191,44 @@ export default function ShipLinesGrid({
                       />
                     )}
                   </td>
+                  {showExpiry && (
+                    <td className="py-2 pr-3">
+                      {done ? (
+                        <span className="text-[12.5px] text-grey-2">—</span>
+                      ) : (
+                        <div className="space-y-1">
+                          {filledLots(v.lots).map((r) => {
+                            const fromTally = exp.tally.get(expiryKey(s.itemName(l.itemId), r.lot_no));
+                            const k = expiryKey(l.itemId, r.lot_no);
+                            return (
+                              <div key={r.lot_no} className="flex items-center gap-2 text-[12.5px]">
+                                {filledLots(v.lots).length > 1 && (
+                                  <span className="text-grey-2 truncate max-w-[90px]" title={r.lot_no}>{r.lot_no}</span>
+                                )}
+                                {fromTally ? (
+                                  <span className="text-navy" title="From Tally">
+                                    {dmy(fromTally)} <span className="text-grey-2">· Tally</span>
+                                  </span>
+                                ) : exp.typedAvailable ? (
+                                  <input
+                                    type="date"
+                                    value={expiryEdits![k] ?? exp.typed.get(k) ?? ""}
+                                    onChange={(e) => onExpiryEdits!({ ...expiryEdits!, [k]: e.target.value })}
+                                    disabled={readOnly}
+                                    title="Tally has no expiry for this lot — enter it from the label"
+                                    className="h-8 rounded-md border border-line px-2 text-[12.5px] text-navy"
+                                  />
+                                ) : (
+                                  <span className="text-grey-2">—</span>
+                                )}
+                              </div>
+                            );
+                          })}
+                          {filledLots(v.lots).length === 0 && <span className="text-[12.5px] text-grey-2">Pick a lot</span>}
+                        </div>
+                      )}
+                    </td>
+                  )}
                 </tr>
               );
             })}
@@ -200,6 +259,7 @@ export default function ShipLinesGrid({
                 </span>
               </td>
               <td className="py-2 pr-3" />
+              {showExpiry && <td className="py-2 pr-3" />}
             </tr>
           </tfoot>
         </table>
