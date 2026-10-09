@@ -1,4 +1,4 @@
--- Rollback for 20270114120000_fms_hr_future_reference.sql
+-- Rollback for 20270116120000_fms_hr_future_reference.sql
 --
 -- What happens to parked candidates: dropping the columns removes the mark, so every
 -- candidate still in Future Reference simply reappears on the vacancy they were parked

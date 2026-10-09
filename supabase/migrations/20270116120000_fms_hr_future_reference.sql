@@ -33,7 +33,7 @@
 -- from 20260903130000 with two changes: parked CVs are not counted
 -- (`future_ref_at is null`), and a bucket viewer may trigger the recount.
 --
--- Rollback: 20270114120000_fms_hr_future_reference_rollback.sql.
+-- Rollback: 20270116120000_fms_hr_future_reference_rollback.sql.
 
 begin;
 

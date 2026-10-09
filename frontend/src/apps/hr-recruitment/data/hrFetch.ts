@@ -181,7 +181,7 @@ async function fetchCandidatesInScope(liveRequisitionIds: string[]): Promise<any
     fetchAll("fms_hr_candidates", "created_at", (q) => q.in("stage", ["finalized", "hired"])),
     // D — every candidate saved for future reference, whatever the window. The bucket
     // exists precisely for CVs from vacancies long closed. Fails SOFT: before
-    // 20270114120000 is applied the column does not exist, and one missing extra must
+    // 20270116120000 is applied the column does not exist, and one missing extra must
     // not blank the whole app.
     fetchAll("fms_hr_candidates", "created_at", (q) => q.not("future_ref_at", "is", null)).catch(() => []),
   ]);
