@@ -426,6 +426,21 @@ interface Person {
   byProduct: Record<string, number>;
 }
 
+/** One customer under a salesperson, as the opened row and the export show it. */
+interface CustomerLine {
+  party: string;
+  net: number; prev: number;
+  inkQty: number; ink: number;
+  machineQty: number; machine: number;
+  headsSpares: number; other: number;
+  /** [Category, net count], biggest first. */
+  machineCats: [string, number][];
+  companies: string; locations: string;
+  vouchers: number;
+  /** YYYYMMDD, "" when only last year. */
+  lastSale: string;
+}
+
 /** One record per salesperson (this year), with last year's same days beside it. */
 function summarise(cur: Tagged[], pre: Tagged[]): Person[] {
   const m = new Map<string, Person & { cust: Set<string>; vch: Set<string> }>();
@@ -526,18 +541,49 @@ function SalespersonTable({ people, total, loading, fy, lastFy, cur, pre, window
   const toggleSort = (key: string, right?: boolean) => setSort((s) =>
     s.key === key ? { key, dir: s.dir === 1 ? -1 : 1 } : { key, dir: right ? -1 : 1 });
 
-  /** A salesperson's customers, this year against last. */
+  /**
+   * A salesperson's customers, this year against last, with WHICH machines they took: the machine
+   * lines' Category (Central Masters), each with its net count — "KYOCERA 600 DPI - STANDARD × 2".
+   */
   const customersOf = (name: string) => {
-    const m = new Map<string, { party: string; net: number; prev: number; ink: number; machine: number }>();
-    const at = (party: string) => m.get(party) ?? m.set(party, { party, net: 0, prev: 0, ink: 0, machine: 0 }).get(party)!;
+    const m = new Map<string, CustomerLine & { cats: Map<string, number>; vch: Set<string>; companySet: Set<string>; locationSet: Set<string> }>();
+    const at = (party: string) => m.get(party) ?? m.set(party, {
+      party, net: 0, prev: 0, inkQty: 0, ink: 0, machineQty: 0, machine: 0, headsSpares: 0, other: 0,
+      machineCats: [], companies: "", locations: "", vouchers: 0, lastSale: "",
+      cats: new Map(), vch: new Set(), companySet: new Set(), locationSet: new Set(),
+    }).get(party)!;
     for (const { r, sp } of cur) if (sp === name) {
-      const c = at(r.party); c.net += r.revenue;
+      const c = at(r.party);
+      c.net += r.revenue;
       const p = productOf(r.sales_type);
-      if (p === "Ink") c.ink += r.revenue; else if (p === "Machine") c.machine += r.revenue;
+      if (p === "Ink") { c.inkQty += r.quantity; c.ink += r.revenue; }
+      else if (p === "Machine") {
+        c.machineQty += r.quantity; c.machine += r.revenue;
+        // A discount line on a machine has no item, so no category and no count — leave it out.
+        if (r.quantity) {
+          const cat = itemCell(DIMS.category(r)) || r.particulars;
+          c.cats.set(cat, (c.cats.get(cat) ?? 0) + r.quantity);
+        }
+      }
+      else if (p === "Heads" || p === "Spare Parts") c.headsSpares += r.revenue;
+      else c.other += r.revenue;
+      c.vch.add(`${r.tenant_id}|${r.voucher_no}`);
+      c.companySet.add(r.company);
+      c.locationSet.add(r.location_name);
+      if (r.vch_date > c.lastSale) c.lastSale = r.vch_date;
     }
     for (const { r, sp } of pre) if (sp === name) at(r.party).prev += r.revenue;
-    return [...m.values()].sort((a, b) => b.net - a.net);
+    return [...m.values()]
+      .map(({ cats, vch, companySet, locationSet, ...c }): CustomerLine => ({
+        ...c,
+        machineCats: [...cats].filter(([, n]) => n !== 0).sort((a, b) => b[1] - a[1]),
+        companies: [...companySet].sort().join(", "),
+        locations: [...locationSet].sort().join(", "),
+        vouchers: vch.size,
+      }))
+      .sort((a, b) => b.net - a.net);
   };
+  const catText = (cats: [string, number][]) => cats.map(([cat, n]) => `${cat} × ${nf2.format(n)}`).join(", ");
 
   const exportXlsx = () => {
     const head = SP_COLS.map((c) => c.header);
@@ -549,11 +595,18 @@ function SalespersonTable({ people, total, loading, fy, lastFy, cur, pre, window
     }))]);
     ws["!cols"] = SP_COLS.map((c) => ({ wch: c.key === "name" ? 28 : 14 }));
     head.forEach((_, i) => { const a = XLSX.utils.encode_cell({ r: 0, c: i }); if (ws[a]) ws[a].s = { font: { bold: true } }; });
+    const custHead = ["Salesperson", "Customer", "Company", "Location", "Machine Category", "Machines", "Machine Value",
+                      "Ink Qty (KG)", "Ink Value", "Heads & Spares", "Other", "Net Sales", "Last Year", "Growth %", "Vouchers", "Last Sale"];
     const wsC = XLSX.utils.aoa_to_sheet([
-      ["Salesperson", "Customer", "Net Sales", "Last Year", "Ink", "Machine"],
-      ...sorted.flatMap((p) => customersOf(p.name).map((c) => [p.name, c.party, Math.round(c.net), Math.round(c.prev), Math.round(c.ink), Math.round(c.machine)])),
+      custHead,
+      ...sorted.flatMap((p) => customersOf(p.name).map((c) => {
+        const g = growth(c.net, c.prev);
+        return [p.name, c.party, c.companies, c.locations, catText(c.machineCats), c.machineQty, Math.round(c.machine),
+                Math.round(c.inkQty * 100) / 100, Math.round(c.ink), Math.round(c.headsSpares), Math.round(c.other),
+                Math.round(c.net), Math.round(c.prev), g === null ? "" : Math.round(g * 10) / 10, c.vouchers, dmy(c.lastSale)];
+      })),
     ]);
-    wsC["!cols"] = [{ wch: 28 }, { wch: 40 }, { wch: 14 }, { wch: 14 }, { wch: 14 }, { wch: 14 }];
+    wsC["!cols"] = custHead.map((h) => ({ wch: h === "Customer" || h === "Machine Category" ? 40 : h === "Salesperson" || h === "Company" ? 26 : 13 }));
     const info = XLSX.utils.aoa_to_sheet([
       ["Salesperson Sales"], ["Window", windowLabel],
       ["Salesperson", "the tag on the customer's ledger in Masters; untagged = (Not assigned)"],
@@ -609,29 +662,62 @@ function SalespersonTable({ people, total, loading, fy, lastFy, cur, pre, window
                 {open === p.name && (
                   <tr className="border-b border-border/60 bg-muted/20">
                     <td colSpan={SP_COLS.length} className="px-6 py-2">
-                      <div className="max-h-[320px] overflow-y-auto">
-                        <table className="w-full text-[12px]">
-                          <thead className="sticky top-0 bg-muted/60">
+                      <div className="max-h-[420px] overflow-auto">
+                        <table className="w-full min-w-[1500px] text-[12px]">
+                          <thead className="sticky top-0 z-[1] bg-muted">
                             <tr className="text-[10.5px] uppercase tracking-wide text-muted-foreground">
                               <th className="py-1 pr-3 text-left font-semibold">Customer</th>
+                              <th className="px-3 py-1 text-left font-semibold">Company</th>
+                              <th className="px-3 py-1 text-left font-semibold">Location</th>
+                              <th className="px-3 py-1 text-left font-semibold">Machine Category</th>
+                              <th className="px-3 py-1 text-right font-semibold">Machines</th>
+                              <th className="px-3 py-1 text-right font-semibold">Machine Value</th>
+                              <th className="px-3 py-1 text-right font-semibold">Ink Qty</th>
                               <th className="px-3 py-1 text-right font-semibold">Ink</th>
-                              <th className="px-3 py-1 text-right font-semibold">Machine</th>
+                              <th className="px-3 py-1 text-right font-semibold">Heads & Spares</th>
+                              <th className="px-3 py-1 text-right font-semibold">Other</th>
                               <th className="px-3 py-1 text-right font-semibold">Net Sales</th>
                               <th className="px-3 py-1 text-right font-semibold">Last Year</th>
-                              <th className="pl-3 py-1 text-right font-semibold">Growth</th>
+                              <th className="px-3 py-1 text-right font-semibold">Growth</th>
+                              <th className="px-3 py-1 text-right font-semibold">Vouchers</th>
+                              <th className="pl-3 py-1 text-right font-semibold">Last Sale</th>
                             </tr>
                           </thead>
                           <tbody>
-                            {customersOf(p.name).map((c) => (
-                              <tr key={c.party} className="border-t border-border/40">
-                                <td className="py-1 pr-3">{c.party}</td>
-                                <td className="px-3 py-1 text-right tabular-nums">{c.ink ? fmtSales(c.ink) : "—"}</td>
-                                <td className="px-3 py-1 text-right tabular-nums">{c.machine ? fmtSales(c.machine) : "—"}</td>
-                                <td className="px-3 py-1 text-right font-medium tabular-nums">{fmtSales(c.net)}</td>
-                                <td className="px-3 py-1 text-right tabular-nums text-muted-foreground">{fmtSales(c.prev)}</td>
-                                <td className="pl-3 py-1 text-right tabular-nums">{growthText(c.net, c.prev)}</td>
-                              </tr>
-                            ))}
+                            {customersOf(p.name).map((c) => {
+                              const g = growth(c.net, c.prev);
+                              return (
+                                <tr key={c.party} className="border-t border-border/40 align-top">
+                                  <td className="py-1 pr-3">{c.party}</td>
+                                  <td className="px-3 py-1 whitespace-nowrap">{c.companies}</td>
+                                  <td className="px-3 py-1 whitespace-nowrap">{c.locations}</td>
+                                  <td className="px-3 py-1">
+                                    {c.machineCats.length ? (
+                                      <div className="flex flex-col gap-0.5">
+                                        {c.machineCats.map(([cat, n]) => (
+                                          <span key={cat} className="whitespace-nowrap">
+                                            {cat} <span className="font-semibold text-foreground">× {nf2.format(n)}</span>
+                                          </span>
+                                        ))}
+                                      </div>
+                                    ) : "—"}
+                                  </td>
+                                  <td className="px-3 py-1 text-right tabular-nums">{c.machineQty ? fmtNos(c.machineQty) : "—"}</td>
+                                  <td className="px-3 py-1 text-right tabular-nums">{c.machine ? fmtSales(c.machine) : "—"}</td>
+                                  <td className="px-3 py-1 text-right tabular-nums">{c.inkQty ? fmtKg(c.inkQty) : "—"}</td>
+                                  <td className="px-3 py-1 text-right tabular-nums">{c.ink ? fmtSales(c.ink) : "—"}</td>
+                                  <td className="px-3 py-1 text-right tabular-nums">{c.headsSpares ? fmtSales(c.headsSpares) : "—"}</td>
+                                  <td className="px-3 py-1 text-right tabular-nums">{c.other ? fmtSales(c.other) : "—"}</td>
+                                  <td className="px-3 py-1 text-right font-medium tabular-nums">{fmtSales(c.net)}</td>
+                                  <td className="px-3 py-1 text-right tabular-nums text-muted-foreground">{fmtSales(c.prev)}</td>
+                                  <td className={cn("px-3 py-1 text-right tabular-nums", g === null ? "text-muted-foreground" : g >= 0 ? "text-[#0ca30c]" : "text-destructive")}>
+                                    {growthText(c.net, c.prev)}
+                                  </td>
+                                  <td className="px-3 py-1 text-right tabular-nums">{fmtInt(c.vouchers)}</td>
+                                  <td className="pl-3 py-1 text-right tabular-nums whitespace-nowrap">{dmy(c.lastSale) || "—"}</td>
+                                </tr>
+                              );
+                            })}
                           </tbody>
                         </table>
                       </div>
