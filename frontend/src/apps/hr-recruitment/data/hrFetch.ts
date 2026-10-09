@@ -179,6 +179,11 @@ async function fetchCandidatesInScope(liveRequisitionIds: string[]): Promise<any
     // offered candidate who is later marked `hired` must not fall out of the read,
     // or their onboarding and probation rows lose the person's name.
     fetchAll("fms_hr_candidates", "created_at", (q) => q.in("stage", ["finalized", "hired"])),
+    // D — every candidate saved for future reference, whatever the window. The bucket
+    // exists precisely for CVs from vacancies long closed. Fails SOFT: before
+    // 20270116120000 is applied the column does not exist, and one missing extra must
+    // not blank the whole app.
+    fetchAll("fms_hr_candidates", "created_at", (q) => q.not("future_ref_at", "is", null)).catch(() => []),
   ]);
 
   const byId = new Map<string, any>();
@@ -212,6 +217,11 @@ export interface HrConfig {
    * on top — fms_hr_can_act() ANDs module_can_edit(). Two grants, both required.
    */
   pipelineViewerIds: string[];
+  /**
+   * Who may see the Future Reference bucket. Read in SQL by
+   * fms_hr_is_future_ref_viewer() — a READ grant over SAVED candidates only.
+   */
+  futureRefViewerIds: string[];
 }
 
 /**
@@ -238,7 +248,14 @@ export interface HrData {
   qualifications: Qualification[];
   requisitions: Requisition[];
   requisitionPlatforms: RequisitionPlatform[];
+  /**
+   * The candidates IN THE PIPELINE. A candidate parked in Future Reference is NOT here
+   * — it has left the pipeline, so the board, the queues, the counts, the Control
+   * Center and My Work (all of which read this array) must not see it.
+   */
   candidates: Candidate[];
+  /** Parked in the Future Reference bucket — out of the pipeline. */
+  futureRefCandidates: Candidate[];
   interviews: Interview[];
   onboardings: Onboarding[];
   onboardingChecks: OnboardingCheck[];
@@ -494,6 +511,9 @@ export async function fetchHrData(): Promise<HrData> {
     fetchAll("fms_hr_department_hods", "department_id"),
   ]);
 
+  // Split once, here, so every consumer of the cache sees the same pipeline.
+  const mappedCandidates = (candidates as any[]).map(mapCandidate);
+
   const byKey = new Map<string, any>(configRows.map((r) => [r.key, r.value ?? {}]));
   const config: HrConfig = {
     processCoordinatorIds: (byKey.get("process_coordinators")?.user_ids ?? []) as string[],
@@ -506,6 +526,7 @@ export async function fetchHrData(): Promise<HrData> {
     reassignPoolDepartmentIds: (byKey.get("reassign_pool")?.department_ids ?? []) as string[],
     reassignPoolUserIds: (byKey.get("reassign_pool")?.user_ids ?? []) as string[],
     pipelineViewerIds: (byKey.get("pipeline_viewers")?.user_ids ?? []) as string[],
+    futureRefViewerIds: (byKey.get("future_ref_viewers")?.user_ids ?? []) as string[],
   };
 
   return {
@@ -523,7 +544,8 @@ export async function fetchHrData(): Promise<HrData> {
     qualifications: qualifications.map(mapMaster),
     requisitions: requisitions.map(mapRequisition),
     requisitionPlatforms: requisitionPlatforms.map(mapRequisitionPlatform),
-    candidates: candidates.map(mapCandidate),
+    candidates: mappedCandidates.filter((c) => !c.futureRefAt),
+    futureRefCandidates: mappedCandidates.filter((c) => !!c.futureRefAt),
     interviews: interviews.map(mapInterview),
     onboardings: onboardings.map(mapOnboarding),
     onboardingChecks: onboardingChecks.map(mapOnboardingCheck),

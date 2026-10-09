@@ -206,6 +206,9 @@ export const mapCandidate = (r: any): Candidate => ({
   disqualificationReasonId: r.disqualification_reason_id ?? null,
   disqualificationNote: r.disqualification_note ?? null,
   decisionRemarks: r.decision_remarks ?? null,
+  futureRefAt: r.future_ref_at ?? null,
+  futureRefBy: r.future_ref_by ?? null,
+  futureRefNote: r.future_ref_note ?? null,
   createdAt: r.created_at,
 });
 

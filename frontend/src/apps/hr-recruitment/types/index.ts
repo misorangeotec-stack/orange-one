@@ -543,6 +543,15 @@ export interface Candidate {
   /** A free-text note captured on the Awaiting-Decision / finalize move. */
   decisionRemarks: string | null;
 
+  /**
+   * Saved for future reference — a FLAG, not a stage. Non-null puts the candidate in
+   * the Future Reference bucket whatever stage they are at on this vacancy.
+   */
+  futureRefAt: string | null;
+  futureRefBy: string | null;
+  /** Why they are worth calling later — "good for a Surat sales role", … */
+  futureRefNote: string | null;
+
   createdAt: string;
 }
 
