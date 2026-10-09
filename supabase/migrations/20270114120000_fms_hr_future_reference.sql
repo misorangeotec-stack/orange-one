@@ -30,7 +30,8 @@
 -- policy is recreated or widened.
 --
 -- The only existing object REPLACED is fms_hr_notify_hod_pending(), carried forward
--- verbatim from 20260903130000 with one added predicate (`future_ref_at is null`).
+-- from 20260903130000 with two changes: parked CVs are not counted
+-- (`future_ref_at is null`), and a bucket viewer may trigger the recount.
 --
 -- Rollback: 20270114120000_fms_hr_future_reference_rollback.sql.
 
@@ -136,8 +137,9 @@ create policy "fms hr docs read future ref"
 
 -- ---------------------------------------------------------------------------
 -- 4. The HOD's "N CVs awaiting your shortlist" notice must not count a CV that has
---    left the pipeline. Body carried forward VERBATIM from 20260903130000; the only
---    change is `and c.future_ref_at is null` in the count.
+--    left the pipeline. Body carried forward from 20260903130000 with two changes:
+--    `and c.future_ref_at is null` in the count, and a bucket viewer passes the
+--    caller gate (so moving a CV back refreshes the HOD's count).
 -- ---------------------------------------------------------------------------
 create or replace function public.fms_hr_notify_hod_pending(p_requisition uuid)
 returns void
@@ -157,7 +159,12 @@ begin
 
   -- auth.uid() is null when this runs from a migration (§6) or a cron job; in that
   -- case there is no caller to authorize and nobody to skip as "the actor".
-  if v_uid is not null and not public.fms_hr_can_read_requisition(p_requisition, v_uid) then
+  -- Future Reference: a bucket viewer moving a CV back onto a vacancy cannot read that
+  -- vacancy through fms_hr_can_read_requisition, and would otherwise leave the HOD's
+  -- count stale. Safe to admit: the count is computed here, never taken from the caller.
+  if v_uid is not null
+     and not public.fms_hr_can_read_requisition(p_requisition, v_uid)
+     and not public.fms_hr_is_future_ref_viewer(v_uid) then
     return;
   end if;
 
