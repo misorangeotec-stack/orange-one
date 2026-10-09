@@ -35,6 +35,7 @@ import { loadSalesRegister, type RegisterRow } from "./salesRegister";
 import { companyGuidOf, fetchCompanyMap, makeCompanyResolver } from "./companyMap";
 import { SALES_REGISTER_COLOURS, colourOf } from "./batchCostingRules";
 import { loadSaleTypeRuleset, type SaleType, type SaleTypeResolver } from "@/apps/daily-report/lib/saleType";
+import { DISCOUNT_TYPE, isDiscountParticulars } from "./bushraSalesFigures";
 
 export type SalesTypeSource = "Particulars" | "Central Masters" | "Voucher Type" | "";
 
@@ -53,11 +54,25 @@ export interface BushraRegisterRow extends RegisterRow {
   unit: string;
   /** False when no Central Masters item carries this name. */
   in_masters: boolean;
+  /**
+   * A discount / rate-difference ledger line. It has no stock item, so Ink Type, Group, Category
+   * and Colour all read "Discount" — the same answer the dashboards give (DIMS in
+   * bushraSalesFigures.ts) — and there is nothing in Central Masters to edit.
+   */
+  is_discount: boolean;
 }
 
 /* --------------------------------------------------------- central masters */
 
 interface MasterItemInfo {
+  /** mst_items.id — what a Bushra Central Master override is keyed on. */
+  id: string;
+  /** Tally's own item name, as Central Masters holds it. */
+  name: string;
+  /** Central's OWN values, before any override and before the near-duplicate merge. */
+  central: { itemType: ItemType | null; inkType: string | null; category: string | null; groupName: string | null };
+  /** The Bushra Central Master override on this copy, as stored — undefined when there is none. */
+  override: ItemOverride | undefined;
   companyGuid: string;
   itemType: ItemType | null;
   inkType: string | null;
@@ -78,9 +93,10 @@ interface MasterItemInfo {
  * dashboard, in the report, in the Excel export and in the scheduled mail, for everyone.
  *
  * The app's own reader is apps/bushra-central-master/lib/overridesDb.ts. This is a
- * second, much smaller reader rather than an import of that one, on purpose: this side
- * only ever READS, it needs four of the eight keys, and receivables-hub must not take a
- * dependency on another app's store to draw a dashboard.
+ * second, much smaller reader rather than an import of that one, on purpose: it needs
+ * five of the eight keys, and receivables-hub must not take a dependency on another
+ * app's store to draw a dashboard. The Sales Register's admin editor writes the same
+ * rows — see lib/bushraSalesItemEdit.ts.
  *
  * ⚠ ABSENT AND NULL ARE DIFFERENT. A key that is not in the row means "this field
  *   still follows Central Masters"; a key present and null means "cleared on purpose".
@@ -91,7 +107,7 @@ interface MasterItemInfo {
  * register's Particulars is Tally's own item name, which is what the line was billed
  * as, and no master may rewrite that.
  */
-interface ItemOverride {
+export interface ItemOverride {
   itemType?: ItemType | null;
   category?: string | null;
   inkType?: string | null;
@@ -302,7 +318,10 @@ export async function loadItemLookup(): Promise<ItemLookup> {
   const settled = items.map((i) => {
     const o = overrideOf.get(i.id);
     return {
+      id: i.id,
       name: i.name,
+      central: { itemType: i.item_type, inkType: i.ink_type, category: i.category, groupName: groupOf(i.group_id) },
+      override: o,
       companyGuid: (i.company_id && companyGuid.get(i.company_id)) || "",
       itemType: laidOver<ItemType | null>(o, "itemType", i.item_type),
       inkType: laidOver<string | null>(o, "inkType", i.ink_type),
@@ -325,6 +344,10 @@ export async function loadItemLookup(): Promise<ItemLookup> {
   };
   for (const i of settled) {
     const info: MasterItemInfo = {
+      id: i.id,
+      name: i.name,
+      central: i.central,
+      override: i.override,
       companyGuid: i.companyGuid,
       itemType: i.itemType,
       inkType: canonInk(i.inkType),
@@ -340,8 +363,17 @@ export async function loadItemLookup(): Promise<ItemLookup> {
   return { exact, folded };
 }
 
+export type MasterCopy = MasterItemInfo;
+
+/** Every company's copy of the item a register line names — what an admin edit is written to. */
+export function copiesOf(lookup: ItemLookup, particulars: string): MasterCopy[] {
+  const k = wsKey(particulars);
+  return lookup.exact.get(k) ?? lookup.folded.get(k.toUpperCase()) ?? [];
+}
+
 /** The line's own company's copy if there is one, else the first copy that carries the field. */
-function pick(copies: MasterItemInfo[], guid: string, field: keyof MasterItemInfo): string | null {
+type PickField = "itemType" | "inkType" | "category" | "group" | "unit" | "colour";
+function pick(copies: MasterItemInfo[], guid: string, field: PickField): string | null {
   const own = copies.find((c) => c.companyGuid === guid && c[field]);
   const any = own ?? copies.find((c) => c[field]);
   return (any?.[field] as string | null | undefined) ?? null;
@@ -440,8 +472,7 @@ export function classifyRegisterRow(
   voucherRule: SaleTypeResolver,
   bookCompany: string,
 ): BushraRegisterRow {
-  const k = wsKey(r.particulars);
-  const copies = lookup.exact.get(k) ?? lookup.folded.get(k.toUpperCase()) ?? [];
+  const copies = copiesOf(lookup, r.particulars);
   const guid = companyGuidOf(r.tenant_id);
   const itemType = pick(copies, guid, "itemType") as ItemType | null;
 
@@ -459,6 +490,17 @@ export function classifyRegisterRow(
 
   const type = bushraType(r);
   const company = bushraCompany({ ...r, type }, bookCompany);
+  // A discount ledger has no item to classify. Say so, rather than leave four blanks that
+  // file it under "(Not set)" beside genuine sales whose master is empty.
+  if (isDiscountParticulars(r.particulars)) {
+    return {
+      ...r, type, company, company_display: company, sales_type, sales_type_source,
+      ink_type: DISCOUNT_TYPE, item_group: DISCOUNT_TYPE, item_category: DISCOUNT_TYPE, colour: DISCOUNT_TYPE,
+      unit: pick(copies, guid, "unit") ?? "",
+      in_masters: copies.length > 0,
+      is_discount: true,
+    };
+  }
   return {
     ...r,
     type,
@@ -475,6 +517,7 @@ export function classifyRegisterRow(
     colour: pick(copies, guid, "colour") ?? colourOf(r.particulars, SALES_REGISTER_COLOURS),
     unit: pick(copies, guid, "unit") ?? "",
     in_masters: copies.length > 0,
+    is_discount: false,
   };
 }
 

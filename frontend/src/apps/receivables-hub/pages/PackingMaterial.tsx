@@ -37,8 +37,11 @@ import {
 import { cn } from "@hub/lib/utils";
 import { Button } from "@hub/components/ui/button";
 import SalesPanel from "@hub/components/masterreports/SalesPanel";
+import { PanelFill } from "@hub/components/ResizeKit";
 import { MultiSelectFilter, type MultiSelectOption } from "@hub/components/MultiSelectFilter";
 import { ScrollableTable } from "@/core/shared/components/ScrollableTable";
+import { FitTh, ResetWidths } from "@/shared/components/ui/ColumnResizer";
+import { useColumnWidths } from "@/shared/lib/useColumnWidths";
 import { usePagination } from "@/shared/lib/usePagination";
 import Pagination from "@/shared/components/ui/Pagination";
 import { fmtSales, salesFyOptions, tickSales } from "@hub/lib/salesReport";
@@ -252,8 +255,8 @@ export default function PackingMaterial() {
       <div className="grid gap-3 lg:grid-cols-2">
         <SalesPanel title="Consumed by month" icon={IndianRupee} loading={loading} empty={empty}
                     emptyMessage="No packing entries in this period."
-                    subtitle="what was used each month, with the godown moves that were netted off">
-          <ResponsiveContainer width="100%" height={280}>
+                    subtitle="what was used each month, with the godown moves that were netted off" sizeKey="consumed-month">
+          <PanelFill base={280}>{(bar) => (<ResponsiveContainer width="100%" height="100%">
             <BarChart data={monthly} margin={{ top: 18, right: 8, left: 4, bottom: 14 }} barGap={2}>
               <CartesianGrid stroke={CHART_GRID} vertical={false} />
               <XAxis dataKey="label" tick={{ ...AXIS_TICK, fontSize: 10 }} tickLine={false}
@@ -261,16 +264,16 @@ export default function PackingMaterial() {
               <YAxis tick={AXIS_TICK} tickLine={false} axisLine={false} tickFormatter={tickSales} width={54} />
               <Tooltip cursor={{ fill: "hsl(220 15% 95%)" }} content={<MonthTooltip />} />
               <Legend iconType="circle" iconSize={8} wrapperStyle={{ fontSize: 11 }} />
-              <Bar dataKey="consumedValue" name="Consumed" fill={CONSUMED} maxBarSize={18} radius={[4, 4, 0, 0]} />
-              <Bar dataKey="transferValue" name="Transferred" fill={TRANSFER} maxBarSize={18} radius={[4, 4, 0, 0]} />
+              <Bar dataKey="consumedValue" name="Consumed" fill={CONSUMED} maxBarSize={bar(18)} radius={[4, 4, 0, 0]} />
+              <Bar dataKey="transferValue" name="Transferred" fill={TRANSFER} maxBarSize={bar(18)} radius={[4, 4, 0, 0]} />
             </BarChart>
-          </ResponsiveContainer>
+          </ResponsiveContainer>)}</PanelFill>
         </SalesPanel>
 
         <SalesPanel title="Packing per KG by month" icon={Scale} loading={loading} empty={empty}
                     emptyMessage="No production in this period."
-                    subtitle="the month's packing consumption over the month's output">
-          <ResponsiveContainer width="100%" height={280}>
+                    subtitle="the month's packing consumption over the month's output" sizeKey="packing-per-kg">
+          <PanelFill base={280}>{(bar) => (<ResponsiveContainer width="100%" height="100%">
             <BarChart data={monthly} margin={{ top: 18, right: 8, left: 4, bottom: 14 }}>
               <CartesianGrid stroke={CHART_GRID} vertical={false} />
               <XAxis dataKey="label" tick={{ ...AXIS_TICK, fontSize: 10 }} tickLine={false}
@@ -278,12 +281,12 @@ export default function PackingMaterial() {
               <YAxis tick={AXIS_TICK} tickLine={false} axisLine={false} width={54}
                      tickFormatter={(v: number) => `₹${Math.round(v)}`} />
               <Tooltip cursor={{ fill: "hsl(220 15% 95%)" }} content={<PerKgTooltip />} />
-              <Bar dataKey="perKg" name="₹ / KG" fill={CONSUMED} maxBarSize={26} radius={[4, 4, 0, 0]}>
+              <Bar dataKey="perKg" name="₹ / KG" fill={CONSUMED} maxBarSize={bar(26)} radius={[4, 4, 0, 0]}>
                 <LabelList dataKey="perKg" position="top" formatter={(v: number) => (v ? `₹${v.toFixed(1)}` : "")}
                            style={{ fontSize: 9.5, fill: LABEL_FILL, fontWeight: 600 }} />
               </Bar>
             </BarChart>
-          </ResponsiveContainer>
+          </ResponsiveContainer>)}</PanelFill>
         </SalesPanel>
       </div>
 
@@ -396,21 +399,22 @@ function HBarPanel({ title, icon, rows, loading, empty, note }: {
   return (
     <SalesPanel title={title} icon={icon as never} loading={loading} empty={empty || !rows.length}
                 emptyMessage="Nothing consumed here."
-                subtitle={note ?? "by value consumed, biggest first"}>
-      <ResponsiveContainer width="100%" height={Math.max(200, rows.length * 26 + 30)}>
+                subtitle={note ?? "by value consumed, biggest first"} sizeKey={`hbar-${title}`} bodyHeight={224}>
+      <PanelFill base={Math.max(200, rows.length * 26 + 30)} min={(bar) => rows.length * (bar(14) + 12) + 30}>{(bar) => (
+      <ResponsiveContainer width="100%" height="100%">
         <BarChart data={rows} layout="vertical" margin={{ top: 4, right: 86, left: 4, bottom: 4 }}>
           <CartesianGrid stroke={CHART_GRID} horizontal={false} />
           <XAxis type="number" tick={AXIS_TICK} tickLine={false} axisLine={false} tickFormatter={tickSales} />
           <YAxis type="category" dataKey="name" tick={{ ...AXIS_TICK, fontSize: 10 }} tickLine={false}
                  axisLine={false} width={190} interval={0} />
           <Tooltip cursor={{ fill: "hsl(220 15% 95%)" }} content={<SliceTooltip />} />
-          <Bar dataKey="consumedValue" maxBarSize={14} radius={[0, 4, 4, 0]}>
+          <Bar dataKey="consumedValue" maxBarSize={bar(14)} radius={[0, 4, 4, 0]}>
             {rows.map((r) => <Cell key={r.name} fill={CONSUMED} />)}
             <LabelList dataKey="consumedValue" position="right" formatter={(v: number) => fmtSales(v)}
                        style={{ fontSize: 10, fill: LABEL_FILL, fontWeight: 600 }} />
           </Bar>
         </BarChart>
-      </ResponsiveContainer>
+      </ResponsiveContainer>)}</PanelFill>
     </SalesPanel>
   );
 }
@@ -475,7 +479,10 @@ const COLS: Array<{ key: SortKey; label: string; right?: boolean; w: number }> =
   { key: "consumedValue", label: "Consumed", right: true, w: 120 },
 ];
 
+const COL_IDS: readonly string[] = COLS.map((c) => c.key);
+
 function EntryTable({ rows }: { rows: PackingRow[] }) {
+  const fit = useColumnWidths("tb", COL_IDS, "packing-material-entries");
   const [sort, setSort] = useState<{ key: SortKey; dir: "asc" | "desc" }>({ key: "vch_date", dir: "desc" });
   const sorted = useMemo(() => {
     const s = sort.dir === "asc" ? 1 : -1;
@@ -491,12 +498,12 @@ function EntryTable({ rows }: { rows: PackingRow[] }) {
 
   return (
     <div>
-      <ScrollableTable className="border-b border-border" maxHeight="max-h-[460px]">
+      <ScrollableTable className="border-b border-border" maxHeight="max-h-[460px]" resizeKey="packing-material-entries">
         <table className="w-full min-w-[1500px] border-collapse text-[12.5px]">
           <thead className="sticky top-0 z-10 bg-muted/70">
             <tr>
               {COLS.map((c) => (
-                <th key={c.key} style={{ width: c.w }}
+                <FitTh key={c.key} fit={fit} col={c.key} {...(fit.width(c.key) === undefined ? { style: { width: c.w } } : {})}
                     onClick={() => setSort((p) => ({ key: c.key, dir: p.key === c.key && p.dir === "desc" ? "asc" : "desc" }))}
                     className={cn("cursor-pointer select-none whitespace-nowrap px-3 py-2 text-[10.5px] font-semibold uppercase tracking-wide text-foreground/70",
                                   c.right ? "text-right" : "text-left")}>
@@ -504,7 +511,7 @@ function EntryTable({ rows }: { rows: PackingRow[] }) {
                     {c.label}
                     {sort.key === c.key && (sort.dir === "asc" ? <ArrowUp className="h-3 w-3" /> : <ArrowDown className="h-3 w-3" />)}
                   </span>
-                </th>
+                </FitTh>
               ))}
             </tr>
           </thead>
@@ -544,6 +551,7 @@ function EntryTable({ rows }: { rows: PackingRow[] }) {
         </table>
       </ScrollableTable>
       <div className="px-3 py-2">
+        <ResetWidths fit={fit} cols={COL_IDS} className="inline-flex items-center gap-1 text-[11px] text-primary hover:underline" />
         <Pagination state={page} rowsLabel="entries" />
       </div>
     </div>
