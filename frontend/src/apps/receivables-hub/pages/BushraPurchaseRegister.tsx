@@ -15,7 +15,7 @@ import { Input } from "@hub/components/ui/input";
 import { MultiSelectFilter, type MultiSelectOption } from "@hub/components/MultiSelectFilter";
 import { FilterChips, type FilterChip } from "@hub/components/FilterChips";
 import { ScrollableTable } from "@/core/shared/components/ScrollableTable";
-import { FitFilter, FitTh, ResetWidths } from "@/shared/components/ui/ColumnResizer";
+import { FitFilter, FitRow, FitTh, ResetWidths } from "@/shared/components/ui/ColumnResizer";
 import { useColumnWidths } from "@/shared/lib/useColumnWidths";
 import { usePagination } from "@/shared/lib/usePagination";
 import Pagination from "@/shared/components/ui/Pagination";
@@ -341,7 +341,7 @@ export default function BushraPurchaseRegister() {
                   ))}
                 </tr>
               </thead>
-              <tbody>
+              <tbody {...fit.tbodyProps}>
                 {page.pageItems.length === 0 ? (
                   // The table stays standing when the filters match nothing, so the way back is right here.
                   <tr><td colSpan={TABLE_COLUMNS.length} className="py-10 text-center text-sm text-muted-foreground">
@@ -356,7 +356,7 @@ export default function BushraPurchaseRegister() {
                   </td></tr>
                 ) : (
                   page.pageItems.map((r, i) => (
-                    <tr key={`${r.tenant_id}-${r.voucher_guid}-${r.line_no}-${i}`} className="border-b border-border/40 hover:bg-muted/40">
+                    <FitRow fit={fit} cols={COL_IDS} key={`${r.tenant_id}-${r.voucher_guid}-${r.line_no}-${i}`} className="border-b border-border/40 hover:bg-muted/40">
                       <td className="py-1.5 px-3 text-sm whitespace-nowrap">{r.location_name}</td>
                       <td className="py-1.5 px-3 text-sm whitespace-nowrap">{r.company}</td>
                       <td className="py-1.5 px-3 text-sm whitespace-nowrap">{r.type}</td>
@@ -377,7 +377,7 @@ export default function BushraPurchaseRegister() {
                       <td className="py-1.5 px-3 text-sm whitespace-nowrap">{r.item_group}</td>
                       <td className="py-1.5 px-3 text-sm whitespace-nowrap">{r.item_category}</td>
                       <td className="py-1.5 px-3 text-sm whitespace-nowrap font-medium">{r.colour}</td>
-                    </tr>
+                    </FitRow>
                   ))
                 )}
               </tbody>

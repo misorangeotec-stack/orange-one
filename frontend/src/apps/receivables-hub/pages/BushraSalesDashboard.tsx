@@ -37,7 +37,7 @@ import { cn } from "@hub/lib/utils";
 import { Button } from "@hub/components/ui/button";
 import { Input } from "@hub/components/ui/input";
 import { ScrollableTable } from "@/core/shared/components/ScrollableTable";
-import { FitFilter, FitTh, ResetWidths } from "@/shared/components/ui/ColumnResizer";
+import { FitFilter, FitRow, FitTh, ResetWidths } from "@/shared/components/ui/ColumnResizer";
 import { useColumnWidths } from "@/shared/lib/useColumnWidths";
 import { usePagination } from "@/shared/lib/usePagination";
 import Pagination from "@/shared/components/ui/Pagination";
@@ -648,6 +648,7 @@ export default function BushraSalesDashboard({ presetId }: { presetId: string })
 
       {/* ── Quarter & month performance: one table, products across the top ─── */}
       <PeriodTable
+        storeId={preset.id}
         rows={compareRows} months={compareMonths} thisFy={thisFy} ytdTo={compareTo} measure={tableMeasure} setMeasure={setTableMeasure}
         fmtQ={fmtQ} productFmt={productFmt} selected={sel.month} onPickMonths={pickMonths} loading={loading}
         rowDim={(COMPARE_DIMS[preset.id] ?? { bucket: "salesType" }).bucket}
@@ -655,6 +656,7 @@ export default function BushraSalesDashboard({ presetId }: { presetId: string })
 
       {preset.layout === "overview" ? (
         <Overview
+          storeId={preset.id}
           rows={rows} base={base} from={readFrom} to={to} fys={pickedFys} sections={preset.sections ?? ["type", "salesType"]}
           sel={sel} toggle={toggle} noteFor={pickedNote} fmtQ={fmtQ} setFilter={setFilter} onResetDashboard={resetAll}
           focPair={foc && foc.lines > 0 ? { name: FOC_ROW, qty: foc.qty, value: foc.value, lines: foc.lines } : null}
@@ -684,7 +686,7 @@ export default function BushraSalesDashboard({ presetId }: { presetId: string })
       {/* The overview layout carries its own report; every other dashboard gets the same one here. */}
       {preset.layout === "slices" && (
         <Section id="report" title="Sales Report">
-          <SalesReportTable rows={rows} base={base} from={readFrom} to={to} loading={loading} fmtQ={fmtQ}
+          <SalesReportTable storeId={preset.id} rows={rows} base={base} from={readFrom} to={to} loading={loading} fmtQ={fmtQ}
                             sel={sel} setFilter={setFilter} onResetDashboard={resetAll} />
         </Section>
       )}
@@ -721,13 +723,15 @@ const SECTION_META: Record<SectionDim, { heading: string; subtitle: string; colo
   },
 };
 
-function Overview({ rows, base, from, to, fys, sections, sel, toggle, noteFor, fmtQ, setFilter, onResetDashboard, focPair, onFocClick, grain, setGrain, periodMonths, onPickMonths, loading, empty, emptyMessage }: {
+function Overview({ storeId, rows, base, from, to, fys, sections, sel, toggle, noteFor, fmtQ, setFilter, onResetDashboard, focPair, onFocClick, grain, setGrain, periodMonths, onPickMonths, loading, empty, emptyMessage }: {
   noteFor: (k: FilterKey, what: string) => string;
   /** The free-issue total as one row for the Type ring, or null where FOC is the dashboard itself. */
   focPair: Pair | null; onFocClick: () => void;
   /** Month or quarter, and the months the period chart runs over. */
   grain: "month" | "quarter"; setGrain: (g: "month" | "quarter") => void; periodMonths: string[];
   onPickMonths: (labels: string[]) => void;
+  /** Which dashboard this is, for the report table's own columns, widths and height. */
+  storeId: string;
   rows: Row[]; base: Row[]; from: string; to: string; fys: string[]; sections: SectionDim[]; sel: Record<FilterKey, string[]>;
   fmtQ: QtyFmt; setFilter: (k: FilterKey) => (v: string[]) => void; onResetDashboard: () => void;
   toggle: (k: FilterKey) => (name: string) => void;
@@ -787,7 +791,7 @@ function Overview({ rows, base, from, to, fys, sections, sel, toggle, noteFor, f
       </Section>
 
       <Section id="report" title="Sales Report">
-        <SalesReportTable rows={rows} base={base} from={from} to={to} loading={loading} fmtQ={fmtQ}
+        <SalesReportTable storeId={storeId} rows={rows} base={base} from={from} to={to} loading={loading} fmtQ={fmtQ}
                           sel={sel} setFilter={setFilter} onResetDashboard={onResetDashboard} />
       </Section>
     </>
@@ -1418,7 +1422,9 @@ interface PeriodRow {
  * A cell carries this year's figure; hovering it (or reading the Total column) gives last year and
  * the change, so the table stays a table rather than three numbers per cell.
  */
-function PeriodTable({ rows, months, thisFy, ytdTo, measure, setMeasure, fmtQ, productFmt, selected, onPickMonths, rowDim, loading }: {
+function PeriodTable({ storeId, rows, months, thisFy, ytdTo, measure, setMeasure, fmtQ, productFmt, selected, onPickMonths, rowDim, loading }: {
+  /** Which dashboard this is — the table's height is its own. */
+  storeId: string;
   /** `ytdTo` is this year's last day with data; last year is cut at the same day, like for like. */
   rows: Row[]; months: string[]; thisFy: string; ytdTo: string; measure: "value" | "qty";
   setMeasure: (m: "value" | "qty") => void; fmtQ: QtyFmt; productFmt: (name: string) => QtyFmt;
@@ -1592,7 +1598,7 @@ function PeriodTable({ rows, months, thisFy, ytdTo, measure, setMeasure, fmtQ, p
       {loading ? (
         <div className="h-64 animate-pulse rounded-xl bg-muted/50" />
       ) : (
-        <ScrollableTable className="rounded-xl border border-border bg-surface" maxHeight="max-h-[70vh]" resizeKey="bushra-sales-dash-performance">
+        <ScrollableTable className="rounded-xl border border-border bg-surface" maxHeight="max-h-[70vh]" resizeKey={`bushra-sales-dash-performance.${storeId}`}>
           <table className="border-collapse" style={{ tableLayout: "fixed", width: tableWidth, minWidth: "100%" }}>
             <colgroup>
               <col style={{ width: widthOf("product", "product") }} />
@@ -1886,35 +1892,42 @@ const REPORT_COLUMNS: {
 ];
 const COL_IDS = REPORT_COLUMNS.map((c) => c.header);
 const COLUMN_OPTIONS: ColumnOption[] = COL_IDS.map((h) => ({ key: h, label: h }));
-/** The reader's own column choice, kept in this browser only — a convenience, never shared. */
-const COLS_KEY = "orangeone.cols.bushra-sales-dash-report";
-const readCols = (): string[] => {
+/**
+ * The reader's own column choice, kept in this browser only — a convenience, never shared — and
+ * PER DASHBOARD (the user, 09-10-2026: a column added on the Ink dashboard is for Ink only). The
+ * column widths and the table height below are kept per dashboard the same way.
+ */
+const colsKey = (storeId: string) => `orangeone.cols.bushra-sales-dash-report.${storeId}`;
+const readCols = (key: string): string[] => {
   try {
-    const v = JSON.parse(localStorage.getItem(COLS_KEY) ?? "null");
+    const v = JSON.parse(localStorage.getItem(key) ?? "null");
     const kept = Array.isArray(v) ? COL_IDS.filter((h) => v.includes(h)) : [];
     return kept.length ? kept : COL_IDS;
   } catch { return COL_IDS; }
 };
 
 /** The full sales report: every line the filters leave, filterable and sortable per column, searchable, paged, exportable. */
-function SalesReportTable({ rows, base, from, to, loading, fmtQ, sel, setFilter, onResetDashboard }: {
+function SalesReportTable({ storeId, rows, base, from, to, loading, fmtQ, sel, setFilter, onResetDashboard }: {
+  /** Which dashboard this is — its columns, widths and height are its own, not every dashboard's. */
+  storeId: string;
   /** The dashboard's filtered lines, and `base` — its slice before any filter, for the dropdowns. */
   rows: Row[]; base: Row[]; from: string; to: string; loading: boolean; fmtQ: QtyFmt;
   sel: Record<FilterKey, string[]>;
   setFilter: (k: FilterKey) => (v: string[]) => void;
   onResetDashboard: () => void;
 }) {
-  const fit = useColumnWidths("tb", COL_IDS, "bushra-sales-dash-report");
-  const [visible, setVisible] = useState<string[]>(readCols);
+  const fit = useColumnWidths("tb", COL_IDS, `bushra-sales-dash-report.${storeId}`);
+  const [visible, setVisible] = useState<string[]>(() => readCols(colsKey(storeId)));
   const pickCols = (v: string[]) => {
     setVisible(v);
-    try { localStorage.setItem(COLS_KEY, JSON.stringify(v)); } catch { /* private window: just not kept */ }
+    try { localStorage.setItem(colsKey(storeId), JSON.stringify(v)); } catch { /* private window: just not kept */ }
   };
   /** The columns on show, each with its index in REPORT_COLUMNS, which sorting keys off. */
   const cols = useMemo(
     () => REPORT_COLUMNS.map((c, i) => ({ c, i })).filter(({ c }) => visible.includes(c.header)),
     [visible],
   );
+  const shownIds = useMemo(() => cols.map(({ c }) => c.header), [cols]);
   const [q, setQ] = useState("");
   const [tsel, setTsel] = useState<Record<TableOnlyKey, string[]>>(NO_TABLE_FILTERS);
 
@@ -2037,7 +2050,7 @@ function SalesReportTable({ rows, base, from, to, loading, fmtQ, sel, setFilter,
                     </Button>
                   </div>
                 }>
-      <ScrollableTable className="rounded-md border border-border" maxHeight="max-h-[60vh]" resizeKey="bushra-sales-dash-report">
+      <ScrollableTable className="rounded-md border border-border" maxHeight="max-h-[60vh]" resizeKey={`bushra-sales-dash-report.${storeId}`}>
         <table className="w-full border-collapse" style={{ minWidth: Math.max(900, cols.length * 120) }}>
           <thead>
             <tr className="border-b border-border bg-muted/50">
@@ -2086,7 +2099,7 @@ function SalesReportTable({ rows, base, from, to, loading, fmtQ, sel, setFilter,
               ))}
             </tr>
           </thead>
-          <tbody>
+          <tbody {...fit.tbodyProps}>
             {page.pageItems.length === 0 ? (
               // The table stays standing when the filters match nothing, so the way back is right here.
               <tr><td colSpan={cols.length} className="py-8 text-center text-[12px] text-muted-foreground">
@@ -2100,9 +2113,9 @@ function SalesReportTable({ rows, base, from, to, loading, fmtQ, sel, setFilter,
                 ) : "No lines on this dashboard in this period."}
               </td></tr>
             ) : page.pageItems.map((r, i) => (
-              <tr key={`${r.tenant_id}-${r.voucher_no}-${r.line_no}-${i}`} className="border-b border-border/40 text-[12.5px] hover:bg-muted/40">
+              <FitRow fit={fit} cols={shownIds} key={`${r.tenant_id}-${r.voucher_no}-${r.line_no}-${i}`} className="border-b border-border/40 text-[12.5px] hover:bg-muted/40">
                 {cols.map(({ c }) => <Fragment key={c.header}>{c.cell(r, editCell)}</Fragment>)}
-              </tr>
+              </FitRow>
             ))}
           </tbody>
         </table>
