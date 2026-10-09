@@ -428,7 +428,7 @@ export default function BushraOrangeCustomers({ mode }: { mode: "dashboard" | "r
 
       {/* ── The customer list ─────────────────────────────────────────────── */}
       <CustomerTable customers={customers} loading={loading} windowLabel={windowLabel} from={from} to={to}
-                     canEdit={isAdmin && !!overrides?.ready} onSetBucket={saveBuckets} />
+                     canEdit={isAdmin} ready={!!overrides?.ready} onSetBucket={saveBuckets} />
     </div>
   );
 }
@@ -498,10 +498,12 @@ const readCols = (): string[] => {
   } catch { return COLS.map((c) => c.key); }
 };
 
-function CustomerTable({ customers, loading, windowLabel, from, to, canEdit, onSetBucket }: {
+function CustomerTable({ customers, loading, windowLabel, from, to, canEdit, ready, onSetBucket }: {
   customers: CustomerFigures[]; loading: boolean; windowLabel: string; from: string; to: string;
-  /** An admin, and the overrides table is there. */
+  /** An admin — sees the controls. */
   canEdit: boolean;
+  /** The overrides table is in the database, so a choice can actually be saved. */
+  ready: boolean;
   onSetBucket: (groups: string[], bucket: Bucket | null) => Promise<void>;
 }) {
   /** Ticked for a bulk change — by Customer Group. */
@@ -601,7 +603,12 @@ function CustomerTable({ customers, loading, windowLabel, from, to, canEdit, onS
                     </Button>
                   </div>
                 }>
-      {canEdit && (ticked.size > 0 || saving || saveErr) && (
+      {canEdit && !ready && ticked.size > 0 && (
+        <div className="mb-2 rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-[12px] text-amber-900 dark:border-amber-700 dark:bg-amber-950/40 dark:text-amber-200">
+          {fmtInt(ticked.size)} ticked — but nothing can be saved until migration 20270115120000 is run in Supabase.
+        </div>
+      )}
+      {canEdit && ready && (ticked.size > 0 || saving || saveErr) && (
         <div className="mb-2 flex flex-wrap items-center gap-2 rounded-md border border-primary/30 bg-primary/5 px-3 py-2 text-[12px]">
           <span className="font-semibold text-foreground">{fmtInt(ticked.size)} ticked</span>
           <span className="text-muted-foreground">— set them as</span>
@@ -669,11 +676,11 @@ function CustomerTable({ customers, loading, windowLabel, from, to, canEdit, onS
                         <span className="inline-flex items-center gap-1">
                           <ChevronRight className={cn("h-3.5 w-3.5 shrink-0 text-muted-foreground transition-transform", open === c.group && "rotate-90")} />
                           {col.key === "bucket" && canEdit
-                            ? <BucketPicker c={c} disabled={saving} onPick={(b) => apply([c.group], b)} />
+                            ? <BucketPicker c={c} disabled={saving} ready={ready} onPick={(b) => apply([c.group], b)} />
                             : col.cell(c)}
                         </span>
                       ) : col.key === "bucket" && canEdit
-                        ? <BucketPicker c={c} disabled={saving} onPick={(b) => apply([c.group], b)} />
+                        ? <BucketPicker c={c} disabled={saving} ready={ready} onPick={(b) => apply([c.group], b)} />
                         : col.cell(c)}
                     </td>
                   ))}
@@ -727,8 +734,8 @@ function CustomerTable({ customers, loading, windowLabel, from, to, canEdit, onS
 }
 
 /** An admin's bucket control: the badge (as everyone sees it) opens Orange / Non-Orange / Auto. */
-function BucketPicker({ c, disabled, onPick }: {
-  c: CustomerFigures; disabled: boolean; onPick: (b: Bucket | null) => void;
+function BucketPicker({ c, disabled, ready, onPick }: {
+  c: CustomerFigures; disabled: boolean; ready: boolean; onPick: (b: Bucket | null) => void;
 }) {
   const [open, setOpen] = useState(false);
   const pick = (b: Bucket | null) => { setOpen(false); onPick(b); };
@@ -746,15 +753,20 @@ function BucketPicker({ c, disabled, onPick }: {
           <div className="px-2 pb-1 pt-0.5 text-[10.5px] text-muted-foreground">
             {c.group} · the rule says <b>{c.auto}</b>
           </div>
+          {!ready && (
+            <div className="mx-1 mb-1 rounded bg-amber-50 px-2 py-1 text-[10.5px] text-amber-900 dark:bg-amber-950/40 dark:text-amber-200">
+              Can't save yet — migration 20270115120000 has to be run in Supabase first.
+            </div>
+          )}
           {BUCKETS.map((b) => (
-            <button key={b} type="button" onClick={() => pick(b)}
-                    className={cn("flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-[12.5px] hover:bg-muted/60",
+            <button key={b} type="button" onClick={() => pick(b)} disabled={!ready}
+                    className={cn("flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-[12.5px] hover:bg-muted/60 disabled:opacity-40",
                                   c.manual && c.bucket === b && "font-semibold")}>
               <CircleDot className="h-3.5 w-3.5" style={{ color: COLOR[b] }} /> {b}
               {c.manual && c.bucket === b && <span className="ml-auto text-[10px] text-muted-foreground">set by hand</span>}
             </button>
           ))}
-          <button type="button" onClick={() => pick(null)} disabled={!c.manual}
+          <button type="button" onClick={() => pick(null)} disabled={!c.manual || !ready}
                   className="mt-0.5 flex w-full items-center gap-2 rounded-md border-t border-border/60 px-2 py-1.5 text-left text-[12.5px] hover:bg-muted/60 disabled:opacity-40">
             <RotateCcw className="h-3.5 w-3.5 text-muted-foreground" /> Auto — follow the rule ({c.auto})
           </button>
