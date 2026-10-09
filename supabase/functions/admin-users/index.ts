@@ -118,18 +118,28 @@ Deno.serve(async (req) => {
   // ---- set-password ----
   // Re-pin a user's login password (the admin user form calls this on save to
   // keep the password equal to the current mobile number).
+  //
+  // ⚠ AN EXTERNAL (customer) ACCOUNT'S PASSWORD IS NOT A PHONE NUMBER. Setup →
+  //   Customer Logins resets it to a real password the admin chose; copying that
+  //   into `profiles.phone` / `user_metadata.phone` would print a customer's
+  //   password, in plain text, on every staff screen that shows a phone. The same
+  //   rule `create` follows below.
   if (body.action === "set-password") {
     const userId = String(body.userId ?? "");
     const password = String(body.password ?? "").trim();
     if (!userId) return json(400, { error: "userId required" });
     if (password.length < 6) return json(400, { error: "password must be at least 6 characters" });
-    const { error } = await admin.auth.admin.updateUserById(userId, {
-      password,
-      user_metadata: { phone: password },
-    });
+    const { data: prof, error: profErr } = await admin
+      .from("profiles").select("is_external").eq("id", userId).maybeSingle();
+    if (profErr) return json(500, { error: profErr.message });
+    const external = prof?.is_external === true;
+    const { error } = await admin.auth.admin.updateUserById(
+      userId,
+      external ? { password } : { password, user_metadata: { phone: password } },
+    );
     if (error) return json(400, { error: error.message });
     // Keep the profiles read-model in sync so the Users screen shows the number.
-    await admin.from("profiles").update({ phone: password }).eq("id", userId);
+    if (!external) await admin.from("profiles").update({ phone: password }).eq("id", userId);
     return json(200, { ok: true });
   }
 
