@@ -407,10 +407,12 @@ export default function BushraSalespersonSales({ mode }: { mode: "dashboard" | "
 
       {/* ── Salesperson summary ───────────────────────────────────────────── */}
       <SalespersonTable people={people} total={totals.net} loading={loading} fy={fy} lastFy={lastFy}
+                        spFilter={{ value: sel.salesperson, options: options.salesperson, onChange: setFilter("salesperson") }}
                         cur={cur} pre={pre} windowLabel={windowLabel} />
 
       {/* ── The register lines ────────────────────────────────────────────── */}
-      <LinesTable lines={cur} loading={loading} from={`${fyStart}0401`} to={cutoff} />
+      <LinesTable lines={cur} loading={loading} from={`${fyStart}0401`} to={cutoff}
+                  sel={sel} setFilter={setFilter} dashOptions={options} />
     </div>
   );
 }
@@ -526,8 +528,10 @@ const SP_COLS: { key: string; header: string; right?: boolean; get: (p: Person, 
   { key: "share", header: "Share", right: true, get: (p, t) => (t ? p.net / t : 0), show: (p, t) => pct(p.net, t) },
 ];
 
-function SalespersonTable({ people, total, loading, fy, lastFy, cur, pre, windowLabel }: {
+function SalespersonTable({ people, total, loading, fy, lastFy, cur, pre, windowLabel, spFilter }: {
   people: Person[]; total: number; loading: boolean; fy: string; lastFy: string; cur: Tagged[]; pre: Tagged[]; windowLabel: string;
+  /** The dashboard's own Salesperson filter, under the column heading too. */
+  spFilter: { value: string[]; options: MultiSelectOption[]; onChange: (v: string[]) => void };
 }) {
   const [sort, setSort] = useState<{ key: string; dir: 1 | -1 }>({ key: "net", dir: -1 });
   const [open, setOpen] = useState<string | null>(null);
@@ -639,6 +643,18 @@ function SalespersonTable({ people, total, loading, fy, lastFy, cur, pre, window
                           onClick={() => toggleSort(c.key, c.right)} />
               ))}
             </tr>
+            {/* Filter row. Salesperson is the dashboard's own filter, so it narrows every panel. */}
+            <tr className="border-b-2 border-border bg-muted/30">
+              {SP_COLS.map((c) => (
+                <th key={c.key} className="px-2 py-1.5 font-normal">
+                  {c.key === "name" && (
+                    <MultiSelectFilter options={spFilter.options} value={spFilter.value} onChange={spFilter.onChange}
+                                       allLabel="Any" unit="Salespersons" searchable contentClassName="w-72"
+                                       triggerClassName="w-full min-w-[150px] h-8 text-xs rounded-input border-border bg-surface" />
+                  )}
+                </th>
+              ))}
+            </tr>
           </thead>
           <tbody>
             {sorted.length === 0 ? (
@@ -736,25 +752,39 @@ function SalespersonTable({ people, total, loading, fy, lastFy, cur, pre, window
 /* =========================================================== the register lines */
 
 const itemCell = (v: string) => (v === NOT_SET ? "" : v);
-const LINE_COLS: { key: string; header: string; right?: boolean; sort: (t: Tagged) => string | number; cell: (t: Tagged) => React.ReactNode }[] = [
-  { key: "date", header: "Date", sort: (t) => t.r.vch_date, cell: (t) => t.r.date_display },
-  { key: "voucher", header: "Voucher No.", sort: (t) => t.r.voucher_no, cell: (t) => t.r.voucher_no },
-  { key: "salesperson", header: "Salesperson", sort: (t) => t.sp, cell: (t) => <span className={cn(t.sp === NOT_ASSIGNED && "text-muted-foreground")}>{t.sp}</span> },
-  { key: "type", header: "Type", sort: (t) => DIMS.type(t.r), cell: (t) => DIMS.type(t.r) },
-  { key: "company", header: "Company", sort: (t) => t.r.company, cell: (t) => t.r.company },
-  { key: "location", header: "Location", sort: (t) => t.r.location_name, cell: (t) => t.r.location_name },
-  { key: "product", header: "Product", sort: (t) => DIMS.salesType(t.r), cell: (t) => DIMS.salesType(t.r) },
-  { key: "party", header: "Customer Name", sort: (t) => t.r.party, cell: (t) => t.r.party },
-  { key: "particulars", header: "Particulars", sort: (t) => t.r.particulars, cell: (t) => t.r.particulars },
+/**
+ * Each column's filter, in the row under the headings:
+ *   dash   the dashboard's own filter — a pick here narrows every card and chart too
+ *   table  the table's own — narrows these lines only (Reset table filters clears them)
+ */
+type LineFilter = { dash: FilterKey } | { table: (t: Tagged) => string };
+const LINE_COLS: {
+  key: string; header: string; right?: boolean; filter?: LineFilter;
+  sort: (t: Tagged) => string | number; cell: (t: Tagged) => React.ReactNode;
+}[] = [
+  { key: "date", header: "Date", filter: { table: (t) => t.r.date_display }, sort: (t) => t.r.vch_date, cell: (t) => t.r.date_display },
+  { key: "voucher", header: "Voucher No.", filter: { table: (t) => t.r.voucher_no }, sort: (t) => t.r.voucher_no, cell: (t) => t.r.voucher_no },
+  { key: "salesperson", header: "Salesperson", filter: { dash: "salesperson" }, sort: (t) => t.sp,
+    cell: (t) => <span className={cn(t.sp === NOT_ASSIGNED && "text-muted-foreground")}>{t.sp}</span> },
+  { key: "type", header: "Type", filter: { table: (t) => DIMS.type(t.r) }, sort: (t) => DIMS.type(t.r), cell: (t) => DIMS.type(t.r) },
+  { key: "company", header: "Company", filter: { dash: "company" }, sort: (t) => t.r.company, cell: (t) => t.r.company },
+  { key: "location", header: "Location", filter: { dash: "location" }, sort: (t) => t.r.location_name, cell: (t) => t.r.location_name },
+  { key: "product", header: "Product", filter: { dash: "product" }, sort: (t) => DIMS.salesType(t.r), cell: (t) => DIMS.salesType(t.r) },
+  { key: "party", header: "Customer Name", filter: { dash: "party" }, sort: (t) => t.r.party, cell: (t) => t.r.party },
+  { key: "particulars", header: "Particulars", filter: { table: (t) => t.r.particulars }, sort: (t) => t.r.particulars, cell: (t) => t.r.particulars },
   { key: "quantity", header: "Quantity", right: true, sort: (t) => t.r.quantity, cell: (t) => (t.r.quantity ? nf2.format(t.r.quantity) : "—") },
   { key: "rate", header: "Rate", right: true, sort: (t) => t.r.rate, cell: (t) => (t.r.rate ? nf2.format(t.r.rate) : "—") },
   { key: "revenue", header: "Revenue", right: true, sort: (t) => t.r.revenue,
     cell: (t) => <span className={cn(t.r.revenue < 0 && "text-destructive")}>{nf2.format(t.r.revenue)}</span> },
-  { key: "category", header: "Category", sort: (t) => itemCell(DIMS.category(t.r)), cell: (t) => itemCell(DIMS.category(t.r)) },
-  { key: "group", header: "Group", sort: (t) => itemCell(DIMS.group(t.r)), cell: (t) => itemCell(DIMS.group(t.r)) },
-  { key: "inkType", header: "Ink Type", sort: (t) => itemCell(DIMS.inkType(t.r)), cell: (t) => itemCell(DIMS.inkType(t.r)) },
-  { key: "colour", header: "Colour", sort: (t) => itemCell(DIMS.colour(t.r)), cell: (t) => itemCell(DIMS.colour(t.r)) },
+  { key: "category", header: "Category", filter: { table: (t) => DIMS.category(t.r) }, sort: (t) => itemCell(DIMS.category(t.r)), cell: (t) => itemCell(DIMS.category(t.r)) },
+  { key: "group", header: "Group", filter: { table: (t) => DIMS.group(t.r) }, sort: (t) => itemCell(DIMS.group(t.r)), cell: (t) => itemCell(DIMS.group(t.r)) },
+  { key: "inkType", header: "Ink Type", filter: { table: (t) => DIMS.inkType(t.r) }, sort: (t) => itemCell(DIMS.inkType(t.r)), cell: (t) => itemCell(DIMS.inkType(t.r)) },
+  { key: "colour", header: "Colour", filter: { table: (t) => DIMS.colour(t.r) }, sort: (t) => itemCell(DIMS.colour(t.r)), cell: (t) => itemCell(DIMS.colour(t.r)) },
 ];
+/** The table-only filters, by column key. */
+const TABLE_FILTER_COLS = LINE_COLS.filter((c) => c.filter && "table" in c.filter) as
+  (typeof LINE_COLS[number] & { filter: { table: (t: Tagged) => string } })[];
+const dateKey = (d: string) => d.split("-").reverse().join("");
 const LINE_OPTIONS: ColumnOption[] = LINE_COLS.map((c) => ({ key: c.key, label: c.header }));
 const LINE_COLS_KEY = "orangeone.cols.bushra-salesperson-lines";
 const readLineCols = (): string[] => {
@@ -765,8 +795,14 @@ const readLineCols = (): string[] => {
   } catch { return LINE_COLS.map((c) => c.key); }
 };
 
-function LinesTable({ lines, loading, from, to }: { lines: Tagged[]; loading: boolean; from: string; to: string }) {
+function LinesTable({ lines, loading, from, to, sel, setFilter, dashOptions }: {
+  lines: Tagged[]; loading: boolean; from: string; to: string;
+  sel: Record<FilterKey, string[]>;
+  setFilter: (k: FilterKey) => (v: string[]) => void;
+  dashOptions: Record<FilterKey, MultiSelectOption[]>;
+}) {
   const [q, setQ] = useState("");
+  const [tsel, setTsel] = useState<Record<string, string[]>>({});
   const [visible, setVisible] = useState<string[]>(readLineCols);
   const pickCols = (v: string[]) => {
     setVisible(v);
@@ -780,19 +816,33 @@ function LinesTable({ lines, loading, from, to }: { lines: Tagged[]; loading: bo
     return lines.filter((t) => t.r.party.toLowerCase().includes(s) || t.r.particulars.toLowerCase().includes(s) ||
       t.r.voucher_no.toLowerCase().includes(s) || t.sp.toLowerCase().includes(s));
   }, [lines, q]);
+  const keepTable = (t: Tagged, except?: string) =>
+    TABLE_FILTER_COLS.every((c) => c.key === except || !tsel[c.key]?.length || tsel[c.key].includes(c.filter.table(t)));
+  const shown = useMemo(() => searched.filter((t) => keepTable(t)), [searched, tsel]); // eslint-disable-line react-hooks/exhaustive-deps
+  /** Each table-only dropdown lists what the OTHER table filters and the search leave. */
+  const tableOptions = useMemo(() => Object.fromEntries(TABLE_FILTER_COLS.map((c) => {
+    const vals = new Set<string>();
+    for (const t of searched) if (keepTable(t, c.key)) vals.add(c.filter.table(t));
+    const list = [...vals];
+    list.sort(c.key === "date" ? (a, b) => dateKey(a).localeCompare(dateKey(b)) : collator.compare);
+    return [c.key, list.map((v) => ({ value: v, label: v }))];
+  })) as Record<string, MultiSelectOption[]>, [searched, tsel]); // eslint-disable-line react-hooks/exhaustive-deps
+  const tableFilterCount = Object.values(tsel).reduce((n, v) => n + v.length, 0);
   const sorted = useMemo(() => {
-    if (!sort) return searched;
+    if (!sort) return shown;
     const get = LINE_COLS.find((c) => c.key === sort.key)!.sort;
-    return [...searched].sort((a, b) => {
+    return [...shown].sort((a, b) => {
       const x = get(a), y = get(b);
       return sort.dir * (typeof x === "number" && typeof y === "number" ? x - y : collator.compare(String(x), String(y)));
     });
-  }, [searched, sort]);
+  }, [shown, sort]);
   const toggleSort = (key: string, right?: boolean) => setSort((s) =>
     s?.key === key ? { key, dir: s.dir === 1 ? -1 : 1 } : { key, dir: right ? -1 : 1 });
-  const page = usePagination(sorted, { resetKey: `${lines.length}|${q}|${sort?.key}|${sort?.dir}` });
-  const total = useMemo(() => searched.reduce((s, t) => s + t.r.revenue, 0), [searched]);
-  const spOfRow = useMemo(() => new Map(searched.map((t) => [t.r, t.sp])), [searched]);
+  const page = usePagination(sorted, {
+    resetKey: `${lines.length}|${q}|${sort?.key}|${sort?.dir}|${Object.entries(tsel).map(([k, v]) => `${k}:${v.join(",")}`).join("|")}`,
+  });
+  const total = useMemo(() => shown.reduce((s, t) => s + t.r.revenue, 0), [shown]);
+  const spOfRow = useMemo(() => new Map(shown.map((t) => [t.r, t.sp])), [shown]);
   const extra: ExtraColumn<Row>[] = [
     { header: "SALESPERSON", width: 22, get: (r) => spOfRow.get(r) ?? NOT_ASSIGNED },
     { header: "PRODUCT", width: 14, get: (r) => DIMS.salesType(r) },
@@ -804,9 +854,14 @@ function LinesTable({ lines, loading, from, to }: { lines: Tagged[]; loading: bo
 
   return (
     <SalesPanel title="Sales register by salesperson" icon={Table2} loading={loading}
-                subtitle={`${fmtInt(searched.length)} lines · revenue ${fmtSales(total)}`}
+                subtitle={`${fmtInt(shown.length)} lines · revenue ${fmtSales(total)}`}
                 actions={
                   <div className="flex items-center gap-2">
+                    {tableFilterCount > 0 && (
+                      <button type="button" onClick={() => setTsel({})} className="text-[11px] text-primary hover:underline">
+                        Clear table filters ({tableFilterCount})
+                      </button>
+                    )}
                     <div className="relative">
                       <Search className="absolute left-2 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
                       <Input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Customer, particulars, voucher, salesperson…"
@@ -827,6 +882,23 @@ function LinesTable({ lines, loading, from, to }: { lines: Tagged[]; loading: bo
               {cols.map((c) => (
                 <SortHead key={c.key} label={c.header} right={c.right} on={sort?.key === c.key} dir={sort?.dir ?? 1}
                           onClick={() => toggleSort(c.key, c.right)} />
+              ))}
+            </tr>
+            {/* Filter row — an "Any" dropdown under each heading. */}
+            <tr className="border-b-2 border-border bg-muted/30">
+              {cols.map((c) => (
+                <th key={c.key} className="px-2 py-1.5 font-normal">
+                  {c.filter && ("dash" in c.filter ? (
+                    <MultiSelectFilter options={dashOptions[c.filter.dash]} value={sel[c.filter.dash]} onChange={setFilter(c.filter.dash)}
+                                       allLabel="Any" unit={c.header} searchable contentClassName="w-72"
+                                       triggerClassName="w-full min-w-[110px] h-8 text-xs rounded-input border-border bg-surface" />
+                  ) : (
+                    <MultiSelectFilter options={tableOptions[c.key] ?? []} value={tsel[c.key] ?? []}
+                                       onChange={(v) => setTsel((s) => ({ ...s, [c.key]: v }))}
+                                       allLabel="Any" unit={c.header} searchable contentClassName="w-72"
+                                       triggerClassName="w-full min-w-[110px] h-8 text-xs rounded-input border-border bg-surface" />
+                  ))}
+                </th>
               ))}
             </tr>
           </thead>
