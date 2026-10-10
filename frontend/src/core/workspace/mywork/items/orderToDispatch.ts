@@ -13,7 +13,7 @@
  *   `ownsStepAt` mirrors `fms_dispatch_is_step_owner`.
  */
 import { appName } from "@/apps/appInfo";
-import type { DispatchData } from "@/apps/order-to-dispatch/data/dispatchFetch";
+import type { DispatchOpenWork } from "@/apps/order-to-dispatch/data/dispatchFetch";
 import { buildHeldEntries, buildQueueEntries, dispatchSnapshotFrom } from "@/apps/order-to-dispatch/lib/queues";
 import { stepByKey } from "@/apps/order-to-dispatch/lib/steps";
 import { STEP_STATUS } from "@/apps/order-to-dispatch/lib/format";
@@ -37,7 +37,12 @@ const ownsStepAt = (
       (o.locationId === null || o.locationId === locationId),
   );
 
-export function dispatchWorkItems(data: DispatchData, uid: string, isAdmin: boolean): WorkItem[] {
+/**
+ * ⚠ TAKES `DispatchOpenWork`, the pending-only load (PERF-2). The full
+ *   `DispatchData` fits it too, which is what the ranking and the Call List pass.
+ *   Everything this reads lives on a pending order, so the two give the same rows.
+ */
+export function dispatchWorkItems(data: DispatchOpenWork, uid: string, isAdmin: boolean): WorkItem[] {
   const owners = data.stepOwners;
   const orderById = new Map(data.orders.map((o) => [o.id, o]));
 

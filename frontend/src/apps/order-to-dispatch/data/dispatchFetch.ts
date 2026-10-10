@@ -922,6 +922,144 @@ export async function fetchCompanyItems(companyId: string): Promise<CompanyItem[
     .sort((a, b) => a.name.localeCompare(b.name));
 }
 
+/** The config table's rows -> the typed config. One reader, so the loaders cannot disagree. */
+function configFrom(configRows: any[]): DispatchConfig {
+  const byKey = new Map<string, any>(configRows.map((r) => [r.key, r.value ?? {}]));
+  return {
+    processCoordinatorIds: (byKey.get("process_coordinators")?.user_ids ?? []) as string[],
+    stepSla: resolveStepSla(byKey.get("step_sla")),
+    reassignPoolDepartmentIds: (byKey.get("reassign_pool")?.department_ids ?? []) as string[],
+    reassignPoolUserIds: (byKey.get("reassign_pool")?.user_ids ?? []) as string[],
+  };
+}
+
+/**
+ * Raw order rows + their children -> mapped orders, children grouped in memory
+ * and sorted (lines and round items by line no, rounds by round no).
+ *
+ * ⚠ SHARED BY THE FULL LOAD AND THE PENDING-ONLY LOAD, on purpose. The light load
+ *   promises "the same orders, only fewer", and the only way to keep that promise
+ *   is for both to assemble an order with the same code. Order of the input rows
+ *   does not matter: every list is sorted here.
+ */
+function assembleOrders(orders: any[], orderItems: any[], rounds: any[], roundItems: any[]): DispatchOrder[] {
+  const linesByOrder = new Map<string, OrderLine[]>();
+  for (const raw of orderItems) {
+    const line = mapLine(raw);
+    const arr = linesByOrder.get(line.orderId);
+    if (arr) arr.push(line);
+    else linesByOrder.set(line.orderId, [line]);
+  }
+  for (const arr of linesByOrder.values()) arr.sort((a, b) => a.lineNo - b.lineNo);
+
+  // Same for the round archive: round items onto rounds, rounds onto orders.
+  const itemsByRound = new Map<string, RoundItem[]>();
+  for (const raw of roundItems) {
+    const ri = mapRoundItem(raw);
+    const arr = itemsByRound.get(ri.roundId);
+    if (arr) arr.push(ri);
+    else itemsByRound.set(ri.roundId, [ri]);
+  }
+  for (const arr of itemsByRound.values()) arr.sort((a, b) => a.lineNo - b.lineNo);
+
+  const roundsByOrder = new Map<string, DispatchRound[]>();
+  for (const raw of rounds) {
+    const r = mapRound(raw);
+    r.items = itemsByRound.get(r.id) ?? [];
+    const arr = roundsByOrder.get(r.orderId);
+    if (arr) arr.push(r);
+    else roundsByOrder.set(r.orderId, [r]);
+  }
+  for (const arr of roundsByOrder.values()) arr.sort((a, b) => a.roundNo - b.roundNo);
+
+  return orders.map((r) => {
+    const o = mapOrder(r);
+    o.lines = linesByOrder.get(o.id) ?? [];
+    o.rounds = roundsByOrder.get(o.id) ?? [];
+    return o;
+  });
+}
+
+/* ===========================================================================
+ * PENDING WORK ONLY (PERF-2 Step 1) - for screens that count what is OWED.
+ *
+ * Home "My Work", the FMS Control Center row (and so the Process Coordinator's
+ * Processes page) and the 9am mail only ever count open work: a closed or
+ * cancelled order leaves every queue (`isOpenOrder`, lib/queues.ts). They used to
+ * run the module's whole load for it - every order ever raised, ~95% of them
+ * finished - every time anyone opened the home page.
+ *
+ * ⚠ SAME ORDERS, ONLY FEWER. Each pending order comes with ALL its columns, ALL
+ *   its lines (with lots), ALL its earlier rounds and their items, assembled by the
+ *   same `assembleOrders` the full load uses. Do not narrow the columns or drop the
+ *   rounds to save a few kB: `mapOrder` hides a missing column behind a default
+ *   (`round_no ?? 1`), which silently moves due dates, and My Work's credit-hold
+ *   rule reads the earlier rounds (`lastArchivedCredit`, lib/format.ts).
+ *
+ * ⚠ "NOT CLOSED AND NOT CANCELLED" IS WIDER THAN `isOpenOrder` ON PURPOSE. It keeps
+ *   on-hold orders (the hold tile) and orders waiting on a sales return (their own
+ *   My Work row). Nothing closed or cancelled produces a queue entry or a My Work
+ *   item.
+ *
+ * ⚠ ITS OWN KEY ROOT. `fetchDispatchData` reads `queryKey[1]` as a user id, so this
+ *   must never ride under `orderToDispatchData`. The store's post-save refresh also
+ *   invalidates this key, so the home list and side panel follow a save at once.
+ *
+ * ⚠ NO REACT HERE. supabase/worksnapshot bundles this file for the 9am mail.
+ * ======================================================================== */
+
+export const DISPATCH_OPEN_QK = ["orderToDispatchOpenWork"] as const;
+export const dispatchOpenWorkQueryKey = (userId: string | null) => [...DISPATCH_OPEN_QK, userId] as const;
+
+/** What the open-work readers use. The full `DispatchData` satisfies it too. */
+export type DispatchOpenWork = Pick<DispatchData, "stepOwners" | "stepAssignees" | "config" | "orders">;
+
+/** Order ids per children request: keeps each `in(...)` list well inside the gateway's URL limit. */
+const CHILD_CHUNK = 150;
+
+export async function fetchDispatchOpenWork(): Promise<DispatchOpenWork> {
+  const [stepOwners, stepAssignees, configRows, orders] = await Promise.all([
+    fetchAll("fms_dispatch_step_owners"),
+    fetchAll("fms_dispatch_step_assignees", "order_id"),
+    fetchAll("fms_dispatch_config", "key"),
+    pagedWalk((withCount) =>
+      db.from("fms_dispatch_orders")
+        .select("*", withCount ? { count: "exact" } : undefined)
+        .not("status", "in", "(closed,cancelled)")
+        // The full load's order: submitted_at, then the unique tiebreaker.
+        .order("submitted_at", { ascending: true })
+        .order("id", { ascending: true })),
+  ]);
+
+  const ids = (orders as any[]).map((r) => r.id as string);
+  const chunks: string[][] = [];
+  for (let i = 0; i < ids.length; i += CHILD_CHUNK) chunks.push(ids.slice(i, i + CHILD_CHUNK));
+  // Each chunk is itself paged (fetchOrderChildren walks every page), so nothing is cut off.
+  const parts = await Promise.all(chunks.map((c) => fetchOrderChildren(c)));
+
+  return {
+    stepOwners: stepOwners.map(mapStepOwner),
+    stepAssignees: stepAssignees.map(mapStepAssignee),
+    config: configFrom(configRows),
+    orders: assembleOrders(
+      orders,
+      parts.flatMap((p) => p.orderItems as any[]),
+      parts.flatMap((p) => p.rounds as any[]),
+      parts.flatMap((p) => p.roundItems as any[]),
+    ),
+  };
+}
+
+/** The pending-only view of a full load already in hand: no request at all. */
+export function openWorkFrom(full: DispatchOpenWork): DispatchOpenWork {
+  return {
+    stepOwners: full.stepOwners,
+    stepAssignees: full.stepAssignees,
+    config: full.config,
+    orders: full.orders.filter((o) => o.status !== "closed" && o.status !== "cancelled"),
+  };
+}
+
 export async function fetchDispatchData(
   ctx?: { queryKey?: readonly unknown[] },
 ): Promise<DispatchData> {
@@ -959,50 +1097,8 @@ export async function fetchDispatchData(
   ]);
 
 
-  const byKey = new Map<string, any>(configRows.map((r) => [r.key, r.value ?? {}]));
-  const config: DispatchConfig = {
-    processCoordinatorIds: (byKey.get("process_coordinators")?.user_ids ?? []) as string[],
-    stepSla: resolveStepSla(byKey.get("step_sla")),
-    reassignPoolDepartmentIds: (byKey.get("reassign_pool")?.department_ids ?? []) as string[],
-    reassignPoolUserIds: (byKey.get("reassign_pool")?.user_ids ?? []) as string[],
-  };
-
-  // Group the lines onto their orders in memory (see the header note).
-  const linesByOrder = new Map<string, OrderLine[]>();
-  for (const raw of orderItems) {
-    const line = mapLine(raw);
-    const arr = linesByOrder.get(line.orderId);
-    if (arr) arr.push(line);
-    else linesByOrder.set(line.orderId, [line]);
-  }
-  for (const arr of linesByOrder.values()) arr.sort((a, b) => a.lineNo - b.lineNo);
-
-  // Same for the round archive: round items onto rounds, rounds onto orders.
-  const itemsByRound = new Map<string, RoundItem[]>();
-  for (const raw of roundItems) {
-    const ri = mapRoundItem(raw);
-    const arr = itemsByRound.get(ri.roundId);
-    if (arr) arr.push(ri);
-    else itemsByRound.set(ri.roundId, [ri]);
-  }
-  for (const arr of itemsByRound.values()) arr.sort((a, b) => a.lineNo - b.lineNo);
-
-  const roundsByOrder = new Map<string, DispatchRound[]>();
-  for (const raw of rounds) {
-    const r = mapRound(raw);
-    r.items = itemsByRound.get(r.id) ?? [];
-    const arr = roundsByOrder.get(r.orderId);
-    if (arr) arr.push(r);
-    else roundsByOrder.set(r.orderId, [r]);
-  }
-  for (const arr of roundsByOrder.values()) arr.sort((a, b) => a.roundNo - b.roundNo);
-
-  const mappedOrders = orders.map((r) => {
-    const o = mapOrder(r);
-    o.lines = linesByOrder.get(o.id) ?? [];
-    o.rounds = roundsByOrder.get(o.id) ?? [];
-    return o;
-  });
+  const config = configFrom(configRows);
+  const mappedOrders = assembleOrders(orders, orderItems, rounds, roundItems);
 
   // The next order number to be issued (preview — does not consume the counter).
   const { data: orderPeek } = await db.rpc("fms_dispatch_peek_order_no");

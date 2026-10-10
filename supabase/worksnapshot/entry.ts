@@ -65,7 +65,8 @@ import { fetchImportData, type ImportData } from "@/apps/import/data/importFetch
 import { fetchSuppliesData, type SuppliesData } from "@/apps/office-supplies/data/suppliesFetch";
 import { fetchSamplingData, type SamplingData } from "@/apps/sampling/data/samplingFetch";
 import { fetchProductionData, type ProductionData } from "@/apps/production-entry/data/productionFetch";
-import { fetchDispatchData, type DispatchData } from "@/apps/order-to-dispatch/data/dispatchFetch";
+// Pending orders only (PERF-2): the mail counts what is owed, never a finished order.
+import { fetchDispatchOpenWork, type DispatchOpenWork } from "@/apps/order-to-dispatch/data/dispatchFetch";
 import { fetchAssetData, type AssetData } from "@/apps/asset-maintenance/data/assetFetch";
 import { fetchTravelData, type TravelData } from "@/apps/travel-desk/data/travelFetch";
 import { fetchLdData, type LdData } from "@/apps/learning-development/data/ldFetch";
@@ -153,7 +154,7 @@ export interface Datasets {
   sup?: SuppliesData;
   samp?: SamplingData;
   prod?: ProductionData;
-  disp?: DispatchData;
+  disp?: DispatchOpenWork;
   asset?: AssetData;
   travel?: TravelData;
   ld?: LdData;
@@ -301,7 +302,7 @@ export async function loadDatasets(appIds: readonly string[]): Promise<Datasets>
     want.has("office-supplies") ? fetchSuppliesData().then((d) => void (out.sup = d)) : null,
     want.has("sampling") ? fetchSamplingData().then((d) => void (out.samp = d)) : null,
     want.has("production-entry") ? fetchProductionData().then((d) => void (out.prod = d)) : null,
-    want.has("order-to-dispatch") ? fetchDispatchData().then((d) => void (out.disp = d)) : null,
+    want.has("order-to-dispatch") ? fetchDispatchOpenWork().then((d) => void (out.disp = d)) : null,
     want.has("asset-maintenance") ? fetchAssetData().then((d) => void (out.asset = d)) : null,
     want.has("travel-desk") ? fetchTravelData().then((d) => void (out.travel = d)) : null,
     want.has("learning-development") ? fetchLdData().then((d) => void (out.ld = d)) : null,
