@@ -14,6 +14,8 @@ import CandidateDetailsCard from "./CandidateDetailsCard";
 import CandidateFit from "./CandidateFit";
 import CandidateMeetings from "./CandidateMeetings";
 import CandidateTimeline from "./CandidateTimeline";
+import FutureReferenceModal from "./FutureReferenceModal";
+import MoveToPipelineModal from "./MoveToPipelineModal";
 import ResumeViewer from "./ResumeViewer";
 import { useHrStore } from "../../store";
 import { STAGE_LABEL, legalTargets, roundOf } from "../../lib/board";
@@ -97,6 +99,8 @@ export default function CandidateDetail({
   const [onboarding, setOnboarding] = useState<Onboarding | null>(null);
   const [result, setResult] = useState<0 | 1 | 2 | 3 | null>(null);
   const [book, setBook] = useState<0 | 1 | 2 | 3 | null>(null);
+  const [futureRef, setFutureRef] = useState(false);
+  const [toPipeline, setToPipeline] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -119,7 +123,16 @@ export default function CandidateDetail({
    */
   const mine = s.canEdit && s.canActOnCandidate(c);
 
-  const targets = mine ? legalTargets(c.stage) : [];
+  /**
+   * Parked in Future Reference = OUT of the pipeline. A parked candidate has no stage
+   * to change and no interview to book; the only way forward is "Move to pipeline",
+   * which an admin, a bucket viewer or whoever may act on the candidate can press.
+   * Same rules as fms_hr_save_future_reference / fms_hr_move_to_pipeline.
+   */
+  const parked = !!c.futureRefAt;
+  const targets = mine && !parked ? legalTargets(c.stage) : [];
+  const canPark = mine && !parked && c.stage !== "finalized" && c.stage !== "hired";
+  const canUnpark = parked && s.canEdit && (s.canSeeFutureRef || s.canActOnCandidate(c));
 
   /**
    * The interview round this candidate is sitting in, if any — and whether it has been
@@ -133,7 +146,7 @@ export default function CandidateDetail({
   const iv = round !== null ? s.interviewRound(c.id, round) : undefined;
   const needsScheduling = round !== null && !isBooked(iv);
   const conducted = !!iv?.heldAt;
-  const showInterviewAction = mine && round !== null && !conducted;
+  const showInterviewAction = mine && !parked && round !== null && !conducted;
 
   const pagerLabel = pager?.label ?? "in this list";
   const jobLink = vacancyTo ?? (r ? `/hr-recruitment/positions/${r.id}` : null);
@@ -159,6 +172,11 @@ export default function CandidateDetail({
               <div className="flex flex-wrap items-center gap-x-2 text-[12.5px] text-grey-2">
                 {c.candidateNo && <span>{c.candidateNo}</span>}
                 <span className="font-medium text-navy">{STAGE_LABEL[c.stage]}</span>
+                {parked && (
+                  <span className="rounded-full bg-[#EAF1FE] px-2 py-0.5 text-[11px] font-semibold text-blue">
+                    In Future Reference
+                  </span>
+                )}
                 {r &&
                   (jobLink ? (
                     <Link to={jobLink} className="font-semibold text-orange hover:underline">
@@ -186,6 +204,15 @@ export default function CandidateDetail({
                 {needsScheduling ? "Book it" : "Record result"}
               </Button>
             )}
+
+            {/* Not right for THIS vacancy, but worth keeping — leaves the pipeline
+                for the Future Reference bucket. */}
+            {canPark && (
+              <Button size="sm" variant="ghost" onClick={() => setFutureRef(true)}>
+                Future reference
+              </Button>
+            )}
+            {canUnpark && <Button size="sm" onClick={() => setToPipeline(true)}>Move to pipeline</Button>}
 
             {targets.length > 0 && (
               <div ref={menuRef} className="relative">
@@ -321,6 +348,14 @@ export default function CandidateDetail({
       )}
       {book !== null && (
         <ScheduleInterviewModal candidate={c} round={book} open onClose={() => setBook(null)} />
+      )}
+      {/* Either move takes the candidate off the list the host was showing (the board,
+          or the bucket), so both hand back to the host when done. */}
+      {futureRef && (
+        <FutureReferenceModal candidate={c} open={futureRef} onClose={() => setFutureRef(false)} onDone={onBack} />
+      )}
+      {toPipeline && (
+        <MoveToPipelineModal candidate={c} open={toPipeline} onClose={() => setToPipeline(false)} onDone={onBack} />
       )}
       {onboarding && (
         <OnboardingPanel onboarding={onboarding} open={!!onboarding} onClose={() => setOnboarding(null)} />

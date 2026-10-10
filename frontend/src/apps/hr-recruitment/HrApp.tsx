@@ -15,6 +15,7 @@ import PipelineDashboard from "./pages/pipeline/PipelineDashboard";
 import PositionPipeline from "./pages/positions/PositionPipeline";
 import CandidatesList from "./pages/candidates/CandidatesList";
 import CandidatePage from "./pages/candidates/CandidatePage";
+import FutureReference from "./pages/futureReference/FutureReference";
 import InterviewsQueue from "./pages/queues/InterviewsQueue";
 import OnboardingQueue from "./pages/queues/OnboardingQueue";
 import ProbationQueue from "./pages/queues/ProbationQueue";
@@ -87,6 +88,9 @@ export default function HrApp() {
                 id and nothing else, so the page resolves its own vacancy. */}
             <Route path="candidates" element={<CandidatesList />} />
             <Route path="candidates/:id" element={<CandidatePage />} />
+            {/* Candidates saved for a later vacancy. Gated in the page on
+                canSeeFutureRef — admins plus Setup → Future Reference. */}
+            <Route path="future-reference" element={<FutureReference />} />
             {/* The board used to live here, behind a vacancy dropdown. Old bookmarks,
                 and any notification written before the change, still land on it. */}
             <Route path="queues/pipeline" element={<Navigate to="/hr-recruitment/positions" replace />} />

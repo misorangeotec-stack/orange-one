@@ -1,7 +1,8 @@
 /**
  * This module → My Work.
  *
- * Shares the dispatch store's cache entry.
+ * Reads pending orders only (`useDispatchOpenWork`, PERF-2), reusing the dispatch
+ * store's full copy when one is fresh.
  *
  * ⚠ THIS FILE HOLDS NO RULES. Which rows are this person's work, and what each one
  * says, lives in `../items/orderToDispatch.ts` — because the daily snapshot email runs
@@ -10,10 +11,9 @@
  * two would start disagreeing about the same person. See ../items/README.md.
  */
 import { useMemo } from "react";
-import { useQuery } from "@tanstack/react-query";
 import { useSession } from "@/core/platform/session";
 import { appName } from "@/apps/appInfo";
-import { fetchDispatchData, dispatchQueryKey } from "@/apps/order-to-dispatch/data/dispatchFetch";
+import { useDispatchOpenWork } from "@/apps/order-to-dispatch/data/useDispatchOpenWork";
 import { dispatchWorkItems } from "../items/orderToDispatch";
 import type { MyWorkProvider, MyWorkResult, WorkItem } from "../types";
 
@@ -21,11 +21,8 @@ function useDispatchWork(active: boolean): MyWorkResult {
   const { user, isAdmin } = useSession();
   const uid = user?.id ?? null;
 
-  const { data, isLoading, error } = useQuery({
-    queryKey: dispatchQueryKey(uid),
-    queryFn: fetchDispatchData,
-    enabled: active && !!uid,
-  });
+  // Pending orders only (PERF-2): this list never shows a finished order.
+  const { data, isLoading, error } = useDispatchOpenWork(active);
 
   const items = useMemo<WorkItem[]>(() => {
     if (!data || !uid) return [];

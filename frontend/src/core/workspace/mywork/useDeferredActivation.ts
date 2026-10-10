@@ -61,10 +61,11 @@ export function useDeferredActivation(providers: MyWorkProvider[]): Activation {
     // A source whose data react-query already holds (in memory, or rehydrated from
     // IndexedDB) is free to read, whatever its tier.
     for (const p of providers) {
+      const roots = ([] as string[]).concat(cacheRootOf(p.key));
       const cached = queryClient
         .getQueryCache()
         .getAll()
-        .some((q) => q.queryKey[0] === cacheRootOf(p.key) && q.state.status === "success");
+        .some((q) => roots.includes(q.queryKey[0] as string) && q.state.status === "success");
       if (cached) set.add(p.key);
     }
     return set;
@@ -117,7 +118,7 @@ export function useDeferredActivation(providers: MyWorkProvider[]): Activation {
  * optimisation detail — a wrong entry costs a slightly later fetch, never
  * incorrect data.
  */
-function cacheRootOf(providerKey: string): string {
+function cacheRootOf(providerKey: string): string | string[] {
   switch (providerKey) {
     case "tasks":
       return "taskData";
@@ -139,8 +140,10 @@ function cacheRootOf(providerKey: string): string {
       return "samplingData";
     case "production-entry":
       return "productionData";
+    // Its own pending-only key (PERF-2), or the module's full copy, which
+    // useDispatchOpenWork reuses without a request while it is fresh.
     case "order-to-dispatch":
-      return "orderToDispatchData";
+      return ["orderToDispatchOpenWork", "orderToDispatchData"];
     case "asset-maintenance":
       return "assetMaintenanceData";
     case "travel-desk":

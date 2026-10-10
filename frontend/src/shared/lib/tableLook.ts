@@ -69,23 +69,27 @@ export const HUB_PAGES_ON: readonly string[] = [
   "/outstanding-dashboard/group/:id",
   "/reports/disputed-bills",
   "/reports/red-mark",
-  // Bushra-Report (30-09-2026, "resize the table … of all reports and dashboard"). Header handle
-  // only, as on the pages above: the hub tables do not wrap their cells, so no row changes.
+];
+
+/**
+ * The Bushra reports and dashboards get the DRAG ONLY, like Task Management: nothing about a row
+ * changes until somebody drags a column, and then that column holds exactly the width they chose
+ * — narrower than its text if they like, cut with "…" and whole on hover. The user's words
+ * (09-10-2026): "if the line data is hidden because of adjustment that is ok, just give me that
+ * right". Whole Bushra-Dashboard branch by prefix: its Sales and Purchase dashboards are generated
+ * one per preset, so listing them singly would leave the next preset out.
+ */
+export const HUB_DRAG_ONLY_PAGES: readonly string[] = [
   "/reports/bushra-sales-register",
   "/reports/bushra-purchase-register",
   "/reports/batch-costing",
 ];
+export const HUB_DRAG_ONLY_PREFIXES: readonly string[] = ["/reports/bushra-dashboard/"];
 
-/**
- * Whole branches switched on at once, by path prefix: every Bushra-Dashboard — the Sales and
- * Purchase dashboards are generated one per preset, so listing them singly would leave the next
- * preset out.
- */
-export const HUB_PREFIXES_ON: readonly string[] = ["/reports/bushra-dashboard/"];
-
-const hubPageOn = (pathname: string) => {
+const hubPageOn = (pathname: string) => HUB_PAGES_ON.includes(normalisePath(pathname));
+const hubDragOnly = (pathname: string) => {
   const p = normalisePath(pathname);
-  return HUB_PAGES_ON.includes(p) || HUB_PREFIXES_ON.some((pre) => p.startsWith(pre));
+  return HUB_DRAG_ONLY_PAGES.includes(p) || HUB_DRAG_ONLY_PREFIXES.some((pre) => p.startsWith(pre));
 };
 
 /** The two apps whose screens are listed one by one above. */
@@ -101,7 +105,7 @@ export function tableLookOn(pathname: string): boolean {
 /** Whether the tables on this URL can be dragged — the look's modules, plus the drag-only ones. */
 export function tableDragOn(pathname: string): boolean {
   const id = currentAppId(pathname) ?? "core";
-  if (PAGE_GATED.includes(id)) return hubPageOn(pathname);
+  if (PAGE_GATED.includes(id)) return hubPageOn(pathname) || hubDragOnly(pathname);
   return TABLE_LOOK_ON.includes(id) || TABLE_DRAG_ON.includes(id);
 }
 

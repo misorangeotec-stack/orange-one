@@ -965,6 +965,32 @@ export async function setCandidateTags(candidateId: string, tags: string[]): Pro
 }
 
 /**
+ * Move a candidate OUT of the pipeline into the Future Reference bucket. The row is
+ * marked, not copied; `stage` is kept so "back to the same vacancy" can restore it.
+ */
+export async function saveFutureReference(candidateId: string, note?: string): Promise<void> {
+  const { error } = await supabase.rpc("fms_hr_save_future_reference", {
+    p_id: candidateId,
+    p_note: note ?? "",
+  });
+  if (error) throw new Error(error.message);
+}
+
+/**
+ * Take a candidate out of the bucket and onto a pipeline. Their own vacancy → back to
+ * the stage they were parked at; another posted vacancy → the same row moves there and
+ * starts at Resumes Uploaded.
+ */
+export async function moveToPipeline(candidateId: string, requisitionId: string, note?: string): Promise<void> {
+  const { error } = await supabase.rpc("fms_hr_move_to_pipeline", {
+    p_id: candidateId,
+    p_req: requisitionId,
+    p_note: note ?? "",
+  });
+  if (error) throw new Error(error.message);
+}
+
+/**
  * Record one AI fit score.
  *
  * The edge function deliberately does NOT write this — it holds no service-role

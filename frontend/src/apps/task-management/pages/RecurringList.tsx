@@ -16,6 +16,7 @@ import { matchesSearch } from "@/shared/lib/search";
 import { formatDate, formatDateTime } from "@/shared/lib/time";
 import { useSession } from "../mock/session";
 import { useTaskStore } from "../mock/store";
+import { exportRecurringToXlsx } from "../lib/exportRecurring";
 import { MONTH_LAST_DAY, RECURRENCE_LABEL, type RecurringTask } from "../types";
 
 const DOW = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
@@ -47,7 +48,7 @@ export function frequencyText(r: RecurringTask) {
 /** Manage recurring task templates (daily / weekly / monthly). HOD + admin. */
 export default function RecurringList() {
   const { user, role } = useSession();
-  const { recurringTasks, toggleRecurring, generateRecurringNow, deleteRecurring, downlineIds, profileById, actorById, canRecurring } = useTaskStore();
+  const { recurringTasks, toggleRecurring, generateRecurringNow, deleteRecurring, downlineIds, profileById, actorById, departmentById, locationById, canRecurring } = useTaskStore();
   const navigate = useNavigate();
   const [confirmId, setConfirmId] = useState<string | null>(null);
   const [busyId, setBusyId] = useState<string | null>(null);
@@ -120,6 +121,23 @@ export default function RecurringList() {
   if (activeFilter !== "all") chips.push({ key: "status", label: activeFilter === "active" ? "Active" : "Paused", onClear: () => setActiveFilter("all") });
   if (assigner !== "all") chips.push({ key: "assigner", label: `Assigned by: ${actorById(assigner)?.name ?? assigner}`, onClear: () => setAssigner("all") });
   if (person !== "all") chips.push({ key: "person", label: `Assigned to: ${profileById(person)?.name ?? person}`, onClear: () => setPerson("all") });
+  // Export exactly what the filters show (every page, not just this one).
+  const onExport = () => {
+    const rows = filtered.map((r) => ({
+      title: r.title,
+      description: r.description?.trim() ?? "",
+      type: RECURRENCE_LABEL[r.recurrenceType],
+      frequency: frequencyText(r),
+      assignedBy: actorById(r.createdBy)?.name ?? "",
+      assignedTo: profileById(r.assignedTo)?.name ?? "",
+      department: departmentById(r.departmentId)?.name ?? "",
+      locations: r.locationIds.map((id) => locationById(id)?.name).filter(Boolean).join(", "),
+      reminder: r.notifyRequired && r.notifyDaysBefore != null ? `${r.notifyDaysBefore} ${r.notifyDaysBefore === 1 ? "day" : "days"} before` : "No",
+      status: r.active ? "Active" : "Paused",
+      createdOn: formatDate(r.createdAt),
+    }));
+    exportRecurringToXlsx(rows, chips.map((c) => c.label), person !== "all" ? profileById(person)?.name : undefined);
+  };
   const clearAll = () => {
     setQ("");
     setType("all");
@@ -135,6 +153,19 @@ export default function RecurringList() {
           <h2 className="text-[22px] font-bold text-navy">Recurring Tasks</h2>
           <p className="text-grey text-[13px] mt-1">Automate repetitive work with daily and weekly templates.</p>
         </div>
+        <div className="flex flex-wrap items-center gap-2.5">
+        {visible.length > 0 && (
+          <button
+            type="button"
+            onClick={onExport}
+            disabled={filtered.length === 0}
+            title="Download the recurring tasks shown below (all pages) as Excel"
+            className="inline-flex items-center gap-2 rounded-xl border border-line bg-white px-4 py-2.5 text-sm font-semibold text-navy transition hover:border-orange hover:text-orange disabled:opacity-40 disabled:hover:border-line disabled:hover:text-navy"
+          >
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 3v12M7 10l5 5 5-5M5 21h14" /></svg>
+            Export Excel
+          </button>
+        )}
         {canRecurring && (
           <Link
             to="/task-management/recurring/new"
@@ -144,6 +175,7 @@ export default function RecurringList() {
             New Recurring Task
           </Link>
         )}
+        </div>
       </div>
 
       <Card className="overflow-hidden">

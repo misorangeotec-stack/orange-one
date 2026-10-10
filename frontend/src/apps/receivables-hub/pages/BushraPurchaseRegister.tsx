@@ -15,7 +15,7 @@ import { Input } from "@hub/components/ui/input";
 import { MultiSelectFilter, type MultiSelectOption } from "@hub/components/MultiSelectFilter";
 import { FilterChips, type FilterChip } from "@hub/components/FilterChips";
 import { ScrollableTable } from "@/core/shared/components/ScrollableTable";
-import { FitFilter, FitTh, ResetWidths } from "@/shared/components/ui/ColumnResizer";
+import { FitFilter, FitRow, FitTh, ResetWidths } from "@/shared/components/ui/ColumnResizer";
 import { useColumnWidths } from "@/shared/lib/useColumnWidths";
 import { usePagination } from "@/shared/lib/usePagination";
 import Pagination from "@/shared/components/ui/Pagination";
@@ -98,6 +98,13 @@ const TABLE_COLUMNS: { header: string; filter: FilterKey | null; right?: boolean
 
 /** Column ids for the dragged widths — the headings themselves. */
 const COL_IDS = TABLE_COLUMNS.map((c) => c.header);
+/**
+ * How narrow a dragged column may go (px of content). The kit's default is 80, which on these
+ * tables — every column already ~120 wide — left a drag about 20 px of room and read as "it does
+ * not narrow". The user's call (09-10-2026): any width, hidden text is fine.
+ */
+const FIT_MIN = 30;
+
 
 export default function BushraPurchaseRegister() {
   const init = useMemo(() => defaultRange(), []);
@@ -308,16 +315,17 @@ export default function BushraPurchaseRegister() {
           </div>
 
           <ScrollableTable className="rounded-lg border border-border" maxHeight="max-h-[64vh]" resizeKey="bushra-purchase-register">
-            <table className="w-full border-collapse min-w-[1800px]">
+            {/* Floor width only until a column is dragged, or a narrowed column's width is handed back to the rest. */}
+            <table className={`w-full border-collapse ${fit.anyCustom(COL_IDS) ? "" : "min-w-[1800px]"}`}>
               <thead>
                 <tr className="border-b border-border bg-muted/50">
                   {TABLE_COLUMNS.map((c, i) => (
-                    <FitTh key={c.header} fit={fit} col={c.header} className={`${c.right ? "text-right" : "text-left"} py-2 px-3 text-xs font-semibold uppercase tracking-wide text-muted-foreground whitespace-nowrap`}>
+                    <FitTh key={c.header} fit={fit} col={c.header} min={FIT_MIN} className={`${c.right ? "text-right" : "text-left"} py-2 px-3 text-xs font-semibold uppercase tracking-wide text-muted-foreground whitespace-nowrap`}>
                       <button type="button" onClick={() => toggleSort(i)} title={`Sort by ${c.header}`}
-                              className={`inline-flex items-center gap-1 uppercase hover:text-foreground ${sort?.col === i ? "text-foreground" : ""}`}>
-                        {c.header}
-                        {sort?.col !== i ? <ArrowUpDown className="h-3 w-3 opacity-40" />
-                          : sort.dir === 1 ? <ArrowUp className="h-3 w-3" /> : <ArrowDown className="h-3 w-3" />}
+                              className={`inline-flex max-w-full items-center gap-1 whitespace-nowrap uppercase hover:text-foreground ${sort?.col === i ? "text-foreground" : ""}`}>
+                        <span className="min-w-0 truncate">{c.header}</span>
+                        {sort?.col !== i ? <ArrowUpDown className="h-3 w-3 shrink-0 opacity-40" />
+                          : sort.dir === 1 ? <ArrowUp className="h-3 w-3 shrink-0" /> : <ArrowDown className="h-3 w-3 shrink-0" />}
                       </button>
                     </FitTh>
                   ))}
@@ -326,7 +334,7 @@ export default function BushraPurchaseRegister() {
                   {TABLE_COLUMNS.map((c) => (
                     <th key={c.header} className="py-1.5 px-2 font-normal">
                       {c.filter && (
-                        <FitFilter dragged={fit.width(c.header) !== undefined}>
+                        <FitFilter fitPicker dragged={fit.width(c.header) !== undefined}>
                           <MultiSelectFilter
                             options={options[c.filter]}
                             value={sel[c.filter]}
@@ -341,7 +349,7 @@ export default function BushraPurchaseRegister() {
                   ))}
                 </tr>
               </thead>
-              <tbody>
+              <tbody {...fit.tbodyProps}>
                 {page.pageItems.length === 0 ? (
                   // The table stays standing when the filters match nothing, so the way back is right here.
                   <tr><td colSpan={TABLE_COLUMNS.length} className="py-10 text-center text-sm text-muted-foreground">
@@ -356,7 +364,7 @@ export default function BushraPurchaseRegister() {
                   </td></tr>
                 ) : (
                   page.pageItems.map((r, i) => (
-                    <tr key={`${r.tenant_id}-${r.voucher_guid}-${r.line_no}-${i}`} className="border-b border-border/40 hover:bg-muted/40">
+                    <FitRow fit={fit} cols={COL_IDS} key={`${r.tenant_id}-${r.voucher_guid}-${r.line_no}-${i}`} className="border-b border-border/40 hover:bg-muted/40">
                       <td className="py-1.5 px-3 text-sm whitespace-nowrap">{r.location_name}</td>
                       <td className="py-1.5 px-3 text-sm whitespace-nowrap">{r.company}</td>
                       <td className="py-1.5 px-3 text-sm whitespace-nowrap">{r.type}</td>
@@ -377,7 +385,7 @@ export default function BushraPurchaseRegister() {
                       <td className="py-1.5 px-3 text-sm whitespace-nowrap">{r.item_group}</td>
                       <td className="py-1.5 px-3 text-sm whitespace-nowrap">{r.item_category}</td>
                       <td className="py-1.5 px-3 text-sm whitespace-nowrap font-medium">{r.colour}</td>
-                    </tr>
+                    </FitRow>
                   ))
                 )}
               </tbody>

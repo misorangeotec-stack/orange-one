@@ -30,14 +30,15 @@
  */
 
 /** Which side the complaint came from. Drives labels and the party picker, not the flow. */
-export type ComplaintType = "finished_good" | "raw_material";
+export type ComplaintType = "finished_good" | "raw_material" | "other_supplier";
 
 export const COMPLAINT_TYPE_LABEL: Record<ComplaintType, string> = {
   finished_good: "Finished Good",
   raw_material: "Raw Material",
+  other_supplier: "Other Supplier Complaint",
 };
 
-export const COMPLAINT_TYPES: ComplaintType[] = ["finished_good", "raw_material"];
+export const COMPLAINT_TYPES: ComplaintType[] = ["finished_good", "raw_material", "other_supplier"];
 
 /**
  * A RAW-MATERIAL complaint's supply route — the ONE field that forks the chain.

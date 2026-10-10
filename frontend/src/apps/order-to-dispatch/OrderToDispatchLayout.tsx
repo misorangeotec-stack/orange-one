@@ -5,6 +5,9 @@ import { roleLabel, useSession } from "@/core/platform/session";
 import { useOrgPersonById } from "@/core/platform/orgPeople";
 import { buildDispatchNav, QUEUE_PATH } from "./nav";
 import { useDispatchStore } from "./store";
+import { mapNotification } from "./data/dispatchFetch";
+import { useFmsBell } from "@/shared/lib/fmsBell";
+import { useInPanel } from "@/shared/lib/embedded";
 import { STEPS } from "./lib/steps";
 import { STEP_HOLD } from "./lib/format";
 import type { QueueStep } from "./lib/queues";
@@ -24,6 +27,13 @@ export default function OrderToDispatchLayout() {
   const { user, role, isAdmin } = useSession();
   const s = useDispatchStore();
   const orgPersonById = useOrgPersonById();
+  /*
+    THE BELL'S OWN SMALL QUERY (PERF-2 Step 2): the newest 100 unread for the
+    signed-in person, held here - its only reader - not in the store. Not loaded
+    inside the home side panel, where AppShell hides the top bar.
+  */
+  const inPanel = useInPanel();
+  const bell = useFmsBell("fms_dispatch_notifications", user?.id ?? null, mapNotification, !inPanel);
 
   const queueSteps = STEPS.filter((st) => !st.noQueue).map((st) => st.key as QueueStep);
 
@@ -112,7 +122,7 @@ export default function OrderToDispatchLayout() {
     [isAdmin, s.isAnyMasterManager, s.canMonitor, hasOrders, s.canRaise, canRaiseReturn, s.resolvableRequests.length, heldByStep, queues, canSeeSalesReturn, salesReturnPending, canSeeCustomerOrders, customerOrdersPending],
   );
 
-  const notifItems: NotificationItem[] = s.notifications.map((n) => {
+  const notifItems: NotificationItem[] = bell.notifications.map((n) => {
     const actor = n.actorId ? s.profiles.find((p) => p.id === n.actorId) ?? orgPersonById(n.actorId) : undefined;
     return {
       id: n.id,
@@ -131,8 +141,21 @@ export default function OrderToDispatchLayout() {
       role={role}
       user={{ name: user.name, designation: user.designation, color: user.avatarColor, roleLabel: roleLabel(role) }}
       notifications={notifItems}
+      onMarkAllRead={() => {
+        void bell.markAllRead();
+      }}
       onMarkRead={(ids) => {
-        void s.markNotificationsRead(ids);
+        void bell.markRead(ids);
+        /*
+          A click on a notification about an order this copy does not hold yet (a
+          brand-new order): fetch what changed, so the order page shows "Loading…"
+          and then the order, never "Order not found".
+        */
+        const wanted = new Set(ids);
+        const missing = bell.notifications.some(
+          (n) => wanted.has(n.id) && n.entityType === "order" && !s.orderById(n.entityId),
+        );
+        if (missing) void s.refreshOrders();
       }}
     />
   );

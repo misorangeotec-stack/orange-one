@@ -1,7 +1,7 @@
 import { useMemo } from "react";
 import PoStageRail, { type PoStageRailNode } from "@/shared/components/ui/PoStageRail";
 import { useComplaintStore } from "../store";
-import { dmy } from "../lib/format";
+import { dmy, runsManagementChain } from "../lib/format";
 import type { StepKey } from "../lib/steps";
 import type { ComplaintRequest } from "../types";
 
@@ -98,7 +98,8 @@ export function pathFor(r: ComplaintRequest): FlowNode[] {
     );
   }
 
-  if (r.rmOrigin === "import") {
+  // Imported raw material, and every Other Supplier complaint.
+  if (runsManagementChain(r)) {
     // Handed to somebody: they answer, then management review and close.
     if (r.rmAssignedAt) {
       return [

@@ -62,7 +62,7 @@ export default function ComplaintFields({ f }: { f: ComplaintFormApi }) {
       {/* ---------------------------- what kind ---------------------------- */}
       <Card className="p-5">
         <h2 className="text-[15px] font-bold text-navy">Type of complaint</h2>
-        <div className="mt-3 max-w-md">
+        <div className="mt-3 max-w-xl">
           <ChoiceButtons
             ariaLabel="Type of complaint"
             options={COMPLAINT_TYPES.map((v) => ({ value: v, label: COMPLAINT_TYPE_LABEL[v] }))}

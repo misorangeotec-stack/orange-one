@@ -30,7 +30,7 @@ import { cn } from "@hub/lib/utils";
 import { Button } from "@hub/components/ui/button";
 import { Input } from "@hub/components/ui/input";
 import { ScrollableTable } from "@/core/shared/components/ScrollableTable";
-import { FitFilter, FitTh, ResetWidths } from "@/shared/components/ui/ColumnResizer";
+import { FitFilter, FitRow, FitTh, ResetWidths } from "@/shared/components/ui/ColumnResizer";
 import { useColumnWidths } from "@/shared/lib/useColumnWidths";
 import { usePagination } from "@/shared/lib/usePagination";
 import Pagination from "@/shared/components/ui/Pagination";
@@ -343,6 +343,7 @@ export default function BushraPurchaseDashboard({ presetId }: { presetId: string
       </div>
 
       <Overview
+        storeId={preset.id}
         rows={rows} from={from} to={to} fys={pickedFys} sections={preset.sections} hasQuantity={preset.hasQuantity}
         base={base} sel={sel} toggle={toggle} noteFor={pickedNote} fmtQ={fmtQ} setFilter={setFilter}
         onResetDashboard={resetAll} loading={loading} empty={empty} emptyMessage={emptyMsg}
@@ -421,7 +422,9 @@ const SECTION_META: Record<PurchaseSectionDim, { heading: string; subtitle: stri
   company: { heading: "By Company", subtitle: "by company", colorOf: () => CAT[3] },
 };
 
-function Overview({ rows, base, from, to, fys, sections, hasQuantity, sel, toggle, noteFor, fmtQ, setFilter, onResetDashboard, loading, empty, emptyMessage }: {
+function Overview({ storeId, rows, base, from, to, fys, sections, hasQuantity, sel, toggle, noteFor, fmtQ, setFilter, onResetDashboard, loading, empty, emptyMessage }: {
+  /** Which dashboard this is, for the report table's own widths and height. */
+  storeId: string;
   rows: Row[]; base: Row[]; from: string; to: string; fys: string[]; sections: PurchaseSectionDim[]; hasQuantity: boolean;
   sel: Record<FilterKey, string[]>; toggle: (k: FilterKey) => (name: string) => void;
   noteFor: (k: FilterKey, what: string) => string; fmtQ: QtyFmt;
@@ -466,7 +469,7 @@ function Overview({ rows, base, from, to, fys, sections, hasQuantity, sel, toggl
       </div>
 
       <SectionHeading>Purchase Report</SectionHeading>
-      <PurchaseReportTable rows={rows} base={base} from={from} to={to} loading={loading} fmtQ={fmtQ}
+      <PurchaseReportTable storeId={storeId} rows={rows} base={base} from={from} to={to} loading={loading} fmtQ={fmtQ}
                            sel={sel} setFilter={setFilter} onResetDashboard={onResetDashboard} />
     </>
   );
@@ -673,8 +676,17 @@ const REPORT_COLUMNS: {
 
 /** Column ids for the dragged widths — the headings themselves. */
 const COL_IDS = REPORT_COLUMNS.map((c) => c.header);
+/**
+ * How narrow a dragged column may go (px of content). The kit's default is 80, which on these
+ * tables — every column already ~120 wide — left a drag about 20 px of room and read as "it does
+ * not narrow". The user's call (09-10-2026): any width, hidden text is fine.
+ */
+const FIT_MIN = 30;
 
-function PurchaseReportTable({ rows, base, from, to, loading, fmtQ, sel, setFilter, onResetDashboard }: {
+
+function PurchaseReportTable({ storeId, rows, base, from, to, loading, fmtQ, sel, setFilter, onResetDashboard }: {
+  /** Which dashboard this is — its column widths and table height are its own, not every dashboard's. */
+  storeId: string;
   /** The dashboard's filtered lines, and `base` — its slice before any filter, for the dropdowns. */
   rows: Row[]; base: Row[]; from: string; to: string; loading: boolean; fmtQ: QtyFmt;
   sel: Record<FilterKey, string[]>;
@@ -683,7 +695,7 @@ function PurchaseReportTable({ rows, base, from, to, loading, fmtQ, sel, setFilt
 }) {
   const [q, setQ] = useState("");
   /** Column widths the reader drags — header edge, double-click resets, "Reset widths" clears all. */
-  const fit = useColumnWidths("tb", COL_IDS, "bushra-purchase-dash-report");
+  const fit = useColumnWidths("tb", COL_IDS, `bushra-purchase-dash-report.${storeId}`);
   const [tsel, setTsel] = useState<Record<TableOnlyKey, string[]>>(NO_TABLE_FILTERS);
   const [sort, setSort] = useState<{ col: number; dir: 1 | -1 } | null>(null);
   const matchesSearch = useMemo(() => {
@@ -758,20 +770,21 @@ function PurchaseReportTable({ rows, base, from, to, loading, fmtQ, sel, setFilt
                     </Button>
                   </div>
                 }>
-      <ScrollableTable className="rounded-md border border-border" maxHeight="max-h-[60vh]" resizeKey="bushra-purchase-dash-report">
-        <table className="w-full min-w-[1800px] border-collapse">
+      <ScrollableTable className="rounded-md border border-border" maxHeight="max-h-[60vh]" resizeKey={`bushra-purchase-dash-report.${storeId}`}>
+        {/* Floor width only until a column is dragged — see the Sales dashboard's report table. */}
+        <table className={cn("w-full border-collapse", !fit.anyCustom(COL_IDS) && "min-w-[1800px]")}>
           <thead>
             <tr className="border-b border-border bg-muted/50">
               {REPORT_COLUMNS.map((c, i) => (
-                <FitTh key={c.header} fit={fit} col={c.header} className={cn(
+                <FitTh key={c.header} fit={fit} col={c.header} min={FIT_MIN} className={cn(
                   "whitespace-nowrap px-3 py-2 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground",
                   c.right ? "text-right" : "text-left",
                 )}>
                   <button type="button" onClick={() => toggleSort(i)} title={`Sort by ${c.header}`}
-                          className={cn("inline-flex items-center gap-1 uppercase hover:text-foreground", sort?.col === i && "text-foreground")}>
-                    {c.header}
-                    {sort?.col !== i ? <ArrowUpDown className="h-3 w-3 opacity-40" />
-                      : sort.dir === 1 ? <ArrowUp className="h-3 w-3" /> : <ArrowDown className="h-3 w-3" />}
+                          className={cn("inline-flex max-w-full items-center gap-1 whitespace-nowrap uppercase hover:text-foreground", sort?.col === i && "text-foreground")}>
+                    <span className="min-w-0 truncate">{c.header}</span>
+                    {sort?.col !== i ? <ArrowUpDown className="h-3 w-3 shrink-0 opacity-40" />
+                      : sort.dir === 1 ? <ArrowUp className="h-3 w-3 shrink-0" /> : <ArrowDown className="h-3 w-3 shrink-0" />}
                   </button>
                 </FitTh>
               ))}
@@ -780,7 +793,7 @@ function PurchaseReportTable({ rows, base, from, to, loading, fmtQ, sel, setFilt
               {REPORT_COLUMNS.map((c) => (
                 <th key={c.header} className="px-2 py-1.5 font-normal">
                   {c.filter && (
-                  <FitFilter dragged={fit.width(c.header) !== undefined}>
+                  <FitFilter fitPicker dragged={fit.width(c.header) !== undefined}>
                   {"dash" in c.filter ? (
                     <MultiSelectFilter
                       options={dashOptions[c.filter.dash]}
@@ -804,7 +817,7 @@ function PurchaseReportTable({ rows, base, from, to, loading, fmtQ, sel, setFilt
               ))}
             </tr>
           </thead>
-          <tbody>
+          <tbody {...fit.tbodyProps}>
             {page.pageItems.length === 0 ? (
               // The table stays standing when the filters match nothing, so the way back is right here.
               <tr><td colSpan={REPORT_COLUMNS.length} className="py-8 text-center text-[12px] text-muted-foreground">
@@ -818,7 +831,7 @@ function PurchaseReportTable({ rows, base, from, to, loading, fmtQ, sel, setFilt
                 ) : "No lines on this dashboard in this period."}
               </td></tr>
             ) : page.pageItems.map((r, i) => (
-              <tr key={`${r.tenant_id}-${r.voucher_guid}-${r.line_no}-${i}`} className="border-b border-border/40 text-[12.5px] hover:bg-muted/40">
+              <FitRow fit={fit} cols={COL_IDS} key={`${r.tenant_id}-${r.voucher_guid}-${r.line_no}-${i}`} className="border-b border-border/40 text-[12.5px] hover:bg-muted/40">
                 <td className="whitespace-nowrap px-3 py-1.5 tabular-nums">{r.date_display}</td>
                 <td className="whitespace-nowrap px-3 py-1.5">{r.voucher_no}</td>
                 <td className="whitespace-nowrap px-3 py-1.5">{r.type}</td>
@@ -834,7 +847,7 @@ function PurchaseReportTable({ rows, base, from, to, loading, fmtQ, sel, setFilt
                 <td className="whitespace-nowrap px-3 py-1.5 text-right tabular-nums">{r.quantity ? nf2.format(r.quantity) : "—"}</td>
                 <td className="whitespace-nowrap px-3 py-1.5 text-right tabular-nums">{r.rate ? nf2.format(r.rate) : "—"}</td>
                 <td className={cn("whitespace-nowrap px-3 py-1.5 text-right tabular-nums", r.amount < 0 && "text-destructive")}>{nf2.format(r.amount)}</td>
-              </tr>
+              </FitRow>
             ))}
           </tbody>
         </table>

@@ -2578,6 +2578,9 @@ export type Database = {
           final_decision_at: string | null
           finalized_at: string | null
           finalized_by: string | null
+          future_ref_at: string | null
+          future_ref_by: string | null
+          future_ref_note: string | null
           hod_decided_at: string | null
           hod_decided_by: string | null
           hr_shortlisted_at: string | null
@@ -2625,6 +2628,9 @@ export type Database = {
           final_decision_at?: string | null
           finalized_at?: string | null
           finalized_by?: string | null
+          future_ref_at?: string | null
+          future_ref_by?: string | null
+          future_ref_note?: string | null
           hod_decided_at?: string | null
           hod_decided_by?: string | null
           hr_shortlisted_at?: string | null
@@ -2672,6 +2678,9 @@ export type Database = {
           final_decision_at?: string | null
           finalized_at?: string | null
           finalized_by?: string | null
+          future_ref_at?: string | null
+          future_ref_by?: string | null
+          future_ref_note?: string | null
           hod_decided_at?: string | null
           hod_decided_by?: string | null
           hr_shortlisted_at?: string | null
@@ -11465,6 +11474,14 @@ export type Database = {
       }
       fms_hr_set_candidate_tags: {
         Args: { p_id: string; p_tags: string[] }
+        Returns: undefined
+      }
+      fms_hr_save_future_reference: {
+        Args: { p_id: string; p_note?: string }
+        Returns: undefined
+      }
+      fms_hr_move_to_pipeline: {
+        Args: { p_id: string; p_note?: string; p_req: string }
         Returns: undefined
       }
       fms_hr_set_candidate_resume: {

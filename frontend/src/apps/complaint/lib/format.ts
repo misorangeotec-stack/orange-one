@@ -20,7 +20,7 @@ import type {
 /* ----------------------------- the RM/FG labels --------------------------- */
 
 export const lotLabelOf = (t: ComplaintType): string =>
-  t === "finished_good" ? "FG Lot No." : "RM Lot No.";
+  t === "finished_good" ? "FG Lot No." : t === "raw_material" ? "RM Lot No." : "Lot No.";
 
 export const partyRoleOf = (t: ComplaintType): string =>
   t === "finished_good" ? "Customer" : "Vendor";
@@ -51,6 +51,17 @@ export const partyFlagOf = (t: ComplaintType): "is_customer" | "is_vendor" =>
  */
 export const rmOriginLabelOf = (o: RmOrigin | null): string =>
   o === "domestic" ? "Domestic" : o === "import" ? "Import" : "—";
+
+/**
+ * Does this complaint run the MANAGEMENT chain — RM-Complaint View (MGT), then
+ * close or assign → assignee → management review? An imported raw material
+ * does, and so does every Other Supplier complaint (it has no Domestic/Import
+ * question; the submit RPC routes it straight to management).
+ */
+export const runsManagementChain = (r: {
+  complaintType: ComplaintType;
+  rmOrigin: RmOrigin | null;
+}): boolean => r.complaintType === "other_supplier" || r.rmOrigin === "import";
 
 /**
  * Badge classes for the Domestic / Import column.
@@ -134,6 +145,7 @@ export const isOpen = (s: RequestStatus): boolean => !isTerminal(s);
 export const COMPLAINT_TYPE_TONE: Record<ComplaintType, string> = {
   finished_good: "bg-blue-50 text-blue-700",
   raw_material: "bg-violet-50 text-violet-700",
+  other_supplier: "bg-cyan-50 text-cyan-700",
 };
 
 /** Badge classes for the root-cause Pareto. `party_side` is the one that isn't ours. */

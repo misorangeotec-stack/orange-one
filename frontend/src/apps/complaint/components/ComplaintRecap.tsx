@@ -3,6 +3,7 @@ import { useComplaintStore } from "../store";
 import {
   dmy,
   formatDateTime,
+  runsManagementChain,
   invoiceDateLabelOf,
   invoiceLabelOf,
   lotLabelOf,
@@ -216,7 +217,7 @@ export default function ComplaintRecap({ r }: { r: ComplaintRequest }) {
             //   mgmt_*, because they are the same act recorded by the same
             //   fields. An imported complaint that was never assigned and never
             //   went through purchase was closed by management themselves.
-            r.rmOrigin === "import" && !r.rmAssignedAt && !r.purAt
+            runsManagementChain(r) && !r.rmAssignedAt && !r.purAt
               ? "Closed by management"
               : "Management review"
           }

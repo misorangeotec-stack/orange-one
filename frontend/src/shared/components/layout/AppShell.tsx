@@ -31,6 +31,7 @@ export default function AppShell({
   user,
   notifications,
   onMarkRead,
+  onMarkAllRead,
   roleSwitcher,
   banner,
   logoTo = HOME_PATH,
@@ -42,6 +43,8 @@ export default function AppShell({
   notifications: NotificationItem[];
   /** Mark the given notification ids read (omit if the shell has no live notifications). */
   onMarkRead?: (ids: string[]) => void;
+  /** Clear all of this person's unread on the server (see NotificationsBell). */
+  onMarkAllRead?: () => void;
   roleSwitcher?: ReactNode;
   /** Optional banner rendered above the page content (e.g. a read-only notice). */
   banner?: ReactNode;
@@ -109,6 +112,7 @@ export default function AppShell({
           user={user}
           notifications={notifications}
           onMarkRead={onMarkRead}
+          onMarkAllRead={onMarkAllRead}
           roleSwitcher={roleSwitcher}
           onMenu={() => setDrawer(true)}
         />
