@@ -17,7 +17,7 @@ import {
 } from "./data/roundReturns";
 import type { Department as OrgDepartment, Profile } from "@/core/platform/types";
 import {
-  DISPATCH_QK, DISPATCH_MASTERS_QK, fetchDispatchData, fetchDispatchMasters, dispatchQueryKey,
+  DISPATCH_QK, DISPATCH_MASTERS_QK, DISPATCH_OPEN_QK, fetchDispatchData, fetchDispatchMasters, dispatchQueryKey,
   fetchOrderActivity, orderActivityQueryKey, fetchDispatchDelta, type DispatchData,
 } from "./data/dispatchFetch";
 import {
@@ -693,7 +693,7 @@ export function DispatchStoreProvider({ children }: { children: ReactNode }) {
      *   leave the screen showing pre-save data: better to spend the 2.9 MB than to
      *   lie about what is on the queue.
      */
-    const refreshWorkingSet = async () => {
+    const refreshFullCopy = async () => {
       const key = dispatchQueryKey(userId);
       const prev = queryClient.getQueryData<DispatchData>(key);
       if (!prev) {
@@ -706,6 +706,17 @@ export function DispatchStoreProvider({ children }: { children: ReactNode }) {
       } catch {
         await queryClient.invalidateQueries({ queryKey: QK }).catch(() => {});
       }
+    };
+    const refreshWorkingSet = async () => {
+      await refreshFullCopy();
+      /*
+        ⚠ THEN THE PENDING-ONLY COPY (PERF-2). Home "My Work", the side panel's
+          list and the Control Center read `DISPATCH_OPEN_QK`, not this store's
+          key. Invalidating it AFTER the full copy is fresh makes it re-derive from
+          that copy with no request of its own (useDispatchOpenWork), so a step
+          saved in the side panel leaves the list behind it at once.
+      */
+      await queryClient.invalidateQueries({ queryKey: DISPATCH_OPEN_QK }).catch(() => {});
     };
 
     /**
