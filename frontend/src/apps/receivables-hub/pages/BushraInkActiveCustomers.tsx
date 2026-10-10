@@ -56,8 +56,15 @@ const collator = new Intl.Collator("en", { numeric: true, sensitivity: "base" })
 const fmtKg = makeQtyFmt("kg", []);
 const nf1 = new Intl.NumberFormat("en-IN", { maximumFractionDigits: 1 });
 const dmy = (d: string) => (d ? `${d.slice(6)}-${d.slice(4, 6)}-${d.slice(0, 4)}` : "");
-/** The slicer's choices, as in the Excel. */
-const THRESHOLDS = Array.from({ length: 15 }, (_, i) => i + 1);
+/**
+ * THE INACTIVE MONTHS SLICER IS A FILTER, as in the Excel: tick 1, 3, 4 and 6 and only customers
+ * silent exactly that many whole months are shown. 0 = bought within the last month; 15 = 15 and over.
+ * Separate from the In-active cut-off (`threshold`), which only decides Active vs In-active.
+ */
+const SLICER = Array.from({ length: 16 }, (_, i) => i);
+const slicerLabel = (m: number) => (m === 15 ? "15+" : String(m));
+/** The In-active cut-off's choices. */
+const THRESHOLDS = Array.from({ length: 12 }, (_, i) => i + 1);
 
 type Row = BushraRegisterRow;
 /** A customer with today's reading of it. */
@@ -105,7 +112,7 @@ export default function BushraInkActiveCustomers({ mode }: { mode: "dashboard" |
   const errText = err ? (err as Error).message : null;
   const loading = (isLoading || !lookup || !groupLink || !spOf) && !errText;
 
-  /** The Excel's Inactive Months slicer. */
+  /** From how many months a customer counts as In-active. */
   const [threshold, setThreshold] = useState(3);
   const customers = useMemo(
     () => (groupLink && spOf ? inkCustomers(data ?? [], groupLink.of, spOf, today) : []),
@@ -119,27 +126,29 @@ export default function BushraInkActiveCustomers({ mode }: { mode: "dashboard" |
 
   /* -------- filters -------- */
   const [sel, setSel] = useState<Record<FilterKey, string[]>>(NO_FILTERS);
-  /** A bar click on the months chart — one months-inactive value. */
-  const [monthsPick, setMonthsPick] = useState<number | null>(null);
+  /** The Excel's Inactive Months slicer — the months-inactive values ticked (empty = all). */
+  const [monthsSel, setMonthsSel] = useState<number[]>([]);
+  const tickMonth = (m: number) => setMonthsSel((s) => (s.includes(m) ? s.filter((x) => x !== m) : [...s, m].sort((a, b) => a - b)));
+  const inSlicer = (c: Read) => !monthsSel.length || monthsSel.includes(Math.min(c.months, 15));
   const keep = (c: Read, except?: FilterKey) =>
     FILTER_KEYS.every((k) => k === except || !sel[k].length || valuesOf(k, c).some((v) => sel[k].includes(v)));
   const shown = useMemo(
-    () => read.filter((c) => keep(c) && (monthsPick === null || Math.min(c.months, 15) === monthsPick)),
-    [read, sel, monthsPick], // eslint-disable-line react-hooks/exhaustive-deps
+    () => read.filter((c) => keep(c) && inSlicer(c)),
+    [read, sel, monthsSel], // eslint-disable-line react-hooks/exhaustive-deps
   );
   const options = useMemo(() => Object.fromEntries(FILTER_KEYS.map((k) => {
     const vals = new Set<string>();
-    for (const c of read) if (keep(c, k)) for (const v of valuesOf(k, c)) vals.add(v);
+    for (const c of read) if (keep(c, k) && inSlicer(c)) for (const v of valuesOf(k, c)) vals.add(v);
     const list = [...vals];
     if (k === "band") list.sort((a, b) => BANDS.indexOf(a as Band) - BANDS.indexOf(b as Band));
     else list.sort(collator.compare);
     return [k, list.map((v) => ({ value: v, label: v }))];
-  })) as Record<FilterKey, MultiSelectOption[]>, [read, sel]); // eslint-disable-line react-hooks/exhaustive-deps
+  })) as Record<FilterKey, MultiSelectOption[]>, [read, sel, monthsSel]); // eslint-disable-line react-hooks/exhaustive-deps
   const setFilter = (k: FilterKey) => (v: string[]) => setSel((s) => ({ ...s, [k]: v }));
   const toggle = (k: FilterKey, v: string) =>
     setSel((s) => ({ ...s, [k]: s[k].length === 1 && s[k][0] === v ? [] : [v] }));
-  const filterCount = FILTER_KEYS.reduce((n, k) => n + sel[k].length, 0) + (monthsPick === null ? 0 : 1);
-  const resetAll = () => { setSel(NO_FILTERS); setMonthsPick(null); };
+  const filterCount = FILTER_KEYS.reduce((n, k) => n + sel[k].length, 0) + monthsSel.length;
+  const resetAll = () => { setSel(NO_FILTERS); setMonthsSel([]); };
 
   /* -------- figures -------- */
   const kpi = useMemo(() => {
@@ -212,18 +221,30 @@ export default function BushraInkActiveCustomers({ mode }: { mode: "dashboard" |
       <div className="rounded-lg border border-border bg-surface px-3 py-2 space-y-2">
         <div className="flex flex-wrap items-center gap-1.5">
           <span className="mr-1 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">Inactive months</span>
-          {THRESHOLDS.map((n) => (
-            <button key={n} type="button" onClick={() => setThreshold(n)}
-                    title={`In-active = no ink bought for ${n} month${n === 1 ? "" : "s"} or more`}
-                    className={cn("h-7 min-w-[34px] rounded-md border px-2 text-[12px] font-medium tabular-nums transition-colors",
-                                  threshold === n ? "border-primary bg-primary text-primary-foreground"
-                                    : "border-border bg-surface text-muted-foreground hover:bg-muted/50 hover:text-foreground")}>
-              {n}
-            </button>
-          ))}
-          <span className="ml-1 text-[11px] text-muted-foreground">
-            In-active = no ink for <b className="text-foreground">{threshold}</b> month{threshold === 1 ? "" : "s"} or more
-          </span>
+          {SLICER.map((m) => {
+            const on = monthsSel.includes(m);
+            return (
+              <button key={m} type="button" onClick={() => tickMonth(m)}
+                      title={on ? `Untick ${slicerLabel(m)}` : `Show customers with no ink for ${m === 15 ? "15 or more months" : m === 0 ? "less than a month" : `exactly ${m} month${m === 1 ? "" : "s"}`}`}
+                      className={cn("h-7 min-w-[34px] rounded-md border px-2 text-[12px] font-medium tabular-nums transition-colors",
+                                    on ? "border-primary bg-primary text-primary-foreground"
+                                      : "border-border bg-surface text-muted-foreground hover:bg-muted/50 hover:text-foreground")}>
+                {slicerLabel(m)}
+              </button>
+            );
+          })}
+          <button type="button" onClick={() => setMonthsSel([])} disabled={!monthsSel.length}
+                  className="ml-1 text-[11px] text-primary hover:underline disabled:text-muted-foreground disabled:no-underline">
+            {monthsSel.length ? `Clear (${monthsSel.map(slicerLabel).join(", ")})` : "all months shown"}
+          </button>
+          <label className="ml-auto flex items-center gap-1.5 text-[11px] text-muted-foreground">
+            In-active from
+            <select value={threshold} onChange={(e) => setThreshold(Number(e.target.value))}
+                    className="h-7 rounded-md border border-border bg-surface px-1.5 text-[12px] text-foreground">
+              {THRESHOLDS.map((n) => <option key={n} value={n}>{n} month{n === 1 ? "" : "s"}</option>)}
+            </select>
+            without ink
+          </label>
         </div>
         <div className="flex flex-wrap items-end gap-x-3 gap-y-2">
           {FILTER_KEYS.map((k) => (
@@ -284,8 +305,8 @@ export default function BushraInkActiveCustomers({ mode }: { mode: "dashboard" |
         <div className="grid gap-3 xl:grid-cols-2">
           <SalesPanel title="Customers by months since their last ink" icon={Hourglass} loading={loading}
                       empty={!loading && !read.length} emptyMessage="No ink customers."
-                      subtitle={monthsPick !== null ? `filtered to ${byMonths[monthsPick].label} months — click it again to clear`
-                        : `green = active, red = in-active at ${threshold}+ months — click a bar to filter`}
+                      subtitle={monthsSel.length ? `filtered to ${monthsSel.map(slicerLabel).join(", ")} months — click a bar to add or remove it`
+                        : `green = active, red = in-active at ${threshold}+ months — click bars to filter, like the slicer`}
                       sizeKey="ink-active-months">
             <PanelFill base={300}>{(bar) => (
               <ResponsiveContainer width="100%" height="100%">
@@ -297,10 +318,10 @@ export default function BushraInkActiveCustomers({ mode }: { mode: "dashboard" |
                   <Tooltip cursor={{ fill: "hsl(220 15% 95%)" }} formatter={(v: number) => [fmtInt(v), "Customers"]}
                            labelFormatter={(l: string) => `${l} months since last ink`} />
                   <Bar dataKey="customers" maxBarSize={bar(34)} radius={[4, 4, 0, 0]} className="cursor-pointer"
-                       onClick={(d: { m?: number }) => d?.m !== undefined && setMonthsPick((p) => (p === d.m ? null : d.m!))}>
+                       onClick={(d: { m?: number }) => d?.m !== undefined && tickMonth(d.m)}>
                     {byMonths.map((p) => (
                       <Cell key={p.m} fill={p.m < threshold ? BAND_COLOR.Active : BAND_COLOR[bandOf(p.m, threshold)]}
-                            fillOpacity={monthsPick === null || monthsPick === p.m ? 1 : 0.3} />
+                            fillOpacity={!monthsSel.length || monthsSel.includes(p.m) ? 1 : 0.3} />
                     ))}
                     <LabelList dataKey="customers" position="top" style={{ fontSize: 10.5, fill: LABEL_FILL, fontWeight: 600 }}
                                formatter={(v: number) => (v ? fmtInt(v) : "")} />
