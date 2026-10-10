@@ -412,7 +412,7 @@ export interface DispatchStoreValue {
    *   server's `fms_dispatch_complete_customer_order` enforces.
    */
   customerOrdersPending: DispatchOrder[];
-  /** Written up, and not yet past credit check — still reopenable. */
+  /** Every written-up customer order, at any later stage (reopen is `canCompleteCustomerOrder`). */
   customerOrdersCompleted: DispatchOrder[];
   /** May this person write up (or reopen) this customer order? */
   canCompleteCustomerOrder: (o: DispatchOrder) => boolean;
@@ -1490,11 +1490,14 @@ export function DispatchStoreProvider({ children }: { children: ReactNode }) {
       customerOrdersPending: orders.filter(
         (o) => o.status === "awaiting_order_completion" && canActOn("sales_order", o),
       ),
+      // EVERY written-up customer order, wherever it is now — credit check, bill,
+      // gate, closed or cancelled. Only "still reopenable" was kept before, so an
+      // order vanished from Completed the moment credit check passed it on.
       customerOrdersCompleted: orders.filter(
         (o) =>
           o.intakeSource === "customer" &&
           !!o.intakeCompletedAt &&
-          o.status === "awaiting_credit_check" &&
+          o.status !== "awaiting_order_completion" &&
           canActOn("sales_order", o),
       ),
       canCompleteCustomerOrder,
