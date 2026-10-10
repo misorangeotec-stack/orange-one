@@ -157,6 +157,8 @@ export interface InkPosition {
    *  First non-empty wins where several books feed one line — it is one ink. */
   category: string;
   source: string;
+  /** Who the planner buys this ink from, typed in the item master. Empty until they type it. */
+  supplier: string;
   baseUnit: string;
   /** Closing quantity per book, keyed by `InkCompany.key`. Absent book means zero. */
   byCompany: Record<string, number>;
@@ -197,6 +199,8 @@ export interface InkOverride {
 export interface InkLineFields {
   category: string;
   source: string;
+  /** Supplier name, typed by the planner. Tally is not read for it — their call (10-10-2026). */
+  supplier?: string;
   /**
    * How many weeks of plant orders this ink runs on. Only meaningful for a Plant ink: it says
    * how many weekly lines the planner expects to enter, so the dashboard can show whether they
@@ -292,6 +296,7 @@ export interface InkMasterRow {
   /** Planner-only fields: Tally has no equivalent, so there is nothing to fall back to. */
   category: string;
   source: string;
+  supplier: string;
   effectiveDescription: string;
   /** True when nothing anywhere supplies a code, so this item cannot merge across books. */
   needsCode: boolean;
@@ -481,6 +486,7 @@ export async function loadInkPositions(
       (groupOv.category ?? "").trim() ||
       detectCategory(tallyName || row.item);
     const effectiveSource = (lineOv.source ?? "").trim() || (groupOv.source ?? "").trim();
+    const effectiveSupplier = (lineOv.supplier ?? "").trim() || (groupOv.supplier ?? "").trim();
 
     master.push({
       key,
@@ -501,6 +507,7 @@ export async function loadInkPositions(
       effectiveGroup,
       category: effectiveCategory,
       source: effectiveSource,
+      supplier: effectiveSupplier,
       effectiveDescription,
       needsCode: !effectiveCode,
     });
@@ -526,6 +533,7 @@ export async function loadInkPositions(
         group: effectiveGroup,
         category: effectiveCategory,
         source: effectiveSource,
+        supplier: effectiveSupplier,
         baseUnit: row.base_unit || "KGS",
         byCompany: {},
         stock: 0,
@@ -552,6 +560,7 @@ export async function loadInkPositions(
     }
     if (!pos.category) pos.category = effectiveCategory;
     if (!pos.source) pos.source = effectiveSource;
+    if (!pos.supplier) pos.supplier = effectiveSupplier;
 
     const chosen = godownChoice[company.key] ?? [];
     const split = splits.get(company.key);
@@ -1091,8 +1100,11 @@ export const saveLines = (l: InkLines) => {
   const clean: InkLines = {};
   for (const [k, v] of Object.entries(l)) {
     const row: Partial<InkLineFields> = {};
+    // Plant weeks used to be left out here, so the number typed in the item master was lost on save.
+    if (v.weeks && v.weeks >= 1) row.weeks = v.weeks;
     if (v.category?.trim()) row.category = v.category.trim().toUpperCase();
     if (v.source?.trim()) row.source = v.source.trim();
+    if (v.supplier?.trim()) row.supplier = v.supplier.trim().toUpperCase();
     if (Object.keys(row).length) clean[k] = row;
   }
   writeJson(KEY_LINES, clean);
@@ -1105,6 +1117,7 @@ export const saveGroupFields = (g: InkGroupFields) => {
     const row: Partial<InkLineFields> = {};
     if (v.category?.trim()) row.category = v.category.trim().toUpperCase();
     if (v.source?.trim()) row.source = v.source.trim();
+    if (v.supplier?.trim()) row.supplier = v.supplier.trim().toUpperCase();
     if (Object.keys(row).length) clean[k] = row;
   }
   writeJson(KEY_GROUPS, clean);

@@ -17,6 +17,13 @@ interface Props {
   resizeKey?: string;
   /** Drop the hint + ‹ › bar for tight screens; the keys and the scrollbar still work. */
   hideControls?: boolean;
+  /** Drop only the "Use arrow keys…" hint, keeping the ‹ › buttons on the right. */
+  hideHint?: boolean;
+  /**
+   * Keep the wheel inside the table. Without it, scrolling past the last row carries on into the
+   * page, which moves the whole box — sticky headings and all — off the top of the screen.
+   */
+  containScroll?: boolean;
 }
 
 /**
@@ -29,7 +36,7 @@ interface Props {
  * div, which would otherwise capture horizontal scroll. `[&>div]:!overflow-visible`
  * neutralises that so THIS element is the single scroll container for both axes.
  */
-export function ScrollableTable({ children, className, maxHeight, step = 320, resizeKey, hideControls = false }: Props) {
+export function ScrollableTable({ children, className, maxHeight, step = 320, resizeKey, hideControls = false, hideHint = false, containScroll = false }: Props) {
   const ref = useRef<HTMLDivElement>(null);
   const [height, setHeight] = usePersistedSize(resizeKey ? `table.${resizeKey}` : undefined);
   const dragFrom = useRef(0);
@@ -79,7 +86,9 @@ export function ScrollableTable({ children, className, maxHeight, step = 320, re
     <div>
       {overflow && !hideControls && (
         <div className="flex items-center justify-end gap-2 mb-1.5">
-          <span className="text-[11px] text-muted-foreground mr-auto">Use arrow keys ← ↑ → ↓ (or the buttons) to scroll the table.</span>
+          {!hideHint && (
+            <span className="text-[11px] text-muted-foreground mr-auto">Use arrow keys ← ↑ → ↓ (or the buttons) to scroll the table.</span>
+          )}
           <button
             type="button"
             onClick={() => by(-step, 0)}
@@ -103,7 +112,7 @@ export function ScrollableTable({ children, className, maxHeight, step = 320, re
         tabIndex={0}
         onKeyDown={onKeyDown}
         style={height !== undefined ? { maxHeight: height } : undefined}
-        className={`overflow-auto [&>div]:!overflow-visible focus:outline-none ${maxHeight ?? ""} ${className ?? ""}`}
+        className={`overflow-auto [&>div]:!overflow-visible focus:outline-none ${containScroll ? "overscroll-contain" : ""} ${maxHeight ?? ""} ${className ?? ""}`}
       >
         {children}
       </div>
