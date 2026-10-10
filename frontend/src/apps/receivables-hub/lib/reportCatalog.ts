@@ -42,6 +42,7 @@ import { BadgeIndianRupee } from "lucide-react";
 import { FileWarning } from "lucide-react";
 // The Purchase dashboards' icon, on its own line for the same reason.
 import { Truck } from "lucide-react";
+import { Activity } from "lucide-react";
 import { appBasePath } from "@/apps/appInfo";
 import { SALES_DASHBOARDS } from "./bushraSalesDashboards";
 import { PURCHASE_DASHBOARDS, purchaseDashboardTitle } from "./bushraPurchaseDashboards";
@@ -957,6 +958,19 @@ export const REPORTS: ReportEntry[] = [
     keywords: ["salesperson", "sales person", "rep", "sales register", "sales by salesperson", "bushra"],
   },
   {
+    // Active / In-active Ink Customers, the list (pages/BushraInkActiveCustomers.tsx, mode "report").
+    id: "bushra-ink-active-customers",
+    scoping: "party-server",
+    title: "Active / In-active Ink Customers",
+    purpose: "Every ink customer with its last ink date, months inactive, ageing band and salesperson, and its category × colour × month ink quantities.",
+    category: "bushra-report",
+    path: "reports/bushra-ink-active-customers",
+    icon: Activity,
+    source: "tally",
+    status: "live",
+    keywords: ["active", "inactive", "in-active", "dormant", "lost customers", "ink customers", "last sale", "bushra"],
+  },
+  {
     id: "bushra-purchase-register",
     // Vendors, not customers — the salesperson scope does not apply.
     scoping: "none",
@@ -1061,6 +1075,19 @@ export const REPORTS: ReportEntry[] = [
     source: "tally",
     status: "live",
     keywords: ["salesperson", "sales person", "rep", "sales dashboard", "bushra"],
+  },
+  {
+    // Bushra-Dashboard → Sales → Active / In-active Ink (pages/BushraInkActiveCustomers.tsx, mode "dashboard").
+    id: "bushra-sales-ink-active",
+    scoping: "party-server",
+    title: "Sales — Active / In-active Ink Customers",
+    purpose: "Who still buys our ink and who has gone quiet — months since the last ink purchase, by salesperson.",
+    category: "bushra-report",
+    path: "bushra-dashboard/sales-ink-active",
+    icon: Activity,
+    source: "tally",
+    status: "live",
+    keywords: ["active", "inactive", "in-active", "dormant", "ink customers", "sales dashboard", "bushra"],
   },
   // Bushra-Dashboard → Purchase: one entry per dashboard, generated from lib/bushraPurchaseDashboards.ts
   // so each id and path matches its screen. All built on the Bushra Purchase Register (vendors — no scope).

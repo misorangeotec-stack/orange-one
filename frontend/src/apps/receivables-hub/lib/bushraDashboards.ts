@@ -19,7 +19,7 @@
  * only the pages the viewer holds (groupPageIds below). A new page therefore also needs its catalogue
  * entry, or nobody but an admin can open it.
  */
-import { Factory, LayoutDashboard, Package, Receipt, ShoppingCart, Truck, UserCheck, Users, type LucideIcon } from "lucide-react";
+import { Activity, Factory, LayoutDashboard, Package, Receipt, ShoppingCart, Truck, UserCheck, Users, type LucideIcon } from "lucide-react";
 import { appBasePath } from "@/apps/appInfo";
 import { SALES_DASHBOARDS } from "./bushraSalesDashboards";
 import { PURCHASE_DASHBOARDS, purchaseDashboardTitle } from "./bushraPurchaseDashboards";
@@ -123,6 +123,15 @@ export const BUSHRA_DASHBOARDS: BushraDashboardGroup[] = [
         purpose: "The sales register read per salesperson — net sales, product mix and growth on last year, down to each line.",
         path: "bushra-dashboard/sales-salesperson",
         icon: UserCheck,
+        status: "live" as const,
+      },
+      // Its own screen (pages/BushraInkActiveCustomers.tsx); id/path = INK_ACTIVE_DASHBOARD_* there.
+      {
+        id: "bushra-sales-ink-active",
+        title: "Active / In-active Ink Customers",
+        purpose: "Who still buys our ink and who has gone quiet — months since the last ink purchase, by salesperson, with the month-wise ink pivot.",
+        path: "bushra-dashboard/sales-ink-active",
+        icon: Activity,
         status: "live" as const,
       },
     ],

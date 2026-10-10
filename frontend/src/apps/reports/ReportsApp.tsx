@@ -86,6 +86,7 @@ import PackingMaterial from "@hub/pages/PackingMaterial";
 import BushraSalesDashboard from "@hub/pages/BushraSalesDashboard";
 import BushraOrangeCustomers from "@hub/pages/BushraOrangeCustomers";
 import BushraSalespersonSales from "@hub/pages/BushraSalespersonSales";
+import BushraInkActiveCustomers from "@hub/pages/BushraInkActiveCustomers";
 import BushraPurchaseDashboard from "@hub/pages/BushraPurchaseDashboard";
 import { SALES_DASHBOARDS } from "@hub/lib/bushraSalesDashboards";
 import { PURCHASE_DASHBOARDS } from "@hub/lib/bushraPurchaseDashboards";
@@ -254,6 +255,8 @@ function ReportRoutes() {
               <Route path="bushra-orange-customers" element={<BushraOrangeCustomers key="report" mode="report" />} />
               {/* Bushra-Report → Salesperson Sales: the sales register per salesperson. */}
               <Route path="bushra-salesperson-sales" element={<BushraSalespersonSales key="report" mode="report" />} />
+              {/* Bushra-Report → Active / In-active Ink Customers: the list. */}
+              <Route path="bushra-ink-active-customers" element={<BushraInkActiveCustomers key="report" mode="report" />} />
             </Route>
           </Route>
 
@@ -293,6 +296,8 @@ function ReportRoutes() {
               <Route path="bushra-dashboard/sales-orange-customers" element={<BushraOrangeCustomers key="dashboard" mode="dashboard" />} />
               {/* Sales → Salesperson: the sales register per salesperson. */}
               <Route path="bushra-dashboard/sales-salesperson" element={<BushraSalespersonSales key="dashboard" mode="dashboard" />} />
+              {/* Sales → Active / In-active Ink: who still buys our ink. */}
+              <Route path="bushra-dashboard/sales-ink-active" element={<BushraInkActiveCustomers key="dashboard" mode="dashboard" />} />
               <Route path="bushra-dashboard/production-expenses" element={<ProductionExpenses />} />
               {/* The third leg of the cost: caps, cans and stickers, which never touch a
                   production voucher. See lib/packingMaterial.ts for outward vs consumed. */}

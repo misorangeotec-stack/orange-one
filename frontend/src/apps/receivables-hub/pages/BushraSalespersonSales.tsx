@@ -254,6 +254,12 @@ export default function BushraSalespersonSales({ mode }: { mode: "dashboard" | "
           <span className="rounded-pill border border-primary bg-primary px-3 py-1 text-[12px] font-medium text-primary-foreground">
             Salesperson
           </span>
+          {canSee("bushra-sales-ink-active") && (
+            <Link to={`${BASE}/bushra-dashboard/sales-ink-active`}
+                  className="rounded-pill border border-border bg-surface px-3 py-1 text-[12px] font-medium text-muted-foreground transition-colors hover:bg-muted/50 hover:text-foreground">
+              Active / In-active Ink
+            </Link>
+          )}
         </nav>
       )}
 

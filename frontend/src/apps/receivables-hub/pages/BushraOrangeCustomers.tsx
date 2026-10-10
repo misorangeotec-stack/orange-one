@@ -269,6 +269,12 @@ export default function BushraOrangeCustomers({ mode }: { mode: "dashboard" | "r
               Salesperson
             </Link>
           )}
+          {canSee("bushra-sales-ink-active") && (
+            <Link to={`${BASE}/bushra-dashboard/sales-ink-active`}
+                  className="rounded-pill border border-border bg-surface px-3 py-1 text-[12px] font-medium text-muted-foreground transition-colors hover:bg-muted/50 hover:text-foreground">
+              Active / In-active Ink
+            </Link>
+          )}
         </nav>
       )}
 
