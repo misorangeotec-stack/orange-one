@@ -1,4 +1,4 @@
-import { createContext, useContext, useEffect, useMemo, useRef } from "react";
+import { createContext, useContext, useEffect, useMemo, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useSession } from "@/core/platform/session";
@@ -20,6 +20,7 @@ import {
   DISPATCH_QK, DISPATCH_MASTERS_QK, DISPATCH_OPEN_QK, fetchDispatchData, fetchDispatchMasters, dispatchQueryKey,
   fetchOrderActivity, orderActivityQueryKey, fetchDispatchDelta, type DispatchData,
 } from "./data/dispatchFetch";
+import { refreshFmsBells } from "@/shared/lib/fmsBell";
 import {
   announce as announceWrite,
   amendRound as amendRoundWrite,
@@ -31,7 +32,6 @@ import {
   insertMasters as insertMastersWrite,
   mapCustomerItems as mapCustomerItemsWrite,
   mapPartyCompanies as mapPartyCompaniesWrite,
-  markNotificationsRead as markNotificationsReadWrite,
   materialNothingAvailable as materialNothingAvailableWrite,
   recordSalesReturn as recordSalesReturnWrite,
   recordStep as recordStepWrite,
@@ -77,7 +77,7 @@ import { DEFAULT_STEP_SLA, type StepSlaMap } from "./lib/sla";
 import type { OwnerStepKey } from "./lib/steps";
 import type {
   Company, CompanyLocation, Customer, Designation, DispatchActivity, DispatchMasterRequest,
-  CustomerItem, CustomerCompany, DispatchMasterType, DispatchNotification, DispatchOrder, Item, MasterManager, NamedMaster, RoundReturn, StepDoc, StepOwner, } from "./types";
+  CustomerItem, CustomerCompany, DispatchMasterType, DispatchOrder, Item, MasterManager, NamedMaster, RoundReturn, StepDoc, StepOwner, } from "./types";
 
 /** A return against a finished invoice, with the order it belongs to. */
 export interface RoundReturnRow {
@@ -412,7 +412,7 @@ export interface DispatchStoreValue {
    *   server's `fms_dispatch_complete_customer_order` enforces.
    */
   customerOrdersPending: DispatchOrder[];
-  /** Written up, and not yet past credit check — still reopenable. */
+  /** Every written-up customer order, at any later stage (reopen is `canCompleteCustomerOrder`). */
   customerOrdersCompleted: DispatchOrder[];
   /** May this person write up (or reopen) this customer order? */
   canCompleteCustomerOrder: (o: DispatchOrder) => boolean;
@@ -431,7 +431,11 @@ export interface DispatchStoreValue {
   // feed
   /** ⚠ REMOVED — an order's trail is its own query now: useOrderActivity(orderId).
    *  It was 2,943 rows in the snapshot, refetched after every save, for one panel. */
-  notifications: DispatchNotification[];
+  /**
+   * ⚠ NO BELL HERE (PERF-2 Step 2). The bell is its own small query, read only by
+   *   OrderToDispatchLayout (useFmsBell). Held in this value it would rebuild the
+   *   whole store, and so re-render every Dispatch page, on every mark-read.
+   */
   processCoordinatorIds: string[];
 
   // actions
@@ -511,7 +515,12 @@ export interface DispatchStoreValue {
   resolveMasterRequest: (
     id: string, approve: boolean, payload: Record<string, unknown> | null, note: string | null,
   ) => Promise<void>;
-  markNotificationsRead: (ids: string[]) => Promise<void>;
+  /**
+   * "What changed", on demand, with `isFetching` true until it lands. The bell
+   * calls it when a notification points at an order this copy does not hold yet,
+   * so the order page says "Loading…" rather than "Order not found".
+   */
+  refreshOrders: () => Promise<void>;
 }
 
 const Ctx = createContext<DispatchStoreValue | null>(null);
@@ -522,6 +531,9 @@ export function DispatchStoreProvider({ children }: { children: ReactNode }) {
   const queryClient = useQueryClient();
   const userId = session.user?.id ?? null;
   const isAdmin = session.isAdmin;
+
+  // True while a bell-requested "what changed" refresh is in flight (refreshOrders).
+  const [refreshingOrders, setRefreshingOrders] = useState(false);
 
   const { data, isLoading, isFetching, error } = useQuery({
     queryKey: dispatchQueryKey(userId),
@@ -605,7 +617,6 @@ export function DispatchStoreProvider({ children }: { children: ReactNode }) {
   const masterManagers = data?.masterManagers ?? [];
   const masterRequests = data?.masterRequests ?? [];
   const orders = data?.orders ?? [];
-  const notifications = data?.notifications ?? [];
   const processCoordinatorIds = data?.config.processCoordinatorIds ?? [];
   const reassignPoolDepartmentIds = data?.config.reassignPoolDepartmentIds ?? [];
   const reassignPoolUserIds = data?.config.reassignPoolUserIds ?? [];
@@ -668,6 +679,9 @@ export function DispatchStoreProvider({ children }: { children: ReactNode }) {
      */
     const invalidate = () => {
       void refreshWorkingSet();
+      // A save can notify someone, the saver included, and the bell is its own
+      // query now (PERF-2 Step 2), so it does not ride the refresh above.
+      void refreshFmsBells(queryClient, "fms_dispatch_notifications");
       // ⚠ ON EVERY WRITE, NOT JUST THE RETURN ONES. A dispatch confirmation (or a
       //   round correction) recorded as Returned opens a sales return server-side,
       //   by trigger — so the write that creates the row is not one of ours. The
@@ -701,7 +715,7 @@ export function DispatchStoreProvider({ children }: { children: ReactNode }) {
         return;
       }
       try {
-        const next = await fetchDispatchDelta(prev, userId);
+        const next = await fetchDispatchDelta(prev);
         if (next !== prev) queryClient.setQueryData(key, next);
       } catch {
         await queryClient.invalidateQueries({ queryKey: QK }).catch(() => {});
@@ -1245,10 +1259,6 @@ export function DispatchStoreProvider({ children }: { children: ReactNode }) {
     /* --------------------------------- indexes ------------------------------- */
 
 
-    const mineNotifications = notifications
-      .filter((n) => n.userId === uid)
-      .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
-
     const orderIndex = new Map(orders.map((o) => [o.id, o]));
 
     // Returns joined to their orders once. A return whose order is not in the
@@ -1344,7 +1354,8 @@ export function DispatchStoreProvider({ children }: { children: ReactNode }) {
        *   "Order not found" on a freshly raised order. The catalogue refreshing
        *   on its own clock has nothing to do with that question.
        */
-      isFetching,
+      // A delta refresh asked for by the bell (refreshOrders) counts as "on its way" too.
+      isFetching: isFetching || refreshingOrders,
       error: error ?? mastersError,
 
       userId: uid,
@@ -1479,11 +1490,14 @@ export function DispatchStoreProvider({ children }: { children: ReactNode }) {
       customerOrdersPending: orders.filter(
         (o) => o.status === "awaiting_order_completion" && canActOn("sales_order", o),
       ),
+      // EVERY written-up customer order, wherever it is now — credit check, bill,
+      // gate, closed or cancelled. Only "still reopenable" was kept before, so an
+      // order vanished from Completed the moment credit check passed it on.
       customerOrdersCompleted: orders.filter(
         (o) =>
           o.intakeSource === "customer" &&
           !!o.intakeCompletedAt &&
-          o.status === "awaiting_credit_check" &&
+          o.status !== "awaiting_order_completion" &&
           canActOn("sales_order", o),
       ),
       canCompleteCustomerOrder,
@@ -1498,7 +1512,6 @@ export function DispatchStoreProvider({ children }: { children: ReactNode }) {
       masterReviewersFor,
       isMasterUnassigned,
 
-      notifications: mineNotifications,
       processCoordinatorIds,
 
       submitOrder: async (input) => {
@@ -1727,16 +1740,20 @@ export function DispatchStoreProvider({ children }: { children: ReactNode }) {
         // until the 30-minute timer came round.
         invalidateAll();
       },
-      markNotificationsRead: async (ids) => {
-        await markNotificationsReadWrite(ids);
-        invalidate();
+      refreshOrders: async () => {
+        setRefreshingOrders(true);
+        try {
+          await refreshWorkingSet();
+        } finally {
+          setRefreshingOrders(false);
+        }
       },
     };
   }, [
-    userId, isAdmin, isLoading, isFetching, error, queryClient, dir, orgPeople,
+    userId, isAdmin, isLoading, isFetching, refreshingOrders, error, queryClient, dir, orgPeople,
     stepOwners, designations, companies, companyLocations, customers, items, customerItems,
     customerCompanies,
-    masterManagers, masterRequests, orders, notifications,
+    masterManagers, masterRequests, orders,
     processCoordinatorIds, stepSla, orderNoPreview, roundReturns,
     // Load-bearing and invisible to tsc: without these the memo keeps the
     // assignees and the pool it was built with, so a reassignment would not move

@@ -18,9 +18,13 @@ export interface StageEntryLike {
   atIso: string;
 }
 
-export function useStageMode<E extends StageEntryLike>(entries: E[], userId: string) {
+export function useStageMode<E extends StageEntryLike>(
+  entries: E[],
+  userId: string,
+  initialScope: StageScope = "mine",
+) {
   const [mode, setMode] = useState<StageMode>("pending");
-  const [scope, setScope] = useState<StageScope>("mine");
+  const [scope, setScope] = useState<StageScope>(initialScope);
 
   // Newest first: "what did I just do" is the question this tab answers.
   const rows = useMemo(() => {
