@@ -13,6 +13,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { CSSProperties, MouseEvent as ReactMouseEvent, ReactNode } from "react";
 import { TableHead } from "@hub/components/ui/table";
+import { useSharedPush } from "./sheetStore";
 
 const MIN_WIDTH = 48;
 
@@ -55,6 +56,8 @@ export function useTableColumns(table: string): TableColumns {
       /* private mode: adjustments still apply for this visit */
     }
   }, [key, state]);
+  // Shared with everyone when the key is in SHARED_KEYS (the dashboard and the item master).
+  useSharedPush(key, state);
 
   const setWidth = useCallback((id: string, px: number | undefined) => {
     setState((prev) => {

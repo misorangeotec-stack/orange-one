@@ -94,7 +94,7 @@ export function ColumnHead({
       >
         <span
           className={
-            wrap ? "whitespace-normal break-words text-[8px] leading-tight" : "truncate"
+            wrap ? "whitespace-normal break-words text-[8pt] leading-tight" : "truncate"
           }
         >
           {label}

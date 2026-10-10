@@ -25,16 +25,19 @@
  *             failure is the one outcome worth avoiding: the planner would keep typing into a
  *             sheet nobody else can see, which is the bug we just fixed.
  *
- * WHAT IS NOT SHARED, deliberately: column widths, row heights, the chart label width and the
- * "already seen" marker behind the new-arrival prompt. Those are one person's view of the sheet
- * rather than the sheet, and sharing them would let one user's column drag resize everyone's
- * screen.
+ * THE LAYOUT IS SHARED TOO (user, 10-10-2026): column widths and hidden columns, row and heading
+ * height, and the chart panel sizes. They were per browser, and the planner had to drag every
+ * column back into shape on each machine and each visit. Now one person sets the layout and
+ * everyone opens it that way. Only an edit grant can change it, like the rest of the sheet.
+ *
+ * Still per browser: the "already seen" marker, the Lines picker and which charts are open.
  *
  * WHO MAY WRITE is the ordinary module grant — `view` reads, `edit` writes, admins are edit.
  * The database enforces it through RLS, so a view-only user is refused by Postgres and not
  * merely by a hidden button. This module also declines to push at all for such a user, to keep
  * the console free of failures that are the correct answer.
  */
+import { useEffect, useRef } from "react";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { supabase } from "@/core/platform/supabase";
 
@@ -57,6 +60,12 @@ export const SHARED_KEYS = [
   "ink-mis:thresholds:v1", // colour bands and the days-red rules
   "ink-mis:holidays:v1", // non-working days behind the per-day average
   "ink-mis:godowns:v1", // which godowns and stock groups count
+  "ink-mis:cols:dashboard", // dashboard column widths + hidden columns
+  "ink-mis:cols:item-master", // item master column widths + hidden columns
+  "ink-mis:row-pad", // dashboard row height
+  "ink-mis:head-pad", // dashboard heading height
+  "ink-mis:chart-panel-height", // reorder chart panel heights
+  "ink-mis:chart-label-width", // reorder chart name widths
 ] as const;
 
 const SHARED = new Set<string>(SHARED_KEYS);
@@ -136,6 +145,22 @@ export function pushDocument(key: string, value: unknown): void {
   const existing = timers.get(key);
   if (existing) clearTimeout(existing);
   timers.set(key, setTimeout(() => void flush(key), SETTLE_MS));
+}
+
+/**
+ * Share a layout value whenever it CHANGES. The first run is skipped on purpose: on open the
+ * value is whatever the shared sheet just handed this browser, and pushing it straight back
+ * would let a browser that opened on stale state overwrite the layout someone else just set.
+ */
+export function useSharedPush(key: string, value: unknown): void {
+  const first = useRef(true);
+  useEffect(() => {
+    if (first.current) {
+      first.current = false;
+      return;
+    }
+    pushDocument(key, value);
+  }, [key, value]);
 }
 
 /** Send anything still waiting, now. Used when the tab is closing. */

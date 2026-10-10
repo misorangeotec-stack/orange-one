@@ -227,7 +227,10 @@ export default function InkItemMaster() {
     }
     setGroupFields((prev) => {
       const next = { ...prev, [group]: { ...prev[group], [field]: value } };
-      if (!value.trim()) {
+      // Supplier is a TYPED box: dropping the key when it empties would make the box fall back to
+      // the saved name mid-edit, so it could never be cleared or retyped. The empty string stays
+      // in the draft and is dropped on save instead.
+      if (!value.trim() && field !== "supplier") {
         const row = { ...next[group] };
         delete row[field];
         if (Object.keys(row).length) next[group] = row;
@@ -250,7 +253,7 @@ export default function InkItemMaster() {
   const setLineField = (mergeKey: string, field: keyof InkLineFields, value: string) =>
     setLines((prev) => {
       const next = { ...prev, [mergeKey]: { ...prev[mergeKey], [field]: value } };
-      if (!value.trim()) {
+      if (!value.trim() && field !== "supplier") {
         const row = { ...next[mergeKey] };
         delete row[field];
         if (Object.keys(row).length) next[mergeKey] = row;
@@ -385,6 +388,7 @@ export default function InkItemMaster() {
         // The LABEL, not the stored value: a column sorts by what its cell shows, or the reader
         // is handed an order they cannot see the reason for.
         case "source": return sourceLabel(r.source);
+        case "supplier": return r.supplier;
         case "weeks": return (savedLines[r.mergeKey] ?? savedLines[r.legacyKey])?.weeks ?? null;
         default: return null;
       }
@@ -546,6 +550,17 @@ export default function InkItemMaster() {
     return [...seen].sort().map((g) => ({ value: g, label: g }));
   }, [survivors, f.groups]);
   const bookOpts = INK_COMPANIES.map((c) => ({ value: c.key, label: c.label }));
+  /** Every supplier name already typed anywhere, for the Supplier box's suggestions. */
+  const supplierNames = useMemo(() => {
+    const seen = new Set<string>();
+    for (const v of [...Object.values(lines), ...Object.values(groupFields)]) {
+      const n = (v.supplier ?? "").trim().toUpperCase();
+      if (n) seen.add(n);
+    }
+    for (const r of master) if (r.supplier) seen.add(r.supplier);
+    return [...seen].sort();
+  }, [lines, groupFields, master]);
+
   const categoryOpts = [
     { value: "(none)", label: "Not set" },
     ...INK_CATEGORIES.map((c) => ({ value: c, label: c })),
@@ -922,6 +937,11 @@ export default function InkItemMaster() {
         </div>
       )}
 
+      <datalist id="ink-mis-suppliers">
+        {supplierNames.map((n) => (
+          <option key={n} value={n} />
+        ))}
+      </datalist>
       <ScrollableTable>
         <Table>
           <TableHeader>
@@ -942,6 +962,9 @@ export default function InkItemMaster() {
               </ResizableHead>
               <ResizableHead id="weeks" cols={cols} className="w-[7rem] text-right">
                 {head("Plant weeks", "weeks")}
+              </ResizableHead>
+              <ResizableHead id="supplier" cols={cols} className="min-w-[12rem]">
+                {head("Supplier", "supplier")}
               </ResizableHead>
             </TableRow>
             <TableRow className="hover:bg-transparent">
@@ -974,12 +997,13 @@ export default function InkItemMaster() {
                 <MultiSelect values={f.sources} onChange={(v) => setCol("sources", v)} options={sourceOpts} placeholder="All" className="w-full" triggerClassName={slim} searchable />
               </TableHead>
               <TableHead className="py-2 font-normal" />
+              <TableHead className="py-2 font-normal" />
             </TableRow>
           </TableHeader>
           <TableBody>
             {isLoading && (
               <TableRow>
-                <TableCell colSpan={11} className="py-10 text-center text-muted-foreground">
+                <TableCell colSpan={12} className="py-10 text-center text-muted-foreground">
                   Loading every item from the four books…
                 </TableCell>
               </TableRow>
@@ -991,7 +1015,7 @@ export default function InkItemMaster() {
             */}
             {!isLoading && visible.length === 0 && (
               <TableRow>
-                <TableCell colSpan={11} className="py-10 text-center text-muted-foreground">
+                <TableCell colSpan={12} className="py-10 text-center text-muted-foreground">
                   {master.length === 0 ? (
                     "No items in the four books yet."
                   ) : (
@@ -1128,6 +1152,23 @@ export default function InkItemMaster() {
                     placeholder={r.source === "plant" ? "1" : "–"}
                     value={lines[r.mergeKey]?.weeks ?? ""}
                     onChange={(e) => setWeeks(r.mergeKey, e.target.value)}
+                  />
+                </TableCell>
+                <TableCell>
+                  {/* Typed by the planner, set for the item's whole group like Category. The list
+                      offers names already used, so one supplier is not spelled three ways — the
+                      dashboard filters on this exact text. */}
+                  <Input
+                    className="h-8 w-full min-w-0"
+                    list="ink-mis-suppliers"
+                    placeholder="—"
+                    title="Sets the supplier for this item's whole group"
+                    value={
+                      lines[r.mergeKey]?.supplier ??
+                      groupFields[(r.effectiveGroup || "").trim().toUpperCase()]?.supplier ??
+                      r.supplier
+                    }
+                    onChange={(e) => setGroupField(r, "supplier", e.target.value)}
                   />
                 </TableCell>
               </TableRow>
