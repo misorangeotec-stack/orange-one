@@ -25,7 +25,7 @@ import * as XLSX from "xlsx-js-style";
 import { saveAs } from "file-saver";
 import {
   ArrowDown, ArrowLeft, ArrowUp, ArrowUpDown, BarChart3, ChevronRight, Download, FileText, IndianRupee,
-  Layers, RotateCcw, Search, Table2, TrendingUp, UserCheck, UserX, Users,
+  Layers, NotebookText, RotateCcw, Search, Table2, TrendingUp, UserCheck, UserX, Users,
 } from "lucide-react";
 import { cn } from "@hub/lib/utils";
 import { Button } from "@hub/components/ui/button";
@@ -41,6 +41,7 @@ import { fmtSales, salesFyOptions } from "@hub/lib/salesReport";
 import { currentFy, ymd } from "@hub/lib/salesRegister";
 import { loadBushraSalesRegister, loadItemLookup, type BushraRegisterRow } from "@hub/lib/bushraSalesRegister";
 import { exportSalesRegisterXlsx, type ExtraColumn } from "@hub/lib/exportSalesRegister";
+import { registerHref } from "@hub/lib/bushraRegisterLink";
 import { SALES_DASHBOARDS, isPureSale } from "@hub/lib/bushraSalesDashboards";
 import {
   DIMS, MAIN_PRODUCTS, MONTHS, NOT_SET, OTHER_PRODUCT, fmtInt, fyOfDate, growth, makeQtyFmt, monthName, productOf, yearBefore,
@@ -859,8 +860,8 @@ function LinesTable({ lines, loading, from, to, sel, setFilter, dashOptions }: {
   ];
 
   return (
-    <SalesPanel title="Sales register by salesperson" icon={Table2} loading={loading}
-                subtitle={`${fmtInt(shown.length)} lines · revenue ${fmtSales(total)}`}
+    <SalesPanel title="Sales lines by salesperson — preview" icon={Table2} loading={loading}
+                subtitle={`${fmtInt(shown.length)} lines · revenue ${fmtSales(total)} · corrections and export in the Sales Register`}
                 actions={
                   <div className="flex items-center gap-2">
                     {tableFilterCount > 0 && (
@@ -874,11 +875,16 @@ function LinesTable({ lines, loading, from, to, sel, setFilter, dashOptions }: {
                              className="h-8 w-64 rounded-input pl-7 text-[12px]" />
                     </div>
                     <ColumnPicker columns={LINE_OPTIONS} visible={visible} onChange={pickCols} triggerClassName="h-8 text-[12px]" />
-                    <Button onClick={() => sorted.length && exportSalesRegisterXlsx(sorted.map((t) => t.r), { from, to, extra, filePrefix: "Bushra_Salesperson_Sales" })}
-                            disabled={!sorted.length}
-                            className="h-8 gap-1.5 rounded-button bg-primary px-3 text-[12px] text-primary-foreground hover:bg-primary/90">
-                      <Download className="h-3.5 w-3.5" /> Export
-                    </Button>
+                    {/* The Sales view of the register, with this dashboard's filters (Product → the register's Product). */}
+                    <Link to={registerHref(BASE, {
+                            view: "bushra-sales-dashboard", from, to,
+                            dims: { salesperson: sel.salesperson, company: sel.company, location: sel.location,
+                                    salesType: sel.product, party: sel.party, month: sel.month },
+                          })}
+                          title="The full Sales Register on these lines — every correction and export is there"
+                          className="inline-flex h-8 items-center gap-1.5 rounded-button bg-primary px-3 text-[12px] font-medium text-primary-foreground hover:bg-primary/90">
+                      <NotebookText className="h-3.5 w-3.5" /> Open in Sales Register
+                    </Link>
                   </div>
                 }>
       <ScrollableTable className="rounded-md border border-border" maxHeight="max-h-[60vh]" resizeKey="bushra-salesperson-lines">

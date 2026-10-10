@@ -252,12 +252,6 @@ function ReportRoutes() {
               {/* Bushra-Report → Purchase Register. Purchases, returns and purchase debit notes with
                   Purchase-Type, Group, Category and Colour (lib/bushraPurchaseRegister.ts). */}
               <Route path="bushra-purchase-register" element={<BushraPurchaseRegister />} />
-              {/* Bushra-Report → Orange vs Non-Orange Customers: the customer list on its own. */}
-              <Route path="bushra-orange-customers" element={<BushraOrangeCustomers key="report" mode="report" />} />
-              {/* Bushra-Report → Salesperson Sales: the sales register per salesperson. */}
-              <Route path="bushra-salesperson-sales" element={<BushraSalespersonSales key="report" mode="report" />} />
-              {/* Bushra-Report → Active / In-active Ink Customers: the list. */}
-              <Route path="bushra-ink-active-customers" element={<BushraInkActiveCustomers key="report" mode="report" />} />
             </Route>
           </Route>
 

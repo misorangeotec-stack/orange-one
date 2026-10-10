@@ -923,52 +923,14 @@ export const REPORTS: ReportEntry[] = [
     // Same read as the Tally Sales Register — rpt_sales_register with .in("party", …).
     scoping: "party-server",
     title: "Sales Register",
-    purpose: "Every sales voucher line, with sales-type, ink type, group and category from Central Masters, and colour.",
+    purpose: "The one sales report: every sales line, viewed whole or as any Sales dashboard's lines (Ink, Machines, Heads, Spare Parts, Papers, FOC, SOA…), with salesperson, customer group, Orange / Non-Orange, and the Central Masters classification.",
     category: "bushra-report",
     path: "reports/bushra-sales-register",
     icon: NotebookText,
     source: "tally",
     status: "live",
-    keywords: ["sales register", "sales", "colour", "color", "item group", "item category", "item type", "bushra"],
-  },
-  {
-    // The Orange vs Non-Orange customer list on its own (pages/BushraOrangeCustomers.tsx, mode "report").
-    id: "bushra-orange-customers",
-    scoping: "party-server",
-    title: "Orange vs Non-Orange Customers",
-    purpose: "Every customer group of the last two FYs: Orange (bought our machine) or Non-Orange (only our ink), with machine, ink and other sales and each ledger.",
-    category: "bushra-report",
-    path: "reports/bushra-orange-customers",
-    icon: Users,
-    source: "tally",
-    status: "live",
-    keywords: ["orange", "non-orange", "machine customers", "ink customers", "customer group", "bushra"],
-  },
-  {
-    // The Salesperson Sales report (pages/BushraSalespersonSales.tsx, mode "report").
-    id: "bushra-salesperson-sales",
-    scoping: "party-server",
-    title: "Salesperson Sales Report",
-    purpose: "The sales register per salesperson: net sales, ink, machines and growth on last year, each salesperson's customers and every line.",
-    category: "bushra-report",
-    path: "reports/bushra-salesperson-sales",
-    icon: UserCheck,
-    source: "tally",
-    status: "live",
-    keywords: ["salesperson", "sales person", "rep", "sales register", "sales by salesperson", "bushra"],
-  },
-  {
-    // Active / In-active Ink Customers, the list (pages/BushraInkActiveCustomers.tsx, mode "report").
-    id: "bushra-ink-active-customers",
-    scoping: "party-server",
-    title: "Active / In-active Ink Customers",
-    purpose: "Every ink customer with its last ink date, months inactive, ageing band and salesperson, and its category × colour × month ink quantities.",
-    category: "bushra-report",
-    path: "reports/bushra-ink-active-customers",
-    icon: Activity,
-    source: "tally",
-    status: "live",
-    keywords: ["active", "inactive", "in-active", "dormant", "lost customers", "ink customers", "last sale", "bushra"],
+    keywords: ["sales register", "sales", "colour", "color", "item group", "item category", "item type", "bushra",
+               "salesperson", "customer group", "orange", "non-orange", "ink", "machine", "heads", "spare parts", "foc", "soa", "paper"],
   },
   {
     id: "bushra-purchase-register",
@@ -1031,6 +993,9 @@ export const REPORTS: ReportEntry[] = [
     status: "live",
     keywords: ["packing material", "caps", "cans", "stickers", "packing", "cost per kg", "production", "bushra"],
   },
+  // ⚠ ONE SALES REPORT (10-10-2026): the Sales Register above is the only Bushra sales report. The
+  //   Orange vs Non-Orange, Salesperson and Active / In-active Ink screens are dashboards below, and
+  //   open the register on their own lines; do not add report-mode twins of them again.
   // Bushra-Dashboard → Sales: one entry per dashboard, generated from lib/bushraSalesDashboards.ts so
   // each id and path matches its screen. All built on the Bushra Sales Register (party-server scope).
   ...SALES_DASHBOARDS.map((p): ReportEntry => ({

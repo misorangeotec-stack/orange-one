@@ -29,7 +29,7 @@ import {
   Bar, BarChart, CartesianGrid, Cell, LabelList, ReferenceLine, ResponsiveContainer, Tooltip, XAxis, YAxis,
 } from "recharts";
 import {
-  ArrowDown, ArrowLeft, ArrowUp, ArrowUpDown, Boxes, ChevronRight, Download, FileText, Gift, IndianRupee, Layers,
+  ArrowDown, ArrowLeft, NotebookText, ArrowUp, ArrowUpDown, Boxes, ChevronRight, Download, FileText, Gift, IndianRupee, Layers,
   Mail, Percent, RotateCcw, Search, ShoppingCart, Table2,
   TrendingDown, TrendingUp, Users,
 } from "lucide-react";
@@ -42,6 +42,7 @@ import { useColumnWidths } from "@/shared/lib/useColumnWidths";
 import { usePagination } from "@/shared/lib/usePagination";
 import Pagination from "@/shared/components/ui/Pagination";
 import { exportSalesRegisterXlsx, type ExtraColumn } from "@hub/lib/exportSalesRegister";
+import { registerHref } from "@hub/lib/bushraRegisterLink";
 import SalesPanel from "@hub/components/masterreports/SalesPanel";
 import { useCardSizing } from "@hub/components/BushraCardSizing";
 import { PanelFill } from "@hub/components/ResizeKit";
@@ -1956,48 +1957,11 @@ function SalesReportTable({ storeId, rows, base, from, to, loading, fmtQ, sel, s
   const [q, setQ] = useState("");
   const [tsel, setTsel] = useState<Record<TableOnlyKey, string[]>>(NO_TABLE_FILTERS);
 
-  /*
-   * ADMIN EDIT, the same editor as Reports → Sales Register: click a line's Sales-Type, Category,
-   * Group, Ink Type or Colour to correct its item in the Bushra Central Master, for every company's
-   * copy. The lookup is the dashboard's own cached one (same key), not a second load.
+  /**
+   * A READ-ONLY PREVIEW (10-10-2026). The Sales Register is the one report: every correction and
+   * every export happens there, and "Open in Sales Register" opens it on exactly these lines.
    */
-  const { isAdmin, user } = useSession();
-  const qc = useQueryClient();
-  const { data: lookup } = useQuery({
-    queryKey: ["bushraSalesRegister", "itemLookup", "v4"],
-    queryFn: loadItemLookup,
-    staleTime: 30 * 60 * 1000,
-  });
-  const [editing, setEditing] = useState<Row | null>(null);
-  const noEditReason = (r: Row) =>
-    (r.is_discount ? "A discount ledger has no stock item — it always reads Discount."
-      : !r.in_masters ? "Not found in Central Masters, so there is no item to correct."
-        : null);
-  const onSaved = () => {
-    setEditing(null);
-    qc.invalidateQueries({ queryKey: ["bushraSalesRegister"] });
-    qc.invalidateQueries({ queryKey: ["bushra-central-master", "overrides"] });
-  };
-  const suggestions = useMemo<EditSuggestions>(() => {
-    const uniq = (get: (r: Row) => string) =>
-      [...new Set(base.map(get).filter((v) => v && v !== DISCOUNT_TYPE))].sort(collator.compare);
-    return {
-      inkType: uniq((r) => r.ink_type),
-      groupName: uniq((r) => r.item_group),
-      category: uniq((r) => r.item_category),
-      color: uniq((r) => r.colour),
-    };
-  }, [base]);
-  /** One classification cell — for an admin, a click opens the item's editor. */
-  const editCell = (r: Row, content: React.ReactNode) => {
-    const blocked = noEditReason(r);
-    const can = isAdmin && !blocked && !!lookup;
-    return (
-      <td className={cn("whitespace-nowrap px-3 py-1.5", can && "cursor-pointer hover:bg-primary/10 hover:underline decoration-dotted")}
-          title={isAdmin ? (blocked ?? "Click to edit this item") : undefined}
-          onClick={can ? () => setEditing(r) : undefined}>{content}</td>
-    );
-  };
+  const editCell = (_r: Row, content: React.ReactNode) => <td className="whitespace-nowrap px-3 py-1.5">{content}</td>;
   const [sort, setSort] = useState<{ col: number; dir: 1 | -1 } | null>(null);
   const matchesSearch = useMemo(() => {
     const s = q.trim().toLowerCase();
@@ -2051,8 +2015,8 @@ function SalesReportTable({ storeId, rows, base, from, to, loading, fmtQ, sel, s
   const tableFilterCount = TABLE_ONLY_KEYS.reduce((n, k) => n + tsel[k].length, 0);
 
   return (
-    <SalesPanel title="Full sales report" icon={Table2} loading={loading}
-                subtitle={`${fmtInt(shown.length)} lines · quantity ${fmtQ(totals.qty)} · revenue ${fmtSales(totals.value)}`}
+    <SalesPanel title="Sales lines — preview" icon={Table2} loading={loading}
+                subtitle={`${fmtInt(shown.length)} lines · quantity ${fmtQ(totals.qty)} · revenue ${fmtSales(totals.value)} · corrections and export in the Sales Register`}
                 actions={
                   <div className="flex items-center gap-2">
                     <ResetWidths fit={fit} cols={COL_IDS} className="inline-flex items-center gap-1 text-[11px] text-primary hover:underline" />
@@ -2068,11 +2032,11 @@ function SalesReportTable({ storeId, rows, base, from, to, loading, fmtQ, sel, s
                              className="h-8 w-56 rounded-input pl-7 text-[12px]" />
                     </div>
                     <ColumnPicker columns={COLUMN_OPTIONS} visible={visible} onChange={pickCols} triggerClassName="h-8 text-[12px]" />
-                    <Button onClick={() => sorted.length && exportSalesRegisterXlsx(sorted, { from, to, extra: REPORT_EXTRA, filePrefix: "Bushra_Sales_Report" })}
-                            disabled={!shown.length}
-                            className="h-8 gap-1.5 rounded-button bg-primary px-3 text-[12px] text-primary-foreground hover:bg-primary/90">
-                      <Download className="h-3.5 w-3.5" /> Export
-                    </Button>
+                    <Link to={registerHref(BASE, { view: storeId, from, to, dims: sel })}
+                          title="The full Sales Register on this dashboard's lines — every correction and export is there"
+                          className="inline-flex h-8 items-center gap-1.5 rounded-button bg-primary px-3 text-[12px] font-medium text-primary-foreground hover:bg-primary/90">
+                      <NotebookText className="h-3.5 w-3.5" /> Open in Sales Register
+                    </Link>
                   </div>
                 }>
       <ScrollableTable className="rounded-md border border-border" maxHeight="max-h-[60vh]" resizeKey={`bushra-sales-dash-report.${storeId}`}>
@@ -2148,16 +2112,6 @@ function SalesReportTable({ storeId, rows, base, from, to, loading, fmtQ, sel, s
         </table>
       </ScrollableTable>
       <Pagination state={page} rowsLabel="lines" />
-      {isAdmin && (
-        <p className="mt-2 text-[11px] text-muted-foreground">
-          Admin: click a line's Product, Category, Group, Ink Type or Colour to correct that item in the
-          Bushra Central Master (every company's copy).
-        </p>
-      )}
-      {editing && lookup && (
-        <BushraItemEditDialog row={editing} copies={copiesOf(lookup, editing.particulars)} suggestions={suggestions}
-                              userId={user.id} onClose={() => setEditing(null)} onSaved={onSaved} />
-      )}
     </SalesPanel>
   );
 }

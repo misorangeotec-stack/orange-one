@@ -16,7 +16,7 @@ import {
 import * as XLSX from "xlsx-js-style";
 import { saveAs } from "file-saver";
 import {
-  Activity, ArrowDown, ArrowLeft, ArrowUp, ArrowUpDown, ChevronRight, Download, Droplet, Hourglass, RotateCcw,
+  Activity, ArrowDown, ArrowLeft, ArrowUp, ArrowUpDown, ChevronRight, Download, Droplet, Hourglass, NotebookText, RotateCcw,
   Search, Table2, UserCheck, UserX, Users,
 } from "lucide-react";
 import { cn } from "@hub/lib/utils";
@@ -38,6 +38,7 @@ import { loadGroupLink } from "@hub/lib/bushraOrangeCustomers";
 import { NOT_ASSIGNED, loadSalespersonLink } from "@hub/lib/bushraSalespersonSales";
 import { BANDS, bandOf, inkCustomers, monthsBetween, type Band, type InkCustomer, type PivotRow } from "@hub/lib/bushraInkActivity";
 import { useScopedParties } from "@hub/lib/scopeParties";
+import { registerHref } from "@hub/lib/bushraRegisterLink";
 import { useReportAccess } from "@hub/lib/reportAccess";
 import { appBasePath } from "@/apps/appInfo";
 
@@ -360,7 +361,17 @@ export default function BushraInkActiveCustomers({ mode }: { mode: "dashboard" |
         </div>
       )}
 
-      <CustomerList customers={shown} loading={loading} from={from} today={today} threshold={threshold} />
+      <CustomerList customers={shown} loading={loading} from={from} today={today} threshold={threshold}
+                    registerTo={registerHref(BASE, {
+                      view: "bushra-sales-ink", from, to: today,
+                      // The slicer and the bands are per-customer readings, not line filters — when they
+                      // narrow the list, the register opens on exactly the customers it shows.
+                      dims: {
+                        salesperson: sel.salesperson, company: sel.company, location: sel.location, category: sel.category,
+                        customerGroup: sel.group.length ? sel.group
+                          : (monthsSel.length || sel.status.length || sel.band.length) ? shown.map((c) => c.group) : [],
+                      },
+                    })} />
     </div>
   );
 }
@@ -431,8 +442,10 @@ function monthsOf(from: string, to: string): string[] {
   return out;
 }
 
-function CustomerList({ customers, loading, from, today, threshold }: {
+function CustomerList({ customers, loading, from, today, threshold, registerTo }: {
   customers: Read[]; loading: boolean; from: string; today: string; threshold: number;
+  /** The Sales Register's Ink view on these customers (lib/bushraRegisterLink.ts). */
+  registerTo: string;
 }) {
   const [q, setQ] = useState("");
   const [visible, setVisible] = useState<string[]>(readCols);
@@ -507,6 +520,11 @@ function CustomerList({ customers, loading, from, today, threshold }: {
                              className="h-8 w-56 rounded-input pl-7 text-[12px]" />
                     </div>
                     <ColumnPicker columns={COLUMN_OPTIONS} visible={visible} onChange={pickCols} triggerClassName="h-8 text-[12px]" />
+                    <Link to={registerTo}
+                          title="The full Sales Register on these customers' lines — every correction and export of lines is there"
+                          className="inline-flex h-8 items-center gap-1.5 rounded-button border border-primary px-3 text-[12px] font-medium text-primary hover:bg-primary/5">
+                      <NotebookText className="h-3.5 w-3.5" /> Open in Sales Register
+                    </Link>
                     <Button onClick={exportXlsx} disabled={!sorted.length}
                             className="h-8 gap-1.5 rounded-button bg-primary px-3 text-[12px] text-primary-foreground hover:bg-primary/90">
                       <Download className="h-3.5 w-3.5" /> Export

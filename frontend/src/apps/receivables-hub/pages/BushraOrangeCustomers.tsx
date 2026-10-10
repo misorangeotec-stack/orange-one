@@ -26,7 +26,7 @@ import {
 import * as XLSX from "xlsx-js-style";
 import { saveAs } from "file-saver";
 import {
-  ArrowDown, ArrowLeft, ArrowUp, ArrowUpDown, ChevronRight, CircleDot, Download, Droplet, Hand,
+  ArrowDown, ArrowLeft, ArrowUp, ArrowUpDown, ChevronRight, CircleDot, Download, Droplet, Hand, NotebookText,
   IndianRupee, Loader2, RotateCcw, Search, Table2, Users,
 } from "lucide-react";
 import { useSession } from "@/core/platform/session";
@@ -49,6 +49,7 @@ import {
   BUCKETS, UNCLASSIFIED, classify, customerFigures, loadGroupLink, type Bucket, type CustomerFigures, type Placement,
 } from "@hub/lib/bushraOrangeCustomers";
 import { loadBucketOverrides, saveBucketOverrides } from "@hub/lib/bushraOrangeOverrides";
+import { registerHref } from "@hub/lib/bushraRegisterLink";
 import { useScopedParties } from "@hub/lib/scopeParties";
 import { useReportAccess } from "@hub/lib/reportAccess";
 import { appBasePath } from "@/apps/appInfo";
@@ -438,6 +439,10 @@ export default function BushraOrangeCustomers({ mode }: { mode: "dashboard" | "r
 
       {/* ── The customer list ─────────────────────────────────────────────── */}
       <CustomerTable customers={customers} loading={loading} windowLabel={windowLabel} from={from} to={to}
+                     registerTo={registerHref(BASE, {
+                       view: "bushra-sales-dashboard", from, to,
+                       dims: { orange: sel.bucket, company: sel.company, location: sel.location, customerGroup: sel.group, month: sel.month },
+                     })}
                      canEdit={isAdmin} ready={!!overrides?.ready} onSetBucket={saveBuckets} />
     </div>
   );
@@ -508,8 +513,10 @@ const readCols = (): string[] => {
   } catch { return COLS.map((c) => c.key); }
 };
 
-function CustomerTable({ customers, loading, windowLabel, from, to, canEdit, ready, onSetBucket }: {
+function CustomerTable({ customers, loading, windowLabel, from, to, canEdit, ready, onSetBucket, registerTo }: {
   customers: CustomerFigures[]; loading: boolean; windowLabel: string; from: string; to: string;
+  /** The Sales Register on these customers' lines (lib/bushraRegisterLink.ts). */
+  registerTo: string;
   /** An admin — sees the controls. */
   canEdit: boolean;
   /** The overrides table is in the database, so a choice can actually be saved. */
@@ -621,6 +628,11 @@ function CustomerTable({ customers, loading, windowLabel, from, to, canEdit, rea
                              className="h-8 w-56 rounded-input pl-7 text-[12px]" />
                     </div>
                     <ColumnPicker columns={COLUMN_OPTIONS} visible={visible} onChange={pickCols} triggerClassName="h-8 text-[12px]" />
+                    <Link to={registerTo}
+                          title="The full Sales Register on these customers' lines — every correction and export of lines is there"
+                          className="inline-flex h-8 items-center gap-1.5 rounded-button border border-primary px-3 text-[12px] font-medium text-primary hover:bg-primary/5">
+                      <NotebookText className="h-3.5 w-3.5" /> Open in Sales Register
+                    </Link>
                     <Button onClick={exportXlsx} disabled={!sorted.length}
                             className="h-8 gap-1.5 rounded-button bg-primary px-3 text-[12px] text-primary-foreground hover:bg-primary/90">
                       <Download className="h-3.5 w-3.5" /> Export
