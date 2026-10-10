@@ -40,6 +40,8 @@ export default function CustomerLoginsSection() {
   const qc = useQueryClient();
   const [editing, setEditing] = useState<CustomerOrg | null>(null);
   const [adding, setAdding] = useState(false);
+  /** The customer whose On/Off is being switched from the list, awaiting confirmation. */
+  const [toggling, setToggling] = useState<CustomerOrg | null>(null);
 
   const { data: orgs = [], isLoading } = useQuery({
     queryKey: CUSTOMER_ORGS_QK,
@@ -166,9 +168,24 @@ export default function CustomerLoginsSection() {
         emptyMessage="Add one and they get a login to a screen that shows nothing but ordering."
         initialSort={{ key: "name", dir: "asc" }}
         actions={(r) => (
-          <Button size="sm" variant="ghost" onClick={() => setEditing(r)}>Edit</Button>
+          <div className="flex gap-1.5">
+            <Button size="sm" variant="ghost" onClick={() => setEditing(r)}>Edit</Button>
+            <Button size="sm" variant="ghost" onClick={() => setToggling(r)}>
+              <span className={r.active ? "text-ryg-red" : "text-ryg-green"}>
+                {r.active ? "Deactivate" : "Activate"}
+              </span>
+            </Button>
+          </div>
         )}
       />
+
+      {toggling && (
+        <ToggleActiveModal
+          org={toggling}
+          onClose={() => setToggling(null)}
+          onSaved={async () => { await reload(); setToggling(null); }}
+        />
+      )}
 
       {editing && (
         <OrgModal
@@ -421,6 +438,66 @@ export default function CustomerLoginsSection() {
           They may place orders now
         </label>
       </div>
+    );
+  }
+
+  /**
+   * ACTIVATE / DEACTIVATE straight from the list.
+   *
+   * ⚠ IT GOES THROUGH THE SAME SAVE AS THE EDIT DIALOG, with every other field
+   *   sent back exactly as loaded. That keeps the server's readiness check in
+   *   charge: switching ON a customer with no items (or nobody told) is refused
+   *   with the reason, as it is from Edit. Switching OFF makes
+   *   `fms_dispatch_customer_org_of` stop finding them, so their login can no
+   *   longer place or see orders; nothing they ordered is touched.
+   */
+  function ToggleActiveModal({ org, onClose, onSaved }: { org: CustomerOrg; onClose: () => void; onSaved: () => Promise<void> }) {
+    const next = !org.active;
+    const [busy, setBusy] = useState(false);
+    const [err, setErr] = useState<string | null>(null);
+
+    const save = async () => {
+      setBusy(true); setErr(null);
+      try {
+        await saveCustomerOrg({
+          id: org.id, displayName: org.displayName, partyIds: org.partyIds,
+          itemIds: org.portalItemIds,
+          customerLocation: org.customerLocation,
+          notifyUserIds: org.notifyUserIds,
+          defaultLocationId: org.defaultLocationId,
+          defaultDispatchType: org.defaultDispatchType,
+          active: next,
+        });
+        await onSaved();
+      } catch (e) {
+        setErr((e as Error).message);
+      } finally {
+        setBusy(false);
+      }
+    };
+
+    return (
+      <Modal
+        open
+        onClose={onClose}
+        title={next ? `Activate ${org.displayName}?` : `Deactivate ${org.displayName}?`}
+        size="md"
+        footer={
+          <div className="flex items-center gap-3">
+            <Button size="sm" onClick={save} disabled={busy}>
+              {busy ? "Saving…" : next ? "Activate" : "Deactivate"}
+            </Button>
+            <Button size="sm" variant="ghost" onClick={onClose}>Cancel</Button>
+            {err && <span className="text-[12.5px] text-ryg-red">{err}</span>}
+          </div>
+        }
+      >
+        <p className="text-[13px] text-grey leading-relaxed">
+          {next
+            ? "Their login can place orders again, from the items chosen for them."
+            : "Their login stops working on the Order Desk at once — they can no longer place or see orders. Their past orders are kept, and you can activate them again any time."}
+        </p>
+      </Modal>
     );
   }
 
