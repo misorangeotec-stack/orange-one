@@ -178,7 +178,9 @@ export default function ComplaintFields({ f }: { f: ComplaintFormApi }) {
                   : `${f.lotMatches.length} shipments carried this LOT`}
               </p>
               <p className="text-[11.5px] text-grey-2">
-                Pick the one this complaint is about — it fills the party, item and invoice.
+                {t !== "finished_good" && f.lotMatches[0]?.direction === "sales"
+                  ? "Not found on any purchase — these are sales of this LOT. Picking one fills the item and company; type the vendor and purchase invoice yourself."
+                  : "Pick the one this complaint is about — it fills the party, item and invoice."}
               </p>
             </div>
             <ul className="divide-y divide-line max-h-64 overflow-y-auto">

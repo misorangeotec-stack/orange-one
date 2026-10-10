@@ -196,8 +196,27 @@ export async function findLotMatches(
   // A finished-good complaint asks who we SHIPPED it to; a raw-material one asks
   // who we BOUGHT it from. Narrowing here rather than in the UI keeps a customer
   // out of a vendor picker.
-  const direction = complaintType === "finished_good" ? "sales" : "purchase";
+  //
+  // An Other Supplier complaint asks purchase first and, only if the lot was
+  // never bought, falls back to sales (user, 10-10-2026: a lot Finished Good
+  // finds must be findable here too). applyLotMatch keeps a sales match's
+  // customer and invoice out of the vendor fields.
+  const directions: ("sales" | "purchase")[] =
+    complaintType === "finished_good" ? ["sales"]
+    : complaintType === "other_supplier" ? ["purchase", "sales"]
+    : ["purchase"];
 
+  for (const direction of directions) {
+    const found = await findLotMatchesIn(direction, key);
+    if (found.length > 0) return found;
+  }
+  return [];
+}
+
+async function findLotMatchesIn(
+  direction: "sales" | "purchase",
+  key: string,
+): Promise<LotMatch[]> {
   const { getConnectwaveSupabase } = await import(
     "@/apps/receivables-hub/lib/connectwaveSupabase"
   );

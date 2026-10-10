@@ -327,7 +327,12 @@ export function useComplaintForm() {
    */
   const applyLotMatch = useCallback((match: LotMatch) => {
     const [qty, unit] = splitTallyQty(match.qty);
-    setForm((f) => ({
+    setForm((f) => {
+      // A SALES line on a vendor-side complaint names our CUSTOMER and our sales
+      // invoice — neither belongs in Vendor Name / Purchase Invoice. Only Other
+      // Supplier can get one (see findLotMatches); the lot facts still fill.
+      const partySide = f.complaintType === "finished_good" || match.direction === "purchase";
+      return {
       ...f,
       // The book the voucher is in. Set FIRST in the object for readability, but
       // note it also re-scopes the party picker — which is why the party is set
@@ -337,13 +342,14 @@ export function useComplaintForm() {
       itemName: f.itemName || match.itemName,
       category: f.category || (match.category ?? ""),
       inkType: f.inkType || (match.inkType ?? ""),
-      partyId: f.partyId || (match.partyId ?? ""),
-      partyName: f.partyName || match.partyName,
-      invoiceNo: f.invoiceNo || match.voucherNo,
-      invoiceDate: f.invoiceDate || match.voucherDate,
+      partyId: f.partyId || (partySide ? (match.partyId ?? "") : ""),
+      partyName: f.partyName || (partySide ? match.partyName : ""),
+      invoiceNo: f.invoiceNo || (partySide ? match.voucherNo : ""),
+      invoiceDate: f.invoiceDate || (partySide ? match.voucherDate : ""),
       qtyAffected: f.qtyAffected || qty,
       unitName: f.unitName || unit,
-    }));
+      };
+    });
     setLotSource("tally");
     setLotNote(`Filled from ${match.voucherNo} — every field is still editable.`);
     setLotMatches([]);
