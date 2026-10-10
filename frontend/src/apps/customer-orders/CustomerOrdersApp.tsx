@@ -55,10 +55,12 @@ function NotACustomer({ isStaff }: { isStaff: boolean }) {
           </>
         ) : (
           <>
-            <p className="text-[15px] font-semibold">Your account is not finished being set up.</p>
+            {/* Neutral on purpose: the same screen shows for a customer still being set up
+                AND for one an admin has deactivated in Setup → Customer Logins. */}
+            <p className="text-[15px] font-semibold">Ordering is not available on your account right now.</p>
             <p className="text-[14px] text-grey mt-2 leading-relaxed">
-              {callUs("Please call us")} and we will finish it. Nothing is wrong with your
-              sign-in — there is just no ordering set up against it yet.
+              {callUs("Please call us")} and we will sort it out. Nothing is wrong with your
+              sign-in — there is just no ordering open against it at the moment.
             </p>
           </>
         )}
