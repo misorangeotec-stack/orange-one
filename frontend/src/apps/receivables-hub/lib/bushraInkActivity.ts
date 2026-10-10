@@ -3,7 +3,8 @@
  *
  * Built on the business's own Excel (shared 10-10-2026): an "Inactive Months" slicer of 1–15, the
  * customer list with its Last Sales Date, and a pivot of ink quantity by customer → main category →
- * colour, month by month. This keeps that reading and adds what the sheet could not hold: the
+ * colour, month by month. Each pivot row also names the ITEM (the Tally item description), since
+ * one category and colour can be several items. This keeps that reading and adds what the sheet could not hold: the
  * salesperson, company, location, the ageing band and the ink each customer used to buy.
  *
  *   months inactive   whole months from the customer's LAST INK SALE to today — "25-05-2026" read on
@@ -51,6 +52,9 @@ export function bandOf(months: number, threshold: number): Band {
 
 export interface InkLedger { ledger: string; company: string; location: string; qty: number; value: number; last: string }
 
+/** One pivot row: a colour and the exact item, KG per month. */
+export interface PivotRow { colour: string; item: string; byMonth: Map<string, number> }
+
 export interface InkCustomer {
   group: string;
   grouped: boolean;
@@ -70,8 +74,8 @@ export interface InkCustomer {
   activeMonths: number;
   /** Main categories (Central Masters Category) bought, biggest first. */
   categories: string[];
-  /** Quantity by category → colour → YYYYMM: the Excel pivot. */
-  pivot: Map<string, Map<string, Map<string, number>>>;
+  /** The Excel pivot: category → one row per colour + item → KG by YYYYMM. */
+  pivot: Map<string, Map<string, PivotRow>>;
 }
 
 /**
@@ -122,10 +126,11 @@ export function inkCustomers(
       const cat = DIMS.category(r) === NOT_SET ? "(No category)" : DIMS.category(r);
       const colour = DIMS.colour(r) === NOT_SET ? "(No colour)" : DIMS.colour(r);
       a.cats.set(cat, (a.cats.get(cat) ?? 0) + r.quantity);
-      const byColour = a.pivot.get(cat) ?? a.pivot.set(cat, new Map()).get(cat)!;
-      const byMonth = byColour.get(colour) ?? byColour.set(colour, new Map()).get(colour)!;
+      const rowsOf = a.pivot.get(cat) ?? a.pivot.set(cat, new Map()).get(cat)!;
+      const rk = `${colour}|${r.particulars}`;
+      const pr = rowsOf.get(rk) ?? rowsOf.set(rk, { colour, item: r.particulars, byMonth: new Map() }).get(rk)!;
       const mk = r.vch_date.slice(0, 6);
-      byMonth.set(mk, (byMonth.get(mk) ?? 0) + r.quantity);
+      pr.byMonth.set(mk, (pr.byMonth.get(mk) ?? 0) + r.quantity);
     }
   }
   const out: InkCustomer[] = [];

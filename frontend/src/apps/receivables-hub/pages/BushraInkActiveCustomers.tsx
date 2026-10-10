@@ -36,7 +36,7 @@ import { SALES_DASHBOARDS } from "@hub/lib/bushraSalesDashboards";
 import { fmtInt, makeQtyFmt, monthName } from "@hub/lib/bushraSalesFigures";
 import { loadGroupLink } from "@hub/lib/bushraOrangeCustomers";
 import { NOT_ASSIGNED, loadSalespersonLink } from "@hub/lib/bushraSalespersonSales";
-import { BANDS, bandOf, inkCustomers, monthsBetween, type Band, type InkCustomer } from "@hub/lib/bushraInkActivity";
+import { BANDS, bandOf, inkCustomers, monthsBetween, type Band, type InkCustomer, type PivotRow } from "@hub/lib/bushraInkActivity";
 import { useScopedParties } from "@hub/lib/scopeParties";
 import { useReportAccess } from "@hub/lib/reportAccess";
 import { appBasePath } from "@/apps/appInfo";
@@ -448,17 +448,18 @@ function CustomerList({ customers, loading, from, today, threshold }: {
     const ws = XLSX.utils.aoa_to_sheet([head, ...sorted.map((c) => cols.map((col) => col.xl(c)))]);
     ws["!cols"] = cols.map((c) => ({ wch: c.key === "group" || c.key === "categories" ? 38 : c.key === "company" || c.key === "sp" ? 24 : 13 }));
     head.forEach((_, i) => { const a = XLSX.utils.encode_cell({ r: 0, c: i }); if (ws[a]) ws[a].s = { font: { bold: true } }; });
-    // The Excel's own pivot, flat: customer → main category → colour, quantity (KG) per month.
-    const pHead = ["Customer", "Salesperson", "Status", "Main Category", "Colour", ...months.map(monthName), "Total"];
+    // The Excel's own pivot, flat: customer → main category → colour → item, quantity (KG) per month.
+    const pHead = ["Customer", "Salesperson", "Status", "Main Category", "Colour", "Item Description", ...months.map(monthName), "Total"];
     const pRows: (string | number)[][] = [];
     for (const c of sorted) {
-      for (const [cat, byColour] of c.pivot) for (const [colour, byMonth] of byColour) {
-        const vals = months.map((m) => Math.round((byMonth.get(m) ?? 0) * 100) / 100);
-        pRows.push([c.group, c.sp, c.status === "Active" ? "Active" : c.band, cat, colour, ...vals.map((v) => v || ""), Math.round(vals.reduce((s, v) => s + v, 0) * 100) / 100]);
+      for (const [cat, rows] of c.pivot) for (const pr of pivotRows(rows)) {
+        const vals = months.map((m) => Math.round((pr.byMonth.get(m) ?? 0) * 100) / 100);
+        pRows.push([c.group, c.sp, c.status === "Active" ? "Active" : c.band, cat, pr.colour, pr.item,
+                    ...vals.map((v) => v || ""), Math.round(vals.reduce((s, v) => s + v, 0) * 100) / 100]);
       }
     }
     const wsP = XLSX.utils.aoa_to_sheet([pHead, ...pRows]);
-    wsP["!cols"] = pHead.map((h, i) => ({ wch: i === 0 ? 36 : i <= 4 ? 22 : 9 }));
+    wsP["!cols"] = pHead.map((_, i) => ({ wch: i === 0 || i === 5 ? 38 : i <= 4 ? 22 : 9 }));
     const info = XLSX.utils.aoa_to_sheet([
       ["Active / In-active Ink Customers"], ["As on", dmy(today)], ["Data from", dmy(from)],
       ["In-active", `no ink bought for ${threshold} month(s) or more (whole months, as Excel DATEDIF "m")`],
@@ -467,7 +468,7 @@ function CustomerList({ customers, loading, from, today, threshold }: {
     ]);
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, "Customers");
-    XLSX.utils.book_append_sheet(wb, wsP, "Category x Colour x Month");
+    XLSX.utils.book_append_sheet(wb, wsP, "Category x Colour x Item");
     XLSX.utils.book_append_sheet(wb, info, "Report Info");
     const out = XLSX.write(wb, { bookType: "xlsx", type: "array" });
     saveAs(new Blob([out], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" }),
@@ -543,7 +544,11 @@ function CustomerList({ customers, loading, from, today, threshold }: {
   );
 }
 
-/** The Excel's pivot for one customer: main category → colour, KG per month, with each category's total. */
+/** A category's rows, colour by colour, each colour's items A→Z. */
+const pivotRows = (rows: Map<string, PivotRow>) =>
+  [...rows.values()].sort((a, b) => collator.compare(a.colour, b.colour) || collator.compare(a.item, b.item));
+
+/** The Excel's pivot for one customer: main category → colour → item, KG per month, with each category's total. */
 function Pivot({ c, months }: { c: Read; months: string[] }) {
   const cats = [...c.pivot].sort((a, b) => sumCat(b[1]) - sumCat(a[1]));
   return (
@@ -557,23 +562,25 @@ function Pivot({ c, months }: { c: Read; months: string[] }) {
             <tr className="text-[10px] uppercase tracking-wide text-muted-foreground">
               <th className="sticky left-0 z-[2] bg-muted px-2 py-1 text-left font-semibold">Main Category</th>
               <th className="px-2 py-1 text-left font-semibold">Colour</th>
+              <th className="px-2 py-1 text-left font-semibold">Item Description</th>
               {months.map((m) => <th key={m} className="px-2 py-1 text-right font-semibold">{monthName(m)}</th>)}
               <th className="px-2 py-1 text-right font-semibold">Total KG</th>
             </tr>
           </thead>
           <tbody>
-            {cats.map(([cat, byColour]) => {
-              const colours = [...byColour].sort((a, b) => collator.compare(a[0], b[0]));
+            {cats.map(([cat, rowMap]) => {
+              const rows = pivotRows(rowMap);
               return (
                 <Fragment key={cat}>
-                  {colours.map(([colour, byMonth], i) => {
-                    const total = months.reduce((s, m) => s + (byMonth.get(m) ?? 0), 0);
+                  {rows.map((pr, i) => {
+                    const total = months.reduce((s, m) => s + (pr.byMonth.get(m) ?? 0), 0);
                     return (
-                      <tr key={colour} className="border-t border-border/40">
+                      <tr key={`${pr.colour}|${pr.item}`} className="border-t border-border/40">
                         <td className="sticky left-0 bg-surface px-2 py-0.5 font-semibold whitespace-nowrap">{i === 0 ? cat : ""}</td>
-                        <td className="px-2 py-0.5 whitespace-nowrap">{colour}</td>
+                        <td className="px-2 py-0.5 whitespace-nowrap">{i === 0 || rows[i - 1].colour !== pr.colour ? pr.colour : ""}</td>
+                        <td className="px-2 py-0.5 whitespace-nowrap">{pr.item}</td>
                         {months.map((m) => {
-                          const v = byMonth.get(m) ?? 0;
+                          const v = pr.byMonth.get(m) ?? 0;
                           return <td key={m} className={cn("px-2 py-0.5 text-right tabular-nums", v < 0 && "text-destructive")}>{v ? nf1.format(v) : ""}</td>;
                         })}
                         <td className="px-2 py-0.5 text-right font-semibold tabular-nums">{nf1.format(total)}</td>
@@ -583,11 +590,12 @@ function Pivot({ c, months }: { c: Read; months: string[] }) {
                   <tr className="border-t border-border bg-[#fde8dc]/60 dark:bg-orange-950/30">
                     <td className="sticky left-0 bg-[#fde8dc] px-2 py-0.5 font-bold whitespace-nowrap dark:bg-orange-950" colSpan={1}>{cat} Total</td>
                     <td />
+                    <td />
                     {months.map((m) => {
-                      const v = colours.reduce((s, [, bm]) => s + (bm.get(m) ?? 0), 0);
+                      const v = rows.reduce((s, pr) => s + (pr.byMonth.get(m) ?? 0), 0);
                       return <td key={m} className="px-2 py-0.5 text-right font-semibold tabular-nums">{v ? nf1.format(v) : ""}</td>;
                     })}
-                    <td className="px-2 py-0.5 text-right font-bold tabular-nums">{nf1.format(sumCat(byColour))}</td>
+                    <td className="px-2 py-0.5 text-right font-bold tabular-nums">{nf1.format(sumCat(rowMap))}</td>
                   </tr>
                 </Fragment>
               );
@@ -598,5 +606,5 @@ function Pivot({ c, months }: { c: Read; months: string[] }) {
     </div>
   );
 }
-const sumCat = (byColour: Map<string, Map<string, number>>) =>
-  [...byColour.values()].reduce((s, bm) => s + [...bm.values()].reduce((a, v) => a + v, 0), 0);
+const sumCat = (rows: Map<string, PivotRow>) =>
+  [...rows.values()].reduce((s, pr) => s + [...pr.byMonth.values()].reduce((a, v) => a + v, 0), 0);
