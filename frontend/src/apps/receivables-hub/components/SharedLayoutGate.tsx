@@ -16,7 +16,7 @@ import { applySharedLayout, loadSharedLayout, saveSharedLayout } from "@hub/lib/
 export default function SharedLayoutGate({ children }: { children: ReactNode }) {
   const { data, isFetched } = useQuery({
     queryKey: ["hubSharedLayout", "bushra"],
-    queryFn: loadSharedLayout,
+    queryFn: () => loadSharedLayout(),
     staleTime: 5 * 60 * 1000,
     retry: 0,
   });
