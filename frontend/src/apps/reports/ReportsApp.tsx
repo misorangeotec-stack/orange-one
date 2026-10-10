@@ -87,6 +87,7 @@ import BushraSalesDashboard from "@hub/pages/BushraSalesDashboard";
 import BushraOrangeCustomers from "@hub/pages/BushraOrangeCustomers";
 import BushraSalespersonSales from "@hub/pages/BushraSalespersonSales";
 import BushraInkActiveCustomers from "@hub/pages/BushraInkActiveCustomers";
+import SharedLayoutGate from "@hub/components/SharedLayoutGate";
 import BushraPurchaseDashboard from "@hub/pages/BushraPurchaseDashboard";
 import { SALES_DASHBOARDS } from "@hub/lib/bushraSalesDashboards";
 import { PURCHASE_DASHBOARDS } from "@hub/lib/bushraPurchaseDashboards";
@@ -327,7 +328,10 @@ export default function ReportsApp() {
             <TooltipProvider>
               <Toaster />
               <Sonner />
-              <ReportRoutes />
+              {/* The admin's saved Bushra layout goes in before any page mounts (components/SharedLayoutGate.tsx). */}
+              <SharedLayoutGate>
+                <ReportRoutes />
+              </SharedLayoutGate>
             </TooltipProvider>
           </FYProvider>
         </ReceivablesScopeProvider>
