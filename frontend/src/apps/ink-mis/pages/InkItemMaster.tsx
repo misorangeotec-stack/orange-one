@@ -901,8 +901,26 @@ export default function InkItemMaster() {
         <ArrangeGroups
           master={master}
           order={order}
-          onApply={(next) => {
+          groupFields={groupFields}
+          onGroupField={(groupName, field, value) => {
+            const g = groupName.trim().toUpperCase();
+            setGroupFields((prev) => {
+              const row = { ...prev[g], [field]: value };
+              if (!value.trim()) delete row[field];
+              const next = { ...prev };
+              if (Object.keys(row).length) next[g] = row;
+              else delete next[g];
+              return next;
+            });
+          }}
+          onApply={(next, regroup) => {
             setOrder(next);
+            // A moved ink takes its new group on every book's row of that line.
+            for (const r of master) {
+              const to = regroup[r.mergeKey];
+              if (to === undefined) continue;
+              patch(r.key, "group", to === r.tallyGroup ? "" : to);
+            }
             setShowArrange(false);
           }}
           onClose={() => setShowArrange(false)}

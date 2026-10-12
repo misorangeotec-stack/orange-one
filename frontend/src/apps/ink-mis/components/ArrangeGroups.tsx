@@ -17,6 +17,10 @@
  * (or arrowed) into its own place and tickable on or off the dashboard. Arranging inks by hand
  * turns that group to "Custom" order; choosing Keep order or A–Z again drops the custom order.
  *
+ * EDIT IN PLACE (user, 12-10-2026): each ink has a Group box that moves it to another group (saved
+ * as that ink's group in the item master), and each group sets its Category and Import/Plant —
+ * the same group-level fields as the item master table, so both screens edit one value.
+ *
  * The result lands in the DRAFT: the table shows the new numbers and nothing is stored until
  * the planner presses Save changes. Numbers this screen cannot place (items outside the loaded
  * groups) are kept, after everything else, in their old order — never dropped.
@@ -24,7 +28,10 @@
 import { Fragment, useMemo, useRef, useState } from "react";
 import { ArrowDown, ArrowUp, ChevronDown, ChevronRight, GripVertical, X } from "lucide-react";
 import { Button } from "@hub/components/ui/button";
-import type { InkMasterRow, InkOrder } from "../lib/inkMis";
+import {
+  INK_CATEGORIES, INK_SOURCES, type InkGroupFields, type InkLineFields, type InkMasterRow,
+  type InkOrder,
+} from "../lib/inkMis";
 
 interface Line {
   key: string;
@@ -128,12 +135,18 @@ export function numberByGroups(groups: GroupEntry[], order: InkOrder): InkOrder 
 export default function ArrangeGroups({
   master,
   order,
+  groupFields,
+  onGroupField,
   onApply,
   onClose,
 }: {
   master: InkMasterRow[];
   order: InkOrder;
-  onApply: (next: InkOrder) => void;
+  /** Category and Import/Plant per group (upper-cased name), the item master's own draft. */
+  groupFields: InkGroupFields;
+  onGroupField: (groupName: string, field: keyof InkLineFields, value: string) => void;
+  /** New numbering, plus inks moved to another group: line key -> group name. */
+  onApply: (next: InkOrder, regroup: Record<string, string>) => void;
   onClose: () => void;
 }) {
   const initial = useMemo(() => buildGroups(master, order), [master, order]);
@@ -162,6 +175,51 @@ export default function ArrangeGroups({
     keys.splice(to, 0, k);
     patch(g.id, { custom: keys });
   };
+  /** Inks moved to another group here, line key -> new group name. */
+  const [regroup, setRegroup] = useState<Record<string, string>>({});
+  const groupNames = useMemo(() => {
+    const names = new Set<string>();
+    for (const r of master) if (r.effectiveGroup?.trim()) names.add(r.effectiveGroup.trim());
+    for (const g of groups) names.add(g.name);
+    return [...names].sort();
+  }, [master, groups]);
+
+  /** Move an ink to another group: it joins the end of that group, ticked. */
+  const moveToGroup = (from: GroupEntry, line: Line, toName: string) => {
+    const toId = groupId(toName);
+    if (toId === from.id) return;
+    setGroups((prev) => {
+      let next = prev.map((g) =>
+        g.id === from.id
+          ? {
+              ...g,
+              lines: g.lines.filter((l) => l.key !== line.key),
+              custom: g.custom ? g.custom.filter((k) => k !== line.key) : null,
+              skip: g.skip.filter((k) => k !== line.key),
+            }
+          : g,
+      );
+      if (!next.some((g) => g.id === toId)) {
+        next = [
+          ...next,
+          { id: toId, name: toName, lines: [], include: true, az: false, custom: null, skip: [] },
+        ];
+      }
+      return next.map((g) =>
+        g.id === toId
+          ? {
+              ...g,
+              include: true,
+              lines: [...g.lines, line],
+              // Joins at the END of the group, whatever its rule, so it is easy to find.
+              custom: [...candidatesOf(g).map((l) => l.key), line.key],
+            }
+          : g,
+      );
+    });
+    setRegroup((prev) => ({ ...prev, [line.key]: toName }));
+  };
+
   const toggleInk = (g: GroupEntry, key: string, on: boolean) =>
     patch(g.id, { skip: on ? g.skip.filter((k) => k !== key) : [...g.skip, key] });
 
@@ -208,6 +266,8 @@ export default function ArrangeGroups({
               <th className="w-10 px-1 py-1 font-normal">Show</th>
               <th className="px-2 py-1 font-normal">Group</th>
               <th className="w-24 px-2 py-1 text-right font-normal">Inks</th>
+              <th className="w-28 px-2 py-1 font-normal">Category</th>
+              <th className="w-28 px-2 py-1 font-normal">Import/Plant</th>
               <th className="w-28 px-2 py-1 font-normal">Inside group</th>
               <th className="w-24 px-2 py-1 text-right font-normal">Numbers</th>
             </tr>
@@ -267,6 +327,32 @@ export default function ArrangeGroups({
                     <td className="px-2 py-1 text-right tabular-nums">
                       {members.length}
                       {fresh > 0 && g.include && <span className="ml-1 text-emerald-700">+{fresh} new</span>}
+                    </td>
+                    <td className="px-2 py-1">
+                      <select
+                        className="h-6 w-full rounded border bg-background px-1 text-xs"
+                        value={groupFields[g.id]?.category ?? ""}
+                        onChange={(e) => onGroupField(g.name, "category", e.target.value)}
+                        title="Category for every ink in this group"
+                      >
+                        <option value="">—</option>
+                        {INK_CATEGORIES.map((c) => (
+                          <option key={c} value={c}>{c}</option>
+                        ))}
+                      </select>
+                    </td>
+                    <td className="px-2 py-1">
+                      <select
+                        className="h-6 w-full rounded border bg-background px-1 text-xs"
+                        value={groupFields[g.id]?.source ?? ""}
+                        onChange={(e) => onGroupField(g.name, "source", e.target.value)}
+                        title="Import / Domestic / Plant for every ink in this group"
+                      >
+                        <option value="">—</option>
+                        {INK_SOURCES.map((o) => (
+                          <option key={o.value} value={o.value}>{o.label}</option>
+                        ))}
+                      </select>
                     </td>
                     <td className="px-2 py-1">
                       <select
@@ -330,6 +416,18 @@ export default function ArrangeGroups({
                         <td className="px-2 py-0.5 text-right tabular-nums text-muted-foreground">
                           {l.num !== undefined ? `was ${l.num}` : ""}
                         </td>
+                        <td className="px-2 py-0.5" colSpan={2}>
+                          <select
+                            className="h-6 w-full rounded border bg-background px-1 text-xs"
+                            value={g.name}
+                            onChange={(e) => moveToGroup(g, l, e.target.value)}
+                            title="Move this ink to another group"
+                          >
+                            {groupNames.map((n) => (
+                              <option key={n} value={n}>{n}</option>
+                            ))}
+                          </select>
+                        </td>
                         <td />
                         <td className="px-2 py-0.5 text-right font-medium tabular-nums">
                           {newNum ?? (on ? "–" : "off")}
@@ -357,11 +455,12 @@ export default function ArrangeGroups({
         </p>
       )}
       <div className="mt-2 flex flex-wrap items-center gap-2">
-        <Button size="sm" onClick={() => onApply(numberByGroups(groups, order))}>
+        <Button size="sm" onClick={() => onApply(numberByGroups(groups, order), regroup)}>
           Number all inks
         </Button>
         <span className="text-xs text-muted-foreground">
-          Fills the numbers into the table. Check them, then press Save changes.
+          Fills the numbers (and any group moves) into the table. Category and Import/Plant
+          change as you pick them. Check, then press Save changes.
         </span>
       </div>
     </div>
