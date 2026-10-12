@@ -917,7 +917,14 @@ export default function InkItemMaster() {
               the first time.
             </strong>
             <span>Give each one a number to put it on the dashboard, or skip for now.</span>
-            <Button size="sm" variant="ghost" className="ml-auto" onClick={dismissNewLines}>
+            {/* Save right here, so the planner is not sent looking for the bar above. It shows
+                once a number has been typed — until then there is nothing to save. */}
+            {dirty && (
+              <Button size="sm" className="ml-auto" onClick={save}>
+                <Save className="mr-2 h-4 w-4" /> Save changes
+              </Button>
+            )}
+            <Button size="sm" variant="ghost" className={dirty ? "" : "ml-auto"} onClick={dismissNewLines}>
               Skip
             </Button>
           </div>
@@ -942,8 +949,8 @@ export default function InkItemMaster() {
             ))}
           </div>
           <p className="mt-2 text-xs">
-            Numbers here are part of the same draft as the table — press Save changes to keep
-            them. Skipping only stops the reminder; the inks stay in the list.
+            Type a number, then press Save changes (it appears at the top of this box). Skipping
+            only stops the reminder; the inks stay in the list.
           </p>
         </div>
       )}
