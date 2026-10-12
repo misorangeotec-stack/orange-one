@@ -311,6 +311,9 @@ export interface InkMasterRow {
    * back to this key when the new one holds nothing.
    */
   legacyKey: string;
+  /** This row's own code key before any merge. The "already seen" list may hold it from before
+   *  the row joined a description line, and an ink seen under it is not new. */
+  ownKey: string;
 }
 
 export interface InkPositionsResult {
@@ -506,6 +509,7 @@ export async function loadInkPositions(
       key,
       mergeKey: mergeKeyForRow,
       legacyKey: codeKey,
+      ownKey: codeKey,
       companyKey: company.key,
       company: company.label,
       item: row.item,
@@ -1200,6 +1204,46 @@ export function uniqueOrder(order: InkOrder, first?: string): InkOrder {
     prev = n;
   }
   return out;
+}
+
+/**
+ * NEW INKS JOIN THEIR GROUP (user, 12-10-2026). A new, unnumbered ink whose group already has
+ * numbered lines takes the number after that group's last line; everything below moves down by
+ * one, as far as the next gap (`uniqueOrder`). An ink in a group with no number yet is left for
+ * the planner — there is no group position to follow.
+ *
+ * Several new inks in one group go in by description, each after the one before.
+ */
+export function placeNewInGroups(
+  master: InkMasterRow[],
+  fresh: InkMasterRow[],
+  order: InkOrder,
+): { order: InkOrder; placed: { key: string; label: string; group: string; n: number }[] } {
+  const groupOf = (r: InkMasterRow) => (r.effectiveGroup || "").trim().toUpperCase();
+  let next: InkOrder = { ...order };
+  const numOf = (r: InkMasterRow) => next[r.mergeKey] ?? next[r.legacyKey];
+  const placedKeys: { key: string; label: string; group: string }[] = [];
+  const todo = [...fresh].sort(
+    (a, b) =>
+      groupOf(a).localeCompare(groupOf(b)) ||
+      (a.effectiveDescription || a.item).localeCompare(b.effectiveDescription || b.item),
+  );
+  for (const r of todo) {
+    const g = groupOf(r);
+    if (!g || numOf(r) !== undefined) continue;
+    let top: number | undefined;
+    for (const m of master) {
+      if (m.mergeKey === r.mergeKey || groupOf(m) !== g) continue;
+      const n = numOf(m);
+      if (n !== undefined && (top === undefined || n > top)) top = n;
+    }
+    if (top === undefined) continue;
+    next[r.mergeKey] = top + 1;
+    next = uniqueOrder(next, r.mergeKey);
+    placedKeys.push({ key: r.mergeKey, label: r.effectiveDescription || r.item, group: r.effectiveGroup });
+  }
+  // Read the numbers at the end: a later insert can move an earlier one down.
+  return { order: next, placed: placedKeys.map((p) => ({ ...p, n: next[p.key] })) };
 }
 
 /**

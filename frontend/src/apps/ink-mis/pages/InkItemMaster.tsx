@@ -24,6 +24,7 @@
  * import carry this table with them.
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { getSheetStatus } from "../lib/sheetStore";
 import { Link } from "react-router-dom";
 import { appBasePath } from "../../appInfo";
 import { useQuery } from "@tanstack/react-query";
@@ -50,7 +51,7 @@ import { applySort, type CellValue, type SortState } from "../lib/grid";
 import {
   EMPTY_PLAN, INK_CATEGORIES, INK_COMPANIES, INK_SOURCES, describeGodownChoice, fmtQty,
   loadInkPositions, loadOrder,
-  loadGroupFields, loadLines, loadOverrides, loadPlans, loadSeenLines, renumber, saveGroupFields, uniqueOrder,
+  loadGroupFields, loadLines, loadOverrides, loadPlans, loadSeenLines, placeNewInGroups, renumber, saveGroupFields, uniqueOrder,
   saveLines, savePlans, saveOrder, saveOverrides, saveSeenLines, sourceLabel,
   type InkGroupFields, type InkLineFields, type InkLines, type InkMasterRow, type InkOrder, type InkOverride,
   type InkOverrides, type InkPlan, type InkScope,
@@ -458,13 +459,34 @@ export default function InkItemMaster() {
     const taken = new Set<string>();
     for (const r of master) {
       if (!r.closingQty) continue;
-      if (seenSet.has(r.mergeKey) || seenSet.has(r.legacyKey)) continue;
+      if (seenSet.has(r.mergeKey) || seenSet.has(r.legacyKey) || seenSet.has(r.ownKey)) continue;
+      // An ink that already has a number is on the dashboard; it does not need one.
+      if ((order[r.mergeKey] ?? order[r.legacyKey]) !== undefined) continue;
       if (taken.has(r.mergeKey)) continue;
       taken.add(r.mergeKey);
       out.push(r);
     }
     return out;
-  }, [master, seen]);
+  }, [master, seen, order]);
+
+  /**
+   * NEW INKS GO INTO THEIR GROUP BY THEMSELVES (user, 12-10-2026): once per visit, any new ink
+   * whose group is already numbered takes the number after that group's last line, and it is
+   * saved straight away. Only with an edit grant, and only on a clean sheet, so it can never
+   * fold in someone's half-typed draft. What it did is listed, so nothing moves unannounced.
+   */
+  const autoPlaceDone = useRef(false);
+  const [autoPlaced, setAutoPlaced] = useState<{ label: string; group: string; n: number }[]>([]);
+  useEffect(() => {
+    if (autoPlaceDone.current || !master.length || !seen.length) return;
+    if (!getSheetStatus().canEdit || JSON.stringify(order) !== JSON.stringify(savedOrder)) return;
+    autoPlaceDone.current = true;
+    const res = placeNewInGroups(master, newLines, savedOrder);
+    if (!res.placed.length) return;
+    setOrder(res.order);
+    setSavedOrder(res.order);
+    setAutoPlaced(res.placed);
+  }, [master, seen.length, newLines, order, savedOrder]);
 
   /** Nothing is "new" on a first visit — the whole list would be. */
   useEffect(() => {
@@ -863,6 +885,29 @@ export default function InkItemMaster() {
           <span>All changes saved.</span>
         )}
       </div>
+
+      {autoPlaced.length > 0 && (
+        <div className="rounded-md border border-emerald-300 bg-emerald-50 p-3 text-sm text-emerald-900">
+          <div className="flex flex-wrap items-center gap-2">
+            <strong>
+              {autoPlaced.length} new ink{autoPlaced.length === 1 ? " was" : "s were"} added to
+              {autoPlaced.length === 1 ? " its group" : " their groups"} and saved.
+            </strong>
+            <span>The lines below them moved down by one.</span>
+            <Button size="sm" variant="ghost" className="ml-auto" onClick={() => setAutoPlaced([])}>
+              OK
+            </Button>
+          </div>
+          <ul className="mt-1 max-h-40 space-y-0.5 overflow-y-auto text-xs">
+            {autoPlaced.map((p) => (
+              <li key={`${p.n}-${p.label}`}>
+                <span className="inline-block w-10 tabular-nums font-semibold">{p.n}</span>
+                {p.label} <span className="text-emerald-700">— {p.group}</span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
 
       {showNewDialog && newLines.length > 0 && (
         <div className="rounded-md border-2 border-orange-400 bg-orange-50 p-3 text-sm text-orange-950">
