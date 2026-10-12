@@ -21,6 +21,11 @@
  * as that ink's group in the item master), and each group sets its Category and Import/Plant —
  * the same group-level fields as the item master table, so both screens edit one value.
  *
+ * TYPE A NUMBER (user, 12-10-2026): an ink's new number can be typed — the ink moves to that place
+ * inside its group (a number outside the group's range puts it first or last; moving between
+ * groups is the Group box's job). A group's number is where it starts: typing 25 moves the whole
+ * group to start at 25, and the groups after it shift down.
+ *
  * The result lands in the DRAFT: the table shows the new numbers and nothing is stored until
  * the planner presses Save changes. Numbers this screen cannot place (items outside the loaded
  * groups) are kept, after everything else, in their old order — never dropped.
@@ -54,6 +59,45 @@ interface GroupEntry {
 }
 
 const groupId = (g: string) => g.trim().toUpperCase() || "(NO GROUP)";
+
+/** A number box that shows the live number and acts only on Enter or when it is left. */
+function NumberBox({
+  value,
+  onCommit,
+  disabled,
+  title,
+  bold,
+}: {
+  value: number | undefined;
+  onCommit: (n: number) => void;
+  disabled?: boolean;
+  title: string;
+  bold?: boolean;
+}) {
+  const commit = (raw: string) => {
+    const n = Math.round(Number(raw));
+    if (raw.trim() && Number.isFinite(n) && n >= 1 && n !== value) onCommit(n);
+  };
+  return (
+    <input
+      // Re-mounted when the live number changes, so the box always shows the current one.
+      key={value ?? "none"}
+      type="number"
+      min={1}
+      defaultValue={value ?? ""}
+      disabled={disabled}
+      title={title}
+      placeholder={disabled ? "off" : "–"}
+      onBlur={(e) => commit(e.target.value)}
+      onKeyDown={(e) => {
+        if (e.key === "Enter") commit((e.target as HTMLInputElement).value);
+      }}
+      className={`h-6 w-14 rounded border bg-background px-1 text-right text-xs tabular-nums disabled:border-transparent disabled:bg-transparent ${
+        bold ? "font-medium" : ""
+      }`}
+    />
+  );
+}
 
 /** Every ink the group can number, in display order — unticked ones included. */
 function candidatesOf(g: GroupEntry): Line[] {
@@ -220,6 +264,36 @@ export default function ArrangeGroups({
     setRegroup((prev) => ({ ...prev, [line.key]: toName }));
   };
 
+  /** Put an ink at number n inside its group (clamped to the group's own range). */
+  const inkToNumber = (g: GroupEntry, key: string, n: number) => {
+    const start = starts.get(g.id);
+    const members = membersOf(g);
+    if (start === undefined || !members.length) return;
+    const t = Math.min(Math.max(n - start, 0), members.length - 1);
+    const keys = candidatesOf(g).map((l) => l.key);
+    const from = keys.indexOf(key);
+    const to = keys.indexOf(members[t].key);
+    if (from >= 0 && to >= 0) moveInk(g, from, to);
+  };
+
+  /** Move a group so it starts at number n: it goes in front of the group that holds n now. */
+  const groupToNumber = (g: GroupEntry, n: number) =>
+    setGroups((prev) => {
+      const others = prev.filter((x) => x.id !== g.id);
+      let at = others.length;
+      let next = 1;
+      for (let k = 0; k < others.length; k++) {
+        if (!others[k].include) continue;
+        const count = membersOf(others[k]).length;
+        if (next + count - 1 >= n) {
+          at = k;
+          break;
+        }
+        next += count;
+      }
+      return [...others.slice(0, at), g, ...others.slice(at)];
+    });
+
   const toggleInk = (g: GroupEntry, key: string, on: boolean) =>
     patch(g.id, { skip: on ? g.skip.filter((k) => k !== key) : [...g.skip, key] });
 
@@ -368,7 +442,18 @@ export default function ArrangeGroups({
                         {g.custom && <option value="custom">Custom</option>}
                       </select>
                     </td>
-                    <td className="px-2 py-1 text-right tabular-nums">{g.include ? ranges.get(g.id) : "off"}</td>
+                    <td className="px-2 py-1 text-right tabular-nums">
+                      <span className="inline-flex items-center justify-end gap-1">
+                        <NumberBox
+                          value={g.include ? start : undefined}
+                          disabled={!g.include}
+                          onCommit={(n) => groupToNumber(g, n)}
+                          title="Type where this group should start"
+                          bold
+                        />
+                        {g.include && <span className="w-12 text-left text-[10px] text-muted-foreground">{ranges.get(g.id)}</span>}
+                      </span>
+                    </td>
                   </tr>
                   {inks.map((l, j) => {
                     const on = !g.skip.includes(l.key);
@@ -429,8 +514,14 @@ export default function ArrangeGroups({
                           </select>
                         </td>
                         <td />
-                        <td className="px-2 py-0.5 text-right font-medium tabular-nums">
-                          {newNum ?? (on ? "–" : "off")}
+                        <td className="px-2 py-0.5 text-right">
+                          <NumberBox
+                            value={newNum}
+                            disabled={newNum === undefined}
+                            onCommit={(n) => inkToNumber(g, l.key, n)}
+                            title="Type this ink's number (within its group)"
+                          />
+                          <span className="inline-block w-12" />
                         </td>
                       </tr>
                     );
