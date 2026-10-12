@@ -50,7 +50,7 @@ import { applySort, type CellValue, type SortState } from "../lib/grid";
 import {
   EMPTY_PLAN, INK_CATEGORIES, INK_COMPANIES, INK_SOURCES, describeGodownChoice, fmtQty,
   loadInkPositions, loadOrder,
-  loadGroupFields, loadLines, loadOverrides, loadPlans, loadSeenLines, renumber, saveGroupFields,
+  loadGroupFields, loadLines, loadOverrides, loadPlans, loadSeenLines, renumber, saveGroupFields, uniqueOrder,
   saveLines, savePlans, saveOrder, saveOverrides, saveSeenLines, sourceLabel,
   type InkGroupFields, type InkLineFields, type InkLines, type InkMasterRow, type InkOrder, type InkOverride,
   type InkOverrides, type InkPlan, type InkScope,
@@ -597,9 +597,11 @@ export default function InkItemMaster() {
       // lost work; its number and lead time should still apply for when it comes back.
       const res = await importItemMaster(file, master, { overrides, order, plans, lines });
       setOverrides(res.overrides);
-      setOrder(res.order);
+      // A file can carry the same number on several rows; it lands with every number unique.
+      const imported = uniqueOrder(res.order);
+      setOrder(imported);
       setSavedOverrides(res.overrides);
-      setSavedOrder(res.order);
+      setSavedOrder(imported);
       if (res.plans) {
         setPlans(res.plans);
         setSavedPlans(res.plans);
@@ -648,10 +650,10 @@ export default function InkItemMaster() {
     // ⚠ NUMBERED LINES ONLY. A number is what puts a line on the dashboard, so the arrows must
     //   never hand one out: renumbering every row in view used to number all of them, and every
     //   blank line would then have appeared on the dashboard. A blank line gets its number typed.
-    if (order[mergeKey] === undefined) return;
+    if (order[mergeKey] === undefined && !rows.some((r) => r.mergeKey === mergeKey && order[r.legacyKey] !== undefined)) return;
     const lines: string[] = [];
     for (const r of rows) {
-      if (order[r.mergeKey] === undefined) continue;
+      if ((order[r.mergeKey] ?? order[r.legacyKey]) === undefined) continue;
       if (!lines.includes(r.mergeKey)) lines.push(r.mergeKey);
     }
     const at = lines.indexOf(mergeKey);
@@ -686,23 +688,7 @@ export default function InkItemMaster() {
    * and cascading on that would shove the whole list down before the 3 arrived.
    */
   const commitPosition = (mergeKey: string) =>
-    setOrder((prev) => {
-      const n = prev[mergeKey];
-      if (n === undefined) return prev;
-      const next = { ...prev };
-
-      const others = Object.entries(next)
-        .filter(([k]) => k !== mergeKey)
-        .sort((a, b) => a[1] - b[1]);
-      let blocked = n;
-      for (const [k, v] of others) {
-        if (v < n) continue;
-        if (v !== blocked) break; // a free number: everything above it can stay where it is
-        next[k] = v + 1;
-        blocked = v + 1;
-      }
-      return next;
-    });
+    setOrder((prev) => (prev[mergeKey] === undefined ? prev : uniqueOrder(prev, mergeKey)));
 
   /** `width` is now a hint only: every editor fills its column so resizing actually resizes. */
   const cell = (r: InkMasterRow, field: keyof InkOverride, fallback: string, width: string) => (
@@ -828,7 +814,7 @@ export default function InkItemMaster() {
             // blank line on the dashboard, which is exactly what a blank number means not to do.
             const lines: string[] = [];
             for (const r of rows) {
-              if (order[r.mergeKey] === undefined) continue;
+              if ((order[r.mergeKey] ?? order[r.legacyKey]) === undefined) continue;
               if (!lines.includes(r.mergeKey)) lines.push(r.mergeKey);
             }
             setOrder((prev) => ({ ...prev, ...renumber(lines) }));
@@ -1045,8 +1031,8 @@ export default function InkItemMaster() {
                       <button
                         type="button"
                         aria-label="Move up"
-                        disabled={order[r.mergeKey] === undefined}
-                        title={order[r.mergeKey] === undefined ? "Type a number first to put this item on the dashboard" : undefined}
+                        disabled={(order[r.mergeKey] ?? order[r.legacyKey]) === undefined}
+                        title={(order[r.mergeKey] ?? order[r.legacyKey]) === undefined ? "Type a number first to put this item on the dashboard" : undefined}
                         className="text-muted-foreground hover:text-foreground disabled:opacity-30 disabled:hover:text-muted-foreground"
                         onClick={() => move(r.mergeKey, -1)}
                       >
@@ -1055,8 +1041,8 @@ export default function InkItemMaster() {
                       <button
                         type="button"
                         aria-label="Move down"
-                        disabled={order[r.mergeKey] === undefined}
-                        title={order[r.mergeKey] === undefined ? "Type a number first to put this item on the dashboard" : undefined}
+                        disabled={(order[r.mergeKey] ?? order[r.legacyKey]) === undefined}
+                        title={(order[r.mergeKey] ?? order[r.legacyKey]) === undefined ? "Type a number first to put this item on the dashboard" : undefined}
                         className="text-muted-foreground hover:text-foreground disabled:opacity-30 disabled:hover:text-muted-foreground"
                         onClick={() => move(r.mergeKey, 1)}
                       >
