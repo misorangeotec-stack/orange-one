@@ -47,6 +47,7 @@ import { ResizableHead, useTableColumns } from "../lib/tableColumns";
 import { useGodownChoice } from "../lib/godowns";
 import ActiveFilters, { type ActiveFilter } from "@/shared/components/ui/ActiveFilters";
 import { ColumnHead } from "../components/HeaderFilter";
+import ArrangeGroups from "../components/ArrangeGroups";
 import { applySort, type CellValue, type SortState } from "../lib/grid";
 import {
   EMPTY_PLAN, INK_CATEGORIES, INK_COMPANIES, INK_SOURCES, describeGodownChoice, fmtQty,
@@ -156,6 +157,7 @@ export default function InkItemMaster() {
   /** Lines already shown to the planner, so an ink that has just arrived can be pointed out. */
   const [seen, setSeen] = useState<string[]>(() => loadSeenLines());
   const [showNewDialog, setShowNewDialog] = useState(true);
+  const [showArrange, setShowArrange] = useState(false);
   /**
    * The same godown filter the dashboard uses, so Closing means the same on both screens — and it
    * follows the Godowns tab's Save, so this screen needs no reopening to agree with it.
@@ -829,6 +831,15 @@ export default function InkItemMaster() {
 
         <Button
           size="sm"
+          variant={showArrange ? "default" : "outline"}
+          onClick={() => setShowArrange((v) => !v)}
+          disabled={!master.length}
+          title="Put the groups in order and number every ink in them at once"
+        >
+          <ListOrdered className="mr-2 h-4 w-4" /> Arrange by group
+        </Button>
+        <Button
+          size="sm"
           variant="outline"
           title="Re-space the numbers you have already given, in steps of ten, keeping their order. Blank lines stay blank."
           onClick={() => {
@@ -885,6 +896,18 @@ export default function InkItemMaster() {
           <span>All changes saved.</span>
         )}
       </div>
+
+      {showArrange && master.length > 0 && (
+        <ArrangeGroups
+          master={master}
+          order={order}
+          onApply={(next) => {
+            setOrder(next);
+            setShowArrange(false);
+          }}
+          onClose={() => setShowArrange(false)}
+        />
+      )}
 
       {autoPlaced.length > 0 && (
         <div className="rounded-md border border-emerald-300 bg-emerald-50 p-3 text-sm text-emerald-900">
