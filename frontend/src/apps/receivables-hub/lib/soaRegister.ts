@@ -36,7 +36,7 @@ import { SCOPE_ALL, isEmptyScope, type PartyScope } from "@hub/lib/scopeParties"
  */
 import { getConnectwaveSupabase } from "./connectwaveSupabase";
 import { fetchCompanyMap, makeCompanyResolver } from "./companyMap";
-import { fysInRange, winningBooks, registerCompanyLabel } from "./salesRegister";
+import { byPartyBatch, fysInRange, winningBooks, registerCompanyLabel } from "./salesRegister";
 
 export interface SoaRow {
   tenant_id: string;
@@ -131,27 +131,32 @@ export async function loadSoaRegister(
   const resolve = makeCompanyResolver(await fetchCompanyMap());
   const scopedParties = scope.kind === "only" ? scope.parties : null;
   const PAGE = 1000;
-  const out: RawSoaRow[] = [];
-  for (let offset = 0; ; offset += PAGE) {
-    let q = cw
-      .from("rpt_soa_register")
-      .select(SELECT_COLS)
-      .in("tenant_id", tenants)
-      .gte("soa_date", from)
-      .lte("soa_date", to);
-    if (scopedParties) q = q.in("party", scopedParties);
-    const { data, error } = await q
-      .order("soa_date", { ascending: true })
-      .order("tenant_id", { ascending: true })
-      .order("tracking_no", { ascending: true })
-      .order("item", { ascending: true })
-      .range(offset, offset + PAGE - 1)
-      .returns<RawSoaRow[]>();
-    if (error) throw new Error(error.message);
-    const rows = data ?? [];
-    out.push(...rows);
-    if (rows.length < PAGE) break;
-  }
+  const out = await byPartyBatch(scopedParties, async (batch) => {
+    const got: RawSoaRow[] = [];
+    for (let offset = 0; ; offset += PAGE) {
+      let q = cw
+        .from("rpt_soa_register")
+        .select(SELECT_COLS)
+        .in("tenant_id", tenants)
+        .gte("soa_date", from)
+        .lte("soa_date", to);
+      if (batch) q = q.in("party", batch);
+      const { data, error } = await q
+        .order("soa_date", { ascending: true })
+        .order("tenant_id", { ascending: true })
+        .order("tracking_no", { ascending: true })
+        .order("item", { ascending: true })
+        .range(offset, offset + PAGE - 1)
+        .returns<RawSoaRow[]>();
+      if (error) throw new Error(error.message);
+      const rows = data ?? [];
+      got.push(...rows);
+      if (rows.length < PAGE) break;
+    }
+    return got;
+  });
+  // Batches come back one after another, so restore the date order the table shows.
+  if (scopedParties) out.sort((a, b) => a.soa_date.localeCompare(b.soa_date));
 
   return out
     .filter((r) => winningPair.has(`${r.tenant_id}|${r.fy}`))
