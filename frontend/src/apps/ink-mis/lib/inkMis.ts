@@ -452,6 +452,19 @@ export async function loadInkPositions(
     );
   };
 
+  /*
+   * Every description the planner has typed. An item whose OWN Tally name is word for word one
+   * of these joins that line, even with nothing typed against it: the planner merges lines by
+   * the description they give, and "KNA REACTIVE INK CYAN" typed on the Otec Surat item has to
+   * pick up the Enterprises items Tally already names exactly that. Before this, those stayed on
+   * their item-code line and the same ink showed twice, both rows reading the code's number.
+   */
+  const typedDescriptions = new Set<string>();
+  for (const ov of Object.values(overrides)) {
+    const d = norm(ov.description);
+    if (d) typedDescriptions.add(d);
+  }
+
   for (const row of inScope) {
     if (row.built_at && (!builtAt || row.built_at > builtAt)) builtAt = row.built_at;
 
@@ -471,7 +484,8 @@ export async function loadInkPositions(
     const effectiveDescription = (ov.description ?? "").trim() || tallyName;
 
     // "D:" cannot collide with a code, which may be any word.
-    const typedDescription = norm(ov.description);
+    const typedDescription =
+      norm(ov.description) || (typedDescriptions.has(norm(tallyName)) ? norm(tallyName) : "");
     const codeKey = effectiveCode || soloKey(company.key, row.item);
     const mergeKeyForRow = typedDescription ? `D:${typedDescription}` : codeKey;
     const lineOv = lines[mergeKeyForRow] ?? {};
@@ -545,6 +559,17 @@ export async function loadInkPositions(
 
     pos.sources.push({ companyKey: company.key, item: row.item });
 
+    // A line formed by description reads its number from its own key first and then from the
+    // code key it had before. If the first item to arrive brought a code with no number, take
+    // the code of a later item that has one, or a numbered line would drop off the dashboard.
+    if (
+      order[pos.key] === undefined &&
+      order[pos.legacyKey] === undefined &&
+      order[codeKey] !== undefined
+    ) {
+      pos.legacyKey = codeKey;
+    }
+
     // Books disagree on how fully an item is named; keep the most descriptive one. A description
     // the planner typed always wins, whatever its length.
     if (ov.description?.trim()) pos.description = ov.description.trim();
@@ -576,6 +601,13 @@ export async function loadInkPositions(
     pos.consumedByCompany[company.key] =
       (pos.consumedByCompany[company.key] ?? 0) + row.outward_qty;
     pos.consumed += row.outward_qty;
+  }
+
+  // Every item master row falls back to its LINE's previous key, so all the rows of one merged
+  // ink show the same number, lead time and plan, whichever book they come from.
+  for (const m of master) {
+    const line = merged.get(m.mergeKey);
+    if (line) m.legacyKey = line.legacyKey;
   }
 
   // THE PLANNER'S ORDER WINS. Their sheet is not alphabetical — it runs Eco, then E-series, then
@@ -1144,6 +1176,31 @@ export const loadOrder = (): InkOrder => {
   return out;
 };
 export const saveOrder = (o: InkOrder) => writeJson(KEY_ORDER, o);
+
+/**
+ * NO TWO LINES SHARE A NUMBER. Walks the numbers smallest first; a number already used moves to
+ * the next free one, and that push carries on only as far as the next gap — the same insert the
+ * item master does when a taken number is typed. `first` wins a tie (the line just typed).
+ *
+ * Duplicates used to survive: an Excel import took each Order cell as it stood, and the typed
+ * insert stopped at the first equal number below it, so once two lines shared 99 they always did.
+ */
+export function uniqueOrder(order: InkOrder, first?: string): InkOrder {
+  const entries = Object.entries(order).sort(
+    (a, b) =>
+      a[1] - b[1] ||
+      (a[0] === first ? -1 : b[0] === first ? 1 : 0) ||
+      a[0].localeCompare(b[0]),
+  );
+  const out: InkOrder = {};
+  let prev = -Infinity;
+  for (const [k, v] of entries) {
+    const n = v <= prev ? prev + 1 : v;
+    out[k] = n;
+    prev = n;
+  }
+  return out;
+}
 
 /**
  * Renumber in steps of ten, in the order given. The gaps are the point: they leave room to drop
