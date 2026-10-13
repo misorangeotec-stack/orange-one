@@ -1309,6 +1309,40 @@ export function deliveryPeriodTakesSuffix(raw: string | null | undefined): boole
   return /\d/.test(raw ?? "");
 }
 
+/** Today's date at local midnight, so day counts never drift across time zones. */
+function localToday(): Date {
+  const n = new Date();
+  return new Date(n.getFullYear(), n.getMonth(), n.getDate());
+}
+
+/**
+ * The tentative delivery date (yyyy-mm-dd) a period lands on, counted from
+ * today. A range ("30 to 45") uses its LAST number — the latest promise.
+ * `null` when the period holds no number ("Immediately", or empty), so the
+ * caller leaves the date alone.
+ */
+export function deliveryDateFromDays(raw: string | null | undefined): string | null {
+  const nums = (raw ?? "").match(/\d+/g);
+  if (!nums) return null;
+  const d = localToday();
+  d.setDate(d.getDate() + Number(nums[nums.length - 1]));
+  const mm = String(d.getMonth() + 1).padStart(2, "0");
+  const dd = String(d.getDate()).padStart(2, "0");
+  return `${d.getFullYear()}-${mm}-${dd}`;
+}
+
+/**
+ * The period, in days from today, that a tentative date (yyyy-mm-dd) means.
+ * `null` for an empty or past date, so the caller leaves the period alone.
+ */
+export function deliveryDaysFromDate(iso: string | null | undefined): string | null {
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(iso ?? "");
+  if (!m) return null;
+  const target = new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]));
+  const days = Math.round((target.getTime() - localToday().getTime()) / 86_400_000);
+  return days >= 0 ? String(days) : null;
+}
+
 /*
   ⚠ THERE IS NO GROUP TABLE HERE ANY MORE, AND THAT IS DELIBERATE.
 
@@ -1383,7 +1417,7 @@ export const FIELD_LABEL: Record<keyof QuotationDraft, string> = {
   dealValueAmount: "Total deal value (excl. GST)",
   paymentType: "Type of payment",
   paymentTerms: "Terms of payment",
-  deliveryDate: "Tentative machine delivery date",  // RETIRED (R1) — kept so stored answers round-trip
+  deliveryDate: "Tentative machine delivery date",  // filled with the period (both ways) on the form
   transportTerms: "Deal type",
   highSeasVia: "High seas delivery via",
   /*

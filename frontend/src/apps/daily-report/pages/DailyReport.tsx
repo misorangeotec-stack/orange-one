@@ -13,7 +13,7 @@ import { useBankAccounts } from "../data/bankAccounts";
 import { balanceKey, useBankBalances } from "../data/bankBalances";
 import { useCcLimits } from "../data/ccLimits";
 import {
-  addDays, dmy, fmtKg, fmtLacs, fmtQty, fmtMoney, isSunday, longDate,
+  addDays, dmy, fmtCr, fmtKg, fmtLacs, fmtQty, fmtMoney, isSunday, longDate,
   shortDay, timeOfDay, todayIso,
 } from "../lib/format";
 import { BASIS_NOTE, BLANK_NOTE, entityLabel, entityRank, listNoun, SHOWN_ONLY_WHEN_ACTIVE } from "../lib/labels";
@@ -368,7 +368,7 @@ export default function DailyReport() {
       key: "bank", label: "Bank balance", value: todayBankTotal.anyMissing ? "—" : fmtMoney(todayBankTotal.sum),
       // Counted over the accounts ON SCREEN, not over all eleven: under a Delhi
       // filter "0 of 11" names ten accounts this page is not showing.
-      hint: `${bankEntered} of ${bankCols.length} account${bankCols.length === 1 ? "" : "s"} entered for ${dmy(date)}`,
+      hint: `${todayBankTotal.anyMissing ? "" : `${fmtCr(todayBankTotal.sum)} · `}${bankEntered} of ${bankCols.length} account${bankCols.length === 1 ? "" : "s"} entered for ${dmy(date)}`,
       tone: bankCols.length > bankEntered ? "red" : undefined,
       href: `/daily-report/bank-balances?d=${date}`,
     },
@@ -662,7 +662,7 @@ export default function DailyReport() {
           <FactCard
             title="Bank, as on this date"
             headline={todayBankTotal.anyMissing ? "—" : fmtMoney(todayBankTotal.sum)}
-            headlineNote={`${bankEntered} of ${bankCols.length} entered`}
+            headlineNote={`${todayBankTotal.anyMissing ? "" : `${fmtCr(todayBankTotal.sum)} · `}${bankEntered} of ${bankCols.length} entered`}
             facts={bankFacts}
             loading={accounts.isLoading}
             onRow={(f) => f.onSelect?.()}

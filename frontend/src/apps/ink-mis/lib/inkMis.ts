@@ -311,6 +311,11 @@ export interface InkMasterRow {
    * back to this key when the new one holds nothing.
    */
   legacyKey: string;
+  /** The group the whole LINE is filed under — see `lineGroupOf`. Same on every row of a line. */
+  lineGroup: string;
+  /** This row's own code key before any merge. The "already seen" list may hold it from before
+   *  the row joined a description line, and an ink seen under it is not new. */
+  ownKey: string;
 }
 
 export interface InkPositionsResult {
@@ -506,6 +511,8 @@ export async function loadInkPositions(
       key,
       mergeKey: mergeKeyForRow,
       legacyKey: codeKey,
+      ownKey: codeKey,
+      lineGroup: effectiveGroup,
       companyKey: company.key,
       company: company.label,
       item: row.item,
@@ -608,6 +615,22 @@ export async function loadInkPositions(
   for (const m of master) {
     const line = merged.get(m.mergeKey);
     if (line) m.legacyKey = line.legacyKey;
+  }
+
+  // ONE GROUP PER LINE, decided from all its books — not from whichever book arrived first. Otec
+  // Surat files the ECO and KNA inks under plain "REACTIVE" while Enterprises files them under
+  // "REACTIVE ECO" / "KNA REACTIVE INK", and first-come put them all under REACTIVE.
+  const rowsByLine = new Map<string, InkMasterRow[]>();
+  for (const m of master) {
+    const list = rowsByLine.get(m.mergeKey) ?? [];
+    list.push(m);
+    rowsByLine.set(m.mergeKey, list);
+  }
+  for (const [key, list] of rowsByLine) {
+    const g = lineGroupOf(list);
+    for (const m of list) m.lineGroup = g;
+    const pos = merged.get(key);
+    if (pos && g) pos.group = g;
   }
 
   // THE PLANNER'S ORDER WINS. Their sheet is not alphabetical — it runs Eco, then E-series, then
@@ -1178,6 +1201,32 @@ export const loadOrder = (): InkOrder => {
 export const saveOrder = (o: InkOrder) => writeJson(KEY_ORDER, o);
 
 /**
+ * The group a line is filed under when its books disagree: the group most of its books use; on
+ * a tie, a group the planner typed in the item master; then the more specific (longer) name, so
+ * "REACTIVE ECO" beats "REACTIVE"; then A–Z, so the answer never depends on load order.
+ */
+export function lineGroupOf(rows: InkMasterRow[]): string {
+  const tally = new Map<string, { name: string; count: number; typed: boolean }>();
+  for (const r of rows) {
+    const name = (r.effectiveGroup || "").trim();
+    if (!name) continue;
+    const k = name.toUpperCase();
+    const t = tally.get(k) ?? { name, count: 0, typed: false };
+    t.count++;
+    if (name.toUpperCase() !== (r.tallyGroup || "").trim().toUpperCase()) t.typed = true;
+    tally.set(k, t);
+  }
+  const best = [...tally.values()].sort(
+    (a, b) =>
+      b.count - a.count ||
+      Number(b.typed) - Number(a.typed) ||
+      b.name.length - a.name.length ||
+      a.name.localeCompare(b.name),
+  )[0];
+  return best?.name ?? "";
+}
+
+/**
  * NO TWO LINES SHARE A NUMBER. Walks the numbers smallest first; a number already used moves to
  * the next free one, and that push carries on only as far as the next gap — the same insert the
  * item master does when a taken number is typed. `first` wins a tie (the line just typed).
@@ -1200,6 +1249,46 @@ export function uniqueOrder(order: InkOrder, first?: string): InkOrder {
     prev = n;
   }
   return out;
+}
+
+/**
+ * NEW INKS JOIN THEIR GROUP (user, 12-10-2026). A new, unnumbered ink whose group already has
+ * numbered lines takes the number after that group's last line; everything below moves down by
+ * one, as far as the next gap (`uniqueOrder`). An ink in a group with no number yet is left for
+ * the planner — there is no group position to follow.
+ *
+ * Several new inks in one group go in by description, each after the one before.
+ */
+export function placeNewInGroups(
+  master: InkMasterRow[],
+  fresh: InkMasterRow[],
+  order: InkOrder,
+): { order: InkOrder; placed: { key: string; label: string; group: string; n: number }[] } {
+  const groupOf = (r: InkMasterRow) => (r.lineGroup || r.effectiveGroup || "").trim().toUpperCase();
+  let next: InkOrder = { ...order };
+  const numOf = (r: InkMasterRow) => next[r.mergeKey] ?? next[r.legacyKey];
+  const placedKeys: { key: string; label: string; group: string }[] = [];
+  const todo = [...fresh].sort(
+    (a, b) =>
+      groupOf(a).localeCompare(groupOf(b)) ||
+      (a.effectiveDescription || a.item).localeCompare(b.effectiveDescription || b.item),
+  );
+  for (const r of todo) {
+    const g = groupOf(r);
+    if (!g || numOf(r) !== undefined) continue;
+    let top: number | undefined;
+    for (const m of master) {
+      if (m.mergeKey === r.mergeKey || groupOf(m) !== g) continue;
+      const n = numOf(m);
+      if (n !== undefined && (top === undefined || n > top)) top = n;
+    }
+    if (top === undefined) continue;
+    next[r.mergeKey] = top + 1;
+    next = uniqueOrder(next, r.mergeKey);
+    placedKeys.push({ key: r.mergeKey, label: r.effectiveDescription || r.item, group: r.lineGroup || r.effectiveGroup });
+  }
+  // Read the numbers at the end: a later insert can move an earlier one down.
+  return { order: next, placed: placedKeys.map((p) => ({ ...p, n: next[p.key] })) };
 }
 
 /**

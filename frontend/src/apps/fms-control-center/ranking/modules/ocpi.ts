@@ -42,6 +42,8 @@ const STEPS: QueueStep[] = [
   "management_signoff",
   "finance_handover",
   "finance_receipt",
+  // Parallel to Finance — a deal can be open here AND at a Finance step.
+  "service_check",
 ];
 
 const DUMMY_QUOTATIONS: ReadonlySet<string> = new Set(["QT-M0040", "QT-M0042", "QT-M0045", "QT-M0053"]);
@@ -85,12 +87,13 @@ export const ocpiScorer: ModuleScorer<OcpiRankData> = {
 
   closed(data) {
     const sla = resolveStepSla(data.stepSla);
-    const openNow = new Map(buildQueueEntries(data.deals, sla).map((e) => [e.dealId, e.stepKey]));
+    // Keyed by deal AND step: the Service Check is a second open entry per deal.
+    const openNow = new Set(buildQueueEntries(data.deals, sla).map((e) => `${e.dealId}:${e.stepKey}`));
     const out: ClosedStep[] = [];
     for (const d of data.deals) {
       for (const step of STEPS) {
         const at = stepCompletedIso(d, step);
-        if (!at || openNow.get(d.id) === step) continue;
+        if (!at || openNow.has(`${d.id}:${step}`)) continue;
         out.push({
           stepId: `${d.id}:${step}`,
           entityId: d.id,
