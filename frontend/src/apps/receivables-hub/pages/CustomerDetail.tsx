@@ -586,42 +586,25 @@ export default function CustomerDetail() {
 
   const { loading, error, customers, allCustomers, customerDetail: baseCustomerDetail, customerGroupMap, dashboard } = useAppData({ saleType: effectiveSaleType });
 
-  // Resolve the list of Tally names that belong to this group (only meaningful
-  // on the group route). A group's children are: every Tally name `n` such
-  // that `mapping[n] === groupName`, plus `groupName` itself if no entry maps
-  // to it (covers ungrouped customers reached via /group/:name).
-  const groupChildNames = useMemo<string[]>(() => {
+  // The muster's name list for this group (only meaningful on the group route): every Tally name
+  // `n` with `mapping[n] === groupName`, plus `groupName` itself if no entry maps to it (covers
+  // ungrouped customers reached via /group/:name).
+  //
+  // ⚠ These are the names AS STORED IN THE MUSTER (ext_ledger_group.tally_name), frozen when the
+  // row was made. Tally renames do not reach them — 72 ledgers had drifted by 13-10-2026, e.g.
+  // "TERRANOVA PACKTECH PRIVATE LIMITED" is "…-MACHINE" in Tally now. So this list is ONLY a
+  // fallback for ledgers with no GUID mapping; it must never decide which ledgers are shown.
+  const groupMusterNames = useMemo<string[]>(() => {
     if (!isGroupRoute) return [];
     const explicit = customerGroupMap.groups?.[groupName] ?? [];
     if (explicit.length > 0) return [...explicit].sort();
     return [groupName];  // ungrouped customer reached via group route
   }, [isGroupRoute, customerGroupMap.groups, groupName]);
 
-  // ── Follow-ups ───────────────────────────────────────────────────────────────
-  // The entity follows the ROUTE: /group/:id logs against the group, /customer/:id against
-  // the customer. Keyed by name — never by Customer.id, which is a pipeline surrogate.
-  const followupsEnabled = true; // shared ConnectWave log — available on default AND Live (Tally)
-  const followupEntityType: FollowupEntityType = isGroupRoute ? "group" : "customer";
-  const followupEntityName = isGroupRoute ? groupName : customerName;
-  const { latestByEntity } = useFollowups();
-  const openFollowup = latestByEntity.get(entityKey(followupEntityType, followupEntityName));
-
-  // Initialise child selection to "all" once we know who the children are.
-  // Re-initialises if groupChildNames structurally changes (e.g. mapping loads
-  // after a fallback render where only [groupName] was known). Tracking by
-  // signature avoids clobbering the user's manual toggles on later re-renders.
-  useEffect(() => {
-    if (!isGroupRoute) return;
-    const key = groupChildNames.join("|");
-    if (lastInitKey.current === key) return;
-    lastInitKey.current = key;
-    setSelectedChildren(new Set(groupChildNames));
-  }, [isGroupRoute, groupChildNames]);
-
   // All raw entities for this customer / group
   const allEntities = useMemo(() => {
     if (isGroupRoute) {
-      const childSet = new Set(groupChildNames);
+      const childSet = new Set(groupMusterNames);
       // Prefer the GUID-keyed muster: `groups` is a name-keyed view derived from it, and 387 ledger
       // names repeat across companies — so a pure name match drags in every same-named ledger,
       // including ones whose own muster row says a DIFFERENT group, and then sums them. Where a
@@ -634,7 +617,45 @@ export default function CustomerDetail() {
       });
     }
     return allCustomers.filter((c) => c.name === customerName);
-  }, [allCustomers, customerName, isGroupRoute, groupChildNames]);
+  }, [allCustomers, customerName, isGroupRoute, groupMusterNames, customerGroupMap.byLedgerId, groupName]);
+
+  // The group's children as Tally names them TODAY — read off the ledgers resolved above, never off
+  // the muster's name list. The child selector filters `allEntities` by `c.name`, so a stale muster
+  // name selected nothing: a renamed single-ledger group read "Customer not found", and a renamed
+  // ledger inside a larger group silently dropped out of the totals. Falls back to the muster names
+  // only while nothing has resolved (still loading, or genuinely nothing in scope).
+  const groupChildNames = useMemo<string[]>(() => {
+    if (!isGroupRoute) return [];
+    const current = [...new Set(allEntities.map((c) => c.name))].sort();
+    return current.length > 0 ? current : groupMusterNames;
+  }, [isGroupRoute, allEntities, groupMusterNames]);
+
+  // ── Follow-ups ───────────────────────────────────────────────────────────────
+  // The entity follows the ROUTE: /group/:id logs against the group, /customer/:id against
+  // the customer. Keyed by name — never by Customer.id, which is a pipeline surrogate.
+  const followupsEnabled = true; // shared ConnectWave log — available on default AND Live (Tally)
+  const followupEntityType: FollowupEntityType = isGroupRoute ? "group" : "customer";
+  const followupEntityName = isGroupRoute ? groupName : customerName;
+  const { latestByEntity } = useFollowups();
+  const openFollowup = latestByEntity.get(entityKey(followupEntityType, followupEntityName));
+  // Follow-ups logged against a child BEFORE its Tally rename are filed under the old name, so the
+  // timeline reads both the current and the muster names.
+  const followupChildNames = useMemo(
+    () => [...new Set([...groupChildNames, ...groupMusterNames])].sort(),
+    [groupChildNames, groupMusterNames],
+  );
+
+  // Initialise child selection to "all" once we know who the children are.
+  // Re-initialises if groupChildNames structurally changes (e.g. mapping loads
+  // after a fallback render where only [groupName] was known). Tracking by
+  // signature avoids clobbering the user's manual toggles on later re-renders.
+  useEffect(() => {
+    if (!isGroupRoute) return;
+    const key = groupChildNames.join("|");
+    if (lastInitKey.current === key) return;
+    lastInitKey.current = key;
+    setSelectedChildren(new Set(groupChildNames));
+  }, [isGroupRoute, groupChildNames]);
 
   // ── Live (Tally) source: lazily fetch the shown ledgers' transaction history ────────────────
   // The ConnectWave snapshot omits per-customer transaction lists (kept lean — they're only ever
@@ -2356,7 +2377,7 @@ export default function CustomerDetail() {
                 <FollowupTimeline
                   entityType={followupEntityType}
                   entityName={followupEntityName}
-                  childNames={isGroupRoute ? groupChildNames : []}
+                  childNames={isGroupRoute ? followupChildNames : []}
                 />
               </CardContent>
             </CollapsibleContent>
