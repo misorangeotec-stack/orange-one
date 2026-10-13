@@ -138,6 +138,9 @@ export function useBalanceStatus(iso: string) {
   });
 }
 
+/** Lakhs back to the rupee figure that was typed; null (clear) stays null. */
+const rupees = (lacs: number | null): number | null => (lacs == null ? null : lacsToRupees(lacs));
+
 /** One row of a save: a null closing CLEARS the day rather than storing a zero. */
 export interface BalanceWrite {
   bankAccountId: string;
@@ -156,9 +159,6 @@ export interface BalanceWrite {
  *   utilised is typed once, per company, in the credit-limit block. The routine
  *   stores NULL for the absent key, which is all the column has ever held.
  */
-/** Lakhs back to the rupee figure that was typed; null (clear) stays null. */
-const rupees = (lacs: number | null): number | null => (lacs == null ? null : lacsToRupees(lacs));
-
 export async function saveEvening(balances: BalanceWrite[], limits: CcLimitWrite[]): Promise<number> {
   if (balances.length === 0 && limits.length === 0) return 0;
   const { data, error } = await supabase.rpc("set_daily_report_evening", {
