@@ -8129,6 +8129,7 @@ export type Database = {
           sub_department_id: string | null
           receivables_admin_menus: string[] | null
           receivables_allow_pipeline: boolean | null
+          report_dashboard_full_view: boolean | null
           receivables_allowed_reports: string[] | null
           receivables_hidden_menus: string[] | null
           receivables_report_prefs: Json | null
@@ -8155,6 +8156,7 @@ export type Database = {
           sub_department_id?: string | null
           receivables_admin_menus?: string[] | null
           receivables_allow_pipeline?: boolean | null
+          report_dashboard_full_view?: boolean | null
           receivables_allowed_reports?: string[] | null
           receivables_hidden_menus?: string[] | null
           receivables_report_prefs?: Json | null
@@ -8181,6 +8183,7 @@ export type Database = {
           sub_department_id?: string | null
           receivables_admin_menus?: string[] | null
           receivables_allow_pipeline?: boolean | null
+          report_dashboard_full_view?: boolean | null
           receivables_allowed_reports?: string[] | null
           receivables_hidden_menus?: string[] | null
           receivables_report_prefs?: Json | null

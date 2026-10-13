@@ -71,6 +71,7 @@ async function fetchRaiseForPeople(): Promise<Profile[]> {
       receivablesAdminMenus: [],
       receivablesAllowedReports: [],
       receivablesAllowPipeline: false,
+      reportDashboardFullView: false,
       lastActiveAt: null,
       isExternal: false,
     }),
