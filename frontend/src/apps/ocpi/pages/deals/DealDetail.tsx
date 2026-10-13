@@ -8,6 +8,7 @@ import CustomerSignPanel from "../../components/CustomerSignPanel";
 import ManagementSignPanel from "../../components/ManagementSignPanel";
 import FinanceHandoverPanel from "../../components/FinanceHandoverPanel";
 import FinanceReceiptPanel from "../../components/FinanceReceiptPanel";
+import ServiceCheckPanel from "../../components/ServiceCheckPanel";
 import SignedDocStrip from "../../components/SignedDocStrip";
 import RevisionHistory from "../../components/RevisionHistory";
 import LifecyclePanel from "../../components/LifecyclePanel";
@@ -138,6 +139,9 @@ export default function DealDetail() {
       {/* The two halves of the handover to Finance. Both self-hiding. */}
       <FinanceHandoverPanel deal={deal} />
       <FinanceReceiptPanel deal={deal} />
+
+      {/* The service team's check — parallel to Finance. Self-hiding. */}
+      <ServiceCheckPanel deal={deal} />
 
       {/*
         ⚠ ONCE CLOSED, THE SIGNED FILES ARE THE RECORD, so the completed deal

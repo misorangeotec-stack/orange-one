@@ -54,6 +54,8 @@ const OVERRIDES: Partial<Record<StepKey, Partial<StepSla>>> = {
   // it. Both are a day's work at most; neither is anybody's negotiation.
   finance_handover: { anchor: "management_signoff", days: 1 },
   finance_receipt: { anchor: "finance_handover", days: 1 },
+  // Parallel to Finance, counted from the same countersignature.
+  service_check: { anchor: "management_signoff", days: 2 },
   // Retired, and still anchored: a deal parked at one of these must keep a due
   // date rather than suddenly reading as untimed.
   order_confirmation: { anchor: "quotation_approval", days: 2 },

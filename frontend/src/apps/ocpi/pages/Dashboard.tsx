@@ -34,15 +34,22 @@ export default function Dashboard() {
 
   const tiles = useMemo<KpiTile[]>(() => {
     const drafts = s.deals.filter((d) => d.status === "draft" && d.raisedBy === s.userId).length;
-    const open = s.entries.length;
+    // Deals on the status chain, each once. The Service Check runs beside it and
+    // has its own tile, so a deal in both buckets is not counted twice here.
+    const open = new Set(
+      s.entries.filter((e) => e.stepKey !== "service_check").map((e) => e.dealId),
+    ).size;
     const closed = s.deals.filter((d) => d.status === "closed").length;
 
     const stepTiles: KpiTile[] = STEPS.filter((st) => !st.noQueue).map((st) => {
       const step = st.key as QueueStep;
       const count = s.entries.filter((e) => e.stepKey === step).length;
+      const isService = step === "service_check";
       return {
         key: step,
-        label: st.short,
+        // The service team's bucket, named so an admin reads it at a glance.
+        label: isService ? "Service pending" : st.short,
+        ...(isService ? { hint: "Service team bucket" } : {}),
         value: count,
         size: "sm",
         href: s.canSeeQueue(step) ? `/ocpi/queues/${QUEUE_PATH[step]}` : undefined,
@@ -136,7 +143,7 @@ export default function Dashboard() {
           ) : (
             <ul className="divide-y divide-line">
               {late.map(({ entry, deal, days }) => (
-                <li key={entry.entityId} className="flex items-center justify-between gap-3 px-4 py-2.5">
+                <li key={`${entry.stepKey}:${entry.entityId}`} className="flex items-center justify-between gap-3 px-4 py-2.5">
                   <div className="min-w-0">
                     <Link
                       to={`/ocpi/deals/${deal.id}`}

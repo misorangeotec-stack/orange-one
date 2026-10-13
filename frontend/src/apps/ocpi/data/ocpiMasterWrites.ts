@@ -225,3 +225,27 @@ export async function replaceMachineHeads(machineId: string, headTypeIds: string
   );
   if (error) throw new Error(error.message);
 }
+
+export interface ServiceCheckpointInput {
+  name: string;
+  active: boolean;
+  sortOrder: number;
+}
+
+/** Masters → Service check points. Same owner as Machine categories. */
+export async function insertServiceCheckpoint(input: ServiceCheckpointInput): Promise<void> {
+  const { error } = await db.from("fms_ocpi_service_checkpoints").insert({
+    name: input.name,
+    active: input.active,
+    sort_order: input.sortOrder,
+  });
+  if (error) throw new Error(error.message);
+}
+
+export async function updateServiceCheckpoint(id: string, input: ServiceCheckpointInput): Promise<void> {
+  const { error } = await db
+    .from("fms_ocpi_service_checkpoints")
+    .update({ name: input.name, active: input.active, sort_order: input.sortOrder })
+    .eq("id", id);
+  if (error) throw new Error(error.message);
+}
