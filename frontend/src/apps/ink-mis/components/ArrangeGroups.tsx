@@ -26,6 +26,12 @@
  * groups is the Group box's job). A group's number is where it starts: typing 25 moves the whole
  * group to start at 25, and the groups after it shift down.
  *
+ * ONLY THE ITEM MASTER'S OWN ROWS (user, 13-10-2026): the panel is handed exactly the rows the
+ * item master lists (its Ink groups / Only items with stock switches apply) and files each ink
+ * under the Group those rows show. Where an ink's listed rows show two groups, the one most of
+ * them show wins. Nothing else is consulted — not other books' rows the list is not showing.
+ * A numbered ink that is not listed keeps its number, after all the groups.
+ *
  * The result lands in the DRAFT: the table shows the new numbers and nothing is stored until
  * the planner presses Save changes. Numbers this screen cannot place (items outside the loaded
  * groups) are kept, after everything else, in their old order — never dropped.
@@ -34,7 +40,7 @@ import { Fragment, useMemo, useRef, useState } from "react";
 import { ArrowDown, ArrowUp, ChevronDown, ChevronRight, GripVertical, X } from "lucide-react";
 import { Button } from "@hub/components/ui/button";
 import {
-  INK_CATEGORIES, INK_SOURCES, type InkGroupFields, type InkLineFields, type InkMasterRow,
+  INK_CATEGORIES, INK_SOURCES, lineGroupOf, type InkGroupFields, type InkLineFields, type InkMasterRow,
   type InkOrder,
 } from "../lib/inkMis";
 
@@ -118,7 +124,14 @@ function membersOf(g: GroupEntry): Line[] {
 }
 
 export function buildGroups(master: InkMasterRow[], order: InkOrder): GroupEntry[] {
-  // One entry per printed line; its group is the group of the line's first row.
+  // The Group each listed row SHOWS, gathered per ink; most rows' group wins (lineGroupOf).
+  const rowsOf = new Map<string, InkMasterRow[]>();
+  for (const r of master) {
+    const list = rowsOf.get(r.mergeKey) ?? [];
+    list.push(r);
+    rowsOf.set(r.mergeKey, list);
+  }
+  // One entry per printed line.
   const lines = new Map<string, { line: Line; group: string }>();
   for (const r of master) {
     const existing = lines.get(r.mergeKey);
@@ -127,8 +140,7 @@ export function buildGroups(master: InkMasterRow[], order: InkOrder): GroupEntry
       continue;
     }
     lines.set(r.mergeKey, {
-      // The LINE's group, decided across all its books (lineGroupOf), not this row's book.
-      group: r.lineGroup || r.effectiveGroup || "",
+      group: lineGroupOf(rowsOf.get(r.mergeKey) ?? [r]) || r.effectiveGroup || "",
       line: {
         key: r.mergeKey,
         legacyKey: r.legacyKey,
@@ -169,7 +181,8 @@ export function numberByGroups(groups: GroupEntry[], order: InkOrder): InkOrder 
     if (!g.include) continue;
     for (const l of membersOf(g)) next[l.key] = n++;
   }
-  // Keys no loaded line owns (items outside these groups): kept, after the rest, in old order.
+  // Keys no listed line owns (not in the item master's list, e.g. out of stock): kept, after
+  // the rest, in their old order — never dropped.
   const rest = Object.entries(order)
     .filter(([k]) => !handled.has(k))
     .sort((a, b) => a[1] - b[1]);
@@ -551,6 +564,7 @@ export default function ArrangeGroups({
           Number all inks
         </Button>
         <span className="text-xs text-muted-foreground">
+          Uses only the rows the item master lists; numbered inks not listed go after the groups.
           Fills the numbers (and any group moves) into the table. Category and Import/Plant
           change as you pick them. Check, then press Save changes.
         </span>

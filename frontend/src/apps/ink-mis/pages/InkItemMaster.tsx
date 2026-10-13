@@ -899,7 +899,10 @@ export default function InkItemMaster() {
 
       {showArrange && master.length > 0 && (
         <ArrangeGroups
-          master={master}
+          // Rebuilt when the list's switches change, so the panel always matches the list.
+          key={`${scope}|${stockOnly}`}
+          // Exactly the rows this screen lists — its own Group column, nothing else (user).
+          master={listed}
           order={order}
           groupFields={groupFields}
           onGroupField={(groupName, field, value) => {
