@@ -1340,7 +1340,7 @@ export default function RmMis() {
           "[&_tbody_td]:text-[9pt] [&_tbody_td_*]:text-[9pt]"
         }
       >
-      <ScrollableTable maxHeight="max-h-[calc(100vh-13rem)]" hideControls>
+      <ScrollableTable maxHeight="max-h-[calc(100vh-13rem)]" hideHint containScroll>
         <Table
           style={{ width: tableWidth, minWidth: tableWidth, maxWidth: "none" }}
           className={

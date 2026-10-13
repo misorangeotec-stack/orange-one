@@ -185,6 +185,8 @@ export interface InkOverride {
   code: string;
   group: string;
   description: string;
+  /** Linked to Bushra Central Master like the other three (user, 13-10-2026). */
+  category: string;
 }
 
 /**
@@ -333,7 +335,7 @@ export interface InkPositionsResult {
    *  can be a different code in a different company. */
   nameToCode: Map<string, string>;
   /** Whether edits may be saved into Bushra Central Master, and why not when they may not. */
-  central: Pick<ImsLinks, "canSave" | "note">;
+  central: Pick<ImsLinks, "canSave" | "note" | "categories">;
 }
 
 const norm = (s: string | null | undefined) => (s ?? "").trim().toUpperCase();
@@ -509,15 +511,18 @@ export async function loadInkPositions(
     const lineOv = lines[mergeKeyForRow] ?? {};
     const groupOv = groups[norm(effectiveGroup)] ?? {};
     /*
-     * Three sources, narrowest first: something set on THIS ink beats something set on its whole
-     * group, which beats what the item's own name says. So a group can be classified in one go
-     * and a single odd ink inside it can still be corrected on its own.
+     * CATEGORY COMES FROM BUSHRA CENTRAL MASTER (user, 13-10-2026), like code, group and
+     * description: an item in Central shows Central's category, and an edit here saves into
+     * Central. The old line / group categories (Ink IMS's five) no longer override it — they hid
+     * what the team set in Central. An item not in Central keeps this sheet's own: typed on the
+     * item, then its line, then its group, then what the name says.
      */
-    const effectiveCategory =
-      (lineOv.category ?? "").trim() ||
-      (groupOv.category ?? "").trim() ||
-      (link?.category ?? "").trim() ||
-      detectCategory(tallyName || row.item);
+    const effectiveCategory = link
+      ? pick("category", ov.category, "")
+      : (ov.category ?? "").trim() ||
+        (lineOv.category ?? "").trim() ||
+        (groupOv.category ?? "").trim() ||
+        detectCategory(tallyName || row.item);
     const effectiveSource = (lineOv.source ?? "").trim() || (groupOv.source ?? "").trim();
 
     const bought = lastSuppliers.get(`${row.company_guid}|${norm(row.item)}`);
@@ -640,7 +645,7 @@ export async function loadInkPositions(
   master.sort(
     (a, b) => a.company.localeCompare(b.company) || a.item.localeCompare(b.item),
   );
-  return { rows, master, builtAt, nameToCode, unsplitItems, central: { canSave: links.canSave, note: links.note } };
+  return { rows, master, builtAt, nameToCode, unsplitItems, central: { canSave: links.canSave, note: links.note, categories: links.categories } };
 }
 
 /* ---------------------------------------------------------------- consumption */
@@ -1227,6 +1232,32 @@ export const loadSeenLines = (): string[] => {
   return Array.isArray(v) ? v.filter((k) => typeof k === "string") : [];
 };
 export const saveSeenLines = (keys: string[]) => writeJson(KEY_SEEN, [...new Set(keys)]);
+
+/**
+ * The group a line is filed under when its books disagree: the group most of its books use; on
+ * a tie, a group the planner typed in the item master; then the more specific (longer) name;
+ * then A–Z, so the answer never depends on load order. Copied from Ink IMS.
+ */
+export function lineGroupOf(rows: InkMasterRow[]): string {
+  const tally = new Map<string, { name: string; count: number; typed: boolean }>();
+  for (const r of rows) {
+    const name = (r.effectiveGroup || "").trim();
+    if (!name) continue;
+    const k = name.toUpperCase();
+    const t = tally.get(k) ?? { name, count: 0, typed: false };
+    t.count++;
+    if (name.toUpperCase() !== (r.tallyGroup || "").trim().toUpperCase()) t.typed = true;
+    tally.set(k, t);
+  }
+  const best = [...tally.values()].sort(
+    (a, b) =>
+      b.count - a.count ||
+      Number(b.typed) - Number(a.typed) ||
+      b.name.length - a.name.length ||
+      a.name.localeCompare(b.name),
+  )[0];
+  return best?.name ?? "";
+}
 
 export const loadOrder = (): InkOrder => {
   const raw = readJson<InkOrder>(KEY_ORDER, {});
