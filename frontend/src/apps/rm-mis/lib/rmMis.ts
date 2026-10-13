@@ -1196,27 +1196,6 @@ export function uniqueOrder(order: InkOrder, first?: string): InkOrder {
   return out;
 }
 
-/**
- * Every number used once. Sorted by number, a repeat takes the next free number and pushes the
- * run above it up as far as the next gap; `first` wins a tie. Copied from Ink IMS (PR #86).
- */
-export function uniqueOrder(order: InkOrder, first?: string): InkOrder {
-  const entries = Object.entries(order).sort(
-    (a, b) =>
-      a[1] - b[1] ||
-      (a[0] === first ? -1 : b[0] === first ? 1 : 0) ||
-      a[0].localeCompare(b[0]),
-  );
-  const out: InkOrder = {};
-  let prev = -Infinity;
-  for (const [k, v] of entries) {
-    const n = v <= prev ? prev + 1 : v;
-    out[k] = n;
-    prev = n;
-  }
-  return out;
-}
-
 /** Extra non-working days, yyyymmdd. Sundays are excluded already and are not listed here. */
 export const loadHolidays = (): string[] => {
   const v = readJson<string[]>(KEY_HOLIDAYS, []);
