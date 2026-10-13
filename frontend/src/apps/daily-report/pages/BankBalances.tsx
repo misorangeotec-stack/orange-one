@@ -19,7 +19,9 @@ import {
 } from "../data/ccLimits";
 import { entityTotal, facilityFor, FACILITY_BALANCE_NOTE } from "../lib/aggregate";
 import { entityLabel, entityRank, BLANK_NOTE, FACILITY_BANKS } from "../lib/labels";
-import { addDays, dmy, fmtLacs, isSunday, longDate, todayIso } from "../lib/format";
+import {
+  addDays, dmy, fmtCr, fmtLacsCr, fmtMoney, fmtRupees, isSunday, lacsToRupees, longDate, todayIso,
+} from "../lib/format";
 import type { BankAccount, BankBalance, CcLimit, FacilityFigures } from "../types";
 
 /**
@@ -43,13 +45,21 @@ import type { BankAccount, BankBalance, CcLimit, FacilityFigures } from "../type
  *   asks first, because un-recording a number should feel deliberate.
  */
 
-/** Parse a typed box. `null` = blank. Throws on anything that is not a number. */
+/**
+ * Parse a typed box. `null` = blank. Throws on anything that is not a number.
+ *
+ * ⚠ THE BOXES ARE TYPED IN RUPEES, AND THIS RETURNS LAKHS. Every box used to be
+ *   labelled ₹ L, and the figure was typed in rupees anyway — straight off the
+ *   bank portal — so ₹2,11,61,000 was stored as 2,11,61,000 LAKHS and the
+ *   report's bank tile read "₹2,26,66,000.00 L". The box now takes the figure
+ *   as the bank prints it, and converts here, once, at the edge.
+ */
 function parseMoney(raw: string, label: string): number | null {
   const t = raw.trim();
   if (t === "") return null;
-  const n = Number(t.replace(/,/g, ""));
+  const n = Number(t.replace(/[,₹\s]/g, ""));
   if (!Number.isFinite(n)) throw new Error(`${label}: “${raw}” is not a number.`);
-  return n;
+  return n / 1e5;
 }
 
 /** The same, for a live preview: a half-typed or mistyped box is simply unknown. */
@@ -73,7 +83,8 @@ interface CcDraft {
 
 const BLANK_CC: CcDraft = { ccLimit: "", lcBcLimit: "", utilised: "", hold: "" };
 
-const str = (n: number | null): string => (n == null ? "" : String(n));
+/** A stored lakh figure as its box shows it — in rupees. */
+const str = (lacs: number | null): string => (lacs == null ? "" : String(lacsToRupees(lacs)));
 
 const trimDraft = (d: CcDraft): CcDraft => ({
   ccLimit: d.ccLimit.trim(), lcBcLimit: d.lcBcLimit.trim(), utilised: d.utilised.trim(), hold: d.hold.trim(),
@@ -106,8 +117,8 @@ function seedDraft(row: CcLimit | undefined, carried: CarriedLimits | undefined)
   if (row) return storedDraft(row);
   return {
     ...BLANK_CC,
-    ccLimit: carried?.ccLimit ? String(carried.ccLimit.lacs) : "",
-    lcBcLimit: carried?.lcBcLimit ? String(carried.lcBcLimit.lacs) : "",
+    ccLimit: carried?.ccLimit ? str(carried.ccLimit.lacs) : "",
+    lcBcLimit: carried?.lcBcLimit ? str(carried.lcBcLimit.lacs) : "",
   };
 }
 
@@ -140,7 +151,7 @@ function closingSeed(active: BankAccount[], stored: BalanceMap, date: string): R
   const c: Record<string, string> = {};
   for (const a of active) {
     const row = stored.get(balanceKey(a.id, date));
-    c[a.id] = row ? String(row.closingLacs) : "";
+    c[a.id] = row ? str(row.closingLacs) : "";
   }
   return c;
 }
@@ -163,7 +174,7 @@ function ccSeed(
 const cellLabel = "block text-[10.5px] font-semibold uppercase tracking-wide text-grey";
 const cellNote = "mt-0.5 block min-h-[14px] text-[10.5px] text-grey-2";
 
-/** A typed facility figure. */
+/** A typed facility figure — rupees in the box, lakhs and crores under it. */
 function FacilityBox({
   label, note, value, onChange, disabled,
 }: {
@@ -184,7 +195,12 @@ function FacilityBox({
         className="mt-1 text-right tabular-nums"
         placeholder="—"
       />
-      <span className={cellNote}>{note}</span>
+      <span className={cellNote}>
+        {softMoney(value) != null && (
+          <span className="block font-semibold text-navy">{fmtLacsCr(softMoney(value))}</span>
+        )}
+        {note}
+      </span>
     </label>
   );
 }
@@ -208,9 +224,12 @@ function FacilityFigure({
         className="mt-1 rounded-xl border border-dashed border-line bg-page px-3.5 py-2.5 text-right text-[14px] font-semibold tabular-nums text-navy"
         title={title}
       >
-        {value == null ? <span className="font-normal text-grey-2">—</span> : fmtLacs(value)}
+        {value == null ? <span className="font-normal text-grey-2">—</span> : fmtMoney(value)}
       </div>
-      <span className={cellNote}>{note}</span>
+      <span className={cellNote}>
+        {value != null && <span className="block font-semibold text-navy">{fmtCr(value)}</span>}
+        {note}
+      </span>
     </div>
   );
 }
@@ -320,7 +339,7 @@ export default function BankBalances() {
     for (const a of active) {
       const row = stored.data?.get(balanceKey(a.id, date));
       const typedC = (closing[a.id] ?? "").trim();
-      const storedC = row ? String(row.closingLacs) : "";
+      const storedC = row ? str(row.closingLacs) : "";
       if (typedC === storedC) continue;
 
       // An empty box on a day that has nothing stored is not a change — it is
@@ -493,14 +512,16 @@ export default function BankBalances() {
 
       <div className="max-w-3xl space-y-1.5 text-[12px] text-grey">
         <p>
-          Closing balance in ₹ lakhs, as the bank portal shows it.{" "}
+          Closing balance <span className="font-semibold text-navy">in rupees</span>, exactly as the
+          bank portal shows it (2,11,61,000 — not 211.61). It is converted to lakhs and crores for
+          you, and the report reads it in lakhs.{" "}
           <span className="font-semibold text-navy">Leave a box empty for a day an account was not recorded</span>{" "}
           — an empty box is not a zero, and the report prints it as “not entered”. Type 0.00 when the
           account genuinely stood at zero.
         </p>
         <p>
           Under each company’s total is its <span className="font-semibold text-navy">credit facility</span>,
-          also in ₹ lakhs. The CC limit and LC / BC limit carry forward from the last day they were
+          also typed in rupees and shown in lakhs and crores. The CC limit and LC / BC limit carry forward from the last day they were
           recorded — change them only when the bank does. Utilised and held by bank are typed each
           evening. The other three figures are worked out, and a company’s facility is saved only once
           something is typed into it.
@@ -524,7 +545,8 @@ export default function BankBalances() {
                     <th className="px-4 py-2 font-semibold">Account</th>
                     <th className="px-2 py-2 font-semibold">Location</th>
                     <th className="px-2 py-2 text-right font-semibold">Previous</th>
-                    <th className="px-2 py-2 text-right font-semibold">Closing balance (₹ L)</th>
+                    <th className="px-2 py-2 text-right font-semibold">Closing balance (₹)</th>
+                    <th className="px-2 py-2 text-right font-semibold">In lakhs · crores</th>
                     <th className="px-2 py-2 text-right font-semibold">Change</th>
                   </tr>
                 </thead>
@@ -532,11 +554,8 @@ export default function BankBalances() {
                   {rows.map((a) => {
                     const prev = previous.data?.get(a.id);
                     const typed = (closing[a.id] ?? "").trim();
-                    const parsed = typed === "" ? null : Number(typed.replace(/,/g, ""));
-                    const delta =
-                      parsed != null && Number.isFinite(parsed) && prev
-                        ? parsed - prev.closingLacs
-                        : null;
+                    const parsed = typed === "" ? null : softMoney(typed);
+                    const delta = parsed != null && prev ? parsed - prev.closingLacs : null;
                     return (
                       <tr key={a.id} className="border-b border-line/60">
                         <td className="px-4 py-2">
@@ -551,7 +570,7 @@ export default function BankBalances() {
                         <td className="px-2 py-2 text-right tabular-nums text-grey">
                           {prev ? (
                             <>
-                              {fmtLacs(prev.closingLacs)}
+                              {fmtRupees(lacsToRupees(prev.closingLacs))}
                               {/* The DATE matters: with Sundays blank, "previous" is
                                   rarely yesterday, and a comparison against an
                                   unnamed day is not a comparison. */}
@@ -567,10 +586,13 @@ export default function BankBalances() {
                             value={closing[a.id] ?? ""}
                             disabled={!mayEdit}
                             onChange={(e) => setClosing((s) => ({ ...s, [a.id]: e.target.value }))}
-                            className="w-28 text-right tabular-nums"
+                            className="w-36 text-right tabular-nums"
                             placeholder="—"
                             aria-label={`Closing balance for ${a.name}`}
                           />
+                        </td>
+                        <td className="px-2 py-2 text-right text-[11.5px] tabular-nums text-navy">
+                          {parsed == null ? <span className="text-grey-2">—</span> : fmtLacsCr(parsed)}
                         </td>
                         <td className="px-2 py-2 text-right tabular-nums">
                           {/* A delta against nothing is a fabricated number, so an
@@ -581,7 +603,7 @@ export default function BankBalances() {
                             <span className="text-grey-2">—</span>
                           ) : (
                             <span className={delta < 0 ? "text-orange" : "text-emerald-700"}>
-                              {delta >= 0 ? "+" : "−"} {fmtLacs(Math.abs(delta))}
+                              {delta >= 0 ? "+" : "−"} {fmtRupees(lacsToRupees(Math.abs(delta)))}
                             </span>
                           )}
                         </td>
@@ -598,7 +620,10 @@ export default function BankBalances() {
                     {/* pr-[23px]: the cell's own 8px plus the input's border and
                         inner padding, so the total lines up under the typed figures. */}
                     <td className="py-2 pl-2 pr-[23px] text-right text-[14px] font-semibold tabular-nums text-navy">
-                      {total.totalLacs == null ? <span className="text-grey-2">—</span> : fmtLacs(total.totalLacs)}
+                      {total.totalLacs == null ? <span className="text-grey-2">—</span> : fmtRupees(lacsToRupees(total.totalLacs))}
+                    </td>
+                    <td className="px-2 py-2 text-right text-[12px] font-semibold tabular-nums text-navy">
+                      {total.totalLacs == null ? "" : fmtLacsCr(total.totalLacs)}
                     </td>
                     <td className="px-2 py-2 text-right text-[11.5px] text-grey-2">
                       {total.totalLacs == null
@@ -608,7 +633,7 @@ export default function BankBalances() {
                   </tr>
                   {total.totalLacs == null && (
                     <tr className="bg-page/60">
-                      <td colSpan={5} className="px-4 pb-2.5 text-[11.5px] text-grey">
+                      <td colSpan={6} className="px-4 pb-2.5 text-[11.5px] text-grey">
                         The total appears once every account above has a figure — a total of only some
                         of them would understate the company’s cash. Still to enter:{" "}
                         <span className="font-semibold text-navy">{total.missing.join(", ")}</span>.
@@ -634,7 +659,7 @@ export default function BankBalances() {
               /** "carried from 07-09" while a box still holds the carried figure. */
               const carriedNote = (field: "ccLimit" | "lcBcLimit"): string => {
                 const c = field === "ccLimit" ? carriedHere?.ccLimit : carriedHere?.lcBcLimit;
-                if (row || !c || draft[field].trim() !== String(c.lacs)) return "sanctioned";
+                if (row || !c || draft[field].trim() !== str(c.lacs)) return "sanctioned";
                 return `carried from ${dmy(c.date).slice(0, 5)}`;
               };
 
@@ -652,29 +677,29 @@ export default function BankBalances() {
                       like the paper it replaces. */}
                   <div className="grid grid-cols-2 gap-x-3 gap-y-2 sm:grid-cols-4 xl:grid-cols-7">
                     <FacilityBox
-                      label="CC limit (₹ L)" note={carriedNote("ccLimit")} disabled={disabled}
+                      label="CC limit (₹)" note={carriedNote("ccLimit")} disabled={disabled}
                       value={draft.ccLimit} onChange={(v) => setCcField(key, "ccLimit", v)}
                     />
                     <FacilityFigure
-                      label="Available balance (₹ L)"
+                      label="Available balance"
                       value={f.availableBalance}
                       note={f.availableBalance == null ? "needs every account" : "company total"}
                       title={FACILITY_BALANCE_NOTE}
                     />
                     <FacilityBox
-                      label="LC / BC limit (₹ L)" note={carriedNote("lcBcLimit")} disabled={disabled}
+                      label="LC / BC limit (₹)" note={carriedNote("lcBcLimit")} disabled={disabled}
                       value={draft.lcBcLimit} onChange={(v) => setCcField(key, "lcBcLimit", v)}
                     />
                     <FacilityBox
-                      label="Utilised (₹ L)" note="today" disabled={disabled}
+                      label="Utilised (₹)" note="today" disabled={disabled}
                       value={draft.utilised} onChange={(v) => setCcField(key, "utilised", v)}
                     />
-                    <FacilityFigure label="Free limit (₹ L)" value={f.lcBcFree} note="LC / BC limit − utilised" />
+                    <FacilityFigure label="Free limit" value={f.lcBcFree} note="LC / BC limit − utilised" />
                     <FacilityBox
-                      label="Held by bank (₹ L)" note="today" disabled={disabled}
+                      label="Held by bank (₹)" note="today" disabled={disabled}
                       value={draft.hold} onChange={(v) => setCcField(key, "hold", v)}
                     />
-                    <FacilityFigure label="Available CC limit (₹ L)" value={f.availableCc} note="CC limit − held" />
+                    <FacilityFigure label="Available CC limit" value={f.availableCc} note="CC limit − held" />
                   </div>
                 </div>
               );
