@@ -105,6 +105,68 @@ export const isWholeGroupKey = (entry: string) => entry.startsWith(GROUP_SEP);
 const PAGE = 1000;
 const up = (v: string | null | undefined) => (v ?? "").trim().toUpperCase();
 
+/**
+ * Every page of an ordered query, several pages at a time.
+ *
+ * The year's movements for Enterprises Surat are ~43,000 rows, 44 pages. Read one after another
+ * they took ~9 s, and the lot balances another ~7 s behind them — most of RM IMS's load time
+ * (measured 13-10-2026). Pages are requested in waves of `WAVE`; the query is ordered, so page N
+ * is the same rows whichever finishes first, and they are joined back in page order.
+ */
+const WAVE = 6;
+export async function pageAll<T>(
+  page: (from: number, to: number) => PromiseLike<{ data: T[] | null; error: { message: string } | null }>,
+): Promise<T[]> {
+  const out: T[] = [];
+  for (let first = 0; ; first += WAVE) {
+    const results = await Promise.all(
+      Array.from({ length: WAVE }, (_, i) => page((first + i) * PAGE, (first + i) * PAGE + PAGE - 1)),
+    );
+    for (const { data, error } of results) {
+      if (error) throw new Error(error.message);
+      const rows = data ?? [];
+      out.push(...rows);
+      if (rows.length < PAGE) return out;
+    }
+  }
+}
+
+/**
+ * The same, one page at a time — for rpt_lot_balance, which is heavy enough that six pages at once
+ * hit the statement timeout (tested 13-10-2026), and a failed read silently drops the godown split.
+ */
+export async function pageOneByOne<T>(
+  page: (from: number, to: number) => PromiseLike<{ data: T[] | null; error: { message: string } | null }>,
+): Promise<T[]> {
+  const out: T[] = [];
+  for (let offset = 0; ; offset += PAGE) {
+    const { data, error } = await page(offset, offset + PAGE - 1);
+    if (error) throw new Error(error.message);
+    const rows = data ?? [];
+    out.push(...rows);
+    if (rows.length < PAGE) return out;
+  }
+}
+
+/**
+ * THE RAW TALLY ROWS ARE KEPT FOR A FEW MINUTES. The dashboard's query is keyed on the planner's
+ * numbering, lead times and categories, so every edit re-ran the whole load; the godown walk alone
+ * re-read 48,000 rows from ConnectWave each time. The rows change only when Tally syncs, so they
+ * are held for RAW_TTL and the edit just recomputes. Refresh drops them (`forgetRawTallyRows`).
+ */
+const RAW_TTL = 5 * 60 * 1000;
+const rawCache = new Map<string, { at: number; value: Promise<unknown> }>();
+export function cachedRaw<T>(key: string, load: () => Promise<T>): Promise<T> {
+  const hit = rawCache.get(key);
+  if (hit && Date.now() - hit.at < RAW_TTL) return hit.value as Promise<T>;
+  const value = load();
+  rawCache.set(key, { at: Date.now(), value });
+  // A failed read is not kept: the next attempt goes back to the server.
+  value.catch(() => rawCache.delete(key));
+  return value;
+}
+export const forgetRawTallyRows = () => rawCache.clear();
+
 interface MoveRow {
   stock_item: string;
   godown_name: string | null;
@@ -175,24 +237,35 @@ export async function loadGodownSplit(
   const cw = getConnectwaveSupabase();
   const tenant = `acct_orange::${companyGuid}`;
 
-  // ── the year's movements, in date order so a running balance means something
-  const moves: MoveRow[] = [];
-  for (let offset = 0; ; offset += PAGE) {
-    const { data, error } = await cw
-      .from("rpt_batch_line")
-      .select("stock_item,godown_name,movement,qty,affects_stock")
-      .eq("company_guid", companyGuid)
-      .eq("tenant_id", tenant)
-      .order("vch_date", { ascending: true })
-      .order("voucher_guid", { ascending: true })
-      .order("line_no", { ascending: true })
-      .range(offset, offset + PAGE - 1)
-      .returns<MoveRow[]>();
-    if (error) throw new Error(error.message);
-    const page = data ?? [];
-    moves.push(...page);
-    if (page.length < PAGE) break;
-  }
+  // ── the year's movements (in date order so a running balance means something) and where the
+  //    stock physically rests, read side by side
+  const [moves, lots] = await cachedRaw(`godown-rows|${companyGuid}`, () =>
+    Promise.all([
+      pageAll<MoveRow>((from, to) =>
+        cw
+          .from("rpt_batch_line")
+          .select("stock_item,godown_name,movement,qty,affects_stock")
+          .eq("company_guid", companyGuid)
+          .eq("tenant_id", tenant)
+          .order("vch_date", { ascending: true })
+          .order("voucher_guid", { ascending: true })
+          .order("line_no", { ascending: true })
+          .range(from, to)
+          .returns<MoveRow[]>(),
+      ),
+      pageOneByOne<LotRow>((from, to) =>
+        cw
+          .from("rpt_lot_balance")
+          .select("stock_item,last_godown,balance,uom")
+          .eq("company_guid", companyGuid)
+          .order("stock_item", { ascending: true })
+          .order("batch_name", { ascending: true })
+          .order("last_godown", { ascending: true })
+          .range(from, to)
+          .returns<LotRow[]>(),
+      ),
+    ]),
+  );
 
   /** item → godown → net movement, and the lowest that running balance ever reached. */
   const net = new Map<string, Map<string, number>>();
@@ -218,23 +291,6 @@ export async function loadGodownSplit(
   }
 
   // ── where stock physically rests, for spreading whatever opening the deficits do not explain
-  const lots: LotRow[] = [];
-  for (let offset = 0; ; offset += PAGE) {
-    const { data, error } = await cw
-      .from("rpt_lot_balance")
-      .select("stock_item,last_godown,balance,uom")
-      .eq("company_guid", companyGuid)
-      .order("stock_item", { ascending: true })
-      .order("batch_name", { ascending: true })
-      .order("last_godown", { ascending: true })
-      .range(offset, offset + PAGE - 1)
-      .returns<LotRow[]>();
-    if (error) throw new Error(error.message);
-    const page = data ?? [];
-    lots.push(...page);
-    if (page.length < PAGE) break;
-  }
-
   const lotShape = new Map<string, Map<string, number>>();
   for (const r of lots) {
     const qty = Number(r.balance) || 0;
