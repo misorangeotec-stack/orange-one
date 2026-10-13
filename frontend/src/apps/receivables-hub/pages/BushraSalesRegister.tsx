@@ -194,7 +194,9 @@ export default function BushraSalesRegister() {
     enabled: validRange && !scopeLoading && !!lookup,
     staleTime: 5 * 60 * 1000,
   });
-  const error = lookupError ?? rowsError ?? extras.error;
+  // The extras (Salesperson / Customer Group / Orange) never take the register down: if they cannot
+  // load, the lines still show and the note below says those three columns are unavailable.
+  const error = lookupError ?? rowsError;
   // The rows query waits, DISABLED, for the item lookup and the scope — and a disabled query is not
   // "loading" to TanStack. Without the two extra checks the page shows "0 lines · ₹0" meanwhile.
   const loading = !error && (isLoading || scopeLoading || !lookup);
@@ -425,7 +427,9 @@ export default function BushraSalesRegister() {
           <div className="text-xs text-muted-foreground">
             {filtered.length.toLocaleString("en-IN")} line{filtered.length === 1 ? "" : "s"}
             {" · "}revenue <b className="text-foreground font-semibold">₹ {fmtRev(totalRevenue)}</b>
-            {!extras.ready && <> · <span className="text-amber-700">Salesperson / Customer Group / Orange still loading…</span></>}
+            {extras.error
+              ? <> · <span className="text-amber-700" title={extras.error.message}>Salesperson / Customer Group / Orange could not be loaded — the lines are unaffected</span></>
+              : !extras.ready && <> · <span className="text-amber-700">Salesperson / Customer Group / Orange still loading…</span></>}
             {notInMasters > 0 && (
               <> · {notInMasters.toLocaleString("en-IN")} item{notInMasters === 1 ? "" : "s"} not found in Central Masters</>
             )}
