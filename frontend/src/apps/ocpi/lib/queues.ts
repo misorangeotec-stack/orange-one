@@ -109,6 +109,7 @@ export function stepCompletedIso(d: OcpiDeal, step: StepKey): string | null {
     case "management_signoff": return d.msAt;
     case "finance_handover":   return d.fhAt;
     case "finance_receipt":    return d.frAt;
+    case "service_check":      return d.svcAt;
     default:                   return null;
   }
 }
@@ -141,6 +142,7 @@ export function stepActorId(d: OcpiDeal, step: StepKey): string | null {
     case "management_signoff": return d.msBy;
     case "finance_handover":   return d.fhBy;
     case "finance_receipt":    return d.frBy;
+    case "service_check":      return d.svcBy;
     default:                   return null;
   }
 }
@@ -173,10 +175,7 @@ export function dueIsoFor(
  */
 export function buildQueueEntries(deals: OcpiDeal[], stepSla?: StepSlaMap | null): QueueEntry[] {
   const out: QueueEntry[] = [];
-  for (const d of deals) {
-    const stepKey = STATUS_STEP[d.status];
-    if (!stepKey || stepKey === "quotation") continue;
-    const step = stepKey as QueueStep;
+  const push = (d: OcpiDeal, step: QueueStep) =>
     out.push({
       stepKey: step,
       entityId: d.id,
@@ -191,6 +190,12 @@ export function buildQueueEntries(deals: OcpiDeal[], stepSla?: StepSlaMap | null
       value: d.machineValueInr ?? d.dealValueAmount,
       status: d.status,
     });
+  for (const d of deals) {
+    const stepKey = STATUS_STEP[d.status];
+    if (stepKey && stepKey !== "quotation") push(d, stepKey as QueueStep);
+    // ⚠ A SECOND ENTRY, NOT A STATUS. The Service Check runs beside the Finance
+    //   chain, so a deal can sit in both buckets at once.
+    if (isServiceOpen(d)) push(d, "service_check");
   }
   return out;
 }
@@ -200,4 +205,8 @@ export const entriesForStep = (entries: QueueEntry[], step: QueueStep): QueueEnt
   entries.filter((e) => e.stepKey === step);
 
 /** Is this deal still owed by somebody? */
+/** Sent to the service team, not yet completed, and the deal not withdrawn or parked. */
+export const isServiceOpen = (d: OcpiDeal): boolean =>
+  !!d.svcOpenedAt && !d.svcAt && !["cancelled", "rejected", "on_hold"].includes(d.status);
+
 export const isOpen = (d: OcpiDeal): boolean => STATUS_STEP[d.status] !== undefined;

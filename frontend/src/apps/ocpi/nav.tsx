@@ -31,6 +31,7 @@ export const QUEUE_PATH: Record<QueueStep, string> = {
   management_signoff: "management-signature",
   finance_handover: "finance-handover",
   finance_receipt: "finance-receipt",
+  service_check: "service-check",
   // ⚠ RETIRED, AND STILL MAPPED. The record is exhaustive over QueueStep, and
   //   these two keys still exist so a historical deal can be counted. No route
   //   is mounted for either path and the sidebar never offers them.
@@ -47,7 +48,15 @@ export function buildOcpiNav(opts: {
   canManageAnyMaster: boolean;
   /** How many master requests are still waiting, for the badge. */
   pendingMasterRequests: number;
+  /** Owns only the Service Check — sees that queue and nothing else. */
+  serviceOnly?: boolean;
 }): NavItem[] {
+  if (opts.serviceOnly) {
+    return [
+      { label: "Service Check", to: `${B}/queues/${QUEUE_PATH.service_check}`, icon: ic.step, section: "Queues" },
+    ];
+  }
+
   const nav: NavItem[] = [
     { label: "Dashboard", to: B, icon: ic.dashboard, section: "Workspace" },
     { label: "All Deals", to: `${B}/deals`, icon: ic.deals },

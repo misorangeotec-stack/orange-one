@@ -21,7 +21,7 @@ import {
   COST_BEARERS, CURRENCIES, DELIVERY_FACTORY_CITIES, DELIVERY_LEGS, DELIVERY_PERIOD_SUFFIX,
   DELIVERY_VIA, DOLLAR_CLAUSE, HEAD_SHIP_MODES, HEAD_SHIP_VIA, INSURANCE_CLAUSE,
   PAYMENT_TERMS_FORMATS, PLATTER_OPTIONS, SUBSIDIZED_RATE_NOTE, TRANSPORT_TERMS,
-  composeTradeTerm, dealFacts,
+  composeTradeTerm, dealFacts, deliveryDateFromDays, deliveryDaysFromDate,
   type QuotationDraft,
 } from "../lib/fieldSpec";
 import { FIELD_ANCHOR, QUOTATION_FORM_ANCHOR, requiredKeys } from "../lib/completeness";
@@ -2978,12 +2978,40 @@ export default function QuotationForm({
               <div className="flex items-center gap-2">
                 <TextInput
                   value={draft.deliveryDays}
-                  onChange={(e) => patch({ deliveryDays: e.target.value })}
+                  onChange={(e) => {
+                    const deliveryDays = e.target.value;
+                    const deliveryDate = deliveryDateFromDays(deliveryDays);
+                    patch(deliveryDate === null ? { deliveryDays } : { deliveryDays, deliveryDate });
+                  }}
                   placeholder="e.g. 30, or 30 to 45"
                   disabled={disabled}
                 />
                 <span className="shrink-0 text-[12.5px] text-grey-2">{DELIVERY_PERIOD_SUFFIX}</span>
               </div>
+            </FieldLabel>
+          </div>
+          {/*
+            The tentative date and the period fill each other, counted from
+            today: typing days sets the date, picking a date sets the days. It
+            writes the old `delivery_date` column, which fms_ocpi_submit_quotation
+            still asks for at Send for approval.
+          */}
+          <div>
+            <FieldLabel
+              label="Tentative delivery date"
+              required={req.has("deliveryDate")}
+              anchor={FIELD_ANCHOR("deliveryDate")}
+            >
+              <TextInput
+                type="date"
+                value={draft.deliveryDate}
+                onChange={(e) => {
+                  const deliveryDate = e.target.value;
+                  const deliveryDays = deliveryDaysFromDate(deliveryDate);
+                  patch(deliveryDays === null ? { deliveryDate } : { deliveryDate, deliveryDays });
+                }}
+                disabled={disabled}
+              />
             </FieldLabel>
           </div>
         </div>

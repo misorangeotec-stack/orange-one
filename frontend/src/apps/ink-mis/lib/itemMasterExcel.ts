@@ -216,11 +216,12 @@ export async function importItemMaster(
     else delete overrides[key];
 
     // Order: keyed on the line this row will feed AFTER its code is applied.
-    const line = lineKey(companyKey, item, code || up(m.tallyCode));
-    if (!touchedLines.has(line)) {
-      delete order[line];
-      touchedLines.add(line);
-    }
+    // An unchanged code feeds the line the row is on now, which may be a line merged by
+    // description; only a changed code needs the key worked out again.
+    const fileCode = code || up(m.tallyCode);
+    const line = fileCode === m.effectiveCode ? m.mergeKey : lineKey(companyKey, item, fileCode);
+    const firstRowOfLine = !touchedLines.has(line);
+    touchedLines.add(line);
     // Planner-only fields, keyed on the line: the first row of a line that carries a value sets
     // it, so an ink listed in four books does not need the same word typed four times.
     if (hasCategory) {
@@ -253,9 +254,14 @@ export async function importItemMaster(
       const lead = norm(row["Lead time"]);
       const n = Number(lead);
       const cur = plans[line] ?? EMPTY_PLAN;
-      plans[line] = { ...cur, leadTime: lead === "" || !Number.isFinite(n) ? 0 : n };
+      // A BLANK CELL KEEPS what is there. It used to clear it, so a file with half its cells
+      // empty silently wiped half the sheet.
+      if (lead !== "" && Number.isFinite(n)) plans[line] = { ...cur, leadTime: n };
     }
 
+    // A BLANK ORDER CELL KEEPS THE NUMBER the line already has. It used to delete it first and
+    // set it from the cell, so a file with numbers in only some rows wiped every other number —
+    // which is how the live numbering dropped to 1–10 on 12-10-2026.
     const cell = norm(row["Order"]);
     if (!cell) continue;
     const n = Number(cell);
@@ -263,11 +269,12 @@ export async function importItemMaster(
       badOrders++;
       continue;
     }
-    if (order[line] !== undefined && order[line] !== n) {
+    if (firstRowOfLine || order[line] === undefined) {
+      order[line] = n;
+    } else if (order[line] !== n) {
+      // Two rows of one ink in the file disagree: the smaller number wins.
       orderClashes++;
       order[line] = Math.min(order[line], n);
-    } else {
-      order[line] = n;
     }
   }
 

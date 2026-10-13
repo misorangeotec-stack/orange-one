@@ -637,7 +637,14 @@ export async function buildOcPdf(input: OcDocInput): Promise<jsPDF> {
   if (wants("attn")) header.push(["Attn:", deal.customerAttn ?? ""]);
   if (wants("date")) header.push(["Date:", dmy(deal.ocAt ?? new Date().toISOString())]);
   if (wants("ref")) header.push(["Ref:", deal.refNo ?? ""]);
-  if (wants("address")) header.push(["Address:", [deal.customerName, deal.customerAddress].filter(Boolean).join(", ")]);
+  // The name on its own line and the address under it, as the PI's "TO," block
+  // prints them — joined with a comma, the name read as part of the address.
+  if (wants("address")) {
+    const name = deal.customerName?.trim() ?? "";
+    const address = deal.customerAddress?.trim() ?? "";
+    header.push(["Address:", name || address]);
+    if (name && address) header.push(["", address]);
+  }
 
   /*
     🔴 THE CUSTOMER'S GSTIN IS HELD AND WAS NOT PRINTED (OCPI-37, finding 07).

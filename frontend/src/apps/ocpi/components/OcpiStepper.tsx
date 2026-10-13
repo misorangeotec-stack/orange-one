@@ -4,7 +4,7 @@ import { useOrgPersonById } from "@/core/platform/orgPeople";
 import { useOcpiStore } from "../store";
 import { stepActorId, stepCompletedIso } from "../lib/queues";
 import { dmy } from "../lib/format";
-import { LIVE_STEPS, STEPS, isRetiredStep, stepByKey, type StepDef, type StepKey } from "../lib/steps";
+import { LIVE_STEPS, PARALLEL_STEPS, STEPS, isRetiredStep, stepByKey, type StepDef, type StepKey } from "../lib/steps";
 import { STATUS_STEP, type OcpiDeal, type OcpiStatus } from "../types";
 
 /**
@@ -51,7 +51,7 @@ const stageOf = (st: StepDef): Stage => ({ key: st.key, label: st.short, step: s
  *   no caption, and `STAGE_LABEL` guards on it (see below).
  */
 const LIVE_STAGES: Stage[] = [
-  ...LIVE_STEPS.map(stageOf),
+  ...LIVE_STEPS.filter((st) => !PARALLEL_STEPS.includes(st.key)).map(stageOf),
   { key: "closed", label: "Closed", step: null },
 ];
 

@@ -1,7 +1,8 @@
 /**
  * OCPI → work items. See ./README.md.
  *
- * A deal sits at exactly one queue step (`STATUS_STEP`), so it appears once.
+ * A deal sits at one status step (`STATUS_STEP`) and, once countersigned, may also
+ * sit at the parallel Service Check — item ids carry the step, so both show.
  *
  * Ownership is `ocpiStepOwnerIds` (apps/ocpi/lib/owners.ts) — the step's owners,
  * plus the deal's own raiser on the two steps the database lets them act on

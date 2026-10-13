@@ -529,3 +529,36 @@ export async function saveCompanyProfile(
     : await db.from("fms_ocpi_company_profiles").insert(row);
   if (res.error) throw new Error(res.error.message);
 }
+
+export interface ServiceCheckInput {
+  installationDate: string;
+  engineer: string;
+  siteContactName: string;
+  siteContactPhone: string;
+  siteReady: boolean | null;
+  siteRemark: string;
+  checks: { name: string; ok: boolean | null; remark: string }[];
+  note: string;
+}
+
+/**
+ * The service team completes the Service Check. Runs beside the Finance chain —
+ * it changes nothing about the deal's status. The database checks every field
+ * and every active check point, and names what is missing.
+ */
+export async function recordServiceCheck(dealId: string, input: ServiceCheckInput): Promise<void> {
+  const { error } = await db.rpc("fms_ocpi_record_service_check", {
+    p_deal: dealId,
+    p: {
+      installation_date: input.installationDate || null,
+      engineer: input.engineer,
+      site_contact_name: input.siteContactName,
+      site_contact_phone: input.siteContactPhone,
+      site_ready: input.siteReady,
+      site_remark: input.siteRemark,
+      checks: input.checks.filter((c) => c.ok !== null),
+      note: input.note,
+    },
+  });
+  if (error) throw new Error(error.message);
+}
