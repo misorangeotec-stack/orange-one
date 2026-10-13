@@ -127,7 +127,8 @@ export function buildGroups(master: InkMasterRow[], order: InkOrder): GroupEntry
       continue;
     }
     lines.set(r.mergeKey, {
-      group: r.effectiveGroup || "",
+      // The LINE's group, decided across all its books (lineGroupOf), not this row's book.
+      group: r.lineGroup || r.effectiveGroup || "",
       line: {
         key: r.mergeKey,
         legacyKey: r.legacyKey,
