@@ -33,11 +33,15 @@ export type CcLimitMap = Map<string, CcLimit>;
 // the note in bankAccounts.ts).
 const SELECT = "entity_alias,bank,balance_date,cc_limit_lacs,lc_bc_limit_lacs,lc_bc_utilised_lacs,hold_by_bank_lacs,updated_at";
 
-/** Supabase hands numerics back as strings on some paths; null stays null. */
+/**
+ * A stored figure, in lakhs. Supabase hands numerics back as strings on some
+ * paths; null stays null. ⚠ The columns hold the RUPEES that were typed — see
+ * the note in bankBalances.ts — so this divides by 1,00,000 as it reads.
+ */
 const num = (v: unknown): number | null => {
   if (v == null || v === "") return null;
   const n = Number(v);
-  return Number.isFinite(n) ? n : null;
+  return Number.isFinite(n) ? n / 1e5 : null;
 };
 
 export async function fetchCcLimits(fromIso: string, toIso: string): Promise<CcLimitMap> {
