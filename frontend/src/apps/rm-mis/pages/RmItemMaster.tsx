@@ -55,7 +55,7 @@ import {
   EMPTY_PLAN, INK_CATEGORIES, INK_COMPANIES, INK_SOURCES, describeGodownChoice, fmtQty,
   loadInkPositions, loadOrder,
   loadGroupFields, loadLines, loadOverrides, loadPlans, loadSeenLines, renumber, saveGroupFields, uniqueOrder,
-  saveLines, savePlans, saveOrder, saveOverrides, saveSeenLines, sourceLabel,
+  fmtYmd, saveLines, savePlans, saveOrder, saveOverrides, saveSeenLines, sourceLabel,
   type InkGroupFields, type InkLineFields, type InkLines, type InkMasterRow, type InkOrder, type InkOverride,
   type InkOverrides, type InkPlan, type InkScope,
 } from "../lib/rmMis";
@@ -468,6 +468,7 @@ export default function RmItemMaster() {
         // is handed an order they cannot see the reason for.
         case "source": return sourceLabel(r.source);
         case "weeks": return (savedLines[r.mergeKey] ?? savedLines[r.legacyKey])?.weeks ?? null;
+        case "supplier": return savedLines[r.mergeKey]?.supplier || r.tallySupplier;
         default: return null;
       }
     },
@@ -1058,6 +1059,9 @@ export default function RmItemMaster() {
               <ResizableHead id="weeks" cols={cols} className="w-[7rem] text-right">
                 {head("Plant weeks", "weeks")}
               </ResizableHead>
+              <ResizableHead id="supplier" cols={cols} className="min-w-[14rem]">
+                {head("Supplier", "supplier")}
+              </ResizableHead>
             </TableRow>
             <TableRow className="hover:bg-transparent">
               <TableHead className="py-2 font-normal">
@@ -1089,12 +1093,13 @@ export default function RmItemMaster() {
                 <MultiSelect values={f.sources} onChange={(v) => setCol("sources", v)} options={sourceOpts} placeholder="All" className="w-full" triggerClassName={slim} searchable />
               </TableHead>
               <TableHead className="py-2 font-normal" />
+              <TableHead className="py-2 font-normal" />
             </TableRow>
           </TableHeader>
           <TableBody>
             {isLoading && (
               <TableRow>
-                <TableCell colSpan={11} className="py-10 text-center text-muted-foreground">
+                <TableCell colSpan={12} className="py-10 text-center text-muted-foreground">
                   Loading every item from the four books…
                 </TableCell>
               </TableRow>
@@ -1106,7 +1111,7 @@ export default function RmItemMaster() {
             */}
             {!isLoading && visible.length === 0 && (
               <TableRow>
-                <TableCell colSpan={11} className="py-10 text-center text-muted-foreground">
+                <TableCell colSpan={12} className="py-10 text-center text-muted-foreground">
                   {master.length === 0 ? (
                     "No items in the four books yet."
                   ) : (
@@ -1243,6 +1248,21 @@ export default function RmItemMaster() {
                     placeholder={r.source === "plant" ? "1" : "–"}
                     value={lines[r.mergeKey]?.weeks ?? ""}
                     onChange={(e) => setWeeks(r.mergeKey, e.target.value)}
+                  />
+                </TableCell>
+                <TableCell>
+                  {/* FREE TEXT (user, 13-10-2026). Grey = Tally's last supplier, shown until a name is
+                      typed; a typed name wins on the dashboard too. Clear the box to go back to Tally. */}
+                  <Input
+                    className="h-8 w-full min-w-0"
+                    placeholder={r.tallySupplier || "Type supplier"}
+                    title={
+                      r.tallySupplier
+                        ? `Tally: last bought from ${r.tallySupplier} on ${fmtYmd(r.tallySupplierDate)}`
+                        : "No purchase on record in Tally"
+                    }
+                    value={lines[r.mergeKey]?.supplier ?? ""}
+                    onChange={(e) => setLineField(r.mergeKey, "supplier", e.target.value.toUpperCase())}
                   />
                 </TableCell>
               </TableRow>
