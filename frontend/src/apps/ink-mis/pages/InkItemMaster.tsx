@@ -24,6 +24,7 @@
  * import carry this table with them.
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { getSheetStatus } from "../lib/sheetStore";
 import { Link } from "react-router-dom";
 import { appBasePath } from "../../appInfo";
 import { useQuery } from "@tanstack/react-query";
@@ -46,11 +47,12 @@ import { ResizableHead, useTableColumns } from "../lib/tableColumns";
 import { useGodownChoice } from "../lib/godowns";
 import ActiveFilters, { type ActiveFilter } from "@/shared/components/ui/ActiveFilters";
 import { ColumnHead } from "../components/HeaderFilter";
+import ArrangeGroups from "../components/ArrangeGroups";
 import { applySort, type CellValue, type SortState } from "../lib/grid";
 import {
   EMPTY_PLAN, INK_CATEGORIES, INK_COMPANIES, INK_SOURCES, describeGodownChoice, fmtQty,
   loadInkPositions, loadOrder,
-  loadGroupFields, loadLines, loadOverrides, loadPlans, loadSeenLines, renumber, saveGroupFields,
+  loadGroupFields, loadLines, loadOverrides, loadPlans, loadSeenLines, placeNewInGroups, renumber, saveGroupFields, uniqueOrder,
   saveLines, savePlans, saveOrder, saveOverrides, saveSeenLines, sourceLabel,
   type InkGroupFields, type InkLineFields, type InkLines, type InkMasterRow, type InkOrder, type InkOverride,
   type InkOverrides, type InkPlan, type InkScope,
@@ -155,6 +157,7 @@ export default function InkItemMaster() {
   /** Lines already shown to the planner, so an ink that has just arrived can be pointed out. */
   const [seen, setSeen] = useState<string[]>(() => loadSeenLines());
   const [showNewDialog, setShowNewDialog] = useState(true);
+  const [showArrange, setShowArrange] = useState(false);
   /**
    * The same godown filter the dashboard uses, so Closing means the same on both screens — and it
    * follows the Godowns tab's Save, so this screen needs no reopening to agree with it.
@@ -458,13 +461,34 @@ export default function InkItemMaster() {
     const taken = new Set<string>();
     for (const r of master) {
       if (!r.closingQty) continue;
-      if (seenSet.has(r.mergeKey) || seenSet.has(r.legacyKey)) continue;
+      if (seenSet.has(r.mergeKey) || seenSet.has(r.legacyKey) || seenSet.has(r.ownKey)) continue;
+      // An ink that already has a number is on the dashboard; it does not need one.
+      if ((order[r.mergeKey] ?? order[r.legacyKey]) !== undefined) continue;
       if (taken.has(r.mergeKey)) continue;
       taken.add(r.mergeKey);
       out.push(r);
     }
     return out;
-  }, [master, seen]);
+  }, [master, seen, order]);
+
+  /**
+   * NEW INKS GO INTO THEIR GROUP BY THEMSELVES (user, 12-10-2026): once per visit, any new ink
+   * whose group is already numbered takes the number after that group's last line, and it is
+   * saved straight away. Only with an edit grant, and only on a clean sheet, so it can never
+   * fold in someone's half-typed draft. What it did is listed, so nothing moves unannounced.
+   */
+  const autoPlaceDone = useRef(false);
+  const [autoPlaced, setAutoPlaced] = useState<{ label: string; group: string; n: number }[]>([]);
+  useEffect(() => {
+    if (autoPlaceDone.current || !master.length || !seen.length) return;
+    if (!getSheetStatus().canEdit || JSON.stringify(order) !== JSON.stringify(savedOrder)) return;
+    autoPlaceDone.current = true;
+    const res = placeNewInGroups(master, newLines, savedOrder);
+    if (!res.placed.length) return;
+    setOrder(res.order);
+    setSavedOrder(res.order);
+    setAutoPlaced(res.placed);
+  }, [master, seen.length, newLines, order, savedOrder]);
 
   /** Nothing is "new" on a first visit — the whole list would be. */
   useEffect(() => {
@@ -597,9 +621,11 @@ export default function InkItemMaster() {
       // lost work; its number and lead time should still apply for when it comes back.
       const res = await importItemMaster(file, master, { overrides, order, plans, lines });
       setOverrides(res.overrides);
-      setOrder(res.order);
+      // A file can carry the same number on several rows; it lands with every number unique.
+      const imported = uniqueOrder(res.order);
+      setOrder(imported);
       setSavedOverrides(res.overrides);
-      setSavedOrder(res.order);
+      setSavedOrder(imported);
       if (res.plans) {
         setPlans(res.plans);
         setSavedPlans(res.plans);
@@ -648,10 +674,10 @@ export default function InkItemMaster() {
     // ⚠ NUMBERED LINES ONLY. A number is what puts a line on the dashboard, so the arrows must
     //   never hand one out: renumbering every row in view used to number all of them, and every
     //   blank line would then have appeared on the dashboard. A blank line gets its number typed.
-    if (order[mergeKey] === undefined) return;
+    if (order[mergeKey] === undefined && !rows.some((r) => r.mergeKey === mergeKey && order[r.legacyKey] !== undefined)) return;
     const lines: string[] = [];
     for (const r of rows) {
-      if (order[r.mergeKey] === undefined) continue;
+      if ((order[r.mergeKey] ?? order[r.legacyKey]) === undefined) continue;
       if (!lines.includes(r.mergeKey)) lines.push(r.mergeKey);
     }
     const at = lines.indexOf(mergeKey);
@@ -686,23 +712,7 @@ export default function InkItemMaster() {
    * and cascading on that would shove the whole list down before the 3 arrived.
    */
   const commitPosition = (mergeKey: string) =>
-    setOrder((prev) => {
-      const n = prev[mergeKey];
-      if (n === undefined) return prev;
-      const next = { ...prev };
-
-      const others = Object.entries(next)
-        .filter(([k]) => k !== mergeKey)
-        .sort((a, b) => a[1] - b[1]);
-      let blocked = n;
-      for (const [k, v] of others) {
-        if (v < n) continue;
-        if (v !== blocked) break; // a free number: everything above it can stay where it is
-        next[k] = v + 1;
-        blocked = v + 1;
-      }
-      return next;
-    });
+    setOrder((prev) => (prev[mergeKey] === undefined ? prev : uniqueOrder(prev, mergeKey)));
 
   /** `width` is now a hint only: every editor fills its column so resizing actually resizes. */
   const cell = (r: InkMasterRow, field: keyof InkOverride, fallback: string, width: string) => (
@@ -821,6 +831,15 @@ export default function InkItemMaster() {
 
         <Button
           size="sm"
+          variant={showArrange ? "default" : "outline"}
+          onClick={() => setShowArrange((v) => !v)}
+          disabled={!master.length}
+          title="Put the groups in order and number every ink in them at once"
+        >
+          <ListOrdered className="mr-2 h-4 w-4" /> Arrange by group
+        </Button>
+        <Button
+          size="sm"
           variant="outline"
           title="Re-space the numbers you have already given, in steps of ten, keeping their order. Blank lines stay blank."
           onClick={() => {
@@ -828,7 +847,7 @@ export default function InkItemMaster() {
             // blank line on the dashboard, which is exactly what a blank number means not to do.
             const lines: string[] = [];
             for (const r of rows) {
-              if (order[r.mergeKey] === undefined) continue;
+              if ((order[r.mergeKey] ?? order[r.legacyKey]) === undefined) continue;
               if (!lines.includes(r.mergeKey)) lines.push(r.mergeKey);
             }
             setOrder((prev) => ({ ...prev, ...renumber(lines) }));
@@ -878,6 +897,62 @@ export default function InkItemMaster() {
         )}
       </div>
 
+      {showArrange && master.length > 0 && (
+        <ArrangeGroups
+          // Rebuilt when the list's switches change, so the panel always matches the list.
+          key={`${scope}|${stockOnly}`}
+          // Exactly the rows this screen lists — its own Group column, nothing else (user).
+          master={listed}
+          order={order}
+          groupFields={groupFields}
+          onGroupField={(groupName, field, value) => {
+            const g = groupName.trim().toUpperCase();
+            setGroupFields((prev) => {
+              const row = { ...prev[g], [field]: value };
+              if (!value.trim()) delete row[field];
+              const next = { ...prev };
+              if (Object.keys(row).length) next[g] = row;
+              else delete next[g];
+              return next;
+            });
+          }}
+          onApply={(next, regroup) => {
+            setOrder(next);
+            // A moved ink takes its new group on every book's row of that line.
+            for (const r of master) {
+              const to = regroup[r.mergeKey];
+              if (to === undefined) continue;
+              patch(r.key, "group", to === r.tallyGroup ? "" : to);
+            }
+            setShowArrange(false);
+          }}
+          onClose={() => setShowArrange(false)}
+        />
+      )}
+
+      {autoPlaced.length > 0 && (
+        <div className="rounded-md border border-emerald-300 bg-emerald-50 p-3 text-sm text-emerald-900">
+          <div className="flex flex-wrap items-center gap-2">
+            <strong>
+              {autoPlaced.length} new ink{autoPlaced.length === 1 ? " was" : "s were"} added to
+              {autoPlaced.length === 1 ? " its group" : " their groups"} and saved.
+            </strong>
+            <span>The lines below them moved down by one.</span>
+            <Button size="sm" variant="ghost" className="ml-auto" onClick={() => setAutoPlaced([])}>
+              OK
+            </Button>
+          </div>
+          <ul className="mt-1 max-h-40 space-y-0.5 overflow-y-auto text-xs">
+            {autoPlaced.map((p) => (
+              <li key={`${p.n}-${p.label}`}>
+                <span className="inline-block w-10 tabular-nums font-semibold">{p.n}</span>
+                {p.label} <span className="text-emerald-700">— {p.group}</span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+
       {showNewDialog && newLines.length > 0 && (
         <div className="rounded-md border-2 border-orange-400 bg-orange-50 p-3 text-sm text-orange-950">
           <div className="flex flex-wrap items-center gap-2">
@@ -886,7 +961,14 @@ export default function InkItemMaster() {
               the first time.
             </strong>
             <span>Give each one a number to put it on the dashboard, or skip for now.</span>
-            <Button size="sm" variant="ghost" className="ml-auto" onClick={dismissNewLines}>
+            {/* Save right here, so the planner is not sent looking for the bar above. It shows
+                once a number has been typed — until then there is nothing to save. */}
+            {dirty && (
+              <Button size="sm" className="ml-auto" onClick={save}>
+                <Save className="mr-2 h-4 w-4" /> Save changes
+              </Button>
+            )}
+            <Button size="sm" variant="ghost" className={dirty ? "" : "ml-auto"} onClick={dismissNewLines}>
               Skip
             </Button>
           </div>
@@ -911,8 +993,8 @@ export default function InkItemMaster() {
             ))}
           </div>
           <p className="mt-2 text-xs">
-            Numbers here are part of the same draft as the table — press Save changes to keep
-            them. Skipping only stops the reminder; the inks stay in the list.
+            Type a number, then press Save changes (it appears at the top of this box). Skipping
+            only stops the reminder; the inks stay in the list.
           </p>
         </div>
       )}
@@ -1045,8 +1127,8 @@ export default function InkItemMaster() {
                       <button
                         type="button"
                         aria-label="Move up"
-                        disabled={order[r.mergeKey] === undefined}
-                        title={order[r.mergeKey] === undefined ? "Type a number first to put this item on the dashboard" : undefined}
+                        disabled={(order[r.mergeKey] ?? order[r.legacyKey]) === undefined}
+                        title={(order[r.mergeKey] ?? order[r.legacyKey]) === undefined ? "Type a number first to put this item on the dashboard" : undefined}
                         className="text-muted-foreground hover:text-foreground disabled:opacity-30 disabled:hover:text-muted-foreground"
                         onClick={() => move(r.mergeKey, -1)}
                       >
@@ -1055,8 +1137,8 @@ export default function InkItemMaster() {
                       <button
                         type="button"
                         aria-label="Move down"
-                        disabled={order[r.mergeKey] === undefined}
-                        title={order[r.mergeKey] === undefined ? "Type a number first to put this item on the dashboard" : undefined}
+                        disabled={(order[r.mergeKey] ?? order[r.legacyKey]) === undefined}
+                        title={(order[r.mergeKey] ?? order[r.legacyKey]) === undefined ? "Type a number first to put this item on the dashboard" : undefined}
                         className="text-muted-foreground hover:text-foreground disabled:opacity-30 disabled:hover:text-muted-foreground"
                         onClick={() => move(r.mergeKey, 1)}
                       >
