@@ -51,8 +51,9 @@ import type { BankAccount, BankBalance, CcLimit, FacilityFigures } from "../type
  * ⚠ THE BOXES ARE TYPED IN RUPEES, AND THIS RETURNS LAKHS. Every box used to be
  *   labelled ₹ L, and the figure was typed in rupees anyway — straight off the
  *   bank portal — so ₹2,11,61,000 was stored as 2,11,61,000 LAKHS and the
- *   report's bank tile read "₹2,26,66,000.00 L". The box now takes the figure
- *   as the bank prints it, and converts here, once, at the edge.
+ *   report's bank tile read "₹2,26,66,000.00 L". The box takes the figure as
+ *   the bank prints it and it is SAVED as typed, in rupees; only the reading is
+ *   converted (see the note in data/bankBalances.ts).
  */
 function parseMoney(raw: string, label: string): number | null {
   const t = raw.trim();

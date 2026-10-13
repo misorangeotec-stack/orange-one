@@ -15,8 +15,17 @@
 
 import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/core/platform/supabase";
+import { lacsToRupees, toLacs } from "../lib/format";
 import type { BalanceStatus, BankBalance } from "../types";
 import type { CcLimitWrite } from "./ccLimits";
+
+/**
+ * ⚠ THE `_lacs` COLUMNS HOLD RUPEES. The figures are typed in rupees, straight
+ *   off the bank portal, and saved exactly as typed. This module works in lakhs,
+ *   so a stored figure is divided by 1,00,000 here as it is READ (`toLacs`, the
+ *   same conversion the Tally figures get) and turned back into the typed rupee
+ *   figure as it is SAVED. Nothing in the database is ever rescaled.
+ */
 
 /** The key a sparse balance map is read by. */
 export const balanceKey = (accountId: string, iso: string): string => `${accountId}|${iso}`;
@@ -36,7 +45,7 @@ export async function fetchBankBalances(fromIso: string, toIso: string): Promise
     const row: BankBalance = {
       bankAccountId: r.bank_account_id,
       date: r.balance_date,
-      closingLacs: Number(r.closing_balance_lacs),
+      closingLacs: toLacs(r.closing_balance_lacs),
       updatedAt: r.updated_at,
     };
     map.set(balanceKey(row.bankAccountId, row.date), row);
@@ -85,7 +94,7 @@ export async function fetchPreviousBalances(beforeIso: string): Promise<Map<stri
     latest.set(r.bank_account_id, {
       bankAccountId: r.bank_account_id,
       date: r.balance_date,
-      closingLacs: Number(r.closing_balance_lacs),
+      closingLacs: toLacs(r.closing_balance_lacs),
       updatedAt: r.updated_at,
     });
   }
@@ -147,22 +156,25 @@ export interface BalanceWrite {
  *   utilised is typed once, per company, in the credit-limit block. The routine
  *   stores NULL for the absent key, which is all the column has ever held.
  */
+/** Lakhs back to the rupee figure that was typed; null (clear) stays null. */
+const rupees = (lacs: number | null): number | null => (lacs == null ? null : lacsToRupees(lacs));
+
 export async function saveEvening(balances: BalanceWrite[], limits: CcLimitWrite[]): Promise<number> {
   if (balances.length === 0 && limits.length === 0) return 0;
   const { data, error } = await supabase.rpc("set_daily_report_evening", {
     p_balances: balances.map((r) => ({
       bank_account_id: r.bankAccountId,
       balance_date: r.date,
-      closing_balance_lacs: r.closingLacs,
+      closing_balance_lacs: rupees(r.closingLacs),
     })),
     p_cc_limits: limits.map((r) => ({
       entity_alias: r.entityAlias,
       bank: r.bank,
       balance_date: r.date,
-      cc_limit_lacs: r.ccLimitLacs,
-      lc_bc_limit_lacs: r.lcBcLimitLacs,
-      lc_bc_utilised_lacs: r.lcBcUtilisedLacs,
-      hold_by_bank_lacs: r.holdByBankLacs,
+      cc_limit_lacs: rupees(r.ccLimitLacs),
+      lc_bc_limit_lacs: rupees(r.lcBcLimitLacs),
+      lc_bc_utilised_lacs: rupees(r.lcBcUtilisedLacs),
+      hold_by_bank_lacs: rupees(r.holdByBankLacs),
     })),
   });
   if (error) throw new Error(error.message);
