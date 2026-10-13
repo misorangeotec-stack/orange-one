@@ -24,7 +24,7 @@ export interface DirectoryData {
 export async function fetchDirectory(): Promise<DirectoryData> {
   // The profiles select is an EXPLICIT column list — a new profiles column that
   // isn't added here simply never reaches the browser.
-  const [profilesRes, deptsRes, subDeptsRes, desigRes, bandsRes, rolesRes, hodsRes, accessRes] = await Promise.all([
+  const [profilesRes, deptsRes, subDeptsRes, desigRes, bandsRes, rolesRes, hodsRes, accessRes, fullViewRes] = await Promise.all([
     supabase.from("profiles").select("id,name,email,phone,designation,designation_id,avatar_color,department_id,sub_department_id,band_id,employee_code,gender,date_of_birth,receivables_salespersons,receivables_collection_teams,receivables_hidden_menus,receivables_admin_menus,receivables_allowed_reports,receivables_allow_pipeline,last_active_at,is_external"),
     supabase.from("departments").select("id,name,description,active,sort_order,source,hr_sheet_name"),
     supabase.from("sub_departments").select("id,department_id,name,active,sort_order"),
@@ -33,11 +33,18 @@ export async function fetchDirectory(): Promise<DirectoryData> {
     supabase.from("user_roles").select("user_id,role"),
     supabase.from("user_hods").select("employee_id,hod_id"),
     supabase.from("app_access").select("user_id,app_id,access_level"),
+    // Read APART from the main list on purpose: a deploy that reaches the browser before migration
+    // 20270120120000 would otherwise fail the whole directory on an unknown column. Its error is
+    // ignored below — no column simply means nobody has full view yet.
+    supabase.from("profiles").select("id,report_dashboard_full_view").eq("report_dashboard_full_view", true),
   ]);
 
   for (const res of [profilesRes, deptsRes, subDeptsRes, desigRes, bandsRes, rolesRes, hodsRes, accessRes]) {
     if (res.error) throw new Error(res.error.message);
   }
+  const fullView = new Set(
+    fullViewRes.error ? [] : ((fullViewRes.data ?? []) as { id: string }[]).map((r) => r.id),
+  );
 
   // Highest-precedence role per user (a user may hold more than one).
   const roleByUser = new Map<string, AppRole>();
@@ -126,6 +133,7 @@ export async function fetchDirectory(): Promise<DirectoryData> {
       // No reports until granted — an absent/NULL column is "nothing", never "everything".
       receivablesAllowedReports: p.receivables_allowed_reports ?? [],
       receivablesAllowPipeline: p.receivables_allow_pipeline ?? false,
+      reportDashboardFullView: fullView.has(p.id),
       lastActiveAt: p.last_active_at,
       isExternal: p.is_external ?? false,
     }))

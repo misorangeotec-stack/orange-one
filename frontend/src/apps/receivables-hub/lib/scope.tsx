@@ -1,5 +1,16 @@
 import { createContext, useContext, useMemo, type ReactNode } from "react";
+import { useLocation } from "react-router-dom";
+import { appBasePath } from "@/apps/appInfo";
 import { useSession } from "@/core/platform/session";
+import { isDashboardPath } from "./bushraDashboards";
+
+/**
+ * The screens `profiles.report_dashboard_full_view` opens up: every Report Dashboard page, plus
+ * the Bushra Sales Register the dashboards read from, so a viewer sees the same lines in both.
+ * Everywhere else (Outstanding Dashboard, the other reports) the scope still applies.
+ */
+const isFullViewPath = (pathname: string) =>
+  isDashboardPath(pathname) || pathname.startsWith(`${appBasePath("reports")}/bushra-sales-register`);
 
 /**
  * Per-viewer scope for the Outstanding Dashboard, in TWO dimensions.
@@ -42,7 +53,12 @@ const ScopeContext = createContext<ReceivablesScope>({
 
 export function ReceivablesScopeProvider({ children }: { children: ReactNode }) {
   const { isAdmin, user } = useSession();
+  const { pathname } = useLocation();
+  // An admin-granted viewer (an HOD, accounts) reads the Report Dashboard as an admin does; a
+  // salesperson without the grant keeps their own bucket there too (12-10-2026).
+  const fullView = user.reportDashboardFullView && isFullViewPath(pathname);
   const value = useMemo<ReceivablesScope>(() => {
+    if (fullView) return { restrictToSalespersons: null, restrictToCollectionTeams: null };
     const teams = user.receivablesCollectionTeams ?? [];
     const salespersons = user.receivablesSalespersons ?? [];
     // ⚠ AN EMPTY SALESPERSON LIST IS AMBIGUOUS, AND THE TEAM TAG IS WHAT DISAMBIGUATES IT.
@@ -61,7 +77,7 @@ export function ReceivablesScopeProvider({ children }: { children: ReactNode }) 
       // them reads "null means this dimension is not restricting".
       restrictToCollectionTeams: isAdmin || !teamScoped ? null : teams,
     };
-  }, [isAdmin, user.receivablesSalespersons, user.receivablesCollectionTeams]);
+  }, [isAdmin, fullView, user.receivablesSalespersons, user.receivablesCollectionTeams]);
   return <ScopeContext.Provider value={value}>{children}</ScopeContext.Provider>;
 }
 

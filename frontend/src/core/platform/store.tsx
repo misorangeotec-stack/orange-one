@@ -77,13 +77,13 @@ export interface DirectoryValue {
   addBand: (input: { bandNo: number; name: string; description?: string | null; active?: boolean; sortOrder?: number }) => Promise<string>;
   updateBand: (id: string, patch: { bandNo?: number; name?: string; description?: string | null; active?: boolean; sortOrder?: number }) => Promise<void>;
 
-  addUser: (input: { name: string; email?: string; mobile: string; designation?: string | null; designationId?: string | null; role: AppRole; departmentId: string | null; subDepartmentId?: string | null; bandId?: string | null; employeeCode?: string | null; hodIds?: string[]; moduleLevels?: Record<string, ModuleLevel>; receivablesSalespersons?: string[]; receivablesCollectionTeams?: string[]; receivablesHiddenMenus?: string[]; receivablesAdminMenus?: string[]; receivablesAllowedReports?: string[] }) => Promise<string>;
+  addUser: (input: { name: string; email?: string; mobile: string; designation?: string | null; designationId?: string | null; role: AppRole; departmentId: string | null; subDepartmentId?: string | null; bandId?: string | null; employeeCode?: string | null; hodIds?: string[]; moduleLevels?: Record<string, ModuleLevel>; receivablesSalespersons?: string[]; receivablesCollectionTeams?: string[]; receivablesHiddenMenus?: string[]; receivablesAdminMenus?: string[]; receivablesAllowedReports?: string[]; reportDashboardFullView?: boolean }) => Promise<string>;
   /**
    * ⚠ `moduleLevels` is the whole grant — the ids in it ARE the granted apps.
    *   `moduleAccess` is deliberately NOT accepted here: two ways to say the same
    *   thing is how the id list and the levels drift apart.
    */
-  updateUser: (id: string, patch: Partial<Pick<Profile, "name" | "email" | "phone" | "designation" | "designationId" | "role" | "departmentId" | "subDepartmentId" | "bandId" | "employeeCode" | "gender" | "dateOfBirth" | "hodIds" | "avatarColor" | "moduleLevels" | "receivablesSalespersons" | "receivablesCollectionTeams" | "receivablesHiddenMenus" | "receivablesAdminMenus" | "receivablesAllowedReports" | "receivablesAllowPipeline">>) => Promise<void>;
+  updateUser: (id: string, patch: Partial<Pick<Profile, "name" | "email" | "phone" | "designation" | "designationId" | "role" | "departmentId" | "subDepartmentId" | "bandId" | "employeeCode" | "gender" | "dateOfBirth" | "hodIds" | "avatarColor" | "moduleLevels" | "receivablesSalespersons" | "receivablesCollectionTeams" | "receivablesHiddenMenus" | "receivablesAdminMenus" | "receivablesAllowedReports" | "receivablesAllowPipeline" | "reportDashboardFullView">>) => Promise<void>;
   deleteUser: (id: string) => Promise<void>;
   setUserModules: (id: string, levels: Record<string, ModuleLevel>) => Promise<void>;
 }
@@ -300,6 +300,9 @@ export function PlatformDirectoryProvider({ children }: { children: ReactNode })
           receivablesAdminMenus: input.receivablesAdminMenus ?? [],
           receivablesAllowedReports: input.receivablesAllowedReports ?? [],
         });
+        // Not carried by the admin-users Edge Function, so it is written straight after, as an
+        // admin, under the same RLS as any profile edit.
+        if (input.reportDashboardFullView) await updateUserProfileWrite(id, { reportDashboardFullView: true });
         await refresh();
         return id;
       },
@@ -335,6 +338,7 @@ export function PlatformDirectoryProvider({ children }: { children: ReactNode })
           receivablesAdminMenus: patch.receivablesAdminMenus,
           receivablesAllowedReports: patch.receivablesAllowedReports,
           receivablesAllowPipeline: patch.receivablesAllowPipeline,
+          reportDashboardFullView: patch.reportDashboardFullView,
         });
         if (patch.role !== undefined) await setUserRoleWrite(id, patch.role);
         if (patch.hodIds !== undefined) await setUserHodsWrite(id, patch.hodIds);

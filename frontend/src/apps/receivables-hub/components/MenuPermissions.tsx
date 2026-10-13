@@ -43,6 +43,7 @@ const LEVEL_LABEL: Record<MenuAccessLevel, string> = {
  *   receivables_admin_menus     ALLOW-list — menus used at ADMIN DEPTH (only `settings` now)
  *   receivables_allowed_reports ALLOW-list — the individual reports they may open
  *   receivables_allow_pipeline  bool       — may switch off the Live (Tally) source
+ *   report_dashboard_full_view  bool       — Report Dashboard ignores the salesperson scope
  *
  * The polarities differ on purpose. A new MENU reaches everyone until an admin hides it; a new
  * REPORT reaches nobody until an admin grants it. Reports carry finance data whose audience is
@@ -83,6 +84,7 @@ export function MenuPermissions() {
   const [adminDraft, setAdminDraft] = useState<Record<string, string[]>>({});
   const [reportDraft, setReportDraft] = useState<Record<string, string[]>>({});
   const [pipelineDraft, setPipelineDraft] = useState<Record<string, boolean>>({});
+  const [fullViewDraft, setFullViewDraft] = useState<Record<string, boolean>>({});
   const [savingId, setSavingId] = useState<string | null>(null);
 
   const shown = users.filter((u) => u.name.toLowerCase().includes(filter.trim().toLowerCase()));
@@ -92,11 +94,13 @@ export function MenuPermissions() {
   const adminFor = (u: Profile): string[] => adminDraft[u.id] ?? u.receivablesAdminMenus ?? [];
   const reportsFor = (u: Profile): string[] => reportDraft[u.id] ?? u.receivablesAllowedReports ?? [];
   const allowPipelineFor = (u: Profile): boolean => pipelineDraft[u.id] ?? u.receivablesAllowPipeline;
+  const fullViewFor = (u: Profile): boolean => fullViewDraft[u.id] ?? u.reportDashboardFullView;
   const isDirty = (u: Profile): boolean =>
     (u.id in draft && !sameKeys(draft[u.id], u.receivablesHiddenMenus ?? [])) ||
     (u.id in adminDraft && !sameKeys(adminDraft[u.id], u.receivablesAdminMenus ?? [])) ||
     (u.id in reportDraft && !sameKeys(reportDraft[u.id], u.receivablesAllowedReports ?? [])) ||
-    (u.id in pipelineDraft && pipelineDraft[u.id] !== u.receivablesAllowPipeline);
+    (u.id in pipelineDraft && pipelineDraft[u.id] !== u.receivablesAllowPipeline) ||
+    (u.id in fullViewDraft && fullViewDraft[u.id] !== u.reportDashboardFullView);
 
   /** Goes through setMenuAccessLevel so "hidden" also drops any full-access grant. */
   const setLevel = (u: Profile, menuKey: string, level: MenuAccessLevel) => {
@@ -113,6 +117,8 @@ export function MenuPermissions() {
         receivablesAdminMenus: adminFor(u),
         receivablesAllowedReports: reportsFor(u),
         receivablesAllowPipeline: allowPipelineFor(u),
+        // Only when changed, so a save never names the column before its migration is applied.
+        ...(fullViewFor(u) !== u.reportDashboardFullView ? { reportDashboardFullView: fullViewFor(u) } : {}),
       });
       const drop = (d: Record<string, unknown>) => {
         const { [u.id]: _omit, ...rest } = d;
@@ -122,6 +128,7 @@ export function MenuPermissions() {
       setAdminDraft((d) => drop(d) as Record<string, string[]>);
       setReportDraft((d) => drop(d) as Record<string, string[]>);
       setPipelineDraft((d) => drop(d) as Record<string, boolean>);
+      setFullViewDraft((d) => drop(d) as Record<string, boolean>);
       toast({ title: "Access saved", description: `Updated receivables access for ${u.name}.` });
     } catch (e) {
       toast({ variant: "destructive", title: "Couldn't save access", description: (e as Error).message });
@@ -296,6 +303,8 @@ export function MenuPermissions() {
                   <ReportAccessTree
                     value={reportsFor(selected)}
                     onChange={(ids) => setReportDraft((d) => ({ ...d, [selected.id]: ids }))}
+                    fullView={fullViewFor(selected)}
+                    onFullViewChange={(on) => setFullViewDraft((d) => ({ ...d, [selected.id]: on }))}
                   />
                 </div>
               </div>

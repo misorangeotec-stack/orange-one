@@ -25,8 +25,18 @@ import { cn } from "@/shared/lib/cn";
  */
 
 /** The scope badge. Tells the admin what a granted report will actually show this user. */
-function ScopeTag({ report }: { report: ReportEntry }) {
+function ScopeTag({ report, full = false }: { report: ReportEntry; full?: boolean }) {
   const scoped = report.scoping !== "none";
+  if (scoped && full) {
+    return (
+      <span
+        className="shrink-0 rounded-pill border border-orange/40 bg-orange/10 px-1.5 py-0.5 text-[10px] uppercase tracking-wide text-orange"
+        title="Full rights: every customer, as an admin sees it — the salesperson limit is ignored here."
+      >
+        Full rights
+      </span>
+    );
+  }
   return (
     <span
       className={cn(
@@ -64,9 +74,27 @@ export interface ReportAccessTreeProps {
   value: string[];
   onChange: (ids: string[]) => void;
   disabled?: boolean;
+  /**
+   * Report Dashboard "Full rights" (profiles.report_dashboard_full_view), drawn on the
+   * FULL_VIEW_CATEGORY row. Omit `onFullViewChange` to hide the tick.
+   */
+  fullView?: boolean;
+  onFullViewChange?: (on: boolean) => void;
 }
 
-export default function ReportAccessTree({ value, onChange, disabled = false }: ReportAccessTreeProps) {
+/**
+ * The category holding the Report Dashboard screens and the Bushra Sales Register — exactly the
+ * screens lib/scope.tsx opens up for a Full rights user.
+ */
+const FULL_VIEW_CATEGORY = "bushra-report";
+
+export default function ReportAccessTree({
+  value,
+  onChange,
+  disabled = false,
+  fullView = false,
+  onFullViewChange,
+}: ReportAccessTreeProps) {
   const granted = useMemo(() => new Set(value), [value]);
 
   /** Categories that actually hold a grantable report, in catalogue order. */
@@ -188,6 +216,25 @@ export default function ReportAccessTree({ value, onChange, disabled = false }: 
                     {held} / {reports.length}
                   </span>
                 </button>
+                {onFullViewChange && category.id === FULL_VIEW_CATEGORY && (
+                  // Beside the dashboard grant on purpose: "may open it" and "sees every
+                  // customer in it" are decided together. Ticked = the admin view; not ticked =
+                  // this user's selected salespeople only.
+                  <button
+                    type="button"
+                    onClick={() => !disabled && onFullViewChange(!fullView)}
+                    disabled={disabled}
+                    aria-pressed={fullView}
+                    title="Ticked: sees the entire sheet, as an admin does. Not ticked: only the customers of the salespeople selected for this user."
+                    className={cn(
+                      "flex shrink-0 items-center gap-1.5 rounded-pill border px-2 py-0.5 text-[11.5px] transition disabled:cursor-not-allowed",
+                      fullView ? "border-orange bg-orange/10 font-semibold text-orange" : "border-line text-grey hover:border-orange/40",
+                    )}
+                  >
+                    <TriTick state={fullView ? "all" : "none"} />
+                    Full rights
+                  </button>
+                )}
               </div>
 
               {isOpen && (
@@ -204,7 +251,7 @@ export default function ReportAccessTree({ value, onChange, disabled = false }: 
                       >
                         <TriTick state={on ? "all" : "none"} />
                         <span className="flex-1 truncate text-[12.5px] text-navy">{r.title}</span>
-                        <ScopeTag report={r} />
+                        <ScopeTag report={r} full={fullView && category.id === FULL_VIEW_CATEGORY} />
                       </button>
                     );
                   })}
