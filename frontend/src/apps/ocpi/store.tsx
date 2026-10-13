@@ -17,7 +17,7 @@ import type {
   OcpiCompanyProfile, OcpiDeal, OcpiMachine, OcpiMachineSection, OcpiNotification,
   OcpiStepOwner, QuotationVersion,
   OcpiMasterManager, OcpiMasterRequest, OcpiMasterType, OcpiNamedMaster,
-  OcpiDryer, OcpiMachineHead, OcpiSalesPage,
+  OcpiDryer, OcpiMachineHead, OcpiSalesPage, OcpiServiceCheckpoint,
 } from "./types";
 
 /**
@@ -95,6 +95,8 @@ interface OcpiStoreValue {
   machineHeads: OcpiMachineHead[];
   masterManagers: OcpiMasterManager[];
   masterRequests: OcpiMasterRequest[];
+  /** Masters → Service check points, all rows (active and not). */
+  serviceCheckpoints: OcpiServiceCheckpoint[];
 
   /**
    * May this person EDIT this master directly, and resolve requests against it?
@@ -112,6 +114,12 @@ interface OcpiStoreValue {
 
   /** May this person raise a new deal? */
   canRaise: boolean;
+  /**
+   * Owns the Service Check and nothing else in OCPI. Mirrors
+   * fms_ocpi_is_service_only: such a user sees only the Service Check queue
+   * and its customer + machine view — no values, terms or documents.
+   */
+  serviceOnly: boolean;
   /** May this person ACTION this step? */
   canActOn: (step: StepKey) => boolean;
   /** May this person OPEN this step's queue? Viewers included. */
@@ -223,7 +231,16 @@ export function OcpiStoreProvider({ children }: { children: ReactNode }) {
       return step === "quotation" && ownersOf("quotation").length === 0;
     };
 
-    const canRaise = canActOn("quotation");
+    const serviceOnly =
+      !!userId &&
+      isOwner("service_check") &&
+      !isAdmin &&
+      !isProcessCoordinator &&
+      !isViewer &&
+      stepOwners.every((o) => o.stepKey === "service_check" || !o.employeeIds.includes(userId)) &&
+      !deals.some((d) => d.raisedBy === userId);
+
+    const canRaise = !serviceOnly && canActOn("quotation");
 
     /**
      * A queue OPENS for its owners, for coordinators, and for a module viewer —
@@ -257,6 +274,7 @@ export function OcpiStoreProvider({ children }: { children: ReactNode }) {
     const machineHeads = data?.machineHeads ?? [];
     const masterManagers = data?.masterManagers ?? [];
     const masterRequests = data?.masterRequests ?? [];
+    const serviceCheckpoints = data?.serviceCheckpoints ?? [];
 
     // Mirrors fms_ocpi_is_master_manager, plus the admin bypass every table
     // policy carries. NOT gated on canEdit: master ownership is granted
@@ -380,12 +398,14 @@ export function OcpiStoreProvider({ children }: { children: ReactNode }) {
       machineHeads,
       masterManagers,
       masterRequests,
+      serviceCheckpoints,
       canManageMaster,
       pendingMasterRequests: masterRequests.filter((r) => r.status === "pending"),
 
       entries,
 
       canRaise,
+      serviceOnly,
       canActOn,
       canSeeQueue,
       canSetup: isAdmin,

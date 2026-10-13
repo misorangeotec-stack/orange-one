@@ -12,6 +12,7 @@ import type {
   OcpiNotification, OcpiStepOwner, QuotationVersion,
   OcpiMasterManager, OcpiMasterRequest, OcpiNamedMaster,
   OcpiDryer, OcpiMachineHead, OcpiSalesPage,
+  OcpiServiceCheckAnswer, OcpiServiceCheckpoint,
 } from "../types";
 import type { StepSla } from "../lib/sla";
 // ⚠ A VALUE IMPORT, and safe: `fieldSpec` imports only from `../types`, so this
@@ -61,7 +62,8 @@ type Tbl =
   | "fms_ocpi_dryers"
   | "fms_ocpi_machine_head_types"
   | "fms_ocpi_master_managers"
-  | "fms_ocpi_master_requests";
+  | "fms_ocpi_master_requests"
+  | "fms_ocpi_service_checkpoints";
 
 async function fetchAll(table: Tbl, orderBy = "created_at"): Promise<any[]> {
   const out: any[] = [];
@@ -177,6 +179,7 @@ export interface OcpiData {
   machineHeads: OcpiMachineHead[];
   masterManagers: OcpiMasterManager[];
   masterRequests: OcpiMasterRequest[];
+  serviceCheckpoints: OcpiServiceCheckpoint[];
 }
 
 const num = (v: unknown): number | null => (v === null || v === undefined ? null : Number(v));
@@ -500,6 +503,26 @@ const mapDeal = (r: any): OcpiDeal => ({
   fhBy: r.fh_by ?? null,
   frAt: r.fr_at ?? null,
   frBy: r.fr_by ?? null,
+  // ⚠ FALLBACK WHILE THE SERVICE CHECK MIGRATION IS NOT ON THE DATABASE: the
+  //   column is then missing (undefined, not null), and a deal waiting with
+  //   Finance is treated as sent to Service from its countersignature — the
+  //   same rule the migration's backfill writes. Once the column exists, it wins.
+  svcOpenedAt:
+    r.svc_opened_at !== undefined
+      ? r.svc_opened_at ?? null
+      : r.status === "awaiting_finance_handover" || r.status === "awaiting_finance_receipt"
+        ? r.ms_at ?? r.updated_at ?? null
+        : null,
+  svcAt: r.svc_at ?? null,
+  svcBy: r.svc_by ?? null,
+  svcInstallationDate: r.svc_installation_date ?? null,
+  svcEngineer: r.svc_engineer ?? null,
+  svcSiteContactName: r.svc_site_contact_name ?? null,
+  svcSiteContactPhone: r.svc_site_contact_phone ?? null,
+  svcSiteReady: r.svc_site_ready ?? null,
+  svcSiteRemark: r.svc_site_remark ?? null,
+  svcChecks: Array.isArray(r.svc_checks) ? (r.svc_checks as OcpiServiceCheckAnswer[]) : [],
+  svcNote: r.svc_note ?? null,
 
   rejectedAt: r.rejected_at ?? null,
   rejectStage: r.reject_stage ?? null,
@@ -578,6 +601,19 @@ export async function fetchOcpiData(): Promise<OcpiData> {
       fetchAll("fms_ocpi_machine_head_types", "sort_order"),
       fetchAll("fms_ocpi_sales_pages", "sort_order"),
     ]);
+  // ⚠ SOFT: a database without the Service Check migration has no such table,
+  //   and that must not take the whole module down with it.
+  const checkpointRows = await fetchAll("fms_ocpi_service_checkpoints", "sort_order").catch(() => []);
+  // ⚠ A SERVICE-ONLY USER CANNOT READ fms_ocpi_deals (restrictive policy), so
+  //   their Service Check rows come from fms_ocpi_service_deals — customer,
+  //   machine and service fields only. Merged in only where the full row is not
+  //   already visible. Soft, like the checkpoints: missing before the migration.
+  const { data: svcRows } = await db.rpc("fms_ocpi_service_deals").then(
+    (r: any) => r,
+    () => ({ data: null }),
+  );
+  const seen = new Set(dealRows.map((r: any) => r.id));
+  const serviceOnlyRows = ((svcRows as any[] | null) ?? []).filter((r) => r && !seen.has(r.id));
 
   const cfg = new Map<string, any>(configRows.map((r) => [r.key, r.value ?? {}]));
 
@@ -632,7 +668,7 @@ export async function fetchOcpiData(): Promise<OcpiData> {
     machines: machineRows.map(mapMachine),
     machineSections: sectionRows.map(mapSection),
     salesPages: salesPageRows.map(mapSalesPage),
-    deals: dealRows.map(mapDeal),
+    deals: [...dealRows, ...serviceOnlyRows].map(mapDeal),
     versions: versionRows.map(mapVersion),
     notifications: notifRows.map(mapNotification),
     headTypes: headRows.map(mapNamed),
@@ -643,6 +679,11 @@ export async function fetchOcpiData(): Promise<OcpiData> {
     machineHeads: machineHeadRows.map(mapMachineHead),
     masterManagers: managerRows.map(mapManager),
     masterRequests: masterReqRows.map(mapMasterRequest),
+    serviceCheckpoints: checkpointRows.map(
+      (r: any): OcpiServiceCheckpoint => ({
+        id: r.id, name: r.name, active: !!r.active, sortOrder: r.sort_order ?? 0,
+      }),
+    ),
   };
 }
 

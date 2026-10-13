@@ -22,6 +22,8 @@ import CustomerSignQueue from "./pages/queues/CustomerSignQueue";
 import ManagementSignQueue from "./pages/queues/ManagementSignQueue";
 import FinanceHandoverQueue from "./pages/queues/FinanceHandoverQueue";
 import FinanceReceiptQueue from "./pages/queues/FinanceReceiptQueue";
+import ServiceCheckQueue from "./pages/queues/ServiceCheckQueue";
+import ServiceCheckView from "./pages/queues/ServiceCheckView";
 import ControlCenter from "./pages/monitoring/ControlCenter";
 import DealRegister from "./pages/reports/DealRegister";
 import Masters from "./pages/masters/Masters";
@@ -133,6 +135,8 @@ export default function OcpiApp() {
           <Route path="queues/management-signature" element={<Loaded><RequireQueue step="management_signoff"><ManagementSignQueue /></RequireQueue></Loaded>} />
           <Route path="queues/finance-handover" element={<Loaded><RequireQueue step="finance_handover"><FinanceHandoverQueue /></RequireQueue></Loaded>} />
           <Route path="queues/finance-receipt" element={<Loaded><RequireQueue step="finance_receipt"><FinanceReceiptQueue /></RequireQueue></Loaded>} />
+          <Route path="queues/service-check" element={<Loaded><RequireQueue step="service_check"><ServiceCheckQueue /></RequireQueue></Loaded>} />
+          <Route path="queues/service-check/:id" element={<Loaded><RequireQueue step="service_check"><ServiceCheckView /></RequireQueue></Loaded>} />
           <Route path="monitoring" element={<Loaded><ControlCenter /></Loaded>} />
           <Route path="reports" element={<Loaded><DealRegister /></Loaded>} />
           <Route path="master-requests" element={<Loaded><MasterRequests /></Loaded>} />
