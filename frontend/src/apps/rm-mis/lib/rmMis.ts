@@ -72,7 +72,7 @@
  */
 import { loadStockSummary, type StockSummaryRow } from "@hub/lib/stockSummary";
 import { pushDocument } from "./sheetStore";
-import { GROUP_SEP, godownShare, hasGodownEvidence, loadGodownSplit, type GodownChoice, type GodownSplit, type ItemFacts } from "./godowns";
+import { GROUP_SEP, cachedRaw, godownShare, hasGodownEvidence, loadGodownSplit, pageAll, pageOneByOne, type GodownChoice, type GodownSplit, type ItemFacts } from "./godowns";
 import { getConnectwaveSupabase } from "@hub/lib/connectwaveSupabase";
 import {
   linkKey, linkedValue, loadImsLinks, pendingAdoption, type ImsField, type ImsLink, type ImsLinks,
@@ -152,6 +152,10 @@ export interface InkPosition {
    *  First non-empty wins where several books feed one line — it is one ink. */
   category: string;
   source: string;
+  /** Who the item was last bought from (Tally purchase register), and when (yyyymmdd). Empty
+   *  when no purchase is on record. Several books on one line: the latest purchase wins. */
+  supplier: string;
+  supplierDate: string;
   baseUnit: string;
   /** Closing quantity per book, keyed by `InkCompany.key`. Absent book means zero. */
   byCompany: Record<string, number>;
@@ -396,9 +400,11 @@ export async function loadInkPositions(
   groups: InkGroupFields = {},
   godownChoice: GodownChoice = {},
 ): Promise<InkPositionsResult> {
-  const [raw, links] = await Promise.all([
-    loadStockSummary(INK_COMPANY_GUIDS, fy, from, to),
+  const [raw, links, lastSuppliers] = await Promise.all([
+    // Kept a few minutes (see `cachedRaw`): an edit recomputes, it does not re-read Tally.
+    cachedRaw(`stock|${fy}|${from ?? ""}|${to ?? ""}`, () => loadStockSummary(INK_COMPANY_GUIDS, fy, from, to)),
     loadImsLinks(INK_COMPANY_GUIDS),
+    loadLastSuppliers(),
   ]);
 
   /*
@@ -548,6 +554,8 @@ export async function loadInkPositions(
         group: effectiveGroup,
         category: effectiveCategory,
         source: effectiveSource,
+        supplier: "",
+        supplierDate: "",
         baseUnit: row.base_unit || "KGS",
         byCompany: {},
         stock: 0,
@@ -574,6 +582,11 @@ export async function loadInkPositions(
     }
     if (!pos.category) pos.category = effectiveCategory;
     if (!pos.source) pos.source = effectiveSource;
+    const bought = lastSuppliers.get(`${row.company_guid}|${norm(row.item).toUpperCase()}`);
+    if (bought && bought.date > pos.supplierDate) {
+      pos.supplier = bought.party;
+      pos.supplierDate = bought.date;
+    }
 
     const chosen = godownChoice[company.key] ?? [];
     const split = splits.get(company.key);
@@ -680,6 +693,49 @@ export function workingDaysElapsed(d: Date, holidays: Set<string> = new Set()): 
 }
 
 /**
+ * LAST SUPPLIER (user, 13-10-2026): who each item was last bought from, read from Tally's purchase
+ * register, so nobody has to type it. The register spans both of a company's Tally books (FY24-25
+ * onwards) under one company_guid, and lists invoices only — stock transfers and Material In are
+ * not purchases. Purchase returns are skipped. Keyed `<company_guid>|<ITEM NAME>`.
+ *
+ * Never fatal: a failed read leaves the column blank rather than taking the dashboard down.
+ */
+async function loadLastSuppliers(): Promise<Map<string, { party: string; date: string }>> {
+  type Row = { company_guid: string; vch_date: string; party: string | null; particulars: string | null };
+  try {
+    return await cachedRaw("last-suppliers", async () => {
+      const cw = getConnectwaveSupabase();
+      const out = new Map<string, { party: string; date: string }>();
+      for (const guid of INK_COMPANY_GUIDS) {
+        const rows = await pageOneByOne<Row>((lo, hi) =>
+          cw
+            .from("rpt_purchase_register")
+            .select("company_guid,vch_date,party,particulars")
+            .eq("company_guid", guid)
+            .eq("kind", "item")
+            .neq("voucher_type", "PURCHASE RETURN")
+            .order("vch_date", { ascending: true })
+            .order("voucher_guid", { ascending: true })
+            .order("line_no", { ascending: true })
+            .range(lo, hi)
+            .returns<Row[]>(),
+        );
+        // Date order, so the last row seen for an item is its latest purchase.
+        for (const r of rows) {
+          const party = norm(r.party);
+          const item = norm(r.particulars).toUpperCase();
+          if (!party || !item) continue;
+          out.set(`${r.company_guid}|${item}`, { party, date: String(r.vch_date ?? "") });
+        }
+      }
+      return out;
+    });
+  } catch {
+    return new Map();
+  }
+}
+
+/**
  * Read the register for the four ink books and return both averages per item code.
  *
  * The register carries the item NAME, not its code, so the join runs through `nameToCode` —
@@ -695,34 +751,32 @@ export async function loadInkConsumption(
   const from = monthStart(today, 3);
   const to = `${today.getFullYear()}${String(today.getMonth() + 1).padStart(2, "0")}${String(today.getDate()).padStart(2, "0")}`;
 
-  const PAGE = 1000;
   /*
    * RM IS CONSUMED IN PRODUCTION, NOT SOLD. Where Ink IMS reads the Sales Register, this reads the
    * STOCK JOURNAL-PRODUCTION lines: outward is material used, an inward line of the same item is
    * material handed back, and the two net — the same way a sales return nets a sale.
    */
-  const rows: { company_guid: string; stock_item: string; movement: string | null; qty: number | null; vch_date: string }[] = [];
+  type Row = { company_guid: string; stock_item: string; movement: string | null; qty: number | null; vch_date: string };
+  const rows: Row[] = [];
   for (const guid of INK_COMPANY_GUIDS) {
-    for (let offset = 0; ; offset += PAGE) {
-      const { data, error } = await cw
-        .from("rpt_batch_line")
-        .select("company_guid,stock_item,movement,qty,vch_date")
-        .eq("company_guid", guid)
-        .eq("tenant_id", `acct_orange::${guid}`)
-        .eq("voucher_type", "STOCK JOURNAL-PRODUCTION")
-        .gte("vch_date", from)
-        .lte("vch_date", to)
-        // A stable order across pages, or paging repeats and drops lines.
-        .order("vch_date", { ascending: true })
-        .order("voucher_guid", { ascending: true })
-        .order("line_no", { ascending: true })
-        .range(offset, offset + PAGE - 1)
-        .returns<typeof rows>();
-      if (error) throw new Error(error.message);
-      const page = data ?? [];
-      rows.push(...page);
-      if (page.length < PAGE) break;
-    }
+    rows.push(
+      ...(await pageAll<Row>((lo, hi) =>
+        cw
+          .from("rpt_batch_line")
+          .select("company_guid,stock_item,movement,qty,vch_date")
+          .eq("company_guid", guid)
+          .eq("tenant_id", `acct_orange::${guid}`)
+          .eq("voucher_type", "STOCK JOURNAL-PRODUCTION")
+          .gte("vch_date", from)
+          .lte("vch_date", to)
+          // A stable order across pages, or paging repeats and drops lines.
+          .order("vch_date", { ascending: true })
+          .order("voucher_guid", { ascending: true })
+          .order("line_no", { ascending: true })
+          .range(lo, hi)
+          .returns<Row[]>(),
+      )),
+    );
   }
 
   const byGuid = new Map(INK_COMPANIES.map((c) => [c.guid, c.key]));
@@ -1287,6 +1341,10 @@ const nf1 = new Intl.NumberFormat("en-IN", { maximumFractionDigits: 1 });
  *  the planner works from uses a dash for both. */
 export const fmtQty = (n: number | null | undefined): string =>
   !n ? "–" : nf0.format(Math.round(n));
+
+/** yyyymmdd → dd-mm-yyyy; empty in, empty out. */
+export const fmtYmd = (d: string | null | undefined): string =>
+  d && /^\d{8}$/.test(d) ? `${d.slice(6, 8)}-${d.slice(4, 6)}-${d.slice(0, 4)}` : "";
 
 export const fmtDays = (n: number | null | undefined): string =>
   n === null || n === undefined || !Number.isFinite(n) ? "–" : nf1.format(n);

@@ -39,6 +39,20 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { INK_CATEGORIES, fmtDays, fmtQty, type InkRow } from "../lib/rmMis";
 import HeightGrip from "./HeightGrip";
 
+/**
+ * TWO CHARTS, each folded away until opened (user, 13-10-2026; copied from Ink IMS):
+ *   category  one panel, a bar per category.
+ *   supplier  one panel, a bar per LAST SUPPLIER (Tally purchase register), so the planner sees
+ *             whose material to order.
+ * Items with no category / no purchase on record get their own bar rather than vanishing, since
+ * they still need ordering. Open / closed is remembered per browser, per chart.
+ */
+export type ReorderBy = "category" | "supplier";
+const NO_SUPPLIER = "(No supplier)";
+const NO_CATEGORY = "(No category)";
+const SUPPLIER_PANEL = "All suppliers";
+const CATEGORY_PANEL = "All categories";
+
 /** Each panel's bar window, in px, keyed by category. About six bars before the reader drags. */
 const HEIGHT_KEY = "rm-mis:chart-panel-height";
 const HEIGHT_DEFAULT = 150;
@@ -90,8 +104,34 @@ interface Panel {
   groups: Group[];
 }
 
-export default function ReorderChart({ rows, unit = "KGS" }: { rows: InkRow[]; unit?: string }) {
+export default function ReorderChart({
+  rows,
+  unit = "KGS",
+  by: chartBy = "category",
+}: {
+  rows: InkRow[];
+  unit?: string;
+  by?: ReorderBy;
+}) {
   const [open, setOpen] = useState<{ category: string; group: string } | null>(null);
+
+  const OPEN_KEY = `rm-mis:chart-open:${chartBy}`;
+  const [expanded, setExpanded] = useState<boolean>(() => {
+    try {
+      return window.localStorage.getItem(OPEN_KEY) === "1";
+    } catch {
+      return false;
+    }
+  });
+  const toggleExpanded = () =>
+    setExpanded((v) => {
+      try {
+        window.localStorage.setItem(OPEN_KEY, v ? "0" : "1");
+      } catch {
+        /* private mode: it still opens for this visit */
+      }
+      return !v;
+    });
 
   const [labelWidths, setLabelWidths] = useState<Record<string, number>>(() => {
     try {
@@ -164,13 +204,14 @@ export default function ReorderChart({ rows, unit = "KGS" }: { rows: InkRow[]; u
     for (const r of rows) {
       const qty = reorderQty(r);
       if (qty <= 0) continue;
-      const category = r.category?.trim();
+      const category = chartBy === "supplier" ? SUPPLIER_PANEL : CATEGORY_PANEL;
       if (!category) {
         noCategoryQty += qty;
         noCategoryCount++;
         continue;
       }
-      const groupName = r.group?.trim() || "No group";
+      const groupName =
+        chartBy === "supplier" ? r.supplier?.trim() || NO_SUPPLIER : r.category?.trim() || NO_CATEGORY;
       const groups = by.get(category) ?? new Map<string, Group>();
       const g = groups.get(groupName) ?? { name: groupName, qty: 0, items: [] };
       g.qty += qty;
@@ -201,17 +242,40 @@ export default function ReorderChart({ rows, unit = "KGS" }: { rows: InkRow[]; u
     // The planner's own category order, so panels do not reshuffle as quantities move.
     out.sort((a, b) => order.indexOf(a.name) - order.indexOf(b.name));
     return { panels: out, uncategorised: { qty: noCategoryQty, count: noCategoryCount } };
-  }, [rows]);
+  }, [rows, chartBy]);
 
   const total =
     panels.reduce((t, p) => t + p.qty, 0) + uncategorised.qty;
 
+  const header = (
+    <button
+      type="button"
+      onClick={toggleExpanded}
+      aria-expanded={expanded}
+      className="flex w-full flex-wrap items-baseline gap-x-3 gap-y-1 px-3 py-1.5 text-left hover:bg-muted/40"
+    >
+      <span className="w-3 text-xs text-muted-foreground">{expanded ? "▾" : "▸"}</span>
+      <span className="text-xs font-semibold">
+        To order by {chartBy === "supplier" ? "supplier" : "category"}
+      </span>
+      <span className="text-xs tabular-nums">
+        {fmtQty(total)} <span className="text-[10px] text-muted-foreground">{unit}</span>
+      </span>
+      {!expanded && <span className="text-[10px] text-muted-foreground">click to open</span>}
+    </button>
+  );
+
+  if (!expanded) return <div className="rounded-lg border bg-card">{header}</div>;
+
   if (!panels.length && !uncategorised.count) {
     return (
-      <div className="rounded-md border bg-card px-3 py-2 text-sm text-muted-foreground">
-        <strong className="text-foreground">Nothing to order.</strong> Every line shown is at or
-        above its month max level, or has no lead time set — which is what gives a line a target
-        to fall short of.
+      <div className="rounded-lg border bg-card">
+        {header}
+        <div className="px-3 pb-2 text-sm text-muted-foreground">
+          <strong className="text-foreground">Nothing to order.</strong> Every line shown is at or
+          above its month max level, or has no lead time set — which is what gives a line a target
+          to fall short of.
+        </div>
       </div>
     );
   }
@@ -222,12 +286,7 @@ export default function ReorderChart({ rows, unit = "KGS" }: { rows: InkRow[]; u
 
   return (
     <div className="rounded-lg border bg-card">
-      <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1 px-3 py-2">
-        <span className="text-sm font-semibold">To order</span>
-        <span className="text-sm tabular-nums">
-          {fmtQty(total)} <span className="text-xs text-muted-foreground">{unit}</span>
-        </span>
-      </div>
+      {header}
 
       {/* items-start: a panel dragged taller must not stretch its neighbours with it. */}
       <div className="grid items-start gap-3 px-3 pb-3 [grid-template-columns:repeat(auto-fit,minmax(22rem,1fr))]">
@@ -250,7 +309,7 @@ export default function ReorderChart({ rows, unit = "KGS" }: { rows: InkRow[]; u
                       key={g.name}
                       type="button"
                       aria-expanded={isOpen}
-                      title={`${g.name}: ${fmtQty(g.qty)} ${unit} across ${g.items.length} ink${
+                      title={`${g.name}: ${fmtQty(g.qty)} ${unit} across ${g.items.length} item${
                         g.items.length === 1 ? "" : "s"
                       }`}
                       onClick={() =>
@@ -325,7 +384,7 @@ export default function ReorderChart({ rows, unit = "KGS" }: { rows: InkRow[]; u
 
       {uncategorised.count > 0 && (
         <p className="px-3 pb-2 text-xs text-muted-foreground">
-          {uncategorised.count} ink{uncategorised.count === 1 ? "" : "s"} with no category are not
+          {uncategorised.count} item{uncategorised.count === 1 ? "" : "s"} with no category are not
           shown here, worth <strong>{fmtQty(uncategorised.qty)}</strong> {unit}. Give them a
           category in the item master to bring them in.
         </p>
@@ -335,7 +394,7 @@ export default function ReorderChart({ rows, unit = "KGS" }: { rows: InkRow[]; u
         <div className="overflow-x-auto border-t px-3 py-2">
           <div className="flex items-baseline justify-between gap-2 pb-1">
             <span className="text-xs font-semibold">
-              {open?.category} › {shown.name} — {shown.items.length} ink
+              {shown.name} — {shown.items.length} item
               {shown.items.length === 1 ? "" : "s"}, {fmtQty(shown.qty)} {unit}
             </span>
             <button
@@ -372,7 +431,7 @@ export default function ReorderChart({ rows, unit = "KGS" }: { rows: InkRow[]; u
             <tfoot>
               <tr className="border-t">
                 <td className="py-1 font-medium">
-                  {shown.items.length} ink{shown.items.length === 1 ? "" : "s"}
+                  {shown.items.length} item{shown.items.length === 1 ? "" : "s"}
                 </td>
                 <td className="py-1 text-right tabular-nums">
                   {fmtQty(shown.items.reduce((t, i) => t + i.stock, 0))}

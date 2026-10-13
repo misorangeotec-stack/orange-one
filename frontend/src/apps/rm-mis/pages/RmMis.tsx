@@ -58,7 +58,7 @@ import {
   type CellValue, type SortState,
 } from "../lib/grid";
 import { ResizableHead, useTableColumns } from "../lib/tableColumns";
-import { useGodownChoice } from "../lib/godowns";
+import { forgetRawTallyRows, useGodownChoice } from "../lib/godowns";
 import { salesFyOptions } from "@hub/lib/salesReport";
 import {
   DEFAULT_THRESHOLDS, EMPTY_PLAN, INK_COMPANIES, daysRedFor, deriveInkRow, describeGodownChoice,
@@ -66,7 +66,7 @@ import {
   INK_CATEGORIES, INK_SOURCES, SHIPMENT_STATUSES, emptyShipment, loadGroupFields, loadHolidays,
   loadLines, loadInkConsumption, loadInkPositions, loadOrder, loadOverrides, loadPlans,
   loadShipments, loadThresholds, newId, saveHolidays, savePlans, saveShipments, saveThresholds,
-  sourceLabel, workingDaysElapsed,
+  fmtYmd, sourceLabel, workingDaysElapsed,
   type InkBand, type InkOrder, type InkOverrides, type InkPlan, type InkRow, type InkScope,
   type InkThresholds, type LeadDaysRule, type Shipment, type ShipmentStatus,
 } from "../lib/rmMis";
@@ -315,6 +315,7 @@ export default function RmMis() {
         case "remark": return r.remark;
         case "category": return r.category;
         case "source": return sourceLabel(r.source);
+        case "supplier": return r.supplier;
         case "m3": return r.plan.threeMonthAvg;
         case "pd": return r.plan.perDayAvg;
         case "lead": return r.plan.leadTime;
@@ -342,6 +343,7 @@ export default function RmMis() {
     remark: "list",
     category: "list",
     source: "list",
+    supplier: "list",
   };
 
   /**
@@ -714,6 +716,7 @@ export default function RmMis() {
     if (id === "remark") return 150;
     if (id === "category") return 130;
     if (id === "source") return 110;
+    if (id === "supplier") return 170;
     if (id.startsWith("ship:") || id.startsWith("plant:")) return 110;
     if (id === "stock" || id === "total" || id === "etdTotal") return 110;
     return 90;
@@ -755,6 +758,7 @@ export default function RmMis() {
     ids.push("total");
     if (cols.isVisible("category")) ids.push("category");
     if (cols.isVisible("source")) ids.push("source");
+    if (cols.isVisible("supplier")) ids.push("supplier");
     return ids;
   }, [leadVisible, showCompanyCols, showShipmentCols, shipmentCols, showPlantCols, plantCols, cols]);
 
@@ -842,6 +846,7 @@ export default function RmMis() {
     { value: "etdTotal", label: "ETD total" },
     { value: "category", label: "Category" },
     { value: "source", label: "Import/Plant" },
+    { value: "supplier", label: "Last supplier" },
   ];
   const visibleColumnIds = columnOptions.map((o) => o.value).filter((id) => cols.isVisible(id));
 
@@ -1021,7 +1026,7 @@ export default function RmMis() {
       ...(showCompanyCols ? INK_COMPANIES.map((c) => c.label) : []),
       "Stock", ...shipmentCols.map((s) => `${s.status} ${s.reference || "(no ref)"} ${s.date}`),
       "ETD", "ETA + at port", "Plant total", "ETD total", "Total", "Category",
-      "Import/Plant", "To order",
+      "Import/Plant", "Last supplier", "Last purchase", "To order",
     ];
     const body = rows.map((r) => [
       order[r.key] ?? order[r.legacyKey] ?? "", r.group, r.itemCode, r.description, r.remark,
@@ -1033,6 +1038,7 @@ export default function RmMis() {
         s.lines.filter((l) => l.itemCode === r.itemCode).reduce((t, l) => t + l.qty, 0) || "",
       ),
       r.etd, r.incoming, r.plant, r.etd, r.total, r.category, sourceLabel(r.source),
+      r.supplier, fmtYmd(r.supplierDate),
       reorderQty(r),
     ]);
     const esc = (v: unknown) => {
@@ -1059,7 +1065,7 @@ export default function RmMis() {
           <h1 className="text-2xl font-semibold">RM IMS</h1>
         </div>
         <div className="flex flex-wrap items-center gap-2">
-          <Button variant="outline" size="sm" onClick={() => void refetch()} disabled={isFetching}>
+          <Button variant="outline" size="sm" onClick={() => { forgetRawTallyRows(); void refetch(); }} disabled={isFetching}>
             <RefreshCw className={`mr-2 h-4 w-4 ${isFetching ? "animate-spin" : ""}`} /> Refresh
           </Button>
           <Button variant="outline" size="sm" onClick={exportCsv} disabled={!rows.length}>
@@ -1305,7 +1311,9 @@ export default function RmMis() {
         </div>
       )}
 
-      <ReorderChart rows={rows} />
+      {/* Two bar charts, each folded until opened (user, 13-10-2026). */}
+      <ReorderChart rows={rows} by="category" />
+      <ReorderChart rows={rows} by="supplier" />
 
       {/*
         THE TABLE SCROLLS IN ITS OWN BOX, not with the page.
@@ -1327,8 +1335,9 @@ export default function RmMis() {
           "[&_tbody_td]:pb-[var(--ink-row-pad)] [&_tbody_td]:pt-[var(--ink-row-pad)] " +
           "[&_thead_th]:pb-[var(--ink-head-pad)] [&_thead_th]:pt-[var(--ink-head-pad)] " +
           "[&_tbody_td]:overflow-hidden [&_tbody_td]:text-ellipsis [&_tbody_td]:whitespace-nowrap " +
-          // Every figure at 9.5px, including the cells and badges that set their own size.
-          "[&_tbody_td]:text-[9.5px] [&_tbody_td_*]:text-[9.5px]"
+          // Every figure at 9pt (user, 13-10-2026: "header 8, table 9" — Excel points, as on Ink IMS),
+          // including the cells and badges that set their own size.
+          "[&_tbody_td]:text-[9pt] [&_tbody_td_*]:text-[9pt]"
         }
       >
       <ScrollableTable maxHeight="max-h-[calc(100vh-13rem)]" hideControls>
@@ -1505,6 +1514,11 @@ export default function RmMis() {
                   {colHead("Import/Plant", "source")}
                 </ResizableHead>
               )}
+              {cols.isVisible("supplier") && (
+                <ResizableHead id="supplier" cols={cols} className="min-w-[10rem]">
+                  {colHead("Last supplier", "supplier")}
+                </ResizableHead>
+              )}
             </TableRow>
           </TableHeader>
 
@@ -1549,6 +1563,7 @@ export default function RmMis() {
                 <TableCell className="text-right tabular-nums">{fmtQty(totals.total)}</TableCell>
                 {cols.isVisible("category") && <TableCell />}
                 {cols.isVisible("source") && <TableCell />}
+                {cols.isVisible("supplier") && <TableCell />}
               </TableRow>
             )}
 
@@ -1713,6 +1728,15 @@ export default function RmMis() {
                 )}
                 {cols.isVisible("source") && (
                   <TableCell className="text-xs">{sourceLabel(r.source)}</TableCell>
+                )}
+                {cols.isVisible("supplier") && (
+                  // Who it was last bought from, per Tally's purchase register. The date is on hover.
+                  <TableCell
+                    className="text-xs"
+                    title={r.supplier ? `Last purchase ${fmtYmd(r.supplierDate)}` : "No purchase on record"}
+                  >
+                    {r.supplier || "—"}
+                  </TableCell>
                 )}
               </TableRow>
             ))}
