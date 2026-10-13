@@ -50,7 +50,7 @@ import { applySort, type CellValue, type SortState } from "../lib/grid";
 import {
   EMPTY_PLAN, INK_CATEGORIES, INK_COMPANIES, INK_SOURCES, describeGodownChoice, fmtQty,
   loadInkPositions, loadOrder,
-  loadGroupFields, loadLines, loadOverrides, loadPlans, loadSeenLines, renumber, saveGroupFields,
+  loadGroupFields, loadLines, loadOverrides, loadPlans, loadSeenLines, renumber, saveGroupFields, uniqueOrder,
   saveLines, savePlans, saveOrder, saveOverrides, saveSeenLines, sourceLabel,
   type InkGroupFields, type InkLineFields, type InkLines, type InkMasterRow, type InkOrder, type InkOverride,
   type InkOverrides, type InkPlan, type InkScope,
@@ -227,7 +227,10 @@ export default function InkItemMaster() {
     }
     setGroupFields((prev) => {
       const next = { ...prev, [group]: { ...prev[group], [field]: value } };
-      if (!value.trim()) {
+      // Supplier is a TYPED box: dropping the key when it empties would make the box fall back to
+      // the saved name mid-edit, so it could never be cleared or retyped. The empty string stays
+      // in the draft and is dropped on save instead.
+      if (!value.trim() && field !== "supplier") {
         const row = { ...next[group] };
         delete row[field];
         if (Object.keys(row).length) next[group] = row;
@@ -250,7 +253,7 @@ export default function InkItemMaster() {
   const setLineField = (mergeKey: string, field: keyof InkLineFields, value: string) =>
     setLines((prev) => {
       const next = { ...prev, [mergeKey]: { ...prev[mergeKey], [field]: value } };
-      if (!value.trim()) {
+      if (!value.trim() && field !== "supplier") {
         const row = { ...next[mergeKey] };
         delete row[field];
         if (Object.keys(row).length) next[mergeKey] = row;
@@ -385,6 +388,7 @@ export default function InkItemMaster() {
         // The LABEL, not the stored value: a column sorts by what its cell shows, or the reader
         // is handed an order they cannot see the reason for.
         case "source": return sourceLabel(r.source);
+        case "supplier": return r.supplier;
         case "weeks": return (savedLines[r.mergeKey] ?? savedLines[r.legacyKey])?.weeks ?? null;
         default: return null;
       }
@@ -546,6 +550,17 @@ export default function InkItemMaster() {
     return [...seen].sort().map((g) => ({ value: g, label: g }));
   }, [survivors, f.groups]);
   const bookOpts = INK_COMPANIES.map((c) => ({ value: c.key, label: c.label }));
+  /** Every supplier name already typed anywhere, for the Supplier box's suggestions. */
+  const supplierNames = useMemo(() => {
+    const seen = new Set<string>();
+    for (const v of [...Object.values(lines), ...Object.values(groupFields)]) {
+      const n = (v.supplier ?? "").trim().toUpperCase();
+      if (n) seen.add(n);
+    }
+    for (const r of master) if (r.supplier) seen.add(r.supplier);
+    return [...seen].sort();
+  }, [lines, groupFields, master]);
+
   const categoryOpts = [
     { value: "(none)", label: "Not set" },
     ...INK_CATEGORIES.map((c) => ({ value: c, label: c })),
@@ -582,9 +597,11 @@ export default function InkItemMaster() {
       // lost work; its number and lead time should still apply for when it comes back.
       const res = await importItemMaster(file, master, { overrides, order, plans, lines });
       setOverrides(res.overrides);
-      setOrder(res.order);
+      // A file can carry the same number on several rows; it lands with every number unique.
+      const imported = uniqueOrder(res.order);
+      setOrder(imported);
       setSavedOverrides(res.overrides);
-      setSavedOrder(res.order);
+      setSavedOrder(imported);
       if (res.plans) {
         setPlans(res.plans);
         setSavedPlans(res.plans);
@@ -633,10 +650,10 @@ export default function InkItemMaster() {
     // ⚠ NUMBERED LINES ONLY. A number is what puts a line on the dashboard, so the arrows must
     //   never hand one out: renumbering every row in view used to number all of them, and every
     //   blank line would then have appeared on the dashboard. A blank line gets its number typed.
-    if (order[mergeKey] === undefined) return;
+    if (order[mergeKey] === undefined && !rows.some((r) => r.mergeKey === mergeKey && order[r.legacyKey] !== undefined)) return;
     const lines: string[] = [];
     for (const r of rows) {
-      if (order[r.mergeKey] === undefined) continue;
+      if ((order[r.mergeKey] ?? order[r.legacyKey]) === undefined) continue;
       if (!lines.includes(r.mergeKey)) lines.push(r.mergeKey);
     }
     const at = lines.indexOf(mergeKey);
@@ -671,23 +688,7 @@ export default function InkItemMaster() {
    * and cascading on that would shove the whole list down before the 3 arrived.
    */
   const commitPosition = (mergeKey: string) =>
-    setOrder((prev) => {
-      const n = prev[mergeKey];
-      if (n === undefined) return prev;
-      const next = { ...prev };
-
-      const others = Object.entries(next)
-        .filter(([k]) => k !== mergeKey)
-        .sort((a, b) => a[1] - b[1]);
-      let blocked = n;
-      for (const [k, v] of others) {
-        if (v < n) continue;
-        if (v !== blocked) break; // a free number: everything above it can stay where it is
-        next[k] = v + 1;
-        blocked = v + 1;
-      }
-      return next;
-    });
+    setOrder((prev) => (prev[mergeKey] === undefined ? prev : uniqueOrder(prev, mergeKey)));
 
   /** `width` is now a hint only: every editor fills its column so resizing actually resizes. */
   const cell = (r: InkMasterRow, field: keyof InkOverride, fallback: string, width: string) => (
@@ -813,7 +814,7 @@ export default function InkItemMaster() {
             // blank line on the dashboard, which is exactly what a blank number means not to do.
             const lines: string[] = [];
             for (const r of rows) {
-              if (order[r.mergeKey] === undefined) continue;
+              if ((order[r.mergeKey] ?? order[r.legacyKey]) === undefined) continue;
               if (!lines.includes(r.mergeKey)) lines.push(r.mergeKey);
             }
             setOrder((prev) => ({ ...prev, ...renumber(lines) }));
@@ -922,6 +923,11 @@ export default function InkItemMaster() {
         </div>
       )}
 
+      <datalist id="ink-mis-suppliers">
+        {supplierNames.map((n) => (
+          <option key={n} value={n} />
+        ))}
+      </datalist>
       <ScrollableTable>
         <Table>
           <TableHeader>
@@ -942,6 +948,9 @@ export default function InkItemMaster() {
               </ResizableHead>
               <ResizableHead id="weeks" cols={cols} className="w-[7rem] text-right">
                 {head("Plant weeks", "weeks")}
+              </ResizableHead>
+              <ResizableHead id="supplier" cols={cols} className="min-w-[12rem]">
+                {head("Supplier", "supplier")}
               </ResizableHead>
             </TableRow>
             <TableRow className="hover:bg-transparent">
@@ -974,12 +983,13 @@ export default function InkItemMaster() {
                 <MultiSelect values={f.sources} onChange={(v) => setCol("sources", v)} options={sourceOpts} placeholder="All" className="w-full" triggerClassName={slim} searchable />
               </TableHead>
               <TableHead className="py-2 font-normal" />
+              <TableHead className="py-2 font-normal" />
             </TableRow>
           </TableHeader>
           <TableBody>
             {isLoading && (
               <TableRow>
-                <TableCell colSpan={11} className="py-10 text-center text-muted-foreground">
+                <TableCell colSpan={12} className="py-10 text-center text-muted-foreground">
                   Loading every item from the four books…
                 </TableCell>
               </TableRow>
@@ -991,7 +1001,7 @@ export default function InkItemMaster() {
             */}
             {!isLoading && visible.length === 0 && (
               <TableRow>
-                <TableCell colSpan={11} className="py-10 text-center text-muted-foreground">
+                <TableCell colSpan={12} className="py-10 text-center text-muted-foreground">
                   {master.length === 0 ? (
                     "No items in the four books yet."
                   ) : (
@@ -1021,8 +1031,8 @@ export default function InkItemMaster() {
                       <button
                         type="button"
                         aria-label="Move up"
-                        disabled={order[r.mergeKey] === undefined}
-                        title={order[r.mergeKey] === undefined ? "Type a number first to put this item on the dashboard" : undefined}
+                        disabled={(order[r.mergeKey] ?? order[r.legacyKey]) === undefined}
+                        title={(order[r.mergeKey] ?? order[r.legacyKey]) === undefined ? "Type a number first to put this item on the dashboard" : undefined}
                         className="text-muted-foreground hover:text-foreground disabled:opacity-30 disabled:hover:text-muted-foreground"
                         onClick={() => move(r.mergeKey, -1)}
                       >
@@ -1031,8 +1041,8 @@ export default function InkItemMaster() {
                       <button
                         type="button"
                         aria-label="Move down"
-                        disabled={order[r.mergeKey] === undefined}
-                        title={order[r.mergeKey] === undefined ? "Type a number first to put this item on the dashboard" : undefined}
+                        disabled={(order[r.mergeKey] ?? order[r.legacyKey]) === undefined}
+                        title={(order[r.mergeKey] ?? order[r.legacyKey]) === undefined ? "Type a number first to put this item on the dashboard" : undefined}
                         className="text-muted-foreground hover:text-foreground disabled:opacity-30 disabled:hover:text-muted-foreground"
                         onClick={() => move(r.mergeKey, 1)}
                       >
@@ -1128,6 +1138,23 @@ export default function InkItemMaster() {
                     placeholder={r.source === "plant" ? "1" : "–"}
                     value={lines[r.mergeKey]?.weeks ?? ""}
                     onChange={(e) => setWeeks(r.mergeKey, e.target.value)}
+                  />
+                </TableCell>
+                <TableCell>
+                  {/* Typed by the planner, set for the item's whole group like Category. The list
+                      offers names already used, so one supplier is not spelled three ways — the
+                      dashboard filters on this exact text. */}
+                  <Input
+                    className="h-8 w-full min-w-0"
+                    list="ink-mis-suppliers"
+                    placeholder="—"
+                    title="Sets the supplier for this item's whole group"
+                    value={
+                      lines[r.mergeKey]?.supplier ??
+                      groupFields[(r.effectiveGroup || "").trim().toUpperCase()]?.supplier ??
+                      r.supplier
+                    }
+                    onChange={(e) => setGroupField(r, "supplier", e.target.value)}
                   />
                 </TableCell>
               </TableRow>

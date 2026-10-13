@@ -41,7 +41,7 @@ import { Link } from "react-router-dom";
 import { appBasePath } from "../../appInfo";
 import { useQuery } from "@tanstack/react-query";
 import {
-  AlertTriangle, Download, ListChecks, Pencil, Plus, RefreshCw, Search, Ship, Trash2, Wand2,
+  AlertTriangle, Download, ListChecks, Pencil, Plus, RefreshCw, RotateCcw, Search, Ship, Trash2, Wand2,
   Warehouse,
 } from "lucide-react";
 import { Button } from "@hub/components/ui/button";
@@ -59,7 +59,10 @@ import {
 } from "../lib/grid";
 import { ResizableHead, useTableColumns } from "../lib/tableColumns";
 import { useGodownChoice } from "../lib/godowns";
+import { useSharedPush } from "../lib/sheetStore";
 import { salesFyOptions } from "@hub/lib/salesReport";
+import { filterOptionLabel } from "@/shared/lib/blankFilter";
+import { colourFromDescription } from "../../bushra-central-master/lib/itemColour";
 import {
   DEFAULT_THRESHOLDS, EMPTY_PLAN, INK_COMPANIES, daysRedFor, deriveInkRow, describeGodownChoice,
   fmtDays, fmtQty,
@@ -92,6 +95,20 @@ const BAND_LABEL: Record<InkBand, string> = {
 };
 
 /** Toolbar sizing: one line of small controls above the sheet. */
+/** "2026-10-12" → "12-10-26": the planner reads dates as dd-mm-yy. Anything else passes through. */
+const fmtDdMmYy = (iso: string) => {
+  const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(iso);
+  return m ? `${m[3]}-${m[2]}-${m[1].slice(2)}` : iso;
+};
+
+/** The always-visible filters above the sheet, in the planner's order. */
+const QUICK_FILTERS = [
+  { id: "group", label: "Group" },
+  { id: "supplier", label: "Supplier name" },
+  { id: "colour", label: "Colour" },
+  { id: "category", label: "Category" },
+];
+
 const BAR_BTN = "h-7 px-2 text-[11px]";
 const BAR_ICON = "mr-1 h-3 w-3";
 
@@ -307,6 +324,9 @@ export default function InkMis() {
         case "remark": return r.remark;
         case "category": return r.category;
         case "source": return sourceLabel(r.source);
+        case "supplier": return r.supplier;
+        // Read from the ink's name ("…H-SERIES LIGHT MAGENTA" → Light Magenta), for the Colour filter.
+        case "colour": return colourFromDescription(r.description) ?? "";
         case "m3": return r.plan.threeMonthAvg;
         case "pd": return r.plan.perDayAvg;
         case "lead": return r.plan.leadTime;
@@ -334,6 +354,8 @@ export default function InkMis() {
     remark: "list",
     category: "list",
     source: "list",
+    supplier: "list",
+    colour: "list",
   };
 
   /**
@@ -484,6 +506,7 @@ export default function InkMis() {
       /* private mode: the height still applies for this visit */
     }
   }, [rowPad]);
+  useSharedPush("ink-mis:row-pad", rowPad);
 
   /** Drag any row's bottom edge; double-click it to go back to the default. */
   const startRowDrag = (e: React.MouseEvent) => {
@@ -530,6 +553,7 @@ export default function InkMis() {
       /* private mode: the height still applies for this visit */
     }
   }, [headPad]);
+  useSharedPush("ink-mis:head-pad", headPad);
 
   const startHeadDrag = (e: React.MouseEvent) => {
     e.preventDefault();
@@ -706,6 +730,7 @@ export default function InkMis() {
     if (id === "remark") return 150;
     if (id === "category") return 130;
     if (id === "source") return 110;
+    if (id === "supplier") return 160;
     if (id.startsWith("ship:") || id.startsWith("plant:")) return 110;
     if (id === "stock" || id === "total" || id === "etdTotal") return 110;
     return 90;
@@ -747,6 +772,7 @@ export default function InkMis() {
     ids.push("total");
     if (cols.isVisible("category")) ids.push("category");
     if (cols.isVisible("source")) ids.push("source");
+    if (cols.isVisible("supplier")) ids.push("supplier");
     return ids;
   }, [leadVisible, showCompanyCols, showShipmentCols, shipmentCols, showPlantCols, plantCols, cols]);
 
@@ -834,6 +860,7 @@ export default function InkMis() {
     { value: "etdTotal", label: "ETD total" },
     { value: "category", label: "Category" },
     { value: "source", label: "Import/Plant" },
+    { value: "supplier", label: "Supplier" },
   ];
   const visibleColumnIds = columnOptions.map((o) => o.value).filter((id) => cols.isVisible(id));
 
@@ -977,7 +1004,9 @@ export default function InkMis() {
         <div>
           {colHead(s.reference || "(no ref)", `${s.status === "PLANT" ? "plant" : "ship"}:${s.id}`)}
         </div>
-        <div className="text-[10px] font-normal text-muted-foreground">{s.date || "no date"}</div>
+        <div className="whitespace-nowrap text-[10px] font-normal text-muted-foreground">
+          {s.date ? fmtDdMmYy(s.date) : "no date"}
+        </div>
       </>
     );
 
@@ -1011,9 +1040,9 @@ export default function InkMis() {
       "3-month avg", "Per day avg", "Lead time", "Safety factor",
       "Days cover", "Days cover with ETA", "Month max level", "Daily max level",
       ...(showCompanyCols ? INK_COMPANIES.map((c) => c.label) : []),
-      "Stock", ...shipmentCols.map((s) => `${s.status} ${s.reference || "(no ref)"} ${s.date}`),
+      "Stock", ...shipmentCols.map((s) => `${s.status} ${s.reference || "(no ref)"} ${fmtDdMmYy(s.date)}`),
       "ETD", "ETA + at port", "Plant total", "ETD total", "Total", "Category",
-      "Import/Plant", "To order",
+      "Import/Plant", "To order", "Supplier",
     ];
     const body = rows.map((r) => [
       order[r.key] ?? order[r.legacyKey] ?? "", r.group, r.itemCode, r.description, r.remark,
@@ -1026,6 +1055,7 @@ export default function InkMis() {
       ),
       r.etd, r.incoming, r.plant, r.etd, r.total, r.category, sourceLabel(r.source),
       reorderQty(r),
+      r.supplier,
     ]);
     const esc = (v: unknown) => {
       const s = String(v ?? "");
@@ -1045,33 +1075,49 @@ export default function InkMis() {
   const tabs = [{ key: "combined", label: "Combined" }, ...INK_COMPANIES.map((c) => ({ key: c.key, label: c.label }))];
 
   return (
-    <div className="space-y-5">
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <div>
-          <h1 className="text-2xl font-semibold">Ink MIS</h1>
+    <div className="space-y-2">
+      {/* ONE COMPACT LINE: title, the five tabs and the page buttons. They were three rows of
+          large type above the sheet and pushed it half a screen down; the sheet is the report. */}
+      <div className="flex flex-wrap items-center gap-x-4 gap-y-1 border-b">
+        <h1 className="text-base font-semibold">Ink MIS</h1>
+        <div className="flex flex-wrap gap-0.5">
+          {tabs.map((t) => (
+            <button
+              key={t.key}
+              type="button"
+              onClick={() => setTab(t.key)}
+              className={`-mb-px border-b-2 px-2.5 py-1.5 text-[11px] transition-colors ${
+                tab === t.key
+                  ? "border-primary font-semibold text-foreground"
+                  : "border-transparent text-muted-foreground hover:text-foreground"
+              }`}
+            >
+              {t.label}
+            </button>
+          ))}
         </div>
-        <div className="flex flex-wrap items-center gap-2">
-          <Button variant="outline" size="sm" onClick={() => void refetch()} disabled={isFetching}>
-            <RefreshCw className={`mr-2 h-4 w-4 ${isFetching ? "animate-spin" : ""}`} /> Refresh
+        <div className="ml-auto flex flex-wrap items-center gap-1.5 pb-1">
+          <Button variant="outline" size="sm" className={BAR_BTN} onClick={() => void refetch()} disabled={isFetching}>
+            <RefreshCw className={`${BAR_ICON} ${isFetching ? "animate-spin" : ""}`} /> Refresh
           </Button>
-          <Button variant="outline" size="sm" onClick={exportCsv} disabled={!rows.length}>
-            <Download className="mr-2 h-4 w-4" /> Export
+          <Button variant="outline" size="sm" className={BAR_BTN} onClick={exportCsv} disabled={!rows.length}>
+            <Download className={BAR_ICON} /> Export
           </Button>
-          <Button size="sm" variant="secondary" asChild>
+          <Button size="sm" variant="secondary" className={BAR_BTN} asChild>
             <Link to={`${BASE}/items`}>
-              <ListChecks className="mr-2 h-4 w-4" /> Item master
+              <ListChecks className={BAR_ICON} /> Item master
             </Link>
           </Button>
-          <Button size="sm" asChild>
+          <Button size="sm" className={BAR_BTN} asChild>
             <Link to={`${BASE}/pipeline`}>
-              <Ship className="mr-2 h-4 w-4" /> ETD / ETA entry
+              <Ship className={BAR_ICON} /> ETD / ETA entry
             </Link>
           </Button>
         </div>
       </div>
 
       {godownLines.length > 0 && (
-        <div className="flex flex-wrap items-center gap-x-3 gap-y-1 rounded-md border bg-muted/40 px-3 py-2 text-xs">
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-1 rounded-md border bg-muted/40 px-2 py-1 text-[11px]">
           <span className="inline-flex items-center gap-1 font-medium">
             <Warehouse className="h-3.5 w-3.5" /> Stock counts only
           </span>
@@ -1084,41 +1130,55 @@ export default function InkMis() {
         </div>
       )}
 
-      {/* Tabs — combined plus one per book. */}
-      <div className="flex flex-wrap gap-1 border-b">
-        {tabs.map((t) => (
-          <button
-            key={t.key}
-            type="button"
-            onClick={() => setTab(t.key)}
-            className={`-mb-px border-b-2 px-4 py-2 text-sm transition-colors ${
-              tab === t.key
-                ? "border-primary font-semibold text-foreground"
-                : "border-transparent text-muted-foreground hover:text-foreground"
-            }`}
-          >
-            {t.label}
-          </button>
-        ))}
-      </div>
-
-      {/* Summary strip — ONE LINE. Six boxed cards pushed the table below the fold, and the
-          table is the report; these are context, so they read as a single row of figures and
-          wrap only when the window is genuinely narrow. */}
-      <div className="flex flex-wrap items-center gap-x-6 gap-y-2 rounded-md border bg-card px-3 py-2 text-sm">
-        {[
-          { label: "Inks", value: String(rows.length) },
-          { label: "Stock", value: fmtQty(totals.stock) },
-          { label: "ETA + at port", value: fmtQty(totals.eta + totals.atPort) },
-          { label: "Plant", value: fmtQty(totals.plant) },
-          { label: "ETD", value: fmtQty(totals.etd) },
-          { label: "Needs ordering", value: String(reorderCount) },
-        ].map((c) => (
-          <span key={c.label} className="whitespace-nowrap">
-            <span className="text-muted-foreground">{c.label} </span>
-            <strong className="tabular-nums">{c.value}</strong>
-          </span>
-        ))}
+      {/* THE FOUR FILTERS THE PLANNER WORKS BY, in plain sight, with the sheet's figures on the
+          same line. Each filter is the same list filter as that column's heading funnel (Colour
+          has no column — it is read from the name), so the two always agree, and Reset clears
+          both. Supplier first narrows the sheet to one supplier's inks, which is how ETD / ETA
+          get updated. */}
+      <div className="flex flex-wrap items-center gap-1.5 text-[11px]">
+        <span className="text-muted-foreground">Filter</span>
+        {QUICK_FILTERS.map(({ id, label }) => {
+          const picked = colFilters[id]?.list ?? [];
+          return (
+            <MultiSelect
+              key={id}
+              values={picked}
+              onChange={(list) => setColFilter(id, { ...colFilters[id], list: list.length ? list : undefined })}
+              options={listOptions(id).map((o) => ({ value: o, label: filterOptionLabel(o) }))}
+              searchable
+              triggerLabel={picked.length ? `${label} (${picked.length})` : label}
+              triggerClassName={`h-7 rounded-md py-0.5 px-2 text-[11px] ${picked.length ? "border-primary text-primary" : ""}`}
+            />
+          );
+        })}
+        <Button
+          variant="outline"
+          size="sm"
+          className={BAR_BTN}
+          onClick={() => {
+            clearFilters();
+            setSearch("");
+          }}
+          disabled={!filtersOn && !search.trim()}
+          title="Clear every filter and the search box"
+        >
+          <RotateCcw className={BAR_ICON} /> Reset filters
+        </Button>
+        <span className="ml-auto flex flex-wrap items-center gap-x-4 gap-y-1">
+          {[
+            { label: "Inks", value: String(rows.length) },
+            { label: "Stock", value: fmtQty(totals.stock) },
+            { label: "ETA + at port", value: fmtQty(totals.eta + totals.atPort) },
+            { label: "Plant", value: fmtQty(totals.plant) },
+            { label: "ETD", value: fmtQty(totals.etd) },
+            { label: "Needs ordering", value: String(reorderCount) },
+          ].map((c) => (
+            <span key={c.label} className="whitespace-nowrap">
+              <span className="text-muted-foreground">{c.label} </span>
+              <strong className="tabular-nums">{c.value}</strong>
+            </span>
+          ))}
+        </span>
       </div>
 
       {/* ONE LINE, small type: the toolbar used to wrap onto two rows and push the sheet down.
@@ -1169,11 +1229,6 @@ export default function InkMis() {
           <Wand2 className={BAR_ICON} />
           {consumptionQuery.isFetching ? "Reading the Sales Register…" : "Refresh averages"}
         </Button>
-        {filtersOn && (
-          <Button variant="ghost" size="sm" className={BAR_BTN} onClick={clearFilters}>
-            Clear filters
-          </Button>
-        )}
         <MultiSelect
           values={visibleColumnIds}
           onChange={(v) => cols.setHidden(columnOptions.map((o) => o.value).filter((id) => !v.includes(id)))}
@@ -1297,7 +1352,10 @@ export default function InkMis() {
         </div>
       )}
 
-      <ReorderChart rows={rows} />
+      {/* Both charts start folded; the header carries the total, so the figure is there
+          without opening anything. */}
+      <ReorderChart rows={rows} by="group" />
+      <ReorderChart rows={rows} by="supplier" />
 
       {/*
         THE TABLE SCROLLS IN ITS OWN BOX, not with the page.
@@ -1319,11 +1377,11 @@ export default function InkMis() {
           "[&_tbody_td]:pb-[var(--ink-row-pad)] [&_tbody_td]:pt-[var(--ink-row-pad)] " +
           "[&_thead_th]:pb-[var(--ink-head-pad)] [&_thead_th]:pt-[var(--ink-head-pad)] " +
           "[&_tbody_td]:overflow-hidden [&_tbody_td]:text-ellipsis [&_tbody_td]:whitespace-nowrap " +
-          // Every figure at 9.5px, including the cells and badges that set their own size.
-          "[&_tbody_td]:text-[9.5px] [&_tbody_td_*]:text-[9.5px]"
+          // Every figure at 9pt (12px), including the cells and badges that set their own size.
+          "[&_tbody_td]:text-[9pt] [&_tbody_td_*]:text-[9pt]"
         }
       >
-      <ScrollableTable maxHeight="max-h-[calc(100vh-13rem)]" hideControls>
+      <ScrollableTable maxHeight="max-h-[calc(100vh-13rem)]" hideHint containScroll>
         <Table
           style={{ width: tableWidth, minWidth: tableWidth, maxWidth: "none" }}
           className={
@@ -1497,6 +1555,11 @@ export default function InkMis() {
                   {colHead("Import/Plant", "source")}
                 </ResizableHead>
               )}
+              {cols.isVisible("supplier") && (
+                <ResizableHead id="supplier" cols={cols} className="min-w-[10rem]">
+                  {colHead("Supplier", "supplier")}
+                </ResizableHead>
+              )}
             </TableRow>
           </TableHeader>
 
@@ -1541,6 +1604,7 @@ export default function InkMis() {
                 <TableCell className="text-right tabular-nums">{fmtQty(totals.total)}</TableCell>
                 {cols.isVisible("category") && <TableCell />}
                 {cols.isVisible("source") && <TableCell />}
+                {cols.isVisible("supplier") && <TableCell />}
               </TableRow>
             )}
 
@@ -1705,6 +1769,9 @@ export default function InkMis() {
                 )}
                 {cols.isVisible("source") && (
                   <TableCell className="text-xs">{sourceLabel(r.source)}</TableCell>
+                )}
+                {cols.isVisible("supplier") && (
+                  <TableCell className="text-xs" title={r.supplier}>{r.supplier}</TableCell>
                 )}
               </TableRow>
             ))}

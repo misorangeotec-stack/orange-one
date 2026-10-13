@@ -21,6 +21,7 @@
  * section, highlighted. The reader never leaves the screen they were on.
  */
 import { useEffect, useRef, useState } from "react";
+import { useLocation } from "react-router-dom";
 import { cn } from "@/shared/lib/cn";
 import { useSession } from "@/core/platform/session";
 import HandbookPane from "./HandbookPane";
@@ -225,6 +226,15 @@ export default function AskHrBubble() {
   const endRef = useRef<HTMLDivElement | null>(null);
   const inputRef = useRef<HTMLTextAreaElement | null>(null);
 
+  // The closed bubble can be dragged sideways, off a page's pagination or last column.
+  // ⚠ DELIBERATELY NOT REMEMBERED: the user asked that it go back to the bottom-right
+  // corner on every refresh and every new page (10-10-2026). `shift` is px left of home.
+  const { pathname } = useLocation();
+  const [shift, setShift] = useState(0);
+  const drag = useRef<{ startX: number; startShift: number; moved: boolean } | null>(null);
+  const dragged = useRef(false);
+  useEffect(() => setShift(0), [pathname]);
+
   useEffect(() => {
     if (mode !== "closed") endRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
   }, [turns, pending, mode]);
@@ -328,8 +338,35 @@ export default function AskHrBubble() {
     return (
       <button
         type="button"
-        onClick={() => setMode("chat")}
-        className="fixed bottom-4 right-4 z-40 flex items-center gap-2 rounded-full bg-orange-grad py-3 pl-4 pr-5 text-[13px] font-semibold text-white shadow-cta transition hover:-translate-y-0.5"
+        title="Drag left or right to move"
+        onPointerDown={(e) => {
+          drag.current = { startX: e.clientX, startShift: shift, moved: false };
+          e.currentTarget.setPointerCapture(e.pointerId);
+        }}
+        onPointerMove={(e) => {
+          const d = drag.current;
+          if (!d) return;
+          const dx = d.startX - e.clientX; // dragging left = positive
+          if (!d.moved && Math.abs(dx) < 5) return; // a click wobbles; that is not a drag
+          d.moved = true;
+          const max = window.innerWidth - e.currentTarget.offsetWidth - 32;
+          setShift(Math.min(Math.max(d.startShift + dx, 0), Math.max(max, 0)));
+        }}
+        onPointerUp={() => {
+          dragged.current = drag.current?.moved ?? false;
+          drag.current = null;
+        }}
+        onPointerCancel={() => (drag.current = null)}
+        onClick={() => {
+          // The click that ends a drag must not open the chat.
+          if (dragged.current) {
+            dragged.current = false;
+            return;
+          }
+          setMode("chat");
+        }}
+        style={{ right: 16 + shift }}
+        className="fixed bottom-4 z-40 flex cursor-grab touch-none select-none items-center gap-2 rounded-full bg-orange-grad py-3 pl-4 pr-5 text-[13px] font-semibold text-white shadow-cta transition hover:-translate-y-0.5 active:cursor-grabbing"
       >
         <span className="w-5">{Icon.chat}</span>
         Ask HR

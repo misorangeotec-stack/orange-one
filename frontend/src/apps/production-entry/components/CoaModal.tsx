@@ -7,7 +7,9 @@ import { todayLocalIso } from "@/shared/lib/dueBuckets";
 import { useProductionStore } from "../store";
 import { uploadStepDocument, type CoaLineInput } from "../data/productionWrites";
 import CoaExports from "./CoaExports";
+import CoaImportPanel, { type CoaImportOutcome } from "./CoaImportPanel";
 import StepDocLink from "./StepDocLink";
+import { coaKeyFor, type QcRow } from "../lib/coaImport";
 import { dmy } from "../lib/format";
 import type { CoaAudience, CoaParameter, ProductionRequest } from "../types";
 
@@ -174,6 +176,55 @@ export default function CoaModal({
 
   const patch = (i: number, next: Partial<Row>) =>
     setRows((rs) => rs.map((r, j) => (j === i ? { ...r, ...next } : r)));
+
+  /**
+   * Drop one line of the QC day sheet into the form (see lib/coaImport.ts).
+   *
+   * Matching is by MEASUREMENT, not by position: both the sheet's column heading
+   * and this row's parameter name are reduced to the same key, so a parameter
+   * reordered in the master or a column moved in the sheet still meet.
+   *
+   * ⚠ A BLANK CELL NEVER CLEARS A BOX. The analyst may well have typed a reading
+   *   the sheet does not carry — the four internal-only ones are absent from the
+   *   Daily QC tab entirely — and an import that wrote "" over it would delete
+   *   work while appearing to add some. Only a value present on the sheet is
+   *   written, and what it could not reach is named in the panel above.
+   *
+   * ⚠ The standard is imported too, and the sheet is allowed to win. It is the
+   *   per-lot specification the batch was actually tested against, which is
+   *   exactly what the certificate is supposed to state; the master's value is
+   *   only ever the default. Pushing it back to the master stays the separate,
+   *   ticked decision it already was.
+   */
+  const applyQcRow = (qc: QcRow): CoaImportOutcome => {
+    const skipped: string[] = [];
+    let filled = 0;
+    setRows((rs) =>
+      rs.map((r) => {
+        const key = coaKeyFor(r.name);
+        const reading = key ? qc.readings[key] : undefined;
+        if (!reading) return r;
+        const next = { ...r };
+        if (reading.standard) next.standard = reading.standard;
+        if (reading.observed) next.observed = reading.observed;
+        return next;
+      }),
+    );
+    // Counted off the same source the patch above reads, so the tally cannot
+    // claim a row the map did not actually touch.
+    //
+    // ⚠ A row the ANALYST already filled in is not "still to type". The four
+    //   internal-only parameters are missing from the Daily QC tab, so they are
+    //   routinely typed before the import runs; listing them back as outstanding
+    //   would read as if the import had wiped them.
+    for (const r of rows) {
+      const key = coaKeyFor(r.name);
+      const reading = key ? qc.readings[key] : undefined;
+      if (reading?.observed) filled += 1;
+      else if (!r.observed.trim()) skipped.push(r.name);
+    }
+    return { filled, total: rows.length, skipped, row: qc };
+  };
 
   const observedCount = rows.filter((r) => r.observed.trim() !== "").length;
 
@@ -414,6 +465,16 @@ export default function CoaModal({
             onChange={(e) => setIssueDate(e.target.value)}
           />
         </FieldLabel>
+
+        {/* Above the table it fills, and hidden to a viewer — someone who opened
+            a saved certificate to print it has nothing to import into. */}
+        {!readOnly && rows.length > 0 && (
+          <CoaImportPanel
+            lot={request?.jobcardNo ?? ""}
+            disabled={busy}
+            onApply={applyQcRow}
+          />
+        )}
 
         <div className="space-y-1.5">
           <div className="flex items-baseline justify-between gap-3">

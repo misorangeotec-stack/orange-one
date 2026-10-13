@@ -1,3 +1,4 @@
+import { useSession } from "@/core/platform/session";
 import Combobox, { type ComboOption } from "@/shared/components/ui/Combobox";
 import ChoiceButtons from "@/shared/components/ui/ChoiceButtons";
 import { FieldHeading, FieldLabel, TextInput, TextArea } from "@/shared/components/ui/Form";
@@ -30,6 +31,10 @@ export default function SupplyRequestFields({ form }: { form: SupplyRequestFormA
     companyOptions, deptOptions, categoryOptions, itemOptions, serviceOptions, peopleOptions,
     resolvedDept, beneficiaryDept, isOtherItem, isOtherService, routeHint,
   } = form;
+  // Services / Maintenance is paused for now — admins only. A request that is
+  // already of that type keeps the option, so editing it still works.
+  const { isAdmin } = useSession();
+  const typeOptions = isAdmin || requestType === "services_maintenance" ? TYPES : TYPES.filter((t) => t.value !== "services_maintenance");
 
   return (
     <>
@@ -75,7 +80,7 @@ export default function SupplyRequestFields({ form }: { form: SupplyRequestFormA
 
       <div>
         <FieldHeading label="Type of request" required />
-        <ChoiceButtons value={requestType} onChange={(v) => setRequestType(v as RequestType)} options={TYPES} autoAdvance ariaLabel="Type of request" />
+        <ChoiceButtons value={requestType} onChange={(v) => setRequestType(v as RequestType)} options={typeOptions} autoAdvance ariaLabel="Type of request" />
       </div>
 
       {requestType === "new_requirement" ? (
