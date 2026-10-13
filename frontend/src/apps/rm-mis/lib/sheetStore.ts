@@ -13,7 +13,7 @@
  *
  * ─── HOW IT WORKS NOW ────────────────────────────────────────────────────────────────────
  *
- * `public.ink_mis_state` holds one row per document, and the browser keeps a copy of each. The
+ * `public.rm_mis_state` holds one row per document, and the browser keeps a copy of each. The
  * copy is not a second source of truth — it is a cache and a cushion:
  *
  *   ON OPEN   every shared document is pulled and written into localStorage BEFORE any screen
@@ -39,20 +39,28 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { supabase } from "@/core/platform/supabase";
 
 /**
- * The generated `Database` type knows nothing about `ink_mis_state` or `ink_mis_save` until
+ * The generated `Database` type knows nothing about `rm_mis_state` or `rm_mis_save` until
  * types are regenerated from the live schema, and regenerating is a separate chore against a
  * database this branch has not yet migrated. One untyped handle here is honest about that and
  * keeps the escape hatch in a single place rather than scattering casts through the file.
  */
 const db = supabase as unknown as SupabaseClient;
 
-/** The documents that belong to everyone. Keys match the browser keys they replace. */
 /**
- * EMPTY in RM IMS: nothing is shared yet, so `pushDocument` ignores every key and
- * `hydrateSharedSheet` returns at once. Ink IMS's list, for when RM gets a table of its own:
- * rm-mis:items, order, plans, lines, groups, shipments, thresholds, holidays, godowns (all :v1).
+ * The documents that belong to everyone. Keys match the browser keys they replace. Stored in
+ * `public.rm_mis_state` (20270122120000), RM's own table, so access follows the 'rm-mis' grant.
  */
-export const SHARED_KEYS: readonly string[] = [];
+export const SHARED_KEYS = [
+  "rm-mis:items:v1", // the item master: code, group, description
+  "rm-mis:order:v1", // the planner's numbering series
+  "rm-mis:plans:v1", // lead time, safety, category, Import/Domestic/Plant
+  "rm-mis:lines:v1", // per-line typed values
+  "rm-mis:groups:v1", // category-to-group links
+  "rm-mis:shipments:v1", // the ETD / ETA consignments
+  "rm-mis:thresholds:v1", // colour bands and the days-red rules
+  "rm-mis:holidays:v1", // non-working days behind the per-day average
+  "rm-mis:godowns:v1", // which godowns and stock groups count
+] as const;
 
 const SHARED = new Set<string>(SHARED_KEYS);
 export const isSharedKey = (key: string): boolean => SHARED.has(key);
@@ -106,7 +114,7 @@ async function flush(key: string): Promise<void> {
   inFlight += 1;
   setStatus({ saving: true });
   try {
-    const { error } = await db.rpc("ink_mis_save", { p_key: key, p_value: value });
+    const { error } = await db.rpc("rm_mis_save", { p_key: key, p_value: value });
     if (error) throw new Error(error.message);
     setStatus({ error: null });
   } catch (e) {
@@ -185,14 +193,8 @@ export interface HydrateResult {
  * can never overwrite it wholesale — only an ordinary edit can change a document after that.
  */
 export async function hydrateSharedSheet(): Promise<HydrateResult> {
-  // RM IMS: BROWSER-ONLY for now. Ink IMS shares through `ink_mis_state` on live; RM gets its
-  // own table only once the sheet is signed off, so nothing here reads or writes the database.
-  if (!SHARED_KEYS.length) {
-    setStatus({ mode: "local", error: null });
-    return { pulled: 0, seeded: 0 };
-  }
   const { data, error } = await db
-    .from("ink_mis_state")
+    .from("rm_mis_state")
     .select("key,value")
     .in("key", [...SHARED_KEYS]);
 
@@ -218,7 +220,7 @@ export async function hydrateSharedSheet(): Promise<HydrateResult> {
     if (!mine.length || !status.canEdit) return { pulled: 0, seeded: 0 };
     let seeded = 0;
     for (const [key, value] of mine) {
-      const { error: e } = await db.rpc("ink_mis_save", { p_key: key, p_value: value });
+      const { error: e } = await db.rpc("rm_mis_save", { p_key: key, p_value: value });
       if (e) {
         setStatus({ error: `Could not upload "${key}": ${e.message}` });
         break;

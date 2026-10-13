@@ -9,9 +9,8 @@
  * quantity in closing stock, so keeping the consignment would count the same ink twice and
  * overstate cover — which is the one error this screen exists to prevent.
  *
- * EVERYTHING SAVES TO THIS BROWSER, by an explicit decision not to add a shared table. The
- * banner says so plainly and the export button is the backup. That is not a detail to soften:
- * a planner who assumes the team can see these dates will be wrong.
+ * SAVED ON THE SERVER (rm_mis_state, via lib/sheetStore.ts) and shared with every RM IMS user;
+ * the browser keeps a copy so typing never waits on the network. Export stays as a backup.
  *
  * Autosave is immediate rather than behind a Save button. The sheet being replaced saved on
  * every keystroke, and a half-entered consignment is worth more than a lost one.
@@ -337,8 +336,8 @@ export default function RmShipments() {
       <div className="flex items-start gap-2 rounded-md border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900">
         <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
         <p>
-          These consignments are saved in <strong>this browser only</strong>. Nobody else can see
-          them and clearing your browsing data will erase them. Export a backup regularly.
+          These consignments are saved on the server and shared with everyone who has RM IMS.
+          Export a backup now and then to keep a copy of your own.
         </p>
       </div>
 
