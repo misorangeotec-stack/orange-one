@@ -1045,15 +1045,22 @@ function readJson<T>(key: string, fallback: T): T {
  * keeps the screen working if the shared sheet is unreachable. `pushDocument` is debounced and
  * returns at once, ignores anything that is not a shared document, and declines for a
  * view-only grant. See lib/sheetStore.ts.
+ *
+ * AN UNCHANGED DOCUMENT IS NOT SENT. The screens call their save effects on mount with what they
+ * just loaded, so without this every page open re-sent the whole sheet — and a tab opened before
+ * another machine's edit would overwrite that edit just by being visited. Only a real change goes up.
  */
 function writeJson(key: string, value: unknown): void {
+  const text = JSON.stringify(value);
+  let unchanged = false;
   try {
-    window.localStorage.setItem(key, JSON.stringify(value));
+    unchanged = window.localStorage.getItem(key) === text;
+    if (!unchanged) window.localStorage.setItem(key, text);
   } catch {
     // Private browsing, or the quota is full. The screen keeps working on in-memory state;
     // warning on every keystroke would be worse than losing an unsaved edit.
   }
-  pushDocument(key, value);
+  if (!unchanged) pushDocument(key, value);
 }
 
 export const loadPlans = (): Record<string, InkPlan> => readJson(KEY_PLANS, {});
@@ -1164,6 +1171,49 @@ export function renumber(keysInOrder: string[]): InkOrder {
   keysInOrder.forEach((k, i) => {
     out[k] = (i + 1) * 10;
   });
+  return out;
+}
+
+/**
+ * Every number used once. Sorted by number, a line that repeats or falls below the one before it
+ * takes the next free number; `first` wins a tie (the line just typed or imported). Copied from
+ * Ink IMS (PR #86), where an Excel import had left 9 lines on 99.
+ */
+export function uniqueOrder(order: InkOrder, first?: string): InkOrder {
+  const entries = Object.entries(order).sort(
+    (a, b) =>
+      a[1] - b[1] ||
+      (a[0] === first ? -1 : b[0] === first ? 1 : 0) ||
+      a[0].localeCompare(b[0]),
+  );
+  const out: InkOrder = {};
+  let prev = -Infinity;
+  for (const [k, v] of entries) {
+    const n = v <= prev ? prev + 1 : v;
+    out[k] = n;
+    prev = n;
+  }
+  return out;
+}
+
+/**
+ * Every number used once. Sorted by number, a repeat takes the next free number and pushes the
+ * run above it up as far as the next gap; `first` wins a tie. Copied from Ink IMS (PR #86).
+ */
+export function uniqueOrder(order: InkOrder, first?: string): InkOrder {
+  const entries = Object.entries(order).sort(
+    (a, b) =>
+      a[1] - b[1] ||
+      (a[0] === first ? -1 : b[0] === first ? 1 : 0) ||
+      a[0].localeCompare(b[0]),
+  );
+  const out: InkOrder = {};
+  let prev = -Infinity;
+  for (const [k, v] of entries) {
+    const n = v <= prev ? prev + 1 : v;
+    out[k] = n;
+    prev = n;
+  }
   return out;
 }
 

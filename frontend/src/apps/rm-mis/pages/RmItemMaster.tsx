@@ -54,7 +54,7 @@ import { applySort, type CellValue, type SortState } from "../lib/grid";
 import {
   EMPTY_PLAN, INK_CATEGORIES, INK_COMPANIES, INK_SOURCES, describeGodownChoice, fmtQty,
   loadInkPositions, loadOrder,
-  loadGroupFields, loadLines, loadOverrides, loadPlans, loadSeenLines, renumber, saveGroupFields,
+  loadGroupFields, loadLines, loadOverrides, loadPlans, loadSeenLines, renumber, saveGroupFields, uniqueOrder, uniqueOrder,
   saveLines, savePlans, saveOrder, saveOverrides, saveSeenLines, sourceLabel,
   type InkGroupFields, type InkLineFields, type InkLines, type InkMasterRow, type InkOrder, type InkOverride,
   type InkOverrides, type InkPlan, type InkScope,
@@ -664,9 +664,11 @@ export default function RmItemMaster() {
       // lost work; its number and lead time should still apply for when it comes back.
       const res = await importItemMaster(file, master, { overrides, order, plans, lines });
       setOverrides(res.overrides);
-      setOrder(res.order);
+      // A file can carry the same number on several rows; it lands with every number unique.
+      const imported = uniqueOrder(res.order);
+      setOrder(imported);
       setSavedOverrides(res.overrides);
-      setSavedOrder(res.order);
+      setSavedOrder(imported);
       if (res.plans) {
         setPlans(res.plans);
         setSavedPlans(res.plans);
