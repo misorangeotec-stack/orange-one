@@ -178,7 +178,7 @@ const isEmptyDoc = (v: unknown): boolean =>
 export interface HydrateResult {
   /** Documents taken from the server into this browser. */
   pulled: number;
-  /** Documents sent up because the shared sheet was completely empty. */
+  /** Documents this browser uploaded because the server did not hold them yet. */
   seeded: number;
 }
 
@@ -186,11 +186,13 @@ export interface HydrateResult {
  * Bring this browser in line with the shared sheet. Must finish before any screen reads a
  * document, which is why the app shell waits on it.
  *
- * THE FIRST RUN IS THE DELICATE ONE. The shared sheet starts empty while one browser holds
- * months of numbering, and the wrong move is to let the empty server win and wipe it. So: if
- * the server has NO shared document at all and this browser has something, this browser seeds
- * it. Once even one document exists on the server, the server is the truth and a stale browser
- * can never overwrite it wholesale — only an ordinary edit can change a document after that.
+ * SEEDING IS PER DOCUMENT. A document the server does not hold yet is uploaded from the first
+ * browser with edit rights that has it; a document the server holds is the truth and is pulled.
+ * It used to seed only while the server was COMPLETELY empty — so on 13-10-2026 a browser with no
+ * numbering opened RM IMS first, saved only the colour bands, and from then on the browser that
+ * held the real numbering could never upload it. Nothing deletes a document from the server, so
+ * "missing on the server" only ever means "never shared", and a stale browser still cannot
+ * overwrite a document someone has shared.
  */
 export async function hydrateSharedSheet(): Promise<HydrateResult> {
   const { data, error } = await db
@@ -212,29 +214,23 @@ export async function hydrateSharedSheet(): Promise<HydrateResult> {
   const server = new Map(rows.map((r) => [r.key, r.value]));
   setStatus({ mode: "shared", error: null });
 
-  if (!server.size) {
-    // Nothing shared yet. Seed from this browser if it has anything worth keeping.
-    const mine = SHARED_KEYS.map((k) => [k, readLocal(k)] as const).filter(
-      ([, v]) => !isEmptyDoc(v),
-    );
-    if (!mine.length || !status.canEdit) return { pulled: 0, seeded: 0 };
-    let seeded = 0;
-    for (const [key, value] of mine) {
-      const { error: e } = await db.rpc("rm_mis_save", { p_key: key, p_value: value });
-      if (e) {
-        setStatus({ error: `Could not upload "${key}": ${e.message}` });
-        break;
-      }
-      seeded += 1;
-    }
-    return { pulled: 0, seeded };
-  }
-
   let pulled = 0;
+  let seeded = 0;
   for (const key of SHARED_KEYS) {
-    if (!server.has(key)) continue;
-    writeLocal(key, server.get(key));
-    pulled += 1;
+    if (server.has(key)) {
+      writeLocal(key, server.get(key));
+      pulled += 1;
+      continue;
+    }
+    // Not on the server yet: seed it from this browser, if this browser has it.
+    const mine = readLocal(key);
+    if (isEmptyDoc(mine) || !status.canEdit) continue;
+    const { error: e } = await db.rpc("rm_mis_save", { p_key: key, p_value: mine });
+    if (e) {
+      setStatus({ error: `Could not upload "${key}": ${e.message}` });
+      break;
+    }
+    seeded += 1;
   }
-  return { pulled, seeded: 0 };
+  return { pulled, seeded };
 }
