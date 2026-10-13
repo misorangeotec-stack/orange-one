@@ -846,7 +846,7 @@ export default function RmMis() {
     { value: "etdTotal", label: "ETD total" },
     { value: "category", label: "Category" },
     { value: "source", label: "Import/Plant" },
-    { value: "supplier", label: "Last supplier" },
+    { value: "supplier", label: "Supplier" },
   ];
   const visibleColumnIds = columnOptions.map((o) => o.value).filter((id) => cols.isVisible(id));
 
@@ -1026,7 +1026,7 @@ export default function RmMis() {
       ...(showCompanyCols ? INK_COMPANIES.map((c) => c.label) : []),
       "Stock", ...shipmentCols.map((s) => `${s.status} ${s.reference || "(no ref)"} ${s.date}`),
       "ETD", "ETA + at port", "Plant total", "ETD total", "Total", "Category",
-      "Import/Plant", "Last supplier", "Last purchase", "To order",
+      "Import/Plant", "Supplier", "Last Tally purchase", "To order",
     ];
     const body = rows.map((r) => [
       order[r.key] ?? order[r.legacyKey] ?? "", r.group, r.itemCode, r.description, r.remark,
@@ -1038,7 +1038,7 @@ export default function RmMis() {
         s.lines.filter((l) => l.itemCode === r.itemCode).reduce((t, l) => t + l.qty, 0) || "",
       ),
       r.etd, r.incoming, r.plant, r.etd, r.total, r.category, sourceLabel(r.source),
-      r.supplier, fmtYmd(r.supplierDate),
+      r.supplier, r.supplierTyped ? "" : fmtYmd(r.supplierDate),
       reorderQty(r),
     ]);
     const esc = (v: unknown) => {
@@ -1516,7 +1516,7 @@ export default function RmMis() {
               )}
               {cols.isVisible("supplier") && (
                 <ResizableHead id="supplier" cols={cols} className="min-w-[10rem]">
-                  {colHead("Last supplier", "supplier")}
+                  {colHead("Supplier", "supplier")}
                 </ResizableHead>
               )}
             </TableRow>
@@ -1730,10 +1730,16 @@ export default function RmMis() {
                   <TableCell className="text-xs">{sourceLabel(r.source)}</TableCell>
                 )}
                 {cols.isVisible("supplier") && (
-                  // Who it was last bought from, per Tally's purchase register. The date is on hover.
+                  // The planner's typed supplier (item master), else who Tally last bought it from.
                   <TableCell
                     className="text-xs"
-                    title={r.supplier ? `Last purchase ${fmtYmd(r.supplierDate)}` : "No purchase on record"}
+                    title={
+                      r.supplierTyped
+                        ? "Typed in the item master"
+                        : r.supplier
+                          ? `Tally: last purchase ${fmtYmd(r.supplierDate)}`
+                          : "No purchase on record — type one in the item master"
+                    }
                   >
                     {r.supplier || "—"}
                   </TableCell>

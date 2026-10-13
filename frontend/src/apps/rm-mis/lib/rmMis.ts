@@ -156,6 +156,8 @@ export interface InkPosition {
    *  when no purchase is on record. Several books on one line: the latest purchase wins. */
   supplier: string;
   supplierDate: string;
+  /** True when `supplier` is the planner's typed name rather than Tally's. */
+  supplierTyped: boolean;
   baseUnit: string;
   /** Closing quantity per book, keyed by `InkCompany.key`. Absent book means zero. */
   byCompany: Record<string, number>;
@@ -202,6 +204,11 @@ export interface InkLineFields {
    * have entered them. Blank means one week.
    */
   weeks?: number;
+  /**
+   * Supplier, typed by the planner in the item master (user, 13-10-2026: "free open"). Wins over
+   * Tally's last supplier; blank falls back to it.
+   */
+  supplier?: string;
 }
 
 export type InkLines = Record<string, Partial<InkLineFields>>;
@@ -291,6 +298,10 @@ export interface InkMasterRow {
   /** Planner-only fields: Tally has no equivalent, so there is nothing to fall back to. */
   category: string;
   source: string;
+  /** Who Tally last bought this item from (purchase register) and when, yyyymmdd. Empty when
+   *  no purchase is on record. What the Supplier box shows until the planner types one. */
+  tallySupplier: string;
+  tallySupplierDate: string;
   effectiveDescription: string;
   /** True when nothing anywhere supplies a code, so this item cannot merge across books. */
   needsCode: boolean;
@@ -509,6 +520,9 @@ export async function loadInkPositions(
       detectCategory(tallyName || row.item);
     const effectiveSource = (lineOv.source ?? "").trim() || (groupOv.source ?? "").trim();
 
+    const bought = lastSuppliers.get(`${row.company_guid}|${norm(row.item)}`);
+    const typedSupplier = (lineOv.supplier ?? "").trim();
+
     master.push({
       key,
       mergeKey: mergeKeyForRow,
@@ -528,6 +542,8 @@ export async function loadInkPositions(
       effectiveGroup,
       category: effectiveCategory,
       source: effectiveSource,
+      tallySupplier: bought?.party ?? "",
+      tallySupplierDate: bought?.date ?? "",
       effectiveDescription,
       needsCode: !effectiveCode,
       link,
@@ -556,6 +572,7 @@ export async function loadInkPositions(
         source: effectiveSource,
         supplier: "",
         supplierDate: "",
+        supplierTyped: false,
         baseUnit: row.base_unit || "KGS",
         byCompany: {},
         stock: 0,
@@ -582,8 +599,11 @@ export async function loadInkPositions(
     }
     if (!pos.category) pos.category = effectiveCategory;
     if (!pos.source) pos.source = effectiveSource;
-    const bought = lastSuppliers.get(`${row.company_guid}|${norm(row.item).toUpperCase()}`);
-    if (bought && bought.date > pos.supplierDate) {
+    // The planner's typed supplier wins; otherwise the latest Tally purchase across the books.
+    if (typedSupplier) {
+      pos.supplier = typedSupplier;
+      pos.supplierTyped = true;
+    } else if (!pos.supplierTyped && bought && bought.date > pos.supplierDate) {
       pos.supplier = bought.party;
       pos.supplierDate = bought.date;
     }
