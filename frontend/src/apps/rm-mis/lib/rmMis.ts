@@ -1009,10 +1009,9 @@ export function deriveInkRow(
 /* ----------------------------------------------------------------- local store */
 
 /**
- * The planner's numbers live in the browser, by an explicit decision: no table was added to
- * the shared database for this. Consequences the UI must own up to — the data is visible only
- * on this machine and this browser profile, and clearing site data loses it. Hence the export
- * and import buttons on the entry screen, which are the backup.
+ * The planner's numbers are read from localStorage, which `sheetStore` fills from the shared
+ * table (rm_mis_state) before any screen renders and pushes back to on every save. Export and
+ * import on the entry screen remain the backup.
  *
  * Every read is defensive. A half-written or hand-edited value must not blank the dashboard,
  * so a parse failure falls back to the default rather than throwing.

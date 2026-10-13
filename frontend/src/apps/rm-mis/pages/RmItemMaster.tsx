@@ -20,8 +20,8 @@
  * line, flagged — because hiding real stock for want of a code is exactly what this screen is
  * here to stop.
  *
- * Saved in this browser only, like the rest of the planner's data. The dashboard's export and
- * import carry this table with them.
+ * Saved on the server (rm_mis_state) like the rest of the planner's sheet. The dashboard's
+ * export and import carry this table with them.
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link } from "react-router-dom";
@@ -828,8 +828,8 @@ export default function RmItemMaster() {
       <div className="flex items-start gap-2 rounded-md border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900">
         <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
         <p>
-          Saved in <strong>this browser only</strong>. Use Export backup on the pipeline screen
-          to keep a copy. The item code is what merges the same ink across books, so filling it
+          Saved on the server and shared with everyone who has RM IMS. Use Export backup on the
+          pipeline screen to keep a copy of your own. The item code is what merges the same ink across books, so filling it
           in is what turns several lines into one.
         </p>
       </div>
