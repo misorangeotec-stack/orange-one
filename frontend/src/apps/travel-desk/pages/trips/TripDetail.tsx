@@ -14,6 +14,7 @@ import EntitlementPanel from "../../components/EntitlementPanel";
 import ApprovalPanel, { ApprovalHistory } from "../../components/ApprovalPanel";
 import AdvancePanel, { AdvanceRecoveryPanel } from "../../components/AdvancePanel";
 import BookingPanel from "../../components/BookingPanel";
+import CancelBookingPanel from "../../components/CancelBookingPanel";
 import ClaimPanel from "../../components/ClaimPanel";
 import ClaimReviewPanel from "../../components/ClaimReviewPanel";
 import FinanceReviewPanel from "../../components/FinanceReviewPanel";
@@ -206,6 +207,7 @@ export default function TripDetail() {
       <AdvancePanel trip={trip} />
       <AdvanceRecoveryPanel trip={trip} />
       <BookingPanel trip={trip} />
+      <CancelBookingPanel trip={trip} />
 
       {/*
         The claim half.
@@ -296,6 +298,8 @@ export default function TripDetail() {
 
           <ApprovalHistory trip={trip} />
 
+          {/* New requests never ask for an advance (2026-10); the card stays for old trips that did. */}
+          {trip.advanceRequested && (
           <Card className="p-4">
             <h2 className={SECTION_HEADING_CLASS}>Travel advance</h2>
             {trip.advanceSkipped || !trip.advanceRequested ? (
@@ -323,6 +327,7 @@ export default function TripDetail() {
               </div>
             )}
           </Card>
+          )}
 
       {/*
         ⚠ SHOWN FROM THE BOOKING STEP ONWARDS, not only while booking is open.

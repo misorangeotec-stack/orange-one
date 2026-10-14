@@ -67,12 +67,6 @@ export default function TripForm({ draft }: { draft?: Trip }) {
   );
   const [emergency, setEmergency] = useState(draft?.isEmergency ?? false);
   const [emergencyReason, setEmergencyReason] = useState(draft?.emergencyReason ?? "");
-  const [advance, setAdvance] = useState(draft?.advanceRequested ?? false);
-  const [advanceAmount, setAdvanceAmount] = useState(
-    draft?.advanceRequestedAmount === null || draft?.advanceRequestedAmount === undefined
-      ? ""
-      : String(draft.advanceRequestedAmount),
-  );
   const [passengers, setPassengers] = useState<PassengerInput[]>(() =>
     draft
       ? s.passengersOf(draft.id).map((p) => ({
@@ -105,11 +99,6 @@ export default function TripForm({ draft }: { draft?: Trip }) {
 
   const purpose = s.purposes.find((p) => p.id === purposeId);
   const estimateNum = estimate.trim() === "" ? null : Number(estimate);
-  const advanceNum = advanceAmount.trim() === "" ? null : Number(advanceAmount);
-  const maxAdvance =
-    estimateNum !== null && Number.isFinite(estimateNum)
-      ? Math.round((estimateNum * s.config.policy.advanceMaxPct) / 100)
-      : null;
 
   const cityOptions = useMemo(
     () =>
@@ -166,7 +155,7 @@ export default function TripForm({ draft }: { draft?: Trip }) {
   if (!cityId) blockers.push("Choose a destination.");
   if (!departure) blockers.push("Give a departure date.");
   if (estimateNum === null || !Number.isFinite(estimateNum)) {
-    blockers.push("Give an estimated cost — Section 3.3 requires one, and the advance is capped against it.");
+    blockers.push("Give an estimated cost — Section 3.3 requires one.");
   }
   if (emergency && !emergencyReason.trim()) {
     blockers.push("An emergency trip needs its reason recorded.");
@@ -209,35 +198,6 @@ export default function TripForm({ draft }: { draft?: Trip }) {
   }
 
   /*
-    ⚠ Section 11.2 — NO SECOND ADVANCE WHILE ONE IS UNRECONCILED. This is the policy's
-      hardest rule and it is unenforceable without a system that can answer "what
-      does this person still owe". Phase 5 makes the raise RPC refuse it; here it
-      is a warning, because a traveller who learns at submit time that their
-      advance is refused has already planned around having it.
-  */
-  const outstanding = s.trips
-    .filter(
-      (t) =>
-        t.travellerId === travellerId &&
-        t.id !== draft?.id &&
-        (t.advancePaidAmount ?? 0) > 0 &&
-        t.status !== "closed" &&
-        t.status !== "cancelled",
-    )
-    .reduce((sum, t) => sum + (t.advancePaidAmount ?? 0), 0);
-
-  if (advance && outstanding > 0) {
-    warnings.push(
-      `${money(outstanding)} of travel advance is still unsettled for this traveller. Section 11.2 does not allow a second advance until that is reconciled.`,
-    );
-  }
-  if (advance && maxAdvance !== null && advanceNum !== null && advanceNum > maxAdvance) {
-    warnings.push(
-      `Section 11.1 caps the advance at ${s.config.policy.advanceMaxPct}% of the estimate — ${money(maxAdvance)} here.`,
-    );
-  }
-
-  /*
     ⚠ THE ORG CHART IS INCOMPLETE AND THE FORM SAYS SO RATHER THAN FAILING. 19 of
       60 people have no `user_hods` row; most are top-of-tree and correctly have
       none, but two are ordinary staff whose manager edge is simply missing.
@@ -269,9 +229,10 @@ export default function TripForm({ draft }: { draft?: Trip }) {
     estimatedCost: estimateNum !== null && Number.isFinite(estimateNum) ? estimateNum : null,
     isEmergency: emergency,
     emergencyReason: emergencyReason.trim() || null,
-    advanceRequested: advance,
-    advanceRequestedAmount:
-      advance && advanceNum !== null && Number.isFinite(advanceNum) ? advanceNum : null,
+    // New process (2026-10): a request never asks for a travel advance — the trip
+    // closes at booking, so there is no claim to adjust one against.
+    advanceRequested: false,
+    advanceRequestedAmount: null,
   });
 
   /** Save, then write the passengers onto whatever id we now have. */
@@ -461,7 +422,6 @@ export default function TripForm({ draft }: { draft?: Trip }) {
               <FieldLabel
                 label="Estimated cost"
                 required
-                hint={`The advance is capped at ${s.config.policy.advanceMaxPct}% of this`}
               >
                 <TextInput
                   type="number"
@@ -510,37 +470,6 @@ export default function TripForm({ draft }: { draft?: Trip }) {
                   rows={2}
                 />
               </FieldLabel>
-            )}
-          </Card>
-
-          <Card className="space-y-4 p-4">
-            <h2 className={SECTION_HEADING_CLASS}>Travel advance</h2>
-            <label className="flex items-center gap-2 text-[13px] text-navy">
-              <input type="checkbox" checked={advance} onChange={(e) => setAdvance(e.target.checked)} />
-              I need an advance before departure
-            </label>
-            {advance ? (
-              <FieldLabel
-                label="Amount"
-                hint={
-                  maxAdvance !== null
-                    ? `at most ${money(maxAdvance)} — ${s.config.policy.advanceMaxPct}% of the estimate (Section 11.1)`
-                    : "give an estimated cost first"
-                }
-              >
-                <TextInput
-                  type="number"
-                  min={0}
-                  step="1"
-                  value={advanceAmount}
-                  onChange={(e) => setAdvanceAmount(e.target.value)}
-                />
-              </FieldLabel>
-            ) : (
-              <p className="text-[12.5px] text-grey-2">
-                No advance is requested, so the Advance step is skipped and the trip goes straight to
-                booking once it is approved.
-              </p>
             )}
           </Card>
 

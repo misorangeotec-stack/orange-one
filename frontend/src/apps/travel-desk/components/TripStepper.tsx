@@ -41,7 +41,26 @@ const RAIL: { key: string; label: string; step: StepKey | null }[] = [
   { key: "closed",            label: "Closed",           step: null },
 ];
 
-const idxOfStep = (step: StepKey): number => RAIL.findIndex((s) => s.step === step);
+/** The claim half — only trips booked under the old process (before 2026-10) walk it. */
+const CLAIM_HALF: StepKey[] = ["claim", "claim_review", "finance_review", "settlement"];
+
+/**
+ * The rail this trip walks.
+ *
+ * ⚠ SINCE 2026-10 A TRIP CLOSES AT BOOKING, so the claim half and the advance
+ *   are dropped from the rail — except on a trip that was booked under the old
+ *   process (it still has to finish its claim), and the advance on an older
+ *   trip that asked for one.
+ */
+function railFor(t: Trip): typeof RAIL {
+  const legacy = t.bkAt !== null && !t.closedAtBooking;
+  if (legacy) return RAIL;
+  return RAIL.filter(
+    (r) =>
+      !(r.step && CLAIM_HALF.includes(r.step)) &&
+      !(r.step === "advance" && !t.advanceRequested),
+  );
+}
 
 /**
  * Which node the trip is sitting on.
@@ -55,8 +74,9 @@ const idxOfStep = (step: StepKey): number => RAIL.findIndex((s) => s.step === st
  *   step it had already skipped, and a rail that guessed the next step would be
  *   the first place that lie appeared.
  */
-function activeIndex(t: Trip): number {
-  if (t.status === "closed") return RAIL.length - 1;
+function activeIndex(t: Trip, rail: typeof RAIL): number {
+  const idxOfStep = (step: StepKey): number => rail.findIndex((s) => s.step === step);
+  if (t.status === "closed") return rail.length - 1;
   if (t.status === "draft") return 0;
 
   const live = STATUS_STEP[t.status];
@@ -76,7 +96,7 @@ function activeIndex(t: Trip): number {
 
   // Nothing recorded: the first step that neither completed nor was skipped.
   // Capped below Closed, which only a settled trip may sit on.
-  const first = RAIL.findIndex(
+  const first = rail.findIndex(
     (s) =>
       s.step !== null &&
       !stepCompletedIso(t, s.step) &&
@@ -84,7 +104,7 @@ function activeIndex(t: Trip): number {
       !(s.step === "director_approval" && t.directorApprovalSkipped) &&
       !(s.step === "advance" && t.advanceSkipped),
   );
-  return first < 0 ? RAIL.length - 2 : first;
+  return first < 0 ? rail.length - 2 : first;
 }
 
 /** Statuses in which the trip is not moving, and the rail should say so. */
@@ -100,14 +120,15 @@ export default function TripStepper({ trip, fit }: { trip: Trip; fit?: boolean }
   const s = useTravelStore();
   const personById = useOrgPersonById();
 
-  const active = activeIndex(trip);
+  const rail = railFor(trip);
+  const active = activeIndex(trip, rail);
   const finished = trip.status === "closed";
   const haltedLabel = HALTED[trip.status];
 
   const nodes: PoStageRailNode[] = useMemo(() => {
     const name = (id: string | null): string | null => personById(id)?.name ?? null;
 
-    return RAIL.map((st, i) => {
+    return rail.map((st, i) => {
       if (!st.step) {
         return { key: st.key, label: st.label, departments: [], people: [], hasStep: false };
       }

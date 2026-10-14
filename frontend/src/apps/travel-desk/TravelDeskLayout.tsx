@@ -7,9 +7,16 @@ import { buildTravelNav } from "./nav";
 import { useTravelStore } from "./store";
 import { STEPS } from "./lib/steps";
 import type { QueueStep } from "./lib/queues";
-import type { TravelNotification } from "./types";
+import { STATUS_STEP, type TravelNotification } from "./types";
 
 const B = "/travel-desk";
+
+/**
+ * Steps the new process (2026-10) no longer uses: the trip closes at booking
+ * and a request never asks for an advance. Their queues stay in the menu only
+ * while an older trip is still waiting at one, so those can finish.
+ */
+const RETIRED_STEPS: QueueStep[] = ["advance", "claim", "claim_review", "finance_review", "settlement"];
 
 /**
  * Where a bell notification lands. Everything in this module is about ONE trip —
@@ -29,7 +36,11 @@ export default function TravelDeskLayout() {
 
   const queues = useMemo(() => {
     const out = {} as Record<QueueStep, boolean>;
-    for (const step of queueSteps) out[step] = s.canSeeQueue(step);
+    for (const step of queueSteps) {
+      out[step] =
+        s.canSeeQueue(step) &&
+        (!RETIRED_STEPS.includes(step) || s.trips.some((t) => STATUS_STEP[t.status] === step));
+    }
     return out;
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [s]);
@@ -43,9 +54,10 @@ export default function TravelDeskLayout() {
         queues,
         canManageAnyMaster: s.canManageAnyMaster,
         pendingMasterRequests: s.pendingMasterRequests.length,
+        hasCancellationRequests: s.trips.some((t) => t.status === "cancellation_requested"),
       }),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [isAdmin, s.canRaise, s.canSetup, queues, s.canManageAnyMaster, s.pendingMasterRequests],
+    [isAdmin, s.canRaise, s.canSetup, queues, s.canManageAnyMaster, s.pendingMasterRequests, s.trips],
   );
 
   const notifItems: NotificationItem[] = s.notifications.map((n) => {
