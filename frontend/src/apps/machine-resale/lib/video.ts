@@ -3,6 +3,14 @@ import { setMachineVideo } from "../data/mrWrites";
 import type { VideoState } from "../types";
 
 /**
+ * Phase one uses YouTube links only (user, 14-10-2026): staff upload the video to
+ * YouTube as Unlisted and paste the link. The Bunny upload panel stays hidden until
+ * the Bunny keys are added; flip this to true then. A machine that somehow already
+ * has a Bunny video still shows the panel, so it can be seen and removed.
+ */
+export const BUNNY_UPLOAD_ON = false;
+
+/**
  * States worth asking Bunny about again. `ready` and `failed` are final, and
  * `created` means nothing has arrived yet: only a new upload changes it.
  */

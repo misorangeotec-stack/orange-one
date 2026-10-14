@@ -23,7 +23,7 @@ import { PageHeader, StatusPill } from "../components/Pills";
 import VideoPanel from "../components/VideoPanel";
 import VisibilityControl from "../components/VisibilityControl";
 import { dmyTime } from "../lib/format";
-import { youtubeId } from "../lib/video";
+import { BUNNY_UPLOAD_ON, youtubeId } from "../lib/video";
 import { B } from "../nav";
 import { useMrStore } from "../store";
 import type { Machine, MachineStatus, SpecPair, VideoState } from "../types";
@@ -654,7 +654,7 @@ export default function MachineForm() {
                 label="YouTube video link"
                 name="youtubeUrl"
                 error={err("youtubeUrl")}
-                note="Shown on the website when there is no uploaded video below"
+                note={BUNNY_UPLOAD_ON ? "Shown on the website when there is no uploaded video below" : "Upload the video to YouTube as Unlisted, then paste its link here"}
                 aside={vis("video")}
               >
                 <TextInput
@@ -694,6 +694,7 @@ export default function MachineForm() {
 
         {/* Outside the fieldset: the video writes on its own, straight away, and is not part
             of what Save sends. */}
+        {(BUNNY_UPLOAD_ON || video.id) && (
         <Card className="space-y-3 p-5">
           <div className="flex items-center justify-between border-b border-line pb-2">
             <h3 className="text-[12px] font-semibold uppercase tracking-wide text-grey">Video upload (Bunny Stream)</h3>
@@ -708,6 +709,7 @@ export default function MachineForm() {
             onRowChanged={onVideoRow}
           />
         </Card>
+        )}
 
         <fieldset disabled={!canEdit || busy} className="space-y-5">
           <Card className="space-y-6 p-5">
