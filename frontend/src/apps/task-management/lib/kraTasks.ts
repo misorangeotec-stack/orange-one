@@ -133,3 +133,26 @@ export function kraScore(t: Task): KraScore | null {
 
 /** "26%", "6.5%". */
 export const pctLabel = (n: number) => `${r2(n)}%`;
+
+/**
+ * Task Category as one viewer sees it — the "Category" column and filter on the task
+ * lists. "kra" / "others" as on Create Task; null = a KRA task this viewer may not see
+ * (only the assignee and their DIRECT HOD may — useKraTaskAccess), shown as "—".
+ */
+export type TaskCategory = "kra" | "others";
+export function taskCategoryFor(
+  t: Task,
+  viewerId: string,
+  hodIdsOf: (profileId: string) => string[] | undefined,
+): TaskCategory | null {
+  if (!t.kraId) return "others";
+  const visible = t.assignedTo === viewerId || (!!t.assignedTo && !!hodIdsOf(t.assignedTo)?.includes(viewerId));
+  return visible ? "kra" : null;
+}
+
+export const TASK_CATEGORY_FILTER_OPTIONS = [
+  { value: "all", label: "All" },
+  { value: "kra", label: "KRA" },
+  { value: "others", label: "Others" },
+] as const;
+export type TaskCategoryFilter = (typeof TASK_CATEGORY_FILTER_OPTIONS)[number]["value"];

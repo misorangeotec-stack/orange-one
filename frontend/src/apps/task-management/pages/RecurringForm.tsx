@@ -1,5 +1,6 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
+import { useQuery } from "@tanstack/react-query";
 import Card from "@/shared/components/ui/Card";
 import Button from "@/shared/components/ui/Button";
 import Avatar from "@/shared/components/ui/Avatar";
@@ -10,6 +11,11 @@ import { useSession } from "../mock/session";
 import { useTaskStore } from "../mock/store";
 import LocationPicker from "../components/LocationPicker";
 import { MONTH_LAST_DAY, type RecurrenceType } from "../types";
+import { fetchKras, KRAS_QUERY_KEY, reviewWeightOf } from "@/core/admin/kras";
+import { pctLabel } from "../lib/kraTasks";
+
+/** Task Category value for the ordinary task — no KRA, no review (same as Create Task). */
+const OTHERS = "others";
 
 // display order Mon→Sun, stored as 0=Sun..6=Sat
 const WEEKDAYS = [
@@ -38,7 +44,13 @@ export default function RecurringForm() {
 
   const [title, setTitle] = useState(editing?.title ?? "");
   const [description, setDescription] = useState(editing?.description ?? "");
-  const [assignedTo, setAssignedTo] = useState(editing?.assignedTo ?? "");
+  const [assignedTo, setAssignedToRaw] = useState(editing?.assignedTo ?? "");
+  const [category, setCategory] = useState(editing?.kraId ?? OTHERS);
+  // A KRA belongs to one person, so a new assignee always starts back on Others.
+  const setAssignedTo = (id: string) => {
+    setAssignedToRaw(id);
+    setCategory(OTHERS);
+  };
   const [recurrenceType, setRecurrenceType] = useState<RecurrenceType>(editing?.recurrenceType ?? "daily");
   const [weeklyDays, setWeeklyDays] = useState<number[]>(editing?.weeklyDays ?? [1]);
   const [monthlyDays, setMonthlyDays] = useState<number[]>(editing?.monthlyDays ?? [1]);
@@ -58,6 +70,25 @@ export default function RecurringForm() {
 
   // Department is derived from the assignee — never selected manually.
   const departmentName = departmentById(profileById(assignedTo)?.departmentId ?? null)?.name;
+
+  // Task Category, as on Create Task: ONLY when this user is the assignee's DIRECT HOD.
+  // Every task the template generates then carries that KRA (20270123120000); the
+  // guard_recurring_kra trigger refuses anyone else, and org_kras RLS hides the list.
+  const isDirectHod = !!assignedTo && !!canAssign.find((p) => p.id === assignedTo)?.hodIds.includes(user.id);
+  const krasQ = useQuery({ queryKey: KRAS_QUERY_KEY, queryFn: fetchKras, enabled: isDirectHod });
+  const assigneeKras = useMemo(
+    () => (isDirectHod ? (krasQ.data ?? []).filter((k) => k.profileId === assignedTo && k.active).sort((a, b) => a.sortOrder - b.sortOrder) : []),
+    [isDirectHod, krasQ.data, assignedTo],
+  );
+  const pickedKra = assigneeKras.find((k) => k.id === category) ?? null;
+  // A saved KRA that has since been switched off: kept on the template, but generation
+  // drops it, so say so rather than show an empty box.
+  const staleKra = category !== OTHERS && !pickedKra && !krasQ.isLoading;
+  // Anyone else editing (admin, creator, upline HOD) never sees the KRA and leaves it
+  // as it was — unless they move the template to another person, whose KRAs it is not.
+  const kraId = isDirectHod
+    ? (category === OTHERS ? null : category)
+    : editing && editing.assignedTo === assignedTo ? editing.kraId : null;
 
   const toggleDay = (v: number) =>
     setWeeklyDays((prev) => (prev.includes(v) ? prev.filter((d) => d !== v) : [...prev, v].sort((a, b) => a - b)));
@@ -92,6 +123,7 @@ export default function RecurringForm() {
       locationIds,
       notifyRequired: notifyOn,
       notifyDaysBefore: notifyOn ? days : null,
+      kraId,
     };
     setBusy(true);
     setError("");
@@ -142,6 +174,30 @@ export default function RecurringForm() {
               })}
             />
           </FieldLabel>
+
+          {isDirectHod && (
+            <FieldLabel
+              label="Task category"
+              hint={assigneeKras.length === 0 && !krasQ.isLoading ? "No KRAs set for this person yet" : undefined}
+            >
+              <Combobox
+                value={category}
+                onChange={(v) => setCategory(v || OTHERS)}
+                options={[
+                  { value: OTHERS, label: "Others", sublabel: "Ordinary task — no KRA, no review" },
+                  ...assigneeKras.map((k) => ({ value: k.id, label: k.name, sublabel: `KRA · Wt ${pctLabel(k.weight)}`, group: "KRAs" })),
+                  ...(staleKra ? [{ value: category, label: "KRA switched off", sublabel: "Tasks generate as Others until you pick a KRA", group: "KRAs" }] : []),
+                ]}
+              />
+              {pickedKra && (
+                <p className="mt-1.5 text-[12px] text-grey">
+                  Every task this generates is worth <b className="text-navy">{pctLabel(pickedKra.weight)}</b>:{" "}
+                  {pctLabel(pickedKra.completionWeight)} when it is completed, and up to{" "}
+                  {pctLabel(reviewWeightOf(pickedKra))} more from your 1–10 review.
+                </p>
+              )}
+            </FieldLabel>
+          )}
 
           {/* frequency segmented */}
           <FieldLabel label="Frequency">

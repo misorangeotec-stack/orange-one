@@ -139,6 +139,7 @@ const mapRecurring = (r: any): RecurringTask => ({
   locationIds: [], // attached after the fetch from recurring_task_locations
   notifyRequired: r.notify_required ?? false,
   notifyDaysBefore: r.notify_days_before ?? null,
+  kraId: r.kra_id ?? null,
 });
 
 const mapPlan = (r: any): WeeklyPlan => ({

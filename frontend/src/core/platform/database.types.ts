@@ -8384,6 +8384,7 @@ export type Database = {
           department_id: string | null
           description: string | null
           id: string
+          kra_id: string | null
           monthly_days: number[]
           monthly_nth: number | null
           monthly_weekday: number | null
@@ -8403,6 +8404,7 @@ export type Database = {
           department_id?: string | null
           description?: string | null
           id?: string
+          kra_id?: string | null
           monthly_days?: number[]
           monthly_nth?: number | null
           monthly_weekday?: number | null
@@ -8422,6 +8424,7 @@ export type Database = {
           department_id?: string | null
           description?: string | null
           id?: string
+          kra_id?: string | null
           monthly_days?: number[]
           monthly_nth?: number | null
           monthly_weekday?: number | null

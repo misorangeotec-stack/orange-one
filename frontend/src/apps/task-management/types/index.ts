@@ -183,6 +183,7 @@ export interface RecurringTask {
   locationIds: string[]; // locations each generated task is tagged with
   notifyRequired: boolean; // remind the assignee before each fire date (weekly/monthly/quarterly only)
   notifyDaysBefore: number | null; // how many days before (1..30); null when no reminder
+  kraId: string | null; // Task Category: the assignee's KRA every generated task carries; null = Others
 }
 
 export interface WeeklyPlan {

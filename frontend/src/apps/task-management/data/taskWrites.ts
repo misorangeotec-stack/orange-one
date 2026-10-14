@@ -492,6 +492,12 @@ export type RecurringWriteInput = {
    * even before migration 20270106120100 has run.
    */
   notify?: { required: boolean; daysBefore: number | null };
+  /**
+   * Task Category: the assignee's KRA (null = Others). Left undefined when the template
+   * has no KRA and never had one, so the write never names the column before migration
+   * 20270123120000 has run. guard_recurring_kra lets only the direct HOD set it.
+   */
+  kraId?: string | null;
 };
 
 /** The reminder columns, only when the caller set them (see RecurringWriteInput.notify). */
@@ -503,6 +509,9 @@ function notifyColumns(input: RecurringWriteInput) {
     notify_days_before: on ? input.notify.daysBefore : null,
   };
 }
+
+/** The KRA column, only when the caller set it (see RecurringWriteInput.kraId). */
+const kraColumn = (input: RecurringWriteInput) => (input.kraId === undefined ? {} : { kra_id: input.kraId });
 
 /** Replace a template's location set: delete the old rows, insert the new set. */
 async function syncRecurringLocations(recurringTaskId: string, locationIds: string[]): Promise<void> {
@@ -536,6 +545,7 @@ export async function insertRecurring(input: RecurringWriteInput & { createdBy: 
       created_by: input.createdBy,
       active: input.active,
       ...notifyColumns(input),
+      ...kraColumn(input),
     })
     .select("id")
     .single();
@@ -561,6 +571,7 @@ export async function updateRecurring(id: string, input: RecurringWriteInput): P
       department_id: input.departmentId,
       active: input.active,
       ...notifyColumns(input),
+      ...kraColumn(input),
     })
     .eq("id", id);
   if (error) throw new Error(error.message);

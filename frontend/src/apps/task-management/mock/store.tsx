@@ -733,6 +733,7 @@ export function TaskStoreProvider({ children }: { children: ReactNode }) {
           active: input.active,
           locationIds: input.locationIds ?? [],
           notify: input.notifyRequired ? { required: true, daysBefore: input.notifyDaysBefore } : undefined,
+          kraId: input.kraId || undefined,
           createdBy: user.id,
         });
         // Materialise today's instance immediately if the template is active and
@@ -768,6 +769,8 @@ export function TaskStoreProvider({ children }: { children: ReactNode }) {
           notify: m.notifyRequired || cur.notifyRequired
             ? { required: m.notifyRequired, daysBefore: m.notifyDaysBefore }
             : undefined,
+          // Named only when the template has a KRA now or had one (so going back to Others is saved).
+          kraId: m.kraId || cur.kraId ? m.kraId ?? null : undefined,
         });
         // If the edit leaves the template active, ensure today's instance exists
         // (e.g. activating via the edit form). Idempotent, so no duplicate if it
