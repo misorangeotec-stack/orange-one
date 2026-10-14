@@ -21,6 +21,7 @@ import { bushraCentralMasterApp } from "./bushra-central-master/meta";
 import { allDraftsApp } from "./all-drafts/meta";
 import { inkStabilisationApp } from "./ink-stabilisation/meta";
 import { inkExpiryApp } from "./ink-expiry/meta";
+import { physicalVerificationApp } from "./physical-verification/meta";
 import { orderToDispatchApp } from "./order-to-dispatch/meta";
 import { customerOrdersApp } from "./customer-orders/meta";
 import { customerOnboardingApp } from "./customer-onboarding/meta";
@@ -110,6 +111,8 @@ export const apps: AppManifest[] = [
   inkStabilisationApp,
   // Ink Expiry — in-stock ink lots and whether Tally has their expiry; read-only ConnectWave.
   inkExpiryApp,
+  // Physical Verification — Otec Surat Printing Ink counts vs Tally closing (pv_* tables).
+  physicalVerificationApp,
   // Order to Dispatch FMS — separate module (own fms_dispatch_* tables), granted
   // per user to the sales, stores, accounts and plant teams. Sales order through
   // credit, stock, LOT, sales bill and gate-out to the delivery confirmation.
