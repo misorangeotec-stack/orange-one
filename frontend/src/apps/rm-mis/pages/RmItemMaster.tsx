@@ -890,6 +890,20 @@ export default function RmItemMaster() {
         ))}
       </div>
 
+      {/* Moved here from the dashboard (user, 14-10-2026): this is where codes are filled. */}
+      {needsCode > 0 && (
+        <div className="flex flex-wrap items-center gap-2 rounded-md border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900">
+          <AlertTriangle className="h-4 w-4 shrink-0" />
+          <span>
+            <strong>{needsCode}</strong> item{needsCode === 1 ? " has" : "s have"} no item code, so
+            the same item in two books still shows as two lines on the dashboard.
+          </span>
+          <Button size="sm" variant="outline" className="ml-auto" onClick={() => setCol("code", ["none"])}>
+            Show them
+          </Button>
+        </div>
+      )}
+
       <div className="flex flex-wrap items-center gap-2">
         <select
           className="h-9 rounded-md border bg-background px-2 text-sm"
