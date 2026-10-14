@@ -468,6 +468,27 @@ export async function loadInkPositions(
     );
   };
 
+  /*
+   * EVERY DESCRIPTION SOMEONE CHOSE — typed here, or set in Bushra Central Master. An item whose
+   * own description is word for word one of these joins that line even with nothing chosen
+   * against it, because lines merge on the description the planner gives (user, 14-10-2026:
+   * COMBINATION LIQUID KY BLACK showed twice — once on its description line, once on its code
+   * line — both reading the code's number). Ink IMS fixed the same in PR #86.
+   */
+  const chosenDescriptions = new Set<string>();
+  for (const row of inScope) {
+    const company = BY_GUID.get(row.company_guid);
+    if (!company) continue;
+    const ov = overrides[masterKey(company.key, row.item)] ?? {};
+    const link = links.byKey.get(linkKey(company.guid, row.item));
+    const chosen = link
+      ? link.own.description || Boolean(pendingAdoption(link, { description: ov.description }).description)
+      : Boolean(norm(ov.description));
+    if (!chosen) continue;
+    const d = norm(link ? linkedValue(link, "description", ov.description) : ov.description);
+    if (d) chosenDescriptions.add(d);
+  }
+
   for (const row of inScope) {
     if (row.built_at && (!builtAt || row.built_at > builtAt)) builtAt = row.built_at;
 
@@ -500,7 +521,8 @@ export async function loadInkPositions(
     const descriptionChosen = link
       ? link.own.description || Boolean(pendingAdoption(link, { description: ov.description }).description)
       : Boolean(norm(ov.description));
-    const typedDescription = descriptionChosen ? norm(effectiveDescription) : "";
+    const typedDescription =
+      descriptionChosen || chosenDescriptions.has(norm(effectiveDescription)) ? norm(effectiveDescription) : "";
     const codeKey = effectiveCode || soloKey(company.key, row.item);
     // The key this line had before the link, so numbering, lead times and line settings typed
     // against it are still found where Central changed the code or description.
@@ -589,6 +611,13 @@ export async function loadInkPositions(
 
     pos.sources.push({ companyKey: company.key, item: row.item });
 
+    // A line formed by description reads its number from its own key, then the key it had before.
+    // If the first item to arrive brought a code with no number, take the code of a later item
+    // that has one, or a numbered line would drop off the dashboard. (Ink IMS PR #86.)
+    if (order[pos.key] === undefined && order[pos.legacyKey] === undefined && order[codeKey] !== undefined) {
+      pos.legacyKey = codeKey;
+    }
+
     // Books disagree on how fully an item is named; keep the most descriptive one. A description
     // the planner typed always wins, whatever its length.
     if (typedDescription) pos.description = effectiveDescription;
@@ -627,6 +656,13 @@ export async function loadInkPositions(
     pos.consumedByCompany[company.key] =
       (pos.consumedByCompany[company.key] ?? 0) + row.outward_qty;
     pos.consumed += row.outward_qty;
+  }
+
+  // Every item master row falls back to its LINE's previous key, so all the rows of one merged
+  // item show the same number, lead time and plan, whichever book they come from.
+  for (const m of master) {
+    const line = merged.get(m.mergeKey);
+    if (line) m.legacyKey = line.legacyKey;
   }
 
   // THE PLANNER'S ORDER WINS. Their sheet is not alphabetical — it runs Eco, then E-series, then
