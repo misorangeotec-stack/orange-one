@@ -68,11 +68,12 @@ alter table public.fms_ld_sessions add constraint fms_ld_sessions_category_chk
 alter table public.fms_ld_sessions drop constraint if exists fms_ld_sessions_source_chk;
 alter table public.fms_ld_sessions add constraint fms_ld_sessions_source_chk
   check (source in ('request','calendar'));
--- A calendar training is only useful with all four of these — the mail, the
--- Join button and the hours all read them.
+-- A calendar training needs its category and times — the hours read them.
+-- The Teams link is OPTIONAL (HR, 14-10-2026: "when required we will upload");
+-- adding it later sends an "Updated" mail to anyone who already had the invite.
 alter table public.fms_ld_sessions drop constraint if exists fms_ld_sessions_calendar_complete_chk;
 alter table public.fms_ld_sessions add constraint fms_ld_sessions_calendar_complete_chk
-  check (source <> 'calendar' or (category is not null and meeting_link is not null
+  check (source <> 'calendar' or (category is not null
                                   and start_time is not null and end_time is not null));
 
 comment on column public.fms_ld_sessions.category is
@@ -320,7 +321,7 @@ declare
   v_date  date := nullif(p_payload->>'session_date', '')::date;
   v_start time := nullif(p_payload->>'start_time', '')::time;
   v_end   time := nullif(p_payload->>'end_time', '')::time;
-  v_link  text := btrim(coalesce(p_payload->>'teams_link', ''));
+  v_link  text := nullif(btrim(coalesce(p_payload->>'teams_link', '')), '');
   v_tuser uuid := nullif(p_payload->>'trainer_user_id', '')::uuid;
   v_tid   uuid := nullif(p_payload->>'trainer_id', '')::uuid;
   v_text  text := nullif(btrim(coalesce(p_payload->>'external_trainer_name', '')), '');
@@ -343,7 +344,8 @@ begin
   if v_date is null then raise exception 'A training date is required'; end if;
   if v_start is null or v_end is null then raise exception 'Start and end time are required'; end if;
   if v_end <= v_start then raise exception 'End time must be after the start time'; end if;
-  if not public.fms_ld_is_teams_link(v_link) then
+  -- Optional, but when given it must be a Teams link (requirement 5).
+  if v_link is not null and not public.fms_ld_is_teams_link(v_link) then
     raise exception 'The joining link must be a Microsoft Teams meeting link (https://teams.microsoft.com/…)';
   end if;
   if v_cat = 'internal' then

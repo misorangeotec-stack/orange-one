@@ -102,6 +102,12 @@ export default function CalendarTrainingPanel({ session: x }: { session: Trainin
         </div>
       </div>
 
+      {!x.meetingLink && !cancelled && !completed && (
+        <p className="mt-3 rounded-lg bg-[#F7F7FD] px-3 py-2 text-[12.5px] text-navy">
+          No Teams link yet.{canEdit ? " Use Edit to add it — anyone who already had the invite gets an “Updated” mail with the link." : " It will be shared before the training."}
+        </p>
+      )}
+
       {x.description && <p className="mt-3 whitespace-pre-line text-[13.5px] text-navy">{x.description}</p>}
 
       {cancelled && x.changeReason && (

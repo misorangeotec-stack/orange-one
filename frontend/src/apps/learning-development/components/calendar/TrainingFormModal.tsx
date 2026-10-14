@@ -1,11 +1,11 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import Modal from "@/shared/components/ui/Modal";
 import Button from "@/shared/components/ui/Button";
 import Combobox from "@/shared/components/ui/Combobox";
 import MultiSelect, { type MultiOption } from "@/shared/components/ui/MultiSelect";
 import { FieldLabel, TextArea, TextInput } from "@/shared/components/ui/Form";
 import { useLdStore } from "../../store";
-import { isTeamsLink } from "../../lib/training";
+import { isTeamsLink, parseIcs } from "../../lib/training";
 import type { TrainingCategory, TrainingSession } from "../../types";
 
 /**
@@ -52,11 +52,35 @@ export default function TrainingFormModal({
   const [dept, setDept] = useState("");
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
+  const [imported, setImported] = useState<string | null>(null);
+  const icsRef = useRef<HTMLInputElement>(null);
+
+  /** Fill the form from a meeting saved out of Outlook / Teams (.ics). Only fills what the file has. */
+  const importIcs = async (file: File) => {
+    setErr(null);
+    setImported(null);
+    try {
+      const m = parseIcs(await file.text());
+      if (!m.date && !m.teamsLink && !m.title) throw new Error("No meeting found in this file. Save the meeting from Outlook as an .ics file and try again.");
+      if (m.title && !title.trim()) setTitle(m.title);
+      if (m.date) setDate(m.date);
+      if (m.start) setStart(m.start);
+      if (m.end) setEnd(m.end);
+      if (m.teamsLink) setLink(m.teamsLink);
+      if (m.description && !description.trim()) setDescription(m.description);
+      setImported(
+        [m.date && "date", m.start && "time", m.teamsLink && "Teams link", m.title && "title"].filter(Boolean).join(", "),
+      );
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : String(e));
+    }
+  };
 
   // Load the row being edited (or reset) whenever the dialog opens.
   useEffect(() => {
     if (!open) return;
     setErr(null);
+    setImported(null);
     setDept("");
     if (session) {
       setTitle(session.title);
@@ -136,7 +160,8 @@ export default function TrainingFormModal({
   })();
 
   const valid =
-    title.trim() !== "" && !!date && !!start && !!end && hours > 0 && isTeamsLink(link) && attendees.length > 0;
+    // The Teams link is optional (HR, 14-10-2026) — but when typed it must be a Teams one.
+    title.trim() !== "" && !!date && !!start && !!end && hours > 0 && linkOk && attendees.length > 0;
 
   const save = async () => {
     setErr(null);
@@ -215,6 +240,28 @@ export default function TrainingFormModal({
           </p>
         </div>
 
+        {/* A Teams link alone carries no date or time — the calendar entry does, so
+            the meeting saved from Outlook (.ics) is what can fill the form. */}
+        <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-dashed border-[#C7C9F2] bg-[#F7F7FD] px-3.5 py-2.5">
+          <div className="text-[12.5px] text-navy">
+            <b>Already created the meeting in Outlook / Teams?</b>{" "}
+            <span className="text-grey-2">Save it as an .ics file and import it — date, time, title and Teams link fill in.</span>
+          </div>
+          <Button size="sm" variant="ghost" onClick={() => icsRef.current?.click()}>Import meeting (.ics)</Button>
+          <input
+            ref={icsRef}
+            type="file"
+            accept=".ics,text/calendar"
+            className="hidden"
+            onChange={(e) => {
+              const f = e.target.files?.[0];
+              if (f) void importIcs(f);
+              if (icsRef.current) icsRef.current.value = "";
+            }}
+          />
+        </div>
+        {imported && <p className="-mt-2 text-[12.5px] text-ryg-green">Filled from the meeting: {imported}. Check them below.</p>}
+
         <FieldLabel label="Training title" required>
           <TextInput value={title} onChange={(e) => setTitle(e.target.value)} placeholder="e.g. Advanced Excel for accounts" />
         </FieldLabel>
@@ -237,9 +284,8 @@ export default function TrainingFormModal({
         </div>
 
         <FieldLabel
-          label="Microsoft Teams meeting link"
-          required
-          hint="Create the meeting in Teams, then paste its “Join” link here."
+          label="Microsoft Teams meeting link (optional)"
+          hint="Add it now or later — attendees get an “Updated” mail when it is added."
         >
           <TextInput
             value={link}

@@ -30,7 +30,7 @@ const COLS = {
   date: "Date (DD-MM-YYYY)",
   start: "Start (HH:MM)",
   end: "End (HH:MM)",
-  link: "Teams meeting link",
+  link: "Teams meeting link (optional)",
   trainer: "Trainer",
   description: "Agenda / description",
   attendees: "Attendees",
@@ -136,7 +136,7 @@ export default function BulkUploadModal({ open, onClose }: { open: boolean; onCl
         "Fill the FIRST tab (Trainings) — one row per training. Do not rename or reorder its columns.",
         "Category: Internal (our own team) or External (outside trainer).",
         "Date as DD-MM-YYYY; Start and End as HH:MM (24-hour). Hours are worked out from them.",
-        "Teams meeting link: must start with https://teams.microsoft.com/ — create the meeting in Teams first.",
+        "Teams meeting link: optional — leave it blank and add it later from the training page. If filled, it must start with https://teams.microsoft.com/.",
         "Trainer: for Internal, the person's email / employee code / name; for External, a name from the 'External trainers' tab or any name.",
         "Attendees: emails or employee codes separated by ; or , — or 'ALL' for everyone, or 'DEPT: <department>' (see the Departments tab). Mix them freely.",
         "Attendees get the Teams-style invitation mail 3 days before the training.",
@@ -228,7 +228,8 @@ export default function BulkUploadModal({ open, onClose }: { open: boolean; onCl
         else if (end <= start) errors.push("end time must be after start");
 
         const link = norm(r[COLS.link]);
-        if (!isTeamsLink(link)) errors.push("not a Microsoft Teams link");
+        // Optional — may be added later from the training page.
+        if (link && !isTeamsLink(link)) errors.push("not a Microsoft Teams link");
 
         const trainerCell = norm(r[COLS.trainer]);
         let trainerUserId: string | null = null;
@@ -268,7 +269,7 @@ export default function BulkUploadModal({ open, onClose }: { open: boolean; onCl
                   sessionDate: date,
                   startTime: start,
                   endTime: end,
-                  teamsLink: link,
+                  teamsLink: link || "",
                   description: norm(r[COLS.description]) || null,
                   trainerUserId,
                   trainerId,

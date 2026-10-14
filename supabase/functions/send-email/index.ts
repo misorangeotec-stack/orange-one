@@ -1544,7 +1544,10 @@ function composeTrainingMail(row: Row): Composed {
     : `Training invitation: ${title} — ${date} ${s("start")}`;
   const eyebrow = cancelled ? "Training cancelled" : updated ? "Training updated" : "Training invitation";
 
-  const joinBlock = cancelled || !link ? "" : `
+  // The Teams link is optional (HR, 14-10-2026) — added later, it arrives as an "Updated" mail.
+  const joinBlock = cancelled ? "" : !link
+    ? noteBox("Microsoft Teams meeting", "The Teams joining link will be shared with you before the training.")
+    : `
   <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin:0 0 22px;border-top:1px solid ${LINE};border-bottom:1px solid ${LINE};">
     <tr><td style="padding:18px 0 6px;font-family:${FONT};font-size:18px;font-weight:700;color:${NAVY};">Microsoft Teams meeting</td></tr>
     <tr><td style="padding:0 0 6px;font-family:${FONT};font-size:13px;color:${GREY};">Join on your computer, mobile app or room device</td></tr>
