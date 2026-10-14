@@ -5,6 +5,7 @@ import ApprovalRulesSection from "./ApprovalRulesSection";
 import StepDueDatesSection from "./StepDueDatesSection";
 import CoordinatorsSection from "./CoordinatorsSection";
 import MasterOwnersSection from "./MasterOwnersSection";
+import TrainingCalendarSection from "./TrainingCalendarSection";
 
 /**
  * Setup — the no-code configuration backbone (admin only), laid out the same way
@@ -31,6 +32,7 @@ export default function Setup() {
     { key: "due", label: "Due Dates" },
     { key: "coordinators", label: "Coordinators" },
     { key: "masters", label: "Master Owners" },
+    { key: "calendar", label: "Training Calendar" },
   ];
 
   return (
@@ -50,6 +52,7 @@ export default function Setup() {
       {tab === "due" && <StepDueDatesSection />}
       {tab === "coordinators" && <CoordinatorsSection />}
       {tab === "masters" && <MasterOwnersSection />}
+      {tab === "calendar" && <TrainingCalendarSection />}
     </div>
   );
 }

@@ -15,6 +15,7 @@ import AssignmentPanel from "../../components/session/AssignmentPanel";
 import FeedbackPanel from "../../components/session/FeedbackPanel";
 import ReviewPanel from "../../components/session/ReviewPanel";
 import EffectivenessPanel from "../../components/session/EffectivenessPanel";
+import CalendarTrainingPanel from "../../components/calendar/CalendarTrainingPanel";
 
 const STATUS_LABEL: Record<string, string> = {
   scheduled: "Scheduled",
@@ -80,6 +81,14 @@ export default function SessionDetail() {
 
   const conducted = !!x.actualStart || x.status === "conducted" || !!x.attendanceClosedAt;
   const attendanceClosed = !!x.attendanceClosedAt;
+  /*
+   * ⚠ A CALENDAR TRAINING (HR's change set of 14-10-2026) HAS NO NOMINATION,
+   *   CONDUCT OR ATTENDANCE STEPS — attendees are put on it when it is added, and
+   *   one Complete pop-up records Present/Absent. Showing the step-by-step panels
+   *   as well would offer two ways to mark the same attendance. Material,
+   *   assignment, feedback and the HR review stay available (decision D7).
+   */
+  const isCalendar = x.source === "calendar";
 
   return (
     <div className="space-y-5">
@@ -108,6 +117,9 @@ export default function SessionDetail() {
         </div>
       </div>
 
+      <CalendarTrainingPanel session={x} />
+
+      {!isCalendar && (
       <Card className="p-5">
         <div className="grid gap-4 sm:grid-cols-3 lg:grid-cols-5">
           <Fact label="Date">{dmy(x.sessionDate)}</Fact>
@@ -147,17 +159,18 @@ export default function SessionDetail() {
           </p>
         )}
       </Card>
+      )}
 
       {err && <p className="rounded-lg bg-[#FEF2F2] px-3 py-2 text-[13px] text-[#B42318]">{err}</p>}
 
-      <NominationsPanel session={x} nominations={noms} onError={setErr} />
+      {!isCalendar && <NominationsPanel session={x} nominations={noms} onError={setErr} />}
       <MaterialPanel session={x} onError={setErr} />
-      {(x.readinessConfirmedAt || conducted) && <ConductPanel session={x} onError={setErr} />}
-      {conducted && <AttendancePanel session={x} nominations={noms} onError={setErr} />}
+      {!isCalendar && (x.readinessConfirmedAt || conducted) && <ConductPanel session={x} onError={setErr} />}
+      {!isCalendar && conducted && <AttendancePanel session={x} nominations={noms} onError={setErr} />}
       {attendanceClosed && <AssignmentPanel session={x} onError={setErr} />}
       {conducted && <FeedbackPanel session={x} nominations={noms} onError={setErr} />}
       {attendanceClosed && <ReviewPanel session={x} onError={setErr} />}
-      {attendanceClosed && <EffectivenessPanel session={x} onError={setErr} />}
+      {attendanceClosed && !isCalendar && <EffectivenessPanel session={x} onError={setErr} />}
     </div>
   );
 }

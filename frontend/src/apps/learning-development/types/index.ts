@@ -210,7 +210,31 @@ export interface TrainingSession {
   actualCost: number | null;
   createdBy: string | null;
   createdAt: string;
+
+  /*
+   * ---- the training calendar (migration 20270125120000) ----
+   * Every field below reads null / its default on a database that has not had
+   * the migration, so the screens keep working before it lands.
+   */
+  /** Internal (our own people) or External (outside trainer). Null on older request-born sessions. */
+  category: TrainingCategory | null;
+  /** "calendar" = added or uploaded on the Training Calendar; "request" = born from a training request. */
+  source: "request" | "calendar";
+  description: string | null;
+  /** Internal trainer as an Orange Hub user — may press Complete on their own training. */
+  trainerUserId: string | null;
+  /** External trainer typed in, when they are not on the Trainers master. */
+  externalTrainerName: string | null;
+  cancelledAt: string | null;
+  cancelledBy: string | null;
+  completedAt: string | null;
+  completedBy: string | null;
+  /** First time the Teams-style invite mail went out. Null = nobody has had it. */
+  inviteMailSentAt: string | null;
+  cancelMailSentAt: string | null;
 }
+
+export type TrainingCategory = "internal" | "external";
 
 export interface LdNotification {
   id: string;
@@ -272,6 +296,8 @@ export interface Nomination {
   rsvp: Rsvp;
   rsvpAt: string | null;
   declineReason: string | null;
+  /** When this attendee's invitation mail was queued (training calendar). */
+  inviteMailedAt: string | null;
 }
 
 export interface Material {

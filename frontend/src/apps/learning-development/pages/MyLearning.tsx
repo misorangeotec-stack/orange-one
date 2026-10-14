@@ -5,6 +5,7 @@ import { useSession } from "@/core/platform/session";
 import { useLdStore } from "../store";
 import { B } from "../nav";
 import { dmy } from "../lib/format";
+import { fyOf, hm, isCancelled, sessionHours } from "../lib/training";
 
 /**
  * My Learning — the screen almost everybody in the company opens, and for most
@@ -25,7 +26,10 @@ export default function MyLearning() {
   const me = user?.id ?? "";
   const d = s.data;
   const todayIso = new Date().toISOString().slice(0, 10);
-  const yearStart = `${new Date().getFullYear()}-01-01`;
+  // Financial year (April–March), the same period the dashboard and the
+  // 24-hour target use — a calendar-year figure here would disagree with it.
+  const fy = fyOf();
+  const yearStart = fy.from;
 
   const myNoms = useMemo(
     () => (d?.nominations ?? []).filter((n) => n.employeeId === me && n.status === "approved"),
@@ -42,8 +46,8 @@ export default function MyLearning() {
   const myAttendance = (d?.attendance ?? []).filter((a) => a.employeeId === me);
   const hours = myAttendance.reduce((n, a) => {
     const x = sessionOf(a.sessionId);
-    if (!x || x.sessionDate < yearStart) return n;
-    if (a.status === "present") return n + (x.hours ?? 0);
+    if (!x || x.sessionDate < yearStart || x.sessionDate > fy.to || isCancelled(x)) return n;
+    if (a.status === "present") return n + sessionHours(x);
     if (a.status === "partial") return n + (a.minutes ?? 0) / 60;
     return n;
   }, 0);
@@ -75,7 +79,7 @@ export default function MyLearning() {
         <Card className="p-4">
           <div className="text-[12px] uppercase tracking-wide text-grey-2">Hours this year</div>
           <div className="mt-1 text-[24px] font-bold text-navy">{hours.toFixed(1)}</div>
-          <div className="text-[12px] text-grey-2">Target 10</div>
+          <div className="text-[12px] text-grey-2">Target {s.hoursTarget} · FY {fy.label}</div>
         </Card>
         <Card className="p-4">
           <div className="text-[12px] uppercase tracking-wide text-grey-2">Sessions attended</div>
@@ -126,7 +130,14 @@ export default function MyLearning() {
                   <Link to={`${B}/sessions/${x.id}`} className="text-[13.5px] text-navy hover:text-orange">
                     {x.title}
                   </Link>
-                  <span className="shrink-0 text-[12.5px] text-grey-2">{dmy(x.sessionDate)}</span>
+                  <span className="flex shrink-0 items-baseline gap-3 text-[12.5px] text-grey-2">
+                    {dmy(x.sessionDate)}{x.startTime ? ` · ${hm(x.startTime)}` : ""}
+                    {x.meetingLink && (
+                      <a href={x.meetingLink} target="_blank" rel="noreferrer" className="font-semibold text-[#5B5FC7] hover:underline">
+                        Join on Teams
+                      </a>
+                    )}
+                  </span>
                 </li>
               ))}
             </ul>
