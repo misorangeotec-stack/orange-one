@@ -155,6 +155,15 @@ export const APPS: Record<string, AppInfo> = {
     category: "plant",
   },
   /**
+   * PHYSICAL VERIFICATION — Otec Surat Printing Ink items holding stock; the admin sets a
+   * verification date, the verifier counts, difference = physical − Tally closing at count time.
+   */
+  "physical-verification": {
+    name: "Physical Verification",
+    basePath: "/physical-verification",
+    category: "plant",
+  },
+  /**
    * TRAINING VIDEOS — the training recordings, each a OneDrive / SharePoint link that opens in a new
    * tab. Open to all staff; each sees the videos of the modules they hold. Only admins edit.
    */
