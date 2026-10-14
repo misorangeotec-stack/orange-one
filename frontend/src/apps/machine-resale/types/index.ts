@@ -88,6 +88,8 @@ export interface Machine extends Audit {
   quantity: number;
   bunnyVideoId: string | null;
   bunnyVideoStatus: VideoState | null;
+  /** Optional YouTube link, shown on the website when there is no ready Bunny video. */
+  youtubeUrl: string | null;
   status: MachineStatus;
   featured: boolean;
   listedAt: string | null;

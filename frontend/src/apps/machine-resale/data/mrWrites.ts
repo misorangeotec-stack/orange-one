@@ -90,6 +90,7 @@ export interface MachineInput {
   salespersonEmail: string | null;
   internalNotes: string | null;
   visibilityOverrides: Record<string, boolean>;
+  youtubeUrl: string | null;
 }
 
 export interface MediaInput {
@@ -124,6 +125,7 @@ const machineRow = (m: MachineInput) => ({
   salesperson_email: m.salespersonEmail,
   internal_notes: m.internalNotes,
   visibility_overrides: m.visibilityOverrides,
+  youtube_url: m.youtubeUrl,
 });
 
 /** Thrown when the machine changed under the form since it was opened. */

@@ -85,6 +85,7 @@ export function mapMachine(r: Row, media: MachineMedia[]): Machine {
     quantity: Number(r.quantity ?? 1),
     bunnyVideoId: r.bunny_video_id ?? null,
     bunnyVideoStatus: r.bunny_video_status ?? null,
+    youtubeUrl: r.youtube_url ?? null,
     status: r.status,
     featured: Boolean(r.featured),
     listedAt: r.listed_at ?? null,

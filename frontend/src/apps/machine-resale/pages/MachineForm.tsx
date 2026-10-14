@@ -23,6 +23,7 @@ import { PageHeader, StatusPill } from "../components/Pills";
 import VideoPanel from "../components/VideoPanel";
 import VisibilityControl from "../components/VisibilityControl";
 import { dmyTime } from "../lib/format";
+import { youtubeId } from "../lib/video";
 import { B } from "../nav";
 import { useMrStore } from "../store";
 import type { Machine, MachineStatus, SpecPair, VideoState } from "../types";
@@ -60,6 +61,7 @@ interface FormState {
   salespersonEmail: string;
   internalNotes: string;
   overrides: Record<string, boolean>;
+  youtubeUrl: string;
   photos: MediaInput[];
   documents: MediaInput[];
 }
@@ -91,6 +93,7 @@ const BLANK: FormState = {
   salespersonEmail: "",
   internalNotes: "",
   overrides: {},
+  youtubeUrl: "",
   photos: [],
   documents: [],
 };
@@ -126,6 +129,7 @@ function fromMachine(m: Machine): FormState {
     salespersonEmail: str(m.salespersonEmail),
     internalNotes: str(m.internalNotes),
     overrides: { ...m.visibilityOverrides },
+    youtubeUrl: str(m.youtubeUrl),
     photos: media(m.photos),
     documents: media(m.documents),
   };
@@ -266,6 +270,7 @@ export default function MachineForm() {
     if (f.headCount && !(/^\d+$/.test(f.headCount) && +f.headCount > 0)) e.headCount = "A whole number";
     if (!/^\d+$/.test(f.quantity) || +f.quantity < 1) e.quantity = "1 or more";
     if (f.specs.some((x) => !x.label.trim() !== !x.value.trim())) e.specs = "Each line needs both a name and a value";
+    if (f.youtubeUrl.trim() && !youtubeId(f.youtubeUrl.trim())) e.youtubeUrl = "Paste a YouTube video link, like https://youtu.be/...";
     if (listing) {
       if (!f.printerBrandId) e.printerBrandId = "Needed to list it";
       if (!f.conditionId) e.conditionId = "Needed to list it";
@@ -279,7 +284,7 @@ export default function MachineForm() {
   }, [f, listing]);
   const err = (k: string) => (tried ? errors[k] : undefined);
   /** The order the form shows its fields, so a failed save lands on the first one in red. */
-  const ORDER = ["title", "categoryId", "subcategoryId", "printerBrandId", "year", "conditionId", "printWidth", "headCount", "specs", "city", "state", "quantity", "photos", "seller", "salesperson"];
+  const ORDER = ["title", "categoryId", "subcategoryId", "printerBrandId", "year", "conditionId", "printWidth", "headCount", "specs", "city", "state", "quantity", "photos", "youtubeUrl", "seller", "salesperson"];
 
   const toInput = (): MachineInput => ({
     title: f.title.trim(),
@@ -308,6 +313,7 @@ export default function MachineForm() {
     salespersonEmail: blank(f.salespersonEmail),
     internalNotes: blank(f.internalNotes),
     visibilityOverrides: f.overrides,
+    youtubeUrl: blank(f.youtubeUrl),
   });
 
   const save = async () => {
@@ -630,7 +636,7 @@ export default function MachineForm() {
               </FormField>
             </FormSection>
 
-            <FormSection title="Photos and documents" cols={1}>
+            <FormSection title="Photos, video link and documents" cols={1}>
               <FormField label="Photos" required={listing} group name="photos" error={err("photos")} aside={vis("photos")}>
                 <MediaList
                   kind="photo"
@@ -642,6 +648,33 @@ export default function MachineForm() {
                   onUploaded={(paths) => paths.forEach((p) => unsaved.current.add(p))}
                 />
               </FormField>
+              <FormField
+                label="YouTube video link"
+                name="youtubeUrl"
+                error={err("youtubeUrl")}
+                note="Shown on the website when there is no uploaded video below"
+                aside={vis("video")}
+              >
+                <TextInput
+                  value={f.youtubeUrl}
+                  maxLength={300}
+                  inputMode="url"
+                  onChange={(e) => set("youtubeUrl", e.target.value.trim())}
+                  placeholder="https://www.youtube.com/watch?v=..."
+                />
+              </FormField>
+              {youtubeId(f.youtubeUrl) && (
+                <a
+                  href={`https://www.youtube.com/watch?v=${youtubeId(f.youtubeUrl)}`}
+                  target="_blank"
+                  rel="noreferrer"
+                  tabIndex={-1}
+                  className="-mt-1 flex w-fit items-center gap-3 rounded-xl border border-line bg-white p-2 pr-4 text-[13px] font-medium text-navy hover:border-orange"
+                >
+                  <img src={`https://i.ytimg.com/vi/${youtubeId(f.youtubeUrl)}/mqdefault.jpg`} alt="" className="h-14 w-24 rounded-lg object-cover" />
+                  Open the video on YouTube
+                </a>
+              )}
               <FormField label="Documents" group name="documents" hint="Brochure or inspection report" aside={vis("documents")}>
                 <MediaList
                   kind="document"
@@ -661,8 +694,8 @@ export default function MachineForm() {
             of what Save sends. */}
         <Card className="space-y-3 p-5">
           <div className="flex items-center justify-between border-b border-line pb-2">
-            <h3 className="text-[12px] font-semibold uppercase tracking-wide text-grey">Video</h3>
-            {vis("video")}
+            <h3 className="text-[12px] font-semibold uppercase tracking-wide text-grey">Video upload (Bunny Stream)</h3>
+            <span className="text-[11.5px] text-grey-2">If a machine has both, the website shows this one over the YouTube link</span>
           </div>
           <VideoPanel
             machineId={exists ? machineId : null}

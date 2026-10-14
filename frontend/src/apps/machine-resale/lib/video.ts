@@ -38,3 +38,15 @@ export async function refreshVideoState(
     throw e;
   }
 }
+
+/**
+ * The 11-character id inside a YouTube link (watch, youtu.be, shorts, embed or live),
+ * or null. Same rule as the portal's `mr_youtube_id()` and its column check, so a link
+ * the form accepts is one the database accepts.
+ */
+export function youtubeId(url: string | null | undefined): string | null {
+  if (!url) return null;
+  if (!/^https:\/\/(www\.|m\.)?(youtube\.com\/(watch\?v=|shorts\/|embed\/|live\/)|youtu\.be\/)[A-Za-z0-9_-]{11}/.test(url)) return null;
+  const m = url.match(/(?:[?&]v=|youtu\.be\/|shorts\/|embed\/|live\/)([A-Za-z0-9_-]{11})/);
+  return m ? m[1] : null;
+}

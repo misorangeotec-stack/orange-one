@@ -30,6 +30,8 @@ export default function MachinesList() {
     });
   }, [s]);
 
+  /** Bunny status when there is an upload; else "YouTube" for a link; else None. */
+  const videoText = (m: Machine) => (m.bunnyVideoStatus ? VIDEO_LABEL[m.bunnyVideoStatus] : m.youtubeUrl ? "YouTube" : "None");
   const cat = (m: Machine) => s.categoryById(m.categoryId)?.name ?? "";
   const head = (m: Machine) => s.printHeadById(m.subcategoryId)?.name ?? "";
   const master = (id: string | null) => s.masterById(id)?.value ?? "";
@@ -112,10 +114,10 @@ export default function MachinesList() {
     {
       key: "video",
       header: "Video",
-      cell: (m) => <VideoPill state={m.bunnyVideoStatus} />,
-      sortValue: (m) => (m.bunnyVideoStatus ? VIDEO_LABEL[m.bunnyVideoStatus] : ""),
-      exportValue: (m) => (m.bunnyVideoStatus ? VIDEO_LABEL[m.bunnyVideoStatus] : "None"),
-      filter: { kind: "select", get: (m) => (m.bunnyVideoStatus ? VIDEO_LABEL[m.bunnyVideoStatus] : "None") },
+      cell: (m) => (m.bunnyVideoStatus || !m.youtubeUrl ? <VideoPill state={m.bunnyVideoStatus} /> : <span className="text-[12.5px] font-medium text-[#1E7B3C]">YouTube</span>),
+      sortValue: videoText,
+      exportValue: videoText,
+      filter: { kind: "select", get: videoText },
     },
     {
       key: "photos",
