@@ -20,11 +20,23 @@ const HINTS: Record<MasterKind, string> = {
 type Row = MasterValue & { name: string };
 
 /**
+ * Inquiry statuses the module reads by NAME, with why. "New" is the one every new
+ * inquiry starts at; "Closed won" asks to mark the machine Sold; the Dashboard counts
+ * both closed ones. Renaming or switching any of them off would quietly break that.
+ */
+const HELD_STATUS: Record<string, string> = {
+  New: "is the status every new inquiry starts at",
+  "Closed won": "asks to mark the machine Sold and is counted on the Dashboard",
+  "Closed lost": "is counted on the Dashboard",
+};
+const held = (m: { master: string; value: string } | undefined) =>
+  m?.master === "inquiry_status" && m.value in HELD_STATUS ? HELD_STATUS[m.value] : null;
+
+/**
  * The fixed lists the machine form and inquiries pick from, one tab per list.
  *
- * ⚠ The inquiry status "New" is held by NAME: the portal gives every new inquiry
- *   the status whose text is "New". Renaming or switching it off would leave new
- *   inquiries with no status, so both are refused here.
+ * ⚠ Three inquiry statuses are held by NAME (HELD_STATUS): renaming or switching
+ *   them off is refused here.
  */
 export default function Masters() {
   const s = useMrStore();
@@ -88,16 +100,18 @@ export default function Masters() {
           if (v.sortOrder && !/^-?\d+$/.test(v.sortOrder.trim())) throw new Error("Order must be a whole number.");
           if (kind === "location" && !/^[^,]+,\s*[^,]+$/.test(value)) throw new Error("Write a location as City, State, for example Surat, Gujarat.");
           const current = id ? s.masterById(id) : undefined;
-          if (current?.master === "inquiry_status" && current.value === "New" && (value !== "New" || !active)) {
-            throw new Error('"New" is the status every new inquiry starts at, so it cannot be renamed or switched off.');
+          const why = held(current);
+          if (current && why && (value !== current.value || !active)) {
+            throw new Error(`"${current.value}" ${why}, so it cannot be renamed or switched off.`);
           }
           await saveMasterValue(id, kind, { value, sortOrder: v.sortOrder.trim() ? Number(v.sortOrder) : 0, active });
           await s.refresh();
         }}
         onToggleActive={async (m, active) => {
           setNotice(null);
-          if (m.master === "inquiry_status" && m.value === "New" && !active) {
-            setNotice('"New" is the status every new inquiry starts at, so it cannot be switched off.');
+          const why = held(m);
+          if (why && !active) {
+            setNotice(`"${m.value}" ${why}, so it cannot be switched off.`);
             return;
           }
           try {

@@ -47,7 +47,11 @@ export default function Settings() {
   const [edited, setEdited] = useState<Values | null>(null);
   const v = edited ?? loaded;
   const dirty = edited !== null;
-  const set = (k: keyof Values, val: string) => setEdited((cur) => ({ ...(cur ?? loaded), [k]: val }));
+  const set = (k: keyof Values, val: string) => {
+    // A "Saved." left showing over new typing reads as if the new values were saved too.
+    setMsg((m) => (m?.ok ? null : m));
+    setEdited((cur) => ({ ...(cur ?? loaded), [k]: val }));
+  };
   const [busy, setBusy] = useState(false);
   const [tried, setTried] = useState(false);
   const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);

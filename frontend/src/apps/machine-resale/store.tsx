@@ -36,6 +36,8 @@ const EMPTY: MrData = {
 interface MrStore extends MrData {
   isLoading: boolean;
   error: unknown;
+  /** A reload that failed after a good first load: the page keeps what it has and says so. */
+  refreshError: unknown;
   pass: PortalPass | null;
   /**
    * Edit rights come from the PASS, not the hub session: the pass carries the level
@@ -125,7 +127,8 @@ export function MrStoreProvider({ children }: { children: ReactNode }) {
     return {
       ...data,
       isLoading: configured && (passQ.isLoading || (passQ.isSuccess && dataQ.isLoading)),
-      error: notConfigured ?? passQ.error ?? dataQ.error,
+      error: notConfigured ?? (passQ.data ? null : passQ.error) ?? (dataQ.data ? null : dataQ.error),
+      refreshError: (passQ.data && passQ.error) || (dataQ.data && dataQ.error) || null,
       pass: passQ.data ?? null,
       canEdit,
       refresh,

@@ -1,4 +1,4 @@
-import { Navigate, Route, Routes, Link } from "react-router-dom";
+import { Navigate, Route, Routes, Link, useLocation } from "react-router-dom";
 import { MrStoreProvider } from "./store";
 import MachineResaleLayout from "./MachineResaleLayout";
 import Loaded from "./components/Loaded";
@@ -13,6 +13,17 @@ import Masters from "./pages/Masters";
 import FieldVisibility from "./pages/FieldVisibility";
 import Settings from "./pages/Settings";
 import { B } from "./nav";
+
+/**
+ * A new form for every machine URL. Both routes render MachineForm and the shell's
+ * Outlet has no key, so without this React keeps one form across "new", a saved
+ * machine and "Copy machine": its new-machine id, created flag and edits carried
+ * over, and a Copy saved straight over the original machine.
+ */
+function FreshMachineForm() {
+  const loc = useLocation();
+  return <MachineForm key={loc.pathname + loc.search} />;
+}
 
 function NotFound() {
   return (
@@ -39,8 +50,8 @@ export default function MachineResaleApp() {
         <Route element={<MachineResaleLayout />}>
           <Route index element={<Loaded><Dashboard /></Loaded>} />
           <Route path="machines" element={<Loaded><MachinesList /></Loaded>} />
-          <Route path="machines/new" element={<Loaded><MachineForm /></Loaded>} />
-          <Route path="machines/:id" element={<Loaded><MachineForm /></Loaded>} />
+          <Route path="machines/new" element={<Loaded><FreshMachineForm /></Loaded>} />
+          <Route path="machines/:id" element={<Loaded><FreshMachineForm /></Loaded>} />
           <Route path="inquiries" element={<Loaded><InquiriesList /></Loaded>} />
           <Route path="inquiries/:key" element={<Loaded><InquiryDetail /></Loaded>} />
           <Route path="categories" element={<Loaded><Categories /></Loaded>} />

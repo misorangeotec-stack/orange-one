@@ -51,6 +51,18 @@ async function run<T>(p: PromiseLike<{ data: T; error: { message: string } | nul
   return data;
 }
 
+/**
+ * An UPDATE that must touch a row. Row rules make a refused update look like a
+ * successful one that matched nothing (for example a grant cut from edit to view
+ * mid-session), so the screen would say "Saved" for a change that never landed.
+ */
+async function runUpdate(q: any): Promise<void> {
+  const rows = (await run(q.select("id"))) as any[];
+  if (!rows?.length) {
+    throw new Error("Nothing was saved. You may no longer be able to edit Machine Resale, or the record was removed. Reload the page.");
+  }
+}
+
 /** Same rule as the portal's `mr_slugify()`, so a slug made here matches one made there. */
 export function slugify(s: string): string {
   return s
@@ -181,12 +193,16 @@ export async function syncMachineMedia(
   documents: MediaInput[],
   removedPaths: string[],
 ): Promise<void> {
-  await run(db().from("mr_machine_media").delete().eq("machine_id", machineId));
+  // New rows go in BEFORE the old ones go out: the website lists only machines with a photo,
+  // so a failure between the two steps must leave too many rows (fixed by the next save),
+  // never none (the listing would vanish from the site).
+  const old = (await run(db().from("mr_machine_media").select("id").eq("machine_id", machineId))) as any[];
   const rows = [
     ...photos.map((p, i) => ({ machine_id: machineId, kind: "photo", storage_path: p.storagePath, file_name: p.fileName, sort_order: i + 1 })),
     ...documents.map((d, i) => ({ machine_id: machineId, kind: "document", storage_path: d.storagePath, file_name: d.fileName, sort_order: i + 1 })),
   ];
   if (rows.length) await run(db().from("mr_machine_media").insert(rows));
+  if (old.length) await run(db().from("mr_machine_media").delete().in("id", old.map((r) => r.id)));
   if (removedPaths.length) {
     // A file left behind costs a little storage; failing the save over it would
     // cost the user their edit. So a cleanup failure is not raised.
@@ -195,7 +211,7 @@ export async function syncMachineMedia(
 }
 
 export async function setMachineStatus(id: string, status: MachineStatus): Promise<void> {
-  await run(db().from("mr_machines").update({ status }).eq("id", id));
+  await runUpdate(db().from("mr_machines").update({ status }).eq("id", id));
 }
 
 /** Record the Bunny video on the machine. Returns the row's new updated_at. */
@@ -207,7 +223,8 @@ export async function setMachineVideo(id: string, videoId: string | null, state:
       .eq("id", id)
       .select("updated_at"),
   )) as any[];
-  return rows[0]?.updated_at;
+  if (!rows.length) throw new Error("The video was not recorded on the machine. Reload the page and try again.");
+  return rows[0].updated_at;
 }
 
 /** Delete a machine and its files. The portal refuses when inquiries point at it. */
@@ -262,7 +279,7 @@ export async function insertInquiry(i: InquiryInput): Promise<{ id: string; inqu
 }
 
 export async function setInquiryStatus(id: string, statusId: string): Promise<void> {
-  await run(db().from("mr_inquiries").update({ status_id: statusId }).eq("id", id));
+  await runUpdate(db().from("mr_inquiries").update({ status_id: statusId }).eq("id", id));
 }
 
 export async function addInquiryNote(inquiryId: string, note: string): Promise<void> {
@@ -291,12 +308,12 @@ export async function saveCategory(id: string | null, c: CategoryInput): Promise
     sort_order: c.sortOrder,
     active: c.active,
   };
-  if (id) await run(db().from("mr_categories").update(row).eq("id", id));
+  if (id) await runUpdate(db().from("mr_categories").update(row).eq("id", id));
   else await run(db().from("mr_categories").insert(row));
 }
 
 export async function setCategoryActive(id: string, active: boolean): Promise<void> {
-  await run(db().from("mr_categories").update({ active }).eq("id", id));
+  await runUpdate(db().from("mr_categories").update({ active }).eq("id", id));
 }
 
 export interface PrintHeadInput {
@@ -309,12 +326,12 @@ export interface PrintHeadInput {
 
 export async function savePrintHead(id: string | null, h: PrintHeadInput): Promise<void> {
   const row = { category_id: h.categoryId, name: h.name.trim(), slug: h.slug, sort_order: h.sortOrder, active: h.active };
-  if (id) await run(db().from("mr_subcategories").update(row).eq("id", id));
+  if (id) await runUpdate(db().from("mr_subcategories").update(row).eq("id", id));
   else await run(db().from("mr_subcategories").insert(row));
 }
 
 export async function setPrintHeadActive(id: string, active: boolean): Promise<void> {
-  await run(db().from("mr_subcategories").update({ active }).eq("id", id));
+  await runUpdate(db().from("mr_subcategories").update({ active }).eq("id", id));
 }
 
 export async function saveMasterValue(
@@ -323,22 +340,22 @@ export async function saveMasterValue(
   v: { value: string; sortOrder: number; active: boolean },
 ): Promise<void> {
   const row = { master, value: v.value.trim(), sort_order: v.sortOrder, active: v.active };
-  if (id) await run(db().from("mr_master_values").update(row).eq("id", id));
+  if (id) await runUpdate(db().from("mr_master_values").update(row).eq("id", id));
   else await run(db().from("mr_master_values").insert(row));
 }
 
 export async function setMasterValueActive(id: string, active: boolean): Promise<void> {
-  await run(db().from("mr_master_values").update({ active }).eq("id", id));
+  await runUpdate(db().from("mr_master_values").update({ active }).eq("id", id));
 }
 
 /** The website default for one field. The portal refuses a locked field. */
 export async function setFieldDefault(key: string, defaultVisible: boolean): Promise<void> {
-  await run(db().from("mr_fields").update({ default_visible: defaultVisible }).eq("key", key));
+  await runUpdate(db().from("mr_fields").update({ default_visible: defaultVisible }).eq("key", key));
 }
 
 /** Save several settings; each is an existing row keyed by name, its value JSON. */
 export async function saveSettings(values: Record<string, unknown>): Promise<void> {
   for (const [key, value] of Object.entries(values)) {
-    await run(db().from("mr_settings").update({ value }).eq("key", key));
+    await runUpdate(db().from("mr_settings").update({ value }).eq("key", key));
   }
 }

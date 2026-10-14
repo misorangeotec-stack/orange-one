@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import * as tus from "tus-js-client";
+import type * as Tus from "tus-js-client";
 import { callVideoFunction, deleteBunnyVideo, PortalError, VIDEO_NOT_SET_UP } from "../data/client";
 import { setMachineVideo } from "../data/mrWrites";
 import { VIDEO_PENDING } from "../lib/video";
@@ -44,7 +44,7 @@ export default function VideoPanel({
   onRowChanged: (updatedAt: string, videoId: string | null, state: VideoState | null) => void;
 }) {
   const fileRef = useRef<HTMLInputElement>(null);
-  const uploadRef = useRef<tus.Upload | null>(null);
+  const uploadRef = useRef<Tus.Upload | null>(null);
   const [progress, setProgress] = useState<number | null>(null);
   const [encode, setEncode] = useState<number | null>(null);
   const [err, setErr] = useState<string | null>(null);
@@ -98,6 +98,7 @@ export default function VideoPanel({
       onRowChanged(at1, t.videoId, "uploading");
       // The machine now points at the new video, so the old one is unused from here on.
       if (oldId && oldId !== t.videoId) void deleteBunnyVideo(oldId).then(setWarn);
+      const tus = await import("tus-js-client");
       await new Promise<void>((resolve, reject) => {
         const up = new tus.Upload(file, {
           endpoint: t.tusEndpoint,

@@ -74,10 +74,13 @@ export default function InquiryDetail() {
         </Link>
       </PageHeader>
 
-      {inq.alertError ? (
+      {/* Loud only while nobody has picked the inquiry up; once its status moves on, a quiet note. */}
+      {inq.alertError && status === "New" ? (
         <p role="alert" className="rounded-lg bg-[#FDECEC] px-4 py-2.5 text-[13.5px] text-ryg-red">
           The alert email for this inquiry was not sent: {inq.alertError} Nobody was told by email, so follow it up from here.
         </p>
+      ) : inq.alertError ? (
+        <p className="text-[12.5px] text-grey-2">Alert email not sent: {inq.alertError}</p>
       ) : inq.alertEmailedAt ? (
         <p className="text-[12.5px] text-grey-2">Alert emailed {dmyTime(inq.alertEmailedAt)}.</p>
       ) : null}
@@ -212,6 +215,9 @@ export default function InquiryDetail() {
         <p className="text-[13.5px] text-grey">
           It stays on the website with a Sold ribbon and no inquiry buttons.
         </p>
+        {/* Shown here, not only in the card behind: a refusal (for example a draft missing its
+            photo or seller) would otherwise look like a button that does nothing. */}
+        {askSold && err && <p className="mt-2 text-[12.5px] text-ryg-red">{err}</p>}
       </Modal>
     </div>
   );

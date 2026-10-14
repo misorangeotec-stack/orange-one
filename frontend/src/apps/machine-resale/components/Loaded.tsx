@@ -54,5 +54,15 @@ export default function Loaded({ children }: { children: ReactNode }) {
     );
   }
 
-  return <>{children}</>;
+  return (
+    <>
+      {s.refreshError ? (
+        <p role="status" className="mb-3 rounded-lg bg-[#FFF6E5] px-3 py-2 text-[13px] text-[#8A5A00]">
+          Could not refresh Machine Resale just now, so this may be a little out of date. Your work on this page is kept;
+          it refreshes again on its own.
+        </p>
+      ) : null}
+      {children}
+    </>
+  );
 }

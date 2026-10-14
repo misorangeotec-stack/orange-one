@@ -169,16 +169,29 @@ export default function MachineForm() {
   const f = edited ?? seed;
   // A copy arrives filled in and is worth saving as it stands, untouched.
   const dirty = edited !== null || (!routeId && !created && Boolean(copySource));
-  const set = <K extends keyof FormState>(k: K, v: FormState[K]) => setEdited((cur) => ({ ...(cur ?? seed), [k]: v }));
-  const patch = (p: Partial<FormState>) => setEdited((cur) => ({ ...(cur ?? seed), ...p }));
+  // The row's updated_at when this sitting's editing began. A store refresh while
+  // editing (someone else's save) must not move it, or their change is overwritten unasked.
+  const [editBase, setEditBase] = useState<string | null>(null);
+  const touch = () => setEditBase((b) => b ?? record?.updatedAt ?? null);
+  const set = <K extends keyof FormState>(k: K, v: FormState[K]) => {
+    touch();
+    setEdited((cur) => ({ ...(cur ?? seed), [k]: v }));
+  };
+  const patch = (p: Partial<FormState>) => {
+    touch();
+    setEdited((cur) => ({ ...(cur ?? seed), ...p }));
+  };
 
   // The row's updated_at as this form last knew it. Its own video writes move it on.
   const [baseline, setBaseline] = useState<string | null>(null);
-  const loadedAt = baseline ?? created?.updatedAt ?? record?.updatedAt ?? null;
+  // The record wins over `created`: after a save the store holds the newer row, and the
+  // insert-time stamp would make the next save look like someone else's edit.
+  const loadedAt = baseline ?? editBase ?? record?.updatedAt ?? created?.updatedAt ?? null;
   const [videoLocal, setVideoLocal] = useState<{ id: string | null; state: VideoState | null } | null>(null);
   const video = videoLocal ?? { id: record?.bunnyVideoId ?? null, state: record?.bunnyVideoStatus ?? null };
   const onVideoRow = useCallback((at: string, vid: string | null, st: VideoState | null) => {
     setBaseline(at);
+    setEditBase((b) => (b === null ? null : at));
     setVideoLocal({ id: vid, state: st });
   }, []);
   // When the store catches up with the row, drop the local copies.
@@ -355,6 +368,7 @@ export default function MachineForm() {
       unsaved.current.clear();
       await s.refresh();
       setEdited(null);
+      setEditBase(null);
       setTried(false);
       setSaved("Saved.");
     } catch (x) {
@@ -445,7 +459,13 @@ export default function MachineForm() {
       >
         {record && <StatusPill status={record.status} />}
         {record && canEdit && (
-          <Link to={`${B}/machines/new?copy=${record.id}`}>
+          <Link
+            to={`${B}/machines/new?copy=${record.id}`}
+            onClick={(e) => {
+              // The copy is made from the SAVED machine; unsaved changes here would be lost.
+              if (dirty && !window.confirm("Copy the saved machine and drop your unsaved changes here?")) e.preventDefault();
+            }}
+          >
             <Button variant="ghost" size="sm">Copy machine</Button>
           </Link>
         )}
