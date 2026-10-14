@@ -1,5 +1,7 @@
-import { useState, type ReactNode } from "react";
+import { useMemo, useState, type ReactNode } from "react";
 import { useNavigate } from "react-router-dom";
+import { useQuery } from "@tanstack/react-query";
+import { fetchKras, KRAS_QUERY_KEY } from "@/core/admin/kras";
 import { ScrollableTable } from "@/core/shared/components/ScrollableTable";
 import { FitCell, FitResizer, ResetWidths, thFitStyle } from "@/shared/components/ui/ColumnResizer";
 import { useColumnWidths, type FitTable } from "@/shared/lib/useColumnWidths";
@@ -12,6 +14,7 @@ import { useTaskStore } from "../mock/store";
 import { useSession } from "../mock/session";
 import { isRecurringTask } from "../mock/selectors";
 import { taskDetailPath } from "../lib/taskLink";
+import { taskCategoryFor } from "../lib/kraTasks";
 import { RECURRENCE_LABEL, isOverdueTask, type Task } from "../types";
 import StatusChip from "./StatusChip";
 import EditTaskModal from "./EditTaskModal";
@@ -27,7 +30,7 @@ export type TaskSort = { key: TaskSortKey; dir: SortDir };
  * of sitting in an anonymous wall of dropdowns above the table. Keys match
  * TaskSortKey; omit one to leave that column's filter cell empty.
  */
-export type TaskFilterCells = Partial<Record<TaskSortKey, ReactNode>>;
+export type TaskFilterCells = Partial<Record<TaskSortKey | "category", ReactNode>>;
 
 export const DEFAULT_TASK_SORT: TaskSort = { key: "dueDate", dir: "asc" };
 
@@ -147,8 +150,16 @@ export default function TaskTable({ tasks, sort, onSort, showDepartment = false,
    */
   emptyMessage?: ReactNode;
 }) {
-  const { actorById, departmentById, getRecurring, canStatusActions, deleteTask, unreadAssignedTaskIds } = useTaskStore();
+  const { actorById, departmentById, getRecurring, canStatusActions, deleteTask, unreadAssignedTaskIds, profileById } = useTaskStore();
   const { user, role } = useSession();
+
+  // Task Category per row, as this viewer may see it (null = a KRA they may not see).
+  const categoryOf = (t: Task) => taskCategoryFor(t, user.id, (id) => profileById(id)?.hodIds);
+  // KRA names only for the rows that show one; org_kras RLS returns just the ones this
+  // user may read (their own and their direct reports').
+  const anyKra = useMemo(() => tasks.some((t) => categoryOf(t) === "kra"), [tasks, user.id, profileById]);
+  const krasQ = useQuery({ queryKey: KRAS_QUERY_KEY, queryFn: fetchKras, enabled: anyKra });
+  const kraNameById = useMemo(() => new Map((krasQ.data ?? []).map((k) => [k.id, k.name])), [krasQ.data]);
   const navigate = useNavigate();
   const [confirmId, setConfirmId] = useState<string | null>(null);
   const [deleting, setDeleting] = useState(false);
@@ -209,11 +220,11 @@ export default function TaskTable({ tasks, sort, onSort, showDepartment = false,
    */
   const fit = useColumnWidths("tb", showDepartment ? TASK_COLS : TASK_COLS.filter((c) => c !== "department"));
 
-  const colCount = showDepartment ? 8 : 7;
+  const colCount = showDepartment ? 9 : 8;
   // Three configurations, three minimums — a single value would either crush the
   // search box in the Task cell or give Tagged Tasks (no filter row) horizontal
   // scroll it never had. Tailwind needs literal class names, hence the ternaries.
-  const minWidth = !filterRow ? "min-w-[930px]" : showDepartment ? "min-w-[1210px]" : "min-w-[1060px]";
+  const minWidth = !filterRow ? "min-w-[1040px]" : showDepartment ? "min-w-[1320px]" : "min-w-[1170px]";
 
   return (
     <>
@@ -228,6 +239,7 @@ export default function TaskTable({ tasks, sort, onSort, showDepartment = false,
             <SortTh label="Assigned" sortKey="createdAt" sort={sort} onSort={onSort} className="w-[120px]" fit={fit} />
             <SortTh label="Due" sortKey="dueDate" sort={sort} onSort={onSort} className="w-[120px]" fit={fit} />
             <SortTh label="Status" sortKey="status" sort={sort} onSort={onSort} align="center" className="w-[130px]" fit={fit} />
+            <th className="w-[110px] px-3 py-2.5 text-left font-semibold">Category</th>
             {/* PF-20: the icon appears here only once a column has been dragged. */}
             <th className="w-[90px] text-right pr-2">
               <ResetWidths fit={fit} cols={TASK_COLS} label="" className="inline-flex items-center text-grey-2 hover:text-orange align-middle" />
@@ -252,6 +264,7 @@ export default function TaskTable({ tasks, sort, onSort, showDepartment = false,
               <th className="px-2 py-2 font-normal text-left align-middle">{filterRow.createdAt}</th>
               <th className="px-2 py-2 font-normal text-left align-middle">{filterRow.dueDate}</th>
               <th className="px-2 py-2 font-normal text-left align-middle">{filterRow.status}</th>
+              <th className="px-2 py-2 font-normal text-left align-middle">{filterRow.category}</th>
               <th />
             </tr>
           )}
@@ -430,6 +443,24 @@ export default function TaskTable({ tasks, sort, onSort, showDepartment = false,
                       </span>
                     )}
                   </div>
+                </td>
+
+                {/* Category — the Task Category it was given under: a KRA, or Others. */}
+                <td className="px-3 py-3 align-middle">
+                  {(() => {
+                    const cat = categoryOf(task);
+                    if (cat === "kra") {
+                      const name = task.kraId ? kraNameById.get(task.kraId) : undefined;
+                      return (
+                        <div className="min-w-0" title={name ? `KRA: ${name}` : "KRA task"}>
+                          <span className="inline-flex items-center text-[10px] font-semibold uppercase tracking-wide text-[#0f7b6c] bg-[#E3F5F1] rounded-pill px-1.5 py-0.5">KRA</span>
+                          {name && <div className="text-[11px] text-grey mt-0.5 truncate">{name}</div>}
+                        </div>
+                      );
+                    }
+                    if (cat === "others") return <span className="text-[12.5px] text-grey">Others</span>;
+                    return <span className="text-[12.5px] text-grey-2" title="The category is visible to the assignee and their HOD only">—</span>;
+                  })()}
                 </td>
 
                 {/* Edit + Delete (pending one-offs only) + chevron */}

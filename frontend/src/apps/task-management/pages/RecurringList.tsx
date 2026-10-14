@@ -295,6 +295,15 @@ export default function RecurringList() {
                           🔔 {r.notifyDaysBefore} {r.notifyDaysBefore === 1 ? "day" : "days"} before
                         </span>
                       )}
+                      {/* Like KraBadge: only the assignee and their direct HOD see a KRA. */}
+                      {r.kraId && (r.assignedTo === user.id || !!assignee?.hodIds.includes(user.id)) && (
+                        <span
+                          className="shrink-0 text-[10px] font-semibold uppercase tracking-wide rounded-pill px-1.5 py-0.5 bg-[#E3F5F1] text-[#0f7b6c]"
+                          title="KRA recurring task: every task it generates is a KRA task, reviewed 1-10 by the HOD"
+                        >
+                          KRA
+                        </span>
+                      )}
                     </div>
                     {r.description?.trim() && (
                       <div className="text-[12px] text-grey mt-0.5 truncate">{r.description}</div>
