@@ -4,7 +4,7 @@ import { useOrgPersonById } from "@/core/platform/orgPeople";
 import { formatDateDMY } from "@/shared/lib/date";
 import { useTravelStore } from "../store";
 import { stepActorId, stepCompletedIso } from "../lib/queues";
-import type { StepKey } from "../lib/steps";
+import { isHiddenStep, type StepKey } from "../lib/steps";
 import { STATUS_STEP, type Trip, type TripStatus } from "../types";
 
 /**
@@ -41,9 +41,6 @@ const RAIL: { key: string; label: string; step: StepKey | null }[] = [
   { key: "closed",            label: "Closed",           step: null },
 ];
 
-/** The claim half — only trips booked under the old process (before 2026-10) walk it. */
-const CLAIM_HALF: StepKey[] = ["claim", "claim_review", "finance_review", "settlement"];
-
 /**
  * The rail this trip walks.
  *
@@ -56,9 +53,7 @@ function railFor(t: Trip): typeof RAIL {
   const legacy = t.bkAt !== null && !t.closedAtBooking;
   if (legacy) return RAIL;
   return RAIL.filter(
-    (r) =>
-      !(r.step && CLAIM_HALF.includes(r.step)) &&
-      !(r.step === "advance" && !t.advanceRequested),
+    (r) => !r.step || !isHiddenStep(r.step) || (r.step === "advance" && t.advanceRequested),
   );
 }
 
