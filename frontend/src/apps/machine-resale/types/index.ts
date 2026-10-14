@@ -129,6 +129,9 @@ export interface Inquiry extends Audit {
   salespersonId: string | null;
   salespersonName: string | null;
   salespersonEmail: string | null;
+  /** Written by the website after it emails the staff alert (MR-1D). Both null: not attempted. */
+  alertEmailedAt: string | null;
+  alertError: string | null;
   notes: InquiryNote[];
 }
 

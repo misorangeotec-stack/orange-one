@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import * as tus from "tus-js-client";
-import { callVideoFunction, PortalError, VIDEO_NOT_SET_UP } from "../data/client";
+import { callVideoFunction, deleteBunnyVideo, PortalError, VIDEO_NOT_SET_UP } from "../data/client";
 import { setMachineVideo } from "../data/mrWrites";
 import { VIDEO_PENDING } from "../lib/video";
 import { VideoPill } from "./Pills";
@@ -24,8 +24,9 @@ const POLL_MS = 10_000;
  * the row's updated_at, so `onRowChanged` hands the new value to the form, which
  * would otherwise mistake its own video for someone else's edit.
  *
- * ⚠ Replacing or removing a video leaves the old one in the Bunny library: the
- *   upload function has no delete action yet (an MR-1D follow-up).
+ * Replacing or removing a video deletes the old one from the Bunny library once the
+ * machine no longer points at it (the function refuses while any machine still does).
+ * Deleting the whole machine does the same, in MachineForm.
  */
 export default function VideoPanel({
   machineId,
@@ -47,6 +48,7 @@ export default function VideoPanel({
   const [progress, setProgress] = useState<number | null>(null);
   const [encode, setEncode] = useState<number | null>(null);
   const [err, setErr] = useState<string | null>(null);
+  const [warn, setWarn] = useState<string | null>(null);
   const [notSetUp, setNotSetUp] = useState(false);
   const uploadingHere = progress !== null;
 
@@ -87,11 +89,15 @@ export default function VideoPanel({
     }
     if (videoId && !window.confirm("This machine already has a video. Upload this one in its place?")) return;
     setErr(null);
+    setWarn(null);
     setProgress(0);
+    const oldId = videoId;
     try {
       const t = await callVideoFunction({ action: "create", title: title.trim() || "Machine video" });
       const at1 = await setMachineVideo(machineId, t.videoId, "uploading");
       onRowChanged(at1, t.videoId, "uploading");
+      // The machine now points at the new video, so the old one is unused from here on.
+      if (oldId && oldId !== t.videoId) void deleteBunnyVideo(oldId).then(setWarn);
       await new Promise<void>((resolve, reject) => {
         const up = new tus.Upload(file, {
           endpoint: t.tusEndpoint,
@@ -124,9 +130,12 @@ export default function VideoPanel({
 
   const remove = async () => {
     if (!machineId || !window.confirm("Remove the video from this machine? The website stops showing it.")) return;
+    const oldId = videoId;
+    setWarn(null);
     try {
       const at = await setMachineVideo(machineId, null, null);
       onRowChanged(at, null, null);
+      if (oldId) setWarn(await deleteBunnyVideo(oldId));
     } catch (e) {
       setErr(e instanceof Error ? e.message : String(e));
     }
@@ -189,6 +198,7 @@ export default function VideoPanel({
         )
       )}
       {err && <p className="text-[12.5px] text-ryg-red">{err}</p>}
+      {warn && <p className="text-[12.5px] text-[#8A5A00]">{warn}</p>}
     </div>
   );
 }

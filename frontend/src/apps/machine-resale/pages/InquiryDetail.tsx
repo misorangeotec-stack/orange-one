@@ -74,6 +74,14 @@ export default function InquiryDetail() {
         </Link>
       </PageHeader>
 
+      {inq.alertError ? (
+        <p role="alert" className="rounded-lg bg-[#FDECEC] px-4 py-2.5 text-[13.5px] text-ryg-red">
+          The alert email for this inquiry was not sent: {inq.alertError} Nobody was told by email, so follow it up from here.
+        </p>
+      ) : inq.alertEmailedAt ? (
+        <p className="text-[12.5px] text-grey-2">Alert emailed {dmyTime(inq.alertEmailedAt)}.</p>
+      ) : null}
+
       <div className="grid gap-5 lg:grid-cols-2">
         <Card className="space-y-2 p-5">
           <h2 className="text-[15px] font-bold text-navy">Buyer</h2>

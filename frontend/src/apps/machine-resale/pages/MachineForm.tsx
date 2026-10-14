@@ -7,7 +7,7 @@ import Combobox, { type ComboOption } from "@/shared/components/ui/Combobox";
 import Modal from "@/shared/components/ui/Modal";
 import SettingToggle from "@/shared/components/ui/SettingToggle";
 import { TextArea, TextInput } from "@/shared/components/ui/Form";
-import { removeMedia } from "../data/client";
+import { deleteBunnyVideo, removeMedia } from "../data/client";
 import {
   deleteMachine,
   insertMachine,
@@ -374,6 +374,8 @@ export default function MachineForm() {
     setBusy(true);
     try {
       await deleteMachine(record.id, [...record.photos, ...record.documents].map((m) => m.storagePath));
+      // The row is gone, so its video is unused; tidy the library without holding up the page.
+      if (video.id) void deleteBunnyVideo(video.id);
       unsaved.current.clear();
       await s.refresh();
       navigate(`${B}/machines`, { replace: true });

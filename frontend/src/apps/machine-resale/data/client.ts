@@ -225,6 +225,7 @@ export const VIDEO_NOT_SET_UP = "Video upload is not set up yet. The video servi
 
 export async function callVideoFunction(body: { action: "create"; title?: string }): Promise<VideoTicket>;
 export async function callVideoFunction(body: { action: "status"; videoId: string }): Promise<VideoStatus>;
+export async function callVideoFunction(body: { action: "delete"; videoId: string }): Promise<{ deleted: true }>;
 export async function callVideoFunction(body: Record<string, unknown>): Promise<unknown> {
   if (!URL || !KEY) throw new PortalError("not-configured", "Machine Resale is not set up on this server yet.");
   const send = async (token: string) =>
@@ -242,6 +243,23 @@ export async function callVideoFunction(body: Record<string, unknown>): Promise<
   if (res.status === 503 && /not set up/i.test(out.error ?? "")) throw new PortalError("not-set-up", VIDEO_NOT_SET_UP);
   if (!res.ok) throw new Error(out.error ?? "The video service did not answer. Please try again.");
   return out;
+}
+
+/**
+ * Removes a video from the Bunny library once no machine uses it (the function refuses
+ * otherwise). Never throws: returns null when done, or a warning to show beside the panel.
+ * The machine is already saved without the video by then, so a failed delete only leaves
+ * an unused file in the library.
+ */
+export async function deleteBunnyVideo(videoId: string): Promise<string | null> {
+  try {
+    await callVideoFunction({ action: "delete", videoId });
+    return null;
+  } catch (e) {
+    // Without the keys there is no library to tidy, so there is nothing to warn about.
+    if (e instanceof PortalError && e.kind === "not-set-up") return null;
+    return `The old video could not be removed from the video service (${e instanceof Error ? e.message : String(e)}). The machine is saved; the file just stays in the library.`;
+  }
 }
 
 // ---------------------------------------------------------------------------

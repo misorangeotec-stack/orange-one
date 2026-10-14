@@ -207,6 +207,8 @@ export async function fetchMrData(): Promise<MrData> {
         salespersonId: r.salesperson_id ?? null,
         salespersonName: r.salesperson_name ?? null,
         salespersonEmail: r.salesperson_email ?? null,
+        alertEmailedAt: r.alert_emailed_at ?? null,
+        alertError: r.alert_error ?? null,
         notes: noteRows.filter((n) => n.inquiryId === r.id),
         ...audit(r),
       }),
