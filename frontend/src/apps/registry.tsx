@@ -29,6 +29,7 @@ import { reportsApp } from "./reports/meta";
 import { assetMaintenanceApp } from "./asset-maintenance/meta";
 import { leadsDashboardApp } from "./leads-dashboard/meta";
 import { ocpiApp } from "./ocpi/meta";
+import { machineResaleApp } from "./machine-resale/meta";
 import { fmsControlCenterApp } from "./fms-control-center/meta";
 import { processCoordinatorApp } from "./process-coordinator/meta";
 import { masterReportApp } from "./master-report/meta";
@@ -151,6 +152,10 @@ export const apps: AppManifest[] = [
   // order confirmation the customer signs. Own fms_ocpi_* tables, granted per
   // user to the sales team and to whoever approves.
   ocpiApp,
+  // Machine Resale: staff list pre-owned printers for the resale website and follow
+  // up its inquiries. Granted per user (view or edit); the grant is also what the
+  // portal's login bridge checks, so it must never be made universal.
+  machineResaleApp,
   fmsControlCenterApp,
   // Process Coordinator — the coordinator's own desk, and the only screen in the
   // Control category that WRITES: every module's master approvals land in one
