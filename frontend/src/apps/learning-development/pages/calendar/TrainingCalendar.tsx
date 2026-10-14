@@ -10,6 +10,7 @@ import {
   CATEGORY_LABEL,
   CATEGORY_TONE,
   hm,
+  isAttendancePending,
   isCancelled,
   isCompleted,
   isoDate,
@@ -17,6 +18,8 @@ import {
 } from "../../lib/training";
 import TrainingFormModal from "../../components/calendar/TrainingFormModal";
 import BulkUploadModal from "../../components/calendar/BulkUploadModal";
+import CompleteModal from "../../components/calendar/CompleteModal";
+import AttendancePendingBanner from "../../components/calendar/AttendancePendingBanner";
 import type { TrainingCategory, TrainingSession } from "../../types";
 
 const MONTHS = ["January","February","March","April","May","June","July","August","September","October","November","December"];
@@ -33,6 +36,7 @@ const iso = (y: number, m: number, d: number) =>
 function toneFor(s: TrainingSession): string {
   if (isCancelled(s)) return "bg-[#FDECEC] text-ryg-red line-through";
   if (isCompleted(s)) return "bg-[#E8F7EE] text-ryg-green";
+  if (isAttendancePending(s)) return "bg-[#FFF3D6] text-[#B45309]";
   if (s.status === "rescheduled") return "bg-[#FFF7E6] text-yellow";
   if (s.category) return CATEGORY_TONE[s.category];
   return "bg-[#FFF1E8] text-orange";
@@ -71,6 +75,7 @@ export default function TrainingCalendar() {
   const [cat, setCat] = useState<CatFilter>("all");
   const [adding, setAdding] = useState<string | null | false>(false);
   const [uploading, setUploading] = useState(false);
+  const [completing, setCompleting] = useState<TrainingSession | null>(null);
 
   const visible = useMemo(
     () => s.sessions.filter((x) => cat === "all" || x.category === cat),
@@ -84,6 +89,15 @@ export default function TrainingCalendar() {
     }
     return map;
   }, [d?.nominations]);
+
+  /** Present (or partial) per training — what the manager checks after closure. */
+  const presentCount = useMemo(() => {
+    const map = new Map<string, number>();
+    for (const a of d?.attendance ?? []) {
+      if (a.status === "present" || a.status === "partial") map.set(a.sessionId, (map.get(a.sessionId) ?? 0) + 1);
+    }
+    return map;
+  }, [d?.attendance]);
 
   const byDate = useMemo(() => {
     const map = new Map<string, TrainingSession[]>();
@@ -145,6 +159,8 @@ export default function TrainingCalendar() {
           </div>
         )}
       </div>
+
+      <AttendancePendingBanner />
 
       <div className="flex flex-wrap items-center justify-between gap-3">
         <Tabs
@@ -247,6 +263,7 @@ export default function TrainingCalendar() {
             {[
               ["Internal", "#1D4ED8"],
               ["External", "#6D28D9"],
+              ["Attendance pending", "#D97706"],
               ["Completed", "#16A34A"],
               ["Cancelled", "#DC2626"],
             ].map(([label, c]) => (
@@ -270,6 +287,7 @@ export default function TrainingCalendar() {
                 <th className="px-3 py-2.5">Category</th>
                 <th className="px-3 py-2.5">Trainer</th>
                 <th className="px-3 py-2.5 text-right">Attendees</th>
+                <th className="px-3 py-2.5 text-right">Attended</th>
                 <th className="px-3 py-2.5">Status</th>
                 <th className="px-3 py-2.5" />
               </tr>
@@ -291,27 +309,36 @@ export default function TrainingCalendar() {
                   </td>
                   <td className="px-3 py-2">{trainerLabel(x, trainers, s.personName)}</td>
                   <td className="px-3 py-2 text-right">{attendeeCount.get(x.id) ?? 0}</td>
+                  <td className="px-3 py-2 text-right">
+                    {isCompleted(x) ? `${presentCount.get(x.id) ?? 0} / ${attendeeCount.get(x.id) ?? 0}` : "—"}
+                  </td>
                   <td className="px-3 py-2">
                     {isCancelled(x) ? (
                       <span className="text-ryg-red">Cancelled</span>
                     ) : isCompleted(x) ? (
                       <span className="text-ryg-green">Completed</span>
+                    ) : isAttendancePending(x) ? (
+                      <span className="font-semibold text-[#B45309]">Attendance pending</span>
                     ) : (
                       <span className="text-navy">Scheduled</span>
                     )}
                   </td>
-                  <td className="px-3 py-2 text-right">
-                    {x.meetingLink && !isCancelled(x) && !isCompleted(x) && (
+                  <td className="px-3 py-2 text-right whitespace-nowrap">
+                    {isAttendancePending(x) && s.canCompleteSession(x.id) ? (
+                      <Button size="sm" onClick={() => setCompleting(x)}>Mark attendance</Button>
+                    ) : isCompleted(x) ? (
+                      <Link to={`${B}/sessions/${x.id}`} className="font-semibold text-orange hover:underline">View attendance</Link>
+                    ) : x.meetingLink && !isCancelled(x) ? (
                       <a href={x.meetingLink} target="_blank" rel="noreferrer" className="font-semibold text-[#5B5FC7] hover:underline">
                         Join on Teams
                       </a>
-                    )}
+                    ) : null}
                   </td>
                 </tr>
               ))}
               {monthRows.length === 0 && (
                 <tr>
-                  <td colSpan={8} className="px-3 py-6 text-center text-grey-2">No trainings in {MONTHS[m]} {y}.</td>
+                  <td colSpan={9} className="px-3 py-6 text-center text-grey-2">No trainings in {MONTHS[m]} {y}.</td>
                 </tr>
               )}
             </tbody>
@@ -365,6 +392,7 @@ export default function TrainingCalendar() {
         <TrainingFormModal open onClose={() => setAdding(false)} defaultDate={adding} />
       )}
       {uploading && <BulkUploadModal open onClose={() => setUploading(false)} />}
+      {completing && <CompleteModal open onClose={() => setCompleting(null)} session={completing} />}
     </div>
   );
 }

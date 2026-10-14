@@ -89,12 +89,12 @@ export default function CalendarTrainingPanel({ session: x }: { session: Trainin
           )}
           {canComplete && (
             <Button
-              variant="progress"
+              variant={endsAt(x) <= now ? "primary" : "progress"}
               disabled={!started}
               title={started ? undefined : "Available once the training has started"}
               onClick={() => setCompleting(true)}
             >
-              Complete
+              Mark attendance &amp; complete
             </Button>
           )}
           {canEdit && <Button variant="ghost" onClick={() => setEditing(true)}>Edit</Button>}
@@ -117,6 +117,13 @@ export default function CalendarTrainingPanel({ session: x }: { session: Trainin
           <span className="text-grey-2">
             {" "}· {x.cancelMailSentAt ? "cancellation mail sent" : "no cancellation mail (the invite had not gone out)"}
           </span>
+        </p>
+      )}
+
+      {canComplete && endsAt(x) <= now && (
+        <p className="mt-3 rounded-lg bg-[#FFF8EB] px-3 py-2 text-[13px] text-navy">
+          <b>This training is over.</b> Ending the Teams meeting does not close it here — press{" "}
+          <b>Mark attendance &amp; complete</b> and mark each attendee Present or Absent.
         </p>
       )}
 

@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import {
   Bar,
@@ -16,6 +16,8 @@ import Button from "@/shared/components/ui/Button";
 import { exportSheetsToXlsx } from "@/shared/lib/exportXlsx";
 import { useSession } from "@/core/platform/session";
 import { useLdStore } from "../../store";
+import AttendancePendingBanner from "./AttendancePendingBanner";
+import DashboardDetail, { type DashDetail, type PersonHours } from "./DashboardDetail";
 import { B } from "../../nav";
 import { dmy } from "../../lib/format";
 import {
@@ -41,15 +43,25 @@ const MET = "#FF6A1F";
 const SHORT = "#FFC7A8";
 const AXIS = { fontSize: 11, fill: "#64748B" };
 
-function Tile({ label, value, hint, to }: { label: string; value: string | number; hint?: string; to?: string }) {
-  const body = (
-    <Card className="h-full p-4 transition hover:border-orange/50">
-      <div className="text-[11.5px] uppercase tracking-wide text-grey-2">{label}</div>
-      <div className="mt-1 text-[26px] font-bold leading-tight text-navy">{value}</div>
-      {hint && <div className="mt-0.5 text-[12px] text-grey-2">{hint}</div>}
-    </Card>
+/** A clickable count — opens its list in a card on the same page. */
+function Tile({
+  label, value, hint, onClick, active,
+}: { label: string; value: string | number; hint?: string; onClick?: () => void; active?: boolean }) {
+  return (
+    <button type="button" onClick={onClick} className="h-full w-full text-left">
+      <Card
+        className={
+          "h-full p-4 transition hover:border-orange/60 hover:shadow-md " +
+          (active ? "border-orange ring-1 ring-orange/40 bg-[#FFF8F4]" : "")
+        }
+      >
+        <div className="text-[11.5px] uppercase tracking-wide text-grey-2">{label}</div>
+        <div className="mt-1 text-[26px] font-bold leading-tight text-navy">{value}</div>
+        {hint && <div className="mt-0.5 text-[12px] text-grey-2">{hint}</div>}
+        <div className="mt-1 text-[11.5px] font-medium text-orange">{active ? "Showing below ↓" : "Click to see the list"}</div>
+      </Card>
+    </button>
   );
-  return to ? <Link to={to}>{body}</Link> : body;
 }
 
 /**
@@ -160,6 +172,42 @@ export default function TrainingDashboard() {
 
   const myHours = user ? hours.get(user.id)?.hours ?? 0 : 0;
 
+  /* ---- click-through: a tile or a bar opens its list in a card, same page ---- */
+  // `at` = where the card opens: under the tiles, or under the chart that was clicked.
+  const [detail, setDetail] = useState<(DashDetail & { key: string; at: "tiles" | "chart" }) | null>(null);
+  const detailRef = useRef<HTMLDivElement>(null);
+  const open = (key: string, dd: DashDetail, at: "tiles" | "chart" = "tiles") => {
+    // A tile toggles its own list; a bar always shows that person.
+    setDetail((cur) => (at === "tiles" && cur?.key === key ? null : { ...dd, key, at }));
+    setTimeout(() => detailRef.current?.scrollIntoView({ behavior: "smooth", block: "nearest" }), 60);
+  };
+  const byDate = (rows: typeof sessions) =>
+    [...rows].sort((a, b) => (a.sessionDate + (a.startTime ?? "")).localeCompare(b.sessionDate + (b.startTime ?? "")));
+  const personHours: PersonHours[] = useMemo(
+    () =>
+      people.map((p) => ({
+        id: p.id,
+        name: p.name,
+        dept: s.departmentName(p.departmentId),
+        hours: hours.get(p.id)?.hours ?? 0,
+        trainings: hours.get(p.id)?.trainings ?? 0,
+      })),
+    [people, hours, s.departmentName],
+  );
+  const detailCard = detail && (
+    <div ref={detailRef} className="scroll-mt-4">
+      <DashboardDetail
+        detail={detail}
+        onChange={(dd) => setDetail({ ...dd, key: dd.kind === "person" ? `person:${dd.id}` : "people", at: detail.at })}
+        onClose={() => setDetail(null)}
+        people={personHours}
+        from={fy.from}
+        to={fy.to}
+        target={target}
+      />
+    </div>
+  );
+
   const exportCoverage = () =>
     void exportSheetsToXlsx({
       fileName: "LD_Training_Coverage",
@@ -190,6 +238,7 @@ export default function TrainingDashboard() {
 
   return (
     <div className="space-y-5">
+      <AttendancePendingBanner />
       <div className="flex flex-wrap items-center justify-between gap-3">
         <h2 className="text-[16px] font-bold text-navy">Training overview</h2>
         <label className="flex items-center gap-2 text-[12.5px] text-grey-2">
@@ -207,14 +256,30 @@ export default function TrainingDashboard() {
       </div>
 
       <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-7">
-        <Tile label="Internal trainings" value={live.filter((x) => x.category === "internal").length} hint={`FY ${fy.label}`} to={`${B}/calendar`} />
-        <Tile label="External trainings" value={live.filter((x) => x.category === "external").length} hint={`FY ${fy.label}`} to={`${B}/calendar`} />
-        <Tile label="Upcoming next month" value={upcomingNextMonth} hint={`${MONTHS[nextMonth.getMonth()]} ${nextMonth.getFullYear()}`} to={`${B}/calendar`} />
-        <Tile label="Completed" value={inFy.filter((x) => isCompleted(x) && !isCancelled(x)).length} hint={`FY ${fy.label}`} />
-        <Tile label="Cancelled" value={inFy.filter(isCancelled).length} hint="See the Cancelled tab" to={`${B}/calendar`} />
-        <Tile label="People attending" value={attendedPeople} hint={`of ${people.length} · attended at least one`} />
-        <Tile label="Training hours" value={Math.round(totalHours * 10) / 10} hint={`${metCount} reached ${target} h`} />
+        <Tile label="Internal trainings" value={live.filter((x) => x.category === "internal").length} hint={`FY ${fy.label}`}
+          active={detail?.key === "internal"}
+          onClick={() => open("internal", { kind: "trainings", title: `Internal trainings · FY ${fy.label}`, rows: byDate(live.filter((x) => x.category === "internal")) })} />
+        <Tile label="External trainings" value={live.filter((x) => x.category === "external").length} hint={`FY ${fy.label}`}
+          active={detail?.key === "external"}
+          onClick={() => open("external", { kind: "trainings", title: `External trainings · FY ${fy.label}`, rows: byDate(live.filter((x) => x.category === "external")) })} />
+        <Tile label="Upcoming next month" value={upcomingNextMonth} hint={`${MONTHS[nextMonth.getMonth()]} ${nextMonth.getFullYear()}`}
+          active={detail?.key === "next"}
+          onClick={() => open("next", { kind: "trainings", title: `Upcoming · ${MONTHS[nextMonth.getMonth()]} ${nextMonth.getFullYear()}`, rows: byDate(sessions.filter((x) => !isCancelled(x) && x.sessionDate.startsWith(nmKey))) })} />
+        <Tile label="Completed" value={inFy.filter((x) => isCompleted(x) && !isCancelled(x)).length} hint={`FY ${fy.label}`}
+          active={detail?.key === "completed"}
+          onClick={() => open("completed", { kind: "trainings", title: `Completed trainings · FY ${fy.label}`, rows: byDate(inFy.filter((x) => isCompleted(x) && !isCancelled(x))) })} />
+        <Tile label="Cancelled" value={inFy.filter(isCancelled).length} hint={`FY ${fy.label}`}
+          active={detail?.key === "cancelled"}
+          onClick={() => open("cancelled", { kind: "trainings", title: `Cancelled trainings · FY ${fy.label}`, rows: byDate(inFy.filter(isCancelled)) })} />
+        <Tile label="People attending" value={attendedPeople} hint={`of ${people.length} · attended at least one`}
+          active={detail?.key === "people"}
+          onClick={() => open("people", { kind: "people" })} />
+        <Tile label="Training hours" value={Math.round(totalHours * 10) / 10} hint={`${metCount} reached ${target} h`}
+          active={detail?.key === "hours"}
+          onClick={() => open("hours", { kind: "people" })} />
       </div>
+
+      {detail?.at === "tiles" && detailCard}
 
       <div className="grid gap-5 lg:grid-cols-3">
         <Card className="p-5 lg:col-span-2">
@@ -276,7 +341,7 @@ export default function TrainingDashboard() {
               <div>
                 <h3 className="text-[15px] font-semibold text-navy">Hours per person · FY {fy.label}</h3>
                 <p className="text-[12.5px] text-grey-2">
-                  Target {target} h a year · {metCount} of {chartRows.length} reached it · counted from attendance (Present)
+                  Target {target} h a year · {metCount} of {chartRows.length} reached it · counted from attendance (Present) · click a bar to see that person's trainings
                 </p>
               </div>
               <div className="flex items-center gap-3 text-[12px] text-grey-2">
@@ -287,7 +352,17 @@ export default function TrainingDashboard() {
             <div className="mt-3 overflow-x-auto">
               <div style={{ minWidth: Math.max(640, chartRows.length * 26), height: 300 }}>
                 <ResponsiveContainer width="100%" height="100%">
-                  <BarChart data={chartRows} margin={{ top: 10, right: 10, bottom: 70, left: 0 }}>
+                  <BarChart
+                    data={chartRows}
+                    margin={{ top: 10, right: 10, bottom: 70, left: 0 }}
+                    // The WHOLE column is the target, not just the bar — a 0.1 h bar is a
+                    // sliver nobody can hit.
+                    style={{ cursor: "pointer" }}
+                    onClick={(st: { activePayload?: { payload?: { id: string } }[] } | null) => {
+                      const id = st?.activePayload?.[0]?.payload?.id;
+                      if (id) open(`person:${id}`, { kind: "person", id }, "chart");
+                    }}
+                  >
                     <CartesianGrid stroke="#EEF2F8" vertical={false} />
                     <XAxis dataKey="name" tick={{ ...AXIS, fontSize: 10 }} angle={-55} textAnchor="end" interval={0} height={70} />
                     <YAxis tick={AXIS} width={36} allowDecimals={false} domain={[0, (max: number) => Math.max(target + 4, Math.ceil(max))]} />
@@ -297,7 +372,11 @@ export default function TrainingDashboard() {
                       formatter={(v: number, _n, item) => [`${v} h · ${(item?.payload as { trainings: number }).trainings} training(s)`, "Attended"]}
                     />
                     <ReferenceLine y={target} stroke="#0B1B40" strokeDasharray="4 4" label={{ value: `${target} h target`, position: "insideTopRight", fontSize: 11, fill: "#0B1B40" }} />
-                    <Bar dataKey="hours" radius={[4, 4, 0, 0]} maxBarSize={18}>
+                    <Bar
+                      dataKey="hours"
+                      radius={[4, 4, 0, 0]}
+                      maxBarSize={18}
+                    >
                       {chartRows.map((r) => (
                         <Cell key={r.id} fill={r.hours >= target ? MET : SHORT} />
                       ))}
@@ -307,6 +386,9 @@ export default function TrainingDashboard() {
               </div>
             </div>
           </Card>
+
+          {/* A clicked bar opens the person right here, under the chart. */}
+          {detail?.at === "chart" && detailCard}
 
           <Card className="p-5">
             <div className="flex flex-wrap items-start justify-between gap-3">

@@ -177,3 +177,14 @@ export function parseSheetTime(v: unknown): string | null {
   if (h > 23 || min > 59) return null;
   return `${String(h).padStart(2, "0")}:${String(min).padStart(2, "0")}`;
 }
+
+/**
+ * The training has run (its end time has passed) but nobody has pressed Complete.
+ *
+ * ⚠ TEAMS CANNOT CLOSE IT FOR US. Leaving the Teams meeting tells Orange Hub
+ *   nothing — there is no link between the two (reading Teams' own attendance
+ *   report needs a Microsoft 365 app registration). So the hub has to ASK: every
+ *   screen that lists trainings flags these, with the button right there.
+ */
+export const isAttendancePending = (s: TrainingSession, now: Date = new Date()): boolean =>
+  s.source === "calendar" && !isCancelled(s) && !isCompleted(s) && endsAt(s) <= now;
