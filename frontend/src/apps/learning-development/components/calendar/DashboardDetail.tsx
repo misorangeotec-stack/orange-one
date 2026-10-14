@@ -18,7 +18,8 @@ import type { TrainingSession } from "../../types";
 /** What the dashboard is drilled into. */
 export type DashDetail =
   | { kind: "trainings"; title: string; rows: TrainingSession[] }
-  | { kind: "people" }
+  /** Everyone who attended — or exactly `ids` (an hours band, zero-hour people included). */
+  | { kind: "people"; title?: string; ids?: string[] }
   | { kind: "person"; id: string };
 
 export interface PersonHours {
@@ -123,8 +124,11 @@ export default function DashboardDetail({
   }
 
   if (detail.kind === "people") {
-    const rows = people.filter((p) => p.trainings > 0).sort((a, b) => b.hours - a.hours || a.name.localeCompare(b.name));
-    title = `People attending · ${rows.length}`;
+    const ids = detail.ids ? new Set(detail.ids) : null;
+    const rows = people
+      .filter((p) => (ids ? ids.has(p.id) : p.trainings > 0))
+      .sort((a, b) => b.hours - a.hours || a.name.localeCompare(b.name));
+    title = `${detail.title ?? "People attending"} · ${rows.length}`;
     body = (
       <table className="w-full text-[13px]">
         <thead className="sticky top-0 bg-[#F6F9FD] text-left text-[12px] text-grey-2">

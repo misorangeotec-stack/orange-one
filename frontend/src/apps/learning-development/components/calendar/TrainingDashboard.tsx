@@ -5,7 +5,7 @@ import {
   BarChart,
   CartesianGrid,
   Cell,
-  ReferenceLine,
+  LabelList,
   ResponsiveContainer,
   Tooltip,
   XAxis,
@@ -39,6 +39,7 @@ import {
 
 const MONTHS = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
 
+const r0 = (n: number) => Math.round(n);
 const MET = "#FF6A1F";
 const SHORT = "#FFC7A8";
 const AXIS = { fontSize: 11, fill: "#64748B" };
@@ -169,6 +170,22 @@ export default function TrainingDashboard() {
     [people, hours],
   );
   const metCount = chartRows.filter((r) => r.hours >= target).length;
+
+  type Band = { key: string; label: string; count: number; ids: string[] };
+  const bands: Band[] = useMemo(() => {
+    const third = target / 3;
+    const defs: { key: string; label: string; test: (h: number) => boolean }[] = [
+      { key: "zero", label: "0 h", test: (h) => h <= 0 },
+      { key: "b1", label: `Under ${r0(third)} h`, test: (h) => h > 0 && h < third },
+      { key: "b2", label: `${r0(third)}–${r0(third * 2)} h`, test: (h) => h >= third && h < third * 2 },
+      { key: "b3", label: `${r0(third * 2)}–${target} h`, test: (h) => h >= third * 2 && h < target },
+      { key: "met", label: `${target} h +`, test: (h) => h >= target },
+    ];
+    return defs.map((d) => {
+      const ids = chartRows.filter((r) => d.test(r.hours)).map((r) => r.id);
+      return { key: d.key, label: d.label, count: ids.length, ids };
+    });
+  }, [chartRows, target]);
 
   const myHours = user ? hours.get(user.id)?.hours ?? 0 : 0;
 
@@ -336,54 +353,51 @@ export default function TrainingDashboard() {
 
       {oversees && (
         <>
+          {/* Hours by BAND, not one bar per person — 74 bars needed a scrollbar and
+              said nothing at a glance. Five bars do: how many people are where
+              against the yearly target. A click lists those people below. */}
           <Card className="p-5">
             <div className="flex flex-wrap items-start justify-between gap-3">
               <div>
-                <h3 className="text-[15px] font-semibold text-navy">Hours per person · FY {fy.label}</h3>
+                <h3 className="text-[15px] font-semibold text-navy">Training hours · FY {fy.label}</h3>
                 <p className="text-[12.5px] text-grey-2">
-                  Target {target} h a year · {metCount} of {chartRows.length} reached it · counted from attendance (Present) · click a bar to see that person's trainings
+                  How many people are in each band against the {target} h target · click a bar to see who
                 </p>
               </div>
-              <div className="flex items-center gap-3 text-[12px] text-grey-2">
-                <span><span className="mr-1 inline-block h-2.5 w-2.5 rounded-sm" style={{ background: MET }} />Reached {target} h</span>
-                <span><span className="mr-1 inline-block h-2.5 w-2.5 rounded-sm" style={{ background: SHORT }} />Below {target} h</span>
+              <div className="text-right">
+                <div className="text-[22px] font-bold leading-tight text-navy">
+                  {metCount} <span className="text-[14px] font-semibold text-grey-2">/ {chartRows.length}</span>
+                </div>
+                <div className="text-[12px] text-grey-2">reached {target} h</div>
               </div>
             </div>
-            <div className="mt-3 overflow-x-auto">
-              <div style={{ minWidth: Math.max(640, chartRows.length * 26), height: 300 }}>
-                <ResponsiveContainer width="100%" height="100%">
-                  <BarChart
-                    data={chartRows}
-                    margin={{ top: 10, right: 10, bottom: 70, left: 0 }}
-                    // The WHOLE column is the target, not just the bar — a 0.1 h bar is a
-                    // sliver nobody can hit.
-                    style={{ cursor: "pointer" }}
-                    onClick={(st: { activePayload?: { payload?: { id: string } }[] } | null) => {
-                      const id = st?.activePayload?.[0]?.payload?.id;
-                      if (id) open(`person:${id}`, { kind: "person", id }, "chart");
-                    }}
-                  >
-                    <CartesianGrid stroke="#EEF2F8" vertical={false} />
-                    <XAxis dataKey="name" tick={{ ...AXIS, fontSize: 10 }} angle={-55} textAnchor="end" interval={0} height={70} />
-                    <YAxis tick={AXIS} width={36} allowDecimals={false} domain={[0, (max: number) => Math.max(target + 4, Math.ceil(max))]} />
-                    <Tooltip
-                      cursor={{ fill: "rgba(11,27,64,0.04)" }}
-                      contentStyle={{ borderRadius: 10, border: "1px solid #EEF2F8", fontSize: 12 }}
-                      formatter={(v: number, _n, item) => [`${v} h · ${(item?.payload as { trainings: number }).trainings} training(s)`, "Attended"]}
-                    />
-                    <ReferenceLine y={target} stroke="#0B1B40" strokeDasharray="4 4" label={{ value: `${target} h target`, position: "insideTopRight", fontSize: 11, fill: "#0B1B40" }} />
-                    <Bar
-                      dataKey="hours"
-                      radius={[4, 4, 0, 0]}
-                      maxBarSize={18}
-                    >
-                      {chartRows.map((r) => (
-                        <Cell key={r.id} fill={r.hours >= target ? MET : SHORT} />
-                      ))}
-                    </Bar>
-                  </BarChart>
-                </ResponsiveContainer>
-              </div>
+            <div className="mt-3" style={{ height: 210 }}>
+              <ResponsiveContainer width="100%" height="100%">
+                <BarChart
+                  data={bands}
+                  margin={{ top: 22, right: 8, bottom: 0, left: 0 }}
+                  style={{ cursor: "pointer" }}
+                  onClick={(st: { activePayload?: { payload?: Band }[] } | null) => {
+                    const b = st?.activePayload?.[0]?.payload;
+                    if (b) open(`band:${b.key}`, { kind: "people", title: `${b.label} · FY ${fy.label}`, ids: b.ids }, "chart");
+                  }}
+                >
+                  <CartesianGrid stroke="#EEF2F8" vertical={false} />
+                  <XAxis dataKey="label" tick={AXIS} axisLine={{ stroke: "#E2E8F0" }} tickLine={false} />
+                  <YAxis tick={AXIS} width={30} allowDecimals={false} axisLine={false} tickLine={false} />
+                  <Tooltip
+                    cursor={{ fill: "rgba(11,27,64,0.04)" }}
+                    contentStyle={{ borderRadius: 10, border: "1px solid #EEF2F8", fontSize: 12 }}
+                    formatter={(v: number) => [`${v} ${v === 1 ? "person" : "people"}`, "In this band"]}
+                  />
+                  <Bar dataKey="count" radius={[4, 4, 0, 0]} maxBarSize={64}>
+                    <LabelList dataKey="count" position="top" style={{ fontSize: 12, fontWeight: 700, fill: "#0B1B40" }} />
+                    {bands.map((b) => (
+                      <Cell key={b.key} fill={b.key === "met" ? MET : SHORT} />
+                    ))}
+                  </Bar>
+                </BarChart>
+              </ResponsiveContainer>
             </div>
           </Card>
 
