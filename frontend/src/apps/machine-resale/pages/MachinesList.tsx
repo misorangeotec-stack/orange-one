@@ -34,13 +34,15 @@ export default function MachinesList() {
   const head = (m: Machine) => s.printHeadById(m.subcategoryId)?.name ?? "";
   const master = (id: string | null) => s.masterById(id)?.value ?? "";
 
-  const text = (key: string, header: string, get: (m: Machine) => string, cls = "text-grey"): QueueColumn<Machine> => ({
+  /** `unique` columns (one value per row) get a typed filter; the rest a picker. */
+  const text = (key: string, header: string, get: (m: Machine) => string, cls = "text-grey", more: Partial<QueueColumn<Machine>> = {}): QueueColumn<Machine> => ({
     key,
     header,
     cell: (m) => <span className={cls}>{get(m)}</span>,
     sortValue: get,
     exportValue: get,
     filter: { kind: "select", get },
+    ...more,
   });
 
   const columns: QueueColumn<Machine>[] = [
@@ -50,8 +52,9 @@ export default function MachinesList() {
       cell: (m) => <span className="font-mono text-[12.5px] font-semibold text-navy">{m.listingNo}</span>,
       sortValue: (m) => m.listingNo,
       exportValue: (m) => m.listingNo,
-      filter: { kind: "select", get: (m) => m.listingNo },
-      resize: { width: 100 },
+      filter: { kind: "text", get: (m) => m.listingNo },
+      resize: { width: 120 },
+      alwaysVisible: true,
     },
     {
       key: "cover",
@@ -69,14 +72,7 @@ export default function MachinesList() {
       filter: { kind: "select", get: (m) => (m.photos.length ? "Has a photo" : "No photo") },
       resize: false,
     },
-    text("title", "Title", (m) => m.title, "font-medium text-navy"),
-    text("category", "Category", cat),
-    text("head", "Print head", head),
-    text("brand", "Printer brand", (m) => master(m.printerBrandId)),
-    text("condition", "Condition", (m) => master(m.conditionId)),
-    text("location", "Location", (m) => place(m.city, m.state)),
-    text("seller", "Seller", (m) => m.sellerName ?? ""),
-    text("salesperson", "Salesperson", (m) => m.salespersonName ?? ""),
+    text("title", "Title", (m) => m.title, "font-medium text-navy", { filter: { kind: "text", get: (m) => m.title }, alwaysVisible: true }),
     {
       key: "status",
       header: "Status",
@@ -86,6 +82,24 @@ export default function MachinesList() {
       filter: { kind: "select", get: (m) => STATUS_LABEL[m.status] },
       resize: false,
     },
+    text("category", "Category", cat),
+    text("head", "Print head", head),
+    text("brand", "Printer brand", (m) => master(m.printerBrandId)),
+    text("model", "Model", (m) => m.model ?? "", "text-grey", { defaultHidden: true }),
+    {
+      key: "year",
+      header: "Year",
+      align: "right",
+      cell: (m) => <span className="tabular-nums">{m.year ?? ""}</span>,
+      sortValue: (m) => m.year ?? 0,
+      exportValue: (m) => m.year ?? "",
+      filter: { kind: "number", get: (m) => m.year ?? 0 },
+      defaultHidden: true,
+    },
+    text("condition", "Condition", (m) => master(m.conditionId)),
+    text("location", "Location", (m) => place(m.city, m.state)),
+    text("seller", "Seller", (m) => m.sellerName ?? ""),
+    text("salesperson", "Salesperson", (m) => m.salespersonName ?? ""),
     {
       key: "featured",
       header: "Featured",
@@ -93,6 +107,7 @@ export default function MachinesList() {
       sortValue: (m) => (m.featured ? 0 : 1),
       exportValue: (m) => (m.featured ? "Yes" : "No"),
       filter: { kind: "select", get: (m) => (m.featured ? "Yes" : "No") },
+      defaultHidden: true,
     },
     {
       key: "video",
@@ -110,6 +125,7 @@ export default function MachinesList() {
       sortValue: (m) => m.photos.length,
       exportValue: (m) => m.photos.length,
       filter: { kind: "number", get: (m) => m.photos.length },
+      defaultHidden: true,
     },
     {
       key: "updated",
@@ -140,6 +156,7 @@ export default function MachinesList() {
         emptyTitle="No machines yet"
         emptyMessage={s.canEdit ? "Add the first one with New machine." : "None have been added yet."}
         exportName="Machines"
+        columnPicker={{ storageKey: "mr-machines-columns" }}
       />
     </div>
   );

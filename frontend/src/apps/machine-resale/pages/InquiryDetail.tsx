@@ -154,7 +154,19 @@ export default function InquiryDetail() {
             }}
           >
             <FieldLabel label="Add a note">
-              <TextArea value={note} maxLength={4000} rows={3} onChange={(e) => setNote(e.target.value)} placeholder="What was said, and what happens next" />
+              <TextArea
+                value={note}
+                maxLength={4000}
+                rows={3}
+                onChange={(e) => setNote(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) {
+                    e.preventDefault();
+                    e.currentTarget.form?.requestSubmit();
+                  }
+                }}
+                placeholder="What was said, and what happens next. Ctrl+Enter adds it."
+              />
             </FieldLabel>
             <Button type="submit" size="sm" disabled={busy || !note.trim()}>
               {busy ? "Saving..." : "Add note"}

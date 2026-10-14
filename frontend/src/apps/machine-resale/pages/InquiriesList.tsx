@@ -19,13 +19,14 @@ export default function InquiriesList() {
   const machineOf = (i: Inquiry) =>
     i.machineId || i.listingNoSnapshot ? `${i.listingNoSnapshot ?? ""} ${i.machineTitleSnapshot ?? ""}`.trim() : "General inquiry";
 
-  const text = (key: string, header: string, get: (i: Inquiry) => string, cls = "text-grey"): QueueColumn<Inquiry> => ({
+  const text = (key: string, header: string, get: (i: Inquiry) => string, cls = "text-grey", more: Partial<QueueColumn<Inquiry>> = {}): QueueColumn<Inquiry> => ({
     key,
     header,
     cell: (i) => <span className={cls}>{get(i)}</span>,
     sortValue: get,
     exportValue: get,
     filter: { kind: "select", get },
+    ...more,
   });
 
   const columns: QueueColumn<Inquiry>[] = [
@@ -35,8 +36,9 @@ export default function InquiriesList() {
       cell: (i) => <span className="font-mono text-[12.5px] font-semibold text-navy">{i.inquiryNo}</span>,
       sortValue: (i) => i.inquiryNo,
       exportValue: (i) => i.inquiryNo,
-      filter: { kind: "select", get: (i) => i.inquiryNo },
+      filter: { kind: "text", get: (i) => i.inquiryNo },
       resize: { width: 90 },
+      alwaysVisible: true,
     },
     {
       key: "date",
@@ -48,7 +50,9 @@ export default function InquiriesList() {
     },
     text("buyer", "Buyer", (i) => i.buyerName, "font-medium text-navy"),
     text("company", "Company", (i) => i.company ?? ""),
-    text("phone", "Phone", (i) => i.phone),
+    text("phone", "Phone", (i) => i.phone, "whitespace-nowrap text-grey", { filter: { kind: "text", get: (i) => i.phone } }),
+    text("email", "Email", (i) => i.email ?? "", "text-grey", { filter: { kind: "text", get: (i) => i.email ?? "" }, defaultHidden: true }),
+    text("city", "City", (i) => i.city ?? "", "text-grey", { defaultHidden: true }),
     text("machine", "Machine", machineOf),
     text("source", "Came in by", (i) => SOURCE_LABEL[i.source]),
     {
@@ -91,6 +95,7 @@ export default function InquiriesList() {
         emptyTitle="No inquiries yet"
         emptyMessage="Inquiries sent from the website appear here, and you can add a phone or WhatsApp lead by hand."
         exportName="Inquiries"
+        columnPicker={{ storageKey: "mr-inquiries-columns" }}
       />
       {s.canEdit && (
         <AddInquiryModal
