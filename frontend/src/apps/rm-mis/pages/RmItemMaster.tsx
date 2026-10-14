@@ -48,11 +48,12 @@ import MultiSelect from "@/shared/components/ui/MultiSelect";
 import { exportItemMaster, importItemMaster } from "../lib/itemMasterExcel";
 import { ResizableHead, useTableColumns } from "../lib/tableColumns";
 import { useGodownChoice } from "../lib/godowns";
+import ArrangeGroups, { type ArrangeBy } from "../components/ArrangeGroups";
 import ActiveFilters, { type ActiveFilter } from "@/shared/components/ui/ActiveFilters";
 import { ColumnHead } from "../components/HeaderFilter";
 import { applySort, type CellValue, type SortState } from "../lib/grid";
 import {
-  EMPTY_PLAN, INK_CATEGORIES, INK_COMPANIES, INK_SOURCES, describeGodownChoice, fmtQty,
+  EMPTY_PLAN, INK_COMPANIES, INK_SOURCES, describeGodownChoice, fmtQty,
   loadInkPositions, loadOrder,
   loadGroupFields, loadLines, loadOverrides, loadPlans, loadSeenLines, renumber, saveGroupFields, uniqueOrder,
   fmtYmd, saveLines, savePlans, saveOrder, saveOverrides, saveSeenLines, sourceLabel,
@@ -159,6 +160,8 @@ export default function RmItemMaster() {
    * listed while it is empty, and comes back with everything still attached.
    */
   const [stockOnly, setStockOnly] = useState(true);
+  /** The arrange panel, by group or by category (user, 13-10-2026), or closed. */
+  const [arrangeBy, setArrangeBy] = useState<ArrangeBy | null>(null);
   /** Lines already shown to the planner, so an ink that has just arrived can be pointed out. */
   const [seen, setSeen] = useState<string[]>(() => loadSeenLines());
   const [showNewDialog, setShowNewDialog] = useState(true);
@@ -629,10 +632,24 @@ export default function RmItemMaster() {
     return [...seen].sort().map((g) => ({ value: g, label: g }));
   }, [survivors, f.groups]);
   const bookOpts = INK_COMPANIES.map((c) => ({ value: c.key, label: c.label }));
-  const categoryOpts = [
-    { value: "(none)", label: "Not set" },
-    ...INK_CATEGORIES.map((c) => ({ value: c, label: c })),
-  ];
+  /** Every category Central uses, plus any on this sheet — the Category boxes' suggestions. */
+  const categorySuggestions = useMemo(
+    () =>
+      [...new Set([...(data?.central.categories ?? []), ...master.map((r) => r.category)].filter(Boolean))].sort(
+        (a, b) => a.localeCompare(b),
+      ),
+    [data, master],
+  );
+  // Category is free text now (Bushra Central Master's), so its filter lists what the rows hold.
+  const categoryOpts = useMemo(
+    () => [
+      { value: "(none)", label: "Not set" },
+      ...[...new Set(master.map((r) => r.category).filter(Boolean))]
+        .sort((a, b) => a.localeCompare(b))
+        .map((c) => ({ value: c, label: c })),
+    ],
+    [master],
+  );
   const sourceOpts = [
     { value: "(none)", label: "Not set" },
     ...INK_SOURCES.map((o) => ({ value: o.value, label: o.label })),
@@ -775,10 +792,11 @@ export default function RmItemMaster() {
     });
 
   /** `width` is now a hint only: every editor fills its column so resizing actually resizes. */
-  const cell = (r: InkMasterRow, field: keyof InkOverride, fallback: string, width: string) =>
+  const cell = (r: InkMasterRow, field: keyof InkOverride, fallback: string, width: string, list?: string) =>
     r.link ? (
       // LINKED: the box holds Bushra Central Master's value, and Save writes back into it.
       <Input
+        list={list}
         className={`h-8 w-full min-w-0 border-sky-300 ${width}`}
         value={shownLinkedValue(r.link, field, overrides[r.key], savedOverrides[r.key])}
         placeholder={fallback || "—"}
@@ -792,6 +810,7 @@ export default function RmItemMaster() {
       />
     ) : (
       <Input
+        list={list}
         className={`h-8 w-full min-w-0 ${width}`}
         value={overrides[r.key]?.[field] ?? ""}
         placeholder={fallback || "—"}
@@ -815,7 +834,7 @@ export default function RmItemMaster() {
 
       <div className="flex flex-wrap items-center gap-2 rounded-md border border-sky-300 bg-sky-50 p-3 text-sm text-sky-950">
         <p className="flex-1">
-          <strong>Item code, Group and Description are linked to Bushra Central Master</strong>{" "}
+          <strong>Item code, Group, Description and Category are linked to Bushra Central Master</strong>{" "}
           (blue boxes). They show its values, and Save updates it there too, so every report sees the
           same thing. Changing them needs edit access to Bushra Central Master. Items not in Central
           Masters keep their values on this sheet.
@@ -870,6 +889,20 @@ export default function RmItemMaster() {
           </div>
         ))}
       </div>
+
+      {/* Moved here from the dashboard (user, 14-10-2026): this is where codes are filled. */}
+      {needsCode > 0 && (
+        <div className="flex flex-wrap items-center gap-2 rounded-md border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900">
+          <AlertTriangle className="h-4 w-4 shrink-0" />
+          <span>
+            <strong>{needsCode}</strong> item{needsCode === 1 ? " has" : "s have"} no item code, so
+            the same item in two books still shows as two lines on the dashboard.
+          </span>
+          <Button size="sm" variant="outline" className="ml-auto" onClick={() => setCol("code", ["none"])}>
+            Show them
+          </Button>
+        </div>
+      )}
 
       <div className="flex flex-wrap items-center gap-2">
         <select
@@ -937,6 +970,18 @@ export default function RmItemMaster() {
         >
           <ListOrdered className="mr-2 h-4 w-4" /> Tidy numbers
         </Button>
+        {(["group", "category"] as ArrangeBy[]).map((by) => (
+          <Button
+            key={by}
+            size="sm"
+            variant={arrangeBy === by ? "default" : "outline"}
+            onClick={() => setArrangeBy((v) => (v === by ? null : by))}
+            disabled={!master.length}
+            title={`Put the ${by === "group" ? "groups" : "categories"} in order and number every item in them at once`}
+          >
+            <ListOrdered className="mr-2 h-4 w-4" /> Arrange by {by}
+          </Button>
+        ))}
         {cols.customised && (
           <Button size="sm" variant="ghost" onClick={cols.reset} title="Put every column back to its automatic width">
             Reset column widths
@@ -978,6 +1023,49 @@ export default function RmItemMaster() {
           <span>All changes saved.</span>
         )}
       </div>
+
+      {/* Suggestions for the Category boxes: every category Bushra Central Master uses. */}
+      <datalist id="rm-mis-categories">
+        {categorySuggestions.map((c) => (
+          <option key={c} value={c} />
+        ))}
+      </datalist>
+
+      {arrangeBy && master.length > 0 && (
+        <ArrangeGroups
+          // Rebuilt when the mode or the list's switches change, so the panel matches the list.
+          key={`${arrangeBy}|${scope}|${stockOnly}`}
+          by={arrangeBy}
+          categories={categorySuggestions}
+          master={listed}
+          order={order}
+          groupFields={groupFields}
+          onGroupField={(groupName, field, value) => {
+            const g = groupName.trim().toUpperCase();
+            setGroupFields((prev) => {
+              const row = { ...prev[g], [field]: value };
+              if (!value.trim()) delete row[field];
+              const next = { ...prev };
+              if (Object.keys(row).length) next[g] = row;
+              else delete next[g];
+              return next;
+            });
+          }}
+          onApply={(next, moved) => {
+            setOrder(next);
+            // A moved item takes its new group / category on every book's row of that line. A
+            // linked item's box then saves into Bushra Central Master with the rest on Save.
+            for (const r of master) {
+              const to = moved[r.mergeKey];
+              if (to === undefined) continue;
+              if (arrangeBy === "category") patch(r.key, "category", to);
+              else patch(r.key, "group", r.link || to !== r.tallyGroup ? to : "");
+            }
+            setArrangeBy(null);
+          }}
+          onClose={() => setArrangeBy(null)}
+        />
+      )}
 
       {showNewDialog && newLines.length > 0 && (
         <div className="rounded-md border-2 border-orange-400 bg-orange-50 p-3 text-sm text-orange-950">
@@ -1191,25 +1279,9 @@ export default function RmItemMaster() {
                 <TableCell>{cell(r, "group", r.tallyGroup, "")}</TableCell>
                 <TableCell>{cell(r, "description", r.item, "")}</TableCell>
                 <TableCell>
-                  {/* Shows the category read from the item's name until the planner picks one;
-                      picking writes their choice, which wins from then on. */}
-                  <select
-                    className="h-8 w-full min-w-0 rounded-md border bg-background px-2 text-sm"
-                    value={
-                      lines[r.mergeKey]?.category ??
-                      groupFields[(r.effectiveGroup || "").trim().toUpperCase()]?.category ??
-                      r.category
-                    }
-                    title="Sets the category for this item's whole group"
-                    onChange={(e) => setGroupField(r, "category", e.target.value)}
-                  >
-                    <option value="">—</option>
-                    {INK_CATEGORIES.map((c) => (
-                      <option key={c} value={c}>
-                        {c}
-                      </option>
-                    ))}
-                  </select>
+                  {/* CATEGORY (user, 13-10-2026): Bushra Central Master's, editable here like the three
+                      before it — any text, with every category Central already uses as suggestions. */}
+                  {cell(r, "category", r.category, "", "rm-mis-categories")}
                 </TableCell>
                 <TableCell>
                   <select

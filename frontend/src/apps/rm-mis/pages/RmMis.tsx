@@ -1296,20 +1296,8 @@ export default function RmMis() {
         </div>
       )}
 
-      {needsCode > 0 && (
-        <div className="flex flex-wrap items-center gap-2 rounded-md border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900">
-          <AlertTriangle className="h-4 w-4 shrink-0" />
-          <span>
-            <strong>{needsCode}</strong> line{needsCode === 1 ? "" : "s"} have no item code, so
-            the same ink in two books is still showing as two lines.
-          </span>
-          <Button size="sm" variant="outline" asChild className="ml-auto">
-            <Link to={`${BASE}/items`}>
-              <ListChecks className="mr-2 h-4 w-4" /> Fill codes in the item master
-            </Link>
-          </Button>
-        </div>
-      )}
+      {/* The "no item code" warning lives on the item master, where codes are filled
+          (user, 14-10-2026: "required in master, not on dashboard"). */}
 
       {/* Two bar charts, each folded until opened (user, 13-10-2026). */}
       <ReorderChart rows={rows} by="category" />
@@ -1340,7 +1328,7 @@ export default function RmMis() {
           "[&_tbody_td]:text-[9pt] [&_tbody_td_*]:text-[9pt]"
         }
       >
-      <ScrollableTable maxHeight="max-h-[calc(100vh-13rem)]" hideControls>
+      <ScrollableTable maxHeight="max-h-[calc(100vh-13rem)]" hideHint containScroll>
         <Table
           style={{ width: tableWidth, minWidth: tableWidth, maxWidth: "none" }}
           className={

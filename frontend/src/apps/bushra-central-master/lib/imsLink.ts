@@ -29,8 +29,12 @@ import { fetchOverrides } from "./overridesDb";
 import { centralValue, cleanOverride, saveMany, type EditableKey, type MirrorEdit, type MirrorOverride, type OverrideMap } from "./store";
 
 /** The fields an IMS item master shares with Bushra Central Master. */
-export type ImsField = "code" | "groupName" | "description";
-export const IMS_FIELDS: ImsField[] = ["code", "groupName", "description"];
+/**
+ * CATEGORY IS SHARED TOO (user, 13-10-2026, for RM IMS): it comes from Bushra Central Master and
+ * an edit in the IMS sheet saves back into it, exactly like code, group and description.
+ */
+export type ImsField = "code" | "groupName" | "description" | "category";
+export const IMS_FIELDS: ImsField[] = ["code", "groupName", "description", "category"];
 
 /** One IMS item, tied to its Central Masters row. */
 export interface ImsLink {
@@ -44,7 +48,7 @@ export interface ImsLink {
    * value; a default never silently erases work typed in an IMS sheet — see `pendingAdoption`.
    */
   own: Record<ImsField, boolean>;
-  /** Not synced, but read: Bushra Central Master's Category, for display. */
+  /** Bushra Central Master's Category — the same as `values.category`, kept for older readers. */
   category: string;
 }
 
@@ -55,6 +59,8 @@ export interface ImsLinks {
   canSave: boolean;
   /** Why the link is missing or partial, when it is. */
   note: string | null;
+  /** Every category in use anywhere in Bushra Central Master, A–Z — the suggestion list. */
+  categories: string[];
 }
 
 export const linkKey = (companyGuid: string, itemName: string) =>
@@ -85,6 +91,7 @@ export async function loadImsLinks(companyGuids: string[]): Promise<ImsLinks> {
     return {
       byKey,
       canSave: false,
+      categories: [],
       note: `Bushra Central Master could not be read (${e instanceof Error ? e.message : "unknown error"}); this sheet's own values are shown.`,
     };
   }
@@ -104,11 +111,15 @@ export async function loadImsLinks(companyGuids: string[]): Promise<ImsLinks> {
   const guidOf = new Map(companies.map((c) => [c.id, c.tallyGuid]));
   const groupName = new Map(groups.map((g) => [g.id, g.name]));
   const wanted = new Set(companyGuids);
+  const categories = new Set<string>();
   for (const item of items) {
-    const guid = item.companyId ? guidOf.get(item.companyId) : null;
-    if (!guid || !wanted.has(guid)) continue;
     const g = item.groupId ? groupName.get(item.groupId) ?? null : null;
     const o = overrides[item.id];
+    // The suggestion list spans ALL of Central, not just these books, as Central's own grid does.
+    const cat = shown(item, o, "category", g).trim();
+    if (cat) categories.add(cat);
+    const guid = item.companyId ? guidOf.get(item.companyId) : null;
+    if (!guid || !wanted.has(guid)) continue;
     byKey.set(linkKey(guid, item.name), {
       item,
       centralGroupName: g,
@@ -116,16 +127,18 @@ export async function loadImsLinks(companyGuids: string[]): Promise<ImsLinks> {
         code: shown(item, o, "code", g),
         groupName: shown(item, o, "groupName", g),
         description: shown(item, o, "description", g),
+        category: shown(item, o, "category", g),
       },
       own: {
         code: Boolean(o && "code" in o),
         groupName: Boolean(o && "groupName" in o),
         description: Boolean(o && "description" in o),
+        category: Boolean(o && "category" in o),
       },
       category: shown(item, o, "category", g),
     });
   }
-  return { byKey, canSave, note };
+  return { byKey, canSave, note, categories: [...categories].sort((a, b) => a.localeCompare(b)) };
 }
 
 /** One IMS edit: the link, and the fields the planner typed. */
@@ -182,8 +195,13 @@ export function linkedValue(link: ImsLink, field: ImsField, local: string | unde
 
 /* ------------------------------------------------------------------ item-master helpers */
 
-/** How an IMS item master names the three shared fields, and the Central field each saves into. */
-export const IMS_LOCAL_FIELD = { code: "code", group: "groupName", description: "description" } as const;
+/** How an IMS item master names the shared fields, and the Central field each saves into. */
+export const IMS_LOCAL_FIELD = {
+  code: "code",
+  group: "groupName",
+  description: "description",
+  category: "category",
+} as const;
 export type ImsLocalField = keyof typeof IMS_LOCAL_FIELD;
 export type ImsLocalOverride = Partial<Record<ImsLocalField, string>>;
 const LOCAL_FIELDS = Object.keys(IMS_LOCAL_FIELD) as ImsLocalField[];
@@ -242,6 +260,7 @@ export function adoptionEdits(
       code: clean("code", local.code),
       groupName: clean("group", local.group),
       description: clean("description", local.description),
+      category: clean("category", local.category),
     });
     if (Object.keys(values).length) out.push({ link, values });
   }

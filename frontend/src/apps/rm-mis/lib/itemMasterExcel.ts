@@ -30,7 +30,7 @@ import * as XLSX from "xlsx-js-style";
 import { saveAs } from "file-saver";
 import { parseXlsxRows } from "@/shared/lib/importXlsx";
 import {
-  EMPTY_PLAN, INK_CATEGORIES, INK_COMPANIES, INK_SOURCES, masterKey, sourceLabel,
+  EMPTY_PLAN, INK_COMPANIES, INK_SOURCES, masterKey, sourceLabel,
   type InkLines, type InkMasterRow, type InkOrder, type InkOverride, type InkOverrides,
   type InkPlan,
 } from "./rmMis";
@@ -179,7 +179,6 @@ export async function importItemMaster(
   // A line's first row in THIS file wins and clears what was stored, so an import can change a
   // category, not merely fill an empty one. Later rows of the same line only fill a gap, which is
   // what lets one word on one of an ink's four rows stand for all of them.
-  const seenCategory = new Set<string>();
   const seenSource = new Set<string>();
   const unmatched: ItemMasterImportResult["unmatched"] = [];
   let matched = 0;
@@ -210,6 +209,11 @@ export async function importItemMaster(
     if (code && code !== up(m.tallyCode)) next.code = code;
     if (group && group !== norm(m.tallyGroup)) next.group = group;
     if (desc && desc !== norm(m.tallyDescription)) next.description = desc;
+    // Category is the item's own, like the three above (linked to Bushra Central Master), and any
+    // text — not only Ink IMS's five. A blank cell, or the value already shown, changes nothing.
+    const cat = hasCategory ? norm(row["Category"]) : "";
+    if (cat && cat.toUpperCase() !== norm(m.category).toUpperCase()) next.category = cat;
+    else if (current.overrides[key]?.category) next.category = current.overrides[key]!.category!;
 
 
     if (Object.keys(next).length) overrides[key] = next;
@@ -224,17 +228,6 @@ export async function importItemMaster(
     touchedLines.add(line);
     // Planner-only fields, keyed on the line: the first row of a line that carries a value sets
     // it, so an ink listed in four books does not need the same word typed four times.
-    if (hasCategory) {
-      const category = up(row["Category"]);
-      if (INK_CATEGORIES.includes(category as (typeof INK_CATEGORIES)[number])) {
-        if (!seenCategory.has(line)) {
-          lines[line] = { ...lines[line], category };
-          seenCategory.add(line);
-        } else if (!lines[line]?.category) {
-          lines[line] = { ...lines[line], category };
-        }
-      } else if (category) badCategories++;
-    }
     if (hasSource) {
       const srcCell = up(row["Import/Plant"]);
       const src = INK_SOURCES.find(
