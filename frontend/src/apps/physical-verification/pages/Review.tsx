@@ -9,7 +9,7 @@ import { matchesSearch } from "@/shared/lib/search";
 import { exportRowsToXlsx } from "@/shared/lib/exportXlsx";
 import { cn } from "@/shared/lib/cn";
 import { fmtDate, fmtInr, fmtQty, fmtStamp, OTEC_SURAT_NAME } from "../lib/stock";
-import { canSchedule, diffValue, PV_QUERY, reviewCounts, STATUS_LABEL, usePv, type CountRow, type CountStatus } from "../lib/pv";
+import { canReview, diffValue, PV_QUERY, reviewCounts, STATUS_LABEL, usePv, type CountRow, type CountStatus } from "../lib/pv";
 import { Diff, inputCls, PageHead, PvUnavailable, StatusPill, tdCls, thCls, Tile } from "../components/parts";
 
 /**
@@ -24,7 +24,8 @@ export default function Review() {
   const { user, isAdmin: admin, canEditModule } = useSession();
   const qc = useQueryClient();
   const pvQ = usePv();
-  const isAdmin = canSchedule(user.id, admin, canEditModule("physical-verification"), pvQ.data);
+  // Step 3 rights (Settings). Named isAdmin to keep the checks below short.
+  const isAdmin = canReview(user.id, admin, canEditModule("physical-verification"), pvQ.data);
   const people = useQuery({ queryKey: ["orgPeople"], queryFn: fetchOrgPeople, staleTime: 10 * 60_000 });
   const nameOf = (id: string | null | undefined) => (id ? people.data?.find((p) => p.id === id)?.name ?? "—" : "—");
 

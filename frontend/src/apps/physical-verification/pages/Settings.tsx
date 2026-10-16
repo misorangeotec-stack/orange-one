@@ -5,29 +5,35 @@ import Button from "@/shared/components/ui/Button";
 import MultiSelect from "@/shared/components/ui/MultiSelect";
 import { fetchOrgPeople } from "@/core/platform/orgPeople";
 import { useSession } from "@/core/platform/session";
-import { PV_QUERY, saveRights, usePv } from "../lib/pv";
+import { PV_QUERY, saveRights, usePv, type Rights } from "../lib/pv";
 import { PvUnavailable } from "../components/parts";
 
 /**
  * SETTINGS — who does each step. Admins only.
  *
- *   Step 1 · Set dates   the Master (tick items, verification date, verifier) and Review
+ *   Step 1 · Set dates   the Master (tick items, verification date, verifier)
  *   Step 2 · Count       the physical count — each sees only the items given to them
+ *   Step 3 · Review      accept a submitted count or send it back for recount
  *
- * Both also need an EDIT grant on Physical Verification in User Access. Admins can do both.
+ * Everyone listed also needs an EDIT grant on Physical Verification in User Access. Admins can do every step.
  */
-type Key = "schedulers" | "verifiers";
+type Key = keyof Rights;
 
 const STEPS: { key: Key; title: string; hint: string }[] = [
   {
     key: "schedulers",
-    title: "Step 1 · Set verification date (Master + Review)",
-    hint: "Who ticks items on the Master, gives the verification date and verifier, and then accepts the counts or sends them back for recount.",
+    title: "Step 1 · Set verification date (Master)",
+    hint: "Who ticks items on the Master and gives the verification date and the verifier.",
   },
   {
     key: "verifiers",
     title: "Step 2 · Physical verification (count)",
     hint: "Who counts the stock. Step 1 picks one of them per item; each sees only the items given to them, from that date.",
+  },
+  {
+    key: "reviewers",
+    title: "Step 3 · Review",
+    hint: "Who checks the submitted counts and accepts them or sends them back for recount. Left empty, the step 1 people review.",
   },
 ];
 
@@ -36,12 +42,12 @@ export default function Settings() {
   const qc = useQueryClient();
   const pvQ = usePv();
   const people = useQuery({ queryKey: ["orgPeople"], queryFn: fetchOrgPeople, staleTime: 10 * 60_000 });
-  const [draft, setDraft] = useState<Record<Key, string[]>>({ schedulers: [], verifiers: [] });
+  const [draft, setDraft] = useState<Rights>({ schedulers: [], verifiers: [], reviewers: [] });
   const [busy, setBusy] = useState(false);
   const [note, setNote] = useState<string | null>(null);
 
   useEffect(() => {
-    if (pvQ.data) setDraft({ schedulers: pvQ.data.schedulers, verifiers: pvQ.data.verifiers });
+    if (pvQ.data) setDraft({ schedulers: pvQ.data.schedulers, verifiers: pvQ.data.verifiers, reviewers: pvQ.data.reviewers });
   }, [pvQ.data]);
 
   const options = useMemo(() => (people.data ?? [])
@@ -51,7 +57,7 @@ export default function Settings() {
   const save = async () => {
     setBusy(true); setNote(null);
     try {
-      await saveRights(draft.schedulers, draft.verifiers, user.id);
+      await saveRights(draft, user.id);
       await qc.invalidateQueries({ queryKey: PV_QUERY });
       setNote("Saved.");
     } catch (e) {
@@ -69,7 +75,7 @@ export default function Settings() {
         <h1 className="text-[22px] font-bold text-navy">Settings</h1>
         <p className="text-[13px] text-grey">
           Who does each step. Everyone listed also needs <b>Edit</b> access to Physical Verification in User Access.
-          Admins can always do both steps.
+          Admins can always do every step.
         </p>
       </div>
       {pvQ.isError && <PvUnavailable error={pvQ.error} />}
@@ -84,7 +90,7 @@ export default function Settings() {
             values={draft[s.key]}
             onChange={(v) => setDraft((d) => ({ ...d, [s.key]: v }))}
             options={options}
-            placeholder={s.key === "schedulers" ? "Admins only" : "Pick people"}
+            placeholder={s.key === "schedulers" ? "Admins only" : s.key === "reviewers" ? "Same as step 1" : "Pick people"}
             searchable
             chips
             disabled={locked}

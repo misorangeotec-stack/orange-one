@@ -65,6 +65,8 @@ export interface PvData {
   schedulers: string[];
   /** Step 2 — who may be given items to count. */
   verifiers: string[];
+  /** Step 3 — who reviews submitted counts (20270128120000). Empty = step 1 reviews. */
+  reviewers: string[];
 }
 
 const num = (v: unknown) => (v === null || v === undefined ? null : Number(v));
@@ -134,6 +136,7 @@ export async function fetchPv(): Promise<PvData> {
     counts, open, lastAccepted,
     schedulers: (settings[0]?.scheduler_ids as string[]) ?? [],
     verifiers: (settings[0]?.verifier_ids as string[]) ?? [],
+    reviewers: (settings[0]?.reviewer_ids as string[]) ?? [],
   };
 }
 
@@ -161,6 +164,16 @@ export function usePv() {
  */
 export const canSchedule = (userId: string, isAdmin: boolean, canEdit: boolean, pv: PvData | undefined) =>
   isAdmin || (canEdit && (pv?.schedulers ?? []).includes(userId));
+
+/**
+ * Step 3 rights — the SAME rule as public.pv_can_review: admin, or listed with an edit grant;
+ * while nobody is listed, the step 1 people review.
+ */
+export function canReview(userId: string, isAdmin: boolean, canEdit: boolean, pv: PvData | undefined): boolean {
+  if (isAdmin) return true;
+  if (!canEdit || !pv) return false;
+  return pv.reviewers.length ? pv.reviewers.includes(userId) : pv.schedulers.includes(userId);
+}
 
 /** Difference value in ₹ — the difference at the rate Tally held when it was counted. */
 export const diffValue = (diff: number | null, rate: number | null) =>
@@ -219,9 +232,14 @@ export async function reviewCounts(ids: string[], action: "accept" | "recount", 
   return data as number;
 }
 
-export async function saveRights(schedulers: string[], verifiers: string[], userId: string): Promise<void> {
+export interface Rights { schedulers: string[]; verifiers: string[]; reviewers: string[] }
+
+export async function saveRights(r: Rights, userId: string): Promise<void> {
   const { error } = await db.from("pv_settings")
-    .update({ scheduler_ids: schedulers, verifier_ids: verifiers, updated_by: userId, updated_at: new Date().toISOString() })
+    .update({
+      scheduler_ids: r.schedulers, verifier_ids: r.verifiers, reviewer_ids: r.reviewers,
+      updated_by: userId, updated_at: new Date().toISOString(),
+    })
     .eq("id", 1);
   if (error) throw new Error(error.message);
 }
