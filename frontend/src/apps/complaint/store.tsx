@@ -16,6 +16,8 @@ import {
   type NamedRow,
 } from "./data/complaintMasters";
 import * as W from "./data/complaintWrites";
+import * as CN from "./data/creditNotes";
+import type { CreditNote, CreditNoteDoc, CreditNoteDocSlot } from "./types/creditNote";
 import {
   buildQueueEntries,
   completedEntriesFor,
@@ -183,6 +185,23 @@ interface ComplaintStoreValue {
     note: string | null,
   ) => Promise<void>;
   markNotificationsRead: (ids: string[]) => Promise<void>;
+
+  /* ------------------------- customer credit notes ------------------------ */
+  creditNotes: CreditNote[];
+  creditNoteById: (id: string) => CreditNote | undefined;
+  cnDocsFor: (creditNoteId: string) => CreditNoteDoc[];
+  /**
+   * ⚠ MIRRORS the SQL `fms_complaint_cn_can_act(step, uid)` (minus its
+   *   module_can_edit, which is `canEdit` — AND it in at the button).
+   */
+  canActOnCn: (step: "cn_approval" | "cn_tally") => boolean;
+  /** The Customer Credit Notes page — nav link and route. */
+  canSeeCreditNotes: boolean;
+  submitCreditNote: (input: CN.CreditNoteInput) => Promise<string>;
+  approveCreditNote: (id: string, input: CN.CreditNoteApprovalInput) => Promise<void>;
+  recordCreditNoteTally: (id: string, input: CN.CreditNoteTallyInput) => Promise<void>;
+  uploadCreditNoteDoc: (id: string, slot: CreditNoteDocSlot, stepKey: string, file: File) => Promise<void>;
+  deleteCreditNoteDoc: (docId: string) => Promise<void>;
 }
 
 const Ctx = createContext<ComplaintStoreValue | null>(null);
@@ -199,6 +218,8 @@ const EMPTY_DATA: ComplaintData = {
   docs: [],
   activity: [],
   notifications: [],
+  creditNotes: [],
+  creditNoteDocs: [],
 };
 
 const EMPTY_MASTERS: ComplaintMasters = { parties: [], companies: [], units: [] };
@@ -251,6 +272,8 @@ export function ComplaintStoreProvider({ children }: { children: ReactNode }) {
       activity,
       notifications,
       config,
+      creditNotes,
+      creditNoteDocs,
     } = d;
     const { processCoordinatorIds, stepSla, approvalThreshold } = config;
 
@@ -381,6 +404,25 @@ export function ComplaintStoreProvider({ children }: { children: ReactNode }) {
 
     const queueOwnerIds = (e: QueueEntry): string[] => ownerFor(e.stepKey)?.employeeIds ?? [];
 
+    /* ------------------------- customer credit notes ------------------------ */
+
+    const cnMap = new Map(creditNotes.map((c) => [c.id, c]));
+    const cnDocsById = new Map<string, CreditNoteDoc[]>();
+    for (const doc of creditNoteDocs) {
+      const list = cnDocsById.get(doc.creditNoteId) ?? [];
+      list.push(doc);
+      cnDocsById.set(doc.creditNoteId, list);
+    }
+    const canActOnCn = (step: "cn_approval" | "cn_tally"): boolean =>
+      isAdmin || isProcessCoordinator || isStepOwner(step);
+    const canSeeCreditNotes =
+      isModuleViewer ||
+      isProcessCoordinator ||
+      canRaise ||
+      isStepOwner("cn_approval") ||
+      isStepOwner("cn_tally") ||
+      creditNotes.length > 0;
+
     const partiesFor = (
       companyId: string | null,
       complaintType: ComplaintType,
@@ -485,6 +527,19 @@ export function ComplaintStoreProvider({ children }: { children: ReactNode }) {
       requestNewMaster: w(W.requestNewMaster),
       resolveMasterRequest: w(W.resolveMasterRequest),
       markNotificationsRead: w(W.markNotificationsRead),
+
+      creditNotes,
+      creditNoteById: (id: string) => cnMap.get(id),
+      cnDocsFor: (id: string) => cnDocsById.get(id) ?? [],
+      canActOnCn,
+      canSeeCreditNotes,
+      submitCreditNote: w(CN.submitCreditNote),
+      approveCreditNote: w(CN.approveCreditNote),
+      recordCreditNoteTally: w(CN.recordCreditNoteTally),
+      uploadCreditNoteDoc: w(async (id: string, slot: CreditNoteDocSlot, stepKey: string, file: File) => {
+        await CN.uploadCreditNoteDoc(id, slot, stepKey, file);
+      }),
+      deleteCreditNoteDoc: w(CN.deleteCreditNoteDoc),
     };
     // ⚠ EVERY array read out of `d` and `m` above must be listed here, or a screen
     //   keeps rendering the previous fetch's rows after a write. `d` and `m` are

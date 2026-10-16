@@ -2,6 +2,7 @@ import type { NavItem } from "@/shared/components/layout/types";
 import { appName } from "@/apps/appInfo";
 import {
   B,
+  creditNotesHref,
   masterRequestsHref,
   mastersHref,
   monitoringHref,
@@ -64,6 +65,9 @@ const ic = {
   assignee: (
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="10" cy="8" r="4" /><path d="M3 20c0-3.6 3.1-5.5 7-5.5" /><path d="M14 18h7" /><path d="m18 15 3 3-3 3" /></svg>
   ),
+  creditNote: (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M6 3h12v18l-3-2-3 2-3-2-3 2z" /><path d="M9 8h6M9 12h6M9 16h3" /></svg>
+  ),
   account: (
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="8" r="4" /><path d="M4 20c0-4 3.5-6 8-6s8 2 8 6" /></svg>
   ),
@@ -111,6 +115,8 @@ export function buildComplaintNav(opts: {
   /** False on a view-only grant — every write link is hidden behind it. */
   canEdit: boolean;
   hasRequests: boolean;
+  /** The Customer Credit Notes page — raisers, its two step owners, coordinators, viewers. */
+  canSeeCreditNotes: boolean;
 }): NavItem[] {
   const nav: NavItem[] = [
     { label: "Dashboard", to: B, icon: ic.dashboard, section: "Workspace" },
@@ -148,6 +154,8 @@ export function buildComplaintNav(opts: {
   if (opts.canRmManagement) queue("RM-Complaint View (MGT)", queueHref("rm-management"), ic.investigation);
   if (opts.canAssignee) queue("Assigned to Me", queueHref("assignee"), ic.assignee);
   if (opts.canReview) queue("Management Review", queueHref("management-review"), ic.close);
+  // One page for the whole credit-note chain: approval → Tally → closed.
+  if (opts.canSeeCreditNotes) queue("Customer Credit Notes", creditNotesHref(), ic.creditNote);
 
   let adminUsed = false;
   const admin = (label: string, to: string, icon: JSX.Element) => {

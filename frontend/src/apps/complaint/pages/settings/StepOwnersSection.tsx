@@ -6,7 +6,7 @@ import MultiSelect, { type MultiOption } from "@/shared/components/ui/MultiSelec
 import { FieldLabel } from "@/shared/components/ui/Form";
 import { ScrollableTable } from "@/core/shared/components/ScrollableTable";
 import { useComplaintStore } from "../../store";
-import { STEPS, type StepKey } from "../../lib/steps";
+import { CN_STEPS, STEPS, type StepKey } from "../../lib/steps";
 
 /**
  * Step Owners (admin).
@@ -34,7 +34,7 @@ import { STEPS, type StepKey } from "../../lib/steps";
 /**
  * The steps an admin may staff. See the ⚠ above for the one that is missing.
  */
-const OWNABLE_STEPS = STEPS.filter((st) => st.key !== "assignee");
+const OWNABLE_STEPS = [...STEPS.filter((st) => st.key !== "assignee"), ...CN_STEPS];
 export default function StepOwnersSection() {
   const s = useComplaintStore();
   const [editing, setEditing] = useState<StepKey | null>(null);
@@ -138,6 +138,16 @@ export default function StepOwnersSection() {
                         The final sign-off on every complaint
                       </div>
                     )}
+                    {st.key === "cn_approval" && (
+                      <div className="text-[11px] text-grey-2">
+                        Customer credit notes are approved here
+                      </div>
+                    )}
+                    {st.key === "cn_tally" && (
+                      <div className="text-[11px] text-grey-2">
+                        Posts the approved credit note in Tally and closes it
+                      </div>
+                    )}
                     {st.key === "purchase" && (
                       <div className="text-[11px] text-grey-2">
                         Domestic raw-material complaints only
@@ -168,7 +178,7 @@ export default function StepOwnersSection() {
       <Modal
         open={!!editing}
         onClose={() => setEditing(null)}
-        title={editing ? `Owners — ${STEPS.find((x) => x.key === editing)?.title}` : ""}
+        title={editing ? `Owners — ${OWNABLE_STEPS.find((x) => x.key === editing)?.title}` : ""}
       >
         <div className="space-y-4">
           <FieldLabel label="Departments" hint="narrows the people list only">

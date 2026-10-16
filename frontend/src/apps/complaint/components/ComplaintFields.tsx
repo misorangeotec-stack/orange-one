@@ -37,7 +37,49 @@ function ErrorText({ children }: { children: string }) {
   return <p className="mt-1 text-[12px] text-red-600">{children}</p>;
 }
 
-export default function ComplaintFields({ f }: { f: ComplaintFormApi }) {
+/** The fourth choice on the type card. Not a ComplaintType — it opens a different form. */
+export const CREDIT_NOTE_CHOICE = "credit_note" as const;
+export type RaiseChoice = ComplaintType | typeof CREDIT_NOTE_CHOICE;
+
+/**
+ * "Type of complaint" — Finished Good / Raw Material / Other Supplier Complaint,
+ * plus Customer Credit Note. Shared by the complaint form and the credit-note
+ * form so the four buttons never move when the user switches between them.
+ */
+export function ComplaintTypeCard({
+  value,
+  onChange,
+  withCreditNote = true,
+}: {
+  value: RaiseChoice;
+  onChange: (v: RaiseChoice) => void;
+  withCreditNote?: boolean;
+}) {
+  const options = COMPLAINT_TYPES.map((v) => ({ value: v as string, label: COMPLAINT_TYPE_LABEL[v] }));
+  if (withCreditNote) options.push({ value: CREDIT_NOTE_CHOICE, label: "Customer Credit Note" });
+  return (
+    <Card className="p-5">
+      <h2 className="text-[15px] font-bold text-navy">Type of complaint</h2>
+      <div className="mt-3 max-w-3xl">
+        <ChoiceButtons
+          ariaLabel="Type of complaint"
+          options={options}
+          value={value}
+          onChange={(v) => onChange(v as RaiseChoice)}
+        />
+      </div>
+    </Card>
+  );
+}
+
+export default function ComplaintFields({
+  f,
+  onPickCreditNote,
+}: {
+  f: ComplaintFormApi;
+  /** Shows the fourth "Customer Credit Note" choice; called when it is picked. */
+  onPickCreditNote?: () => void;
+}) {
   const s = useComplaintStore();
   const t = f.form.complaintType;
 
@@ -60,17 +102,11 @@ export default function ComplaintFields({ f }: { f: ComplaintFormApi }) {
   return (
     <div className="space-y-5">
       {/* ---------------------------- what kind ---------------------------- */}
-      <Card className="p-5">
-        <h2 className="text-[15px] font-bold text-navy">Type of complaint</h2>
-        <div className="mt-3 max-w-xl">
-          <ChoiceButtons
-            ariaLabel="Type of complaint"
-            options={COMPLAINT_TYPES.map((v) => ({ value: v, label: COMPLAINT_TYPE_LABEL[v] }))}
-            value={t}
-            onChange={(v) => f.setComplaintType(v as ComplaintType)}
-          />
-        </div>
-      </Card>
+      <ComplaintTypeCard
+        value={t}
+        onChange={(v) => (v === CREDIT_NOTE_CHOICE ? onPickCreditNote?.() : f.setComplaintType(v))}
+        withCreditNote={!!onPickCreditNote}
+      />
 
       {/* ------------------------- the LOT and its facts ------------------- */}
       <Card className="p-5">

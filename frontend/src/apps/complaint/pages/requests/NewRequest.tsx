@@ -1,10 +1,12 @@
-import { useNavigate } from "react-router-dom";
+import { useEffect } from "react";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import Button from "@/shared/components/ui/Button";
 import Card from "@/shared/components/ui/Card";
 import SavedDraftsPanel, { SaveDraftButton } from "@/shared/components/ui/SavedDraftsPanel";
 import { useSavedDrafts } from "@/shared/lib/useSavedDrafts";
 import { appName } from "@/apps/appInfo";
-import ComplaintFields from "../../components/ComplaintFields";
+import ComplaintFields, { ComplaintTypeCard, CREDIT_NOTE_CHOICE } from "../../components/ComplaintFields";
+import CreditNoteForm from "../../components/CreditNoteForm";
 import { useComplaintForm, type ComplaintDraft } from "./useComplaintForm";
 import { requestHref } from "../../lib/routes";
 
@@ -19,8 +21,41 @@ import { requestHref } from "../../lib/routes";
  * one back, evidence files included; submitting it deletes the draft.
  */
 export default function NewRequest() {
+  const [params, setParams] = useSearchParams();
+  // The fourth choice, Customer Credit Note, is a different form on its own
+  // table. Kept in the URL so the bell / a bookmark can open it directly.
+  if (params.get("type") === CREDIT_NOTE_CHOICE) {
+    return (
+      <div className="space-y-5 max-w-6xl">
+        <div>
+          <h1 className="text-[22px] font-bold text-navy">Raise a complaint</h1>
+        </div>
+        <ComplaintTypeCard
+          value={CREDIT_NOTE_CHOICE}
+          onChange={(v) => {
+            if (v === CREDIT_NOTE_CHOICE) return;
+            setParams({ from: v }, { replace: true });
+          }}
+        />
+        <CreditNoteForm />
+      </div>
+    );
+  }
+  return <ComplaintRequestForm onPickCreditNote={() => setParams({ type: CREDIT_NOTE_CHOICE }, { replace: true })} />;
+}
+
+function ComplaintRequestForm({ onPickCreditNote }: { onPickCreditNote: () => void }) {
+  const [params] = useSearchParams();
   const f = useComplaintForm();
   const navigate = useNavigate();
+  // Coming back from the credit-note form: land on the type that was clicked.
+  const from = params.get("from");
+  useEffect(() => {
+    if (from === "finished_good" || from === "raw_material" || from === "other_supplier") {
+      f.setComplaintType(from);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [from]);
   const drafts = useSavedDrafts<ComplaintDraft>("complaint:request");
 
   const saveDraft = () => {
@@ -59,7 +94,7 @@ export default function NewRequest() {
 
       <SavedDraftsPanel api={drafts} onContinue={continueDraft} noun="complaint" />
 
-      <ComplaintFields f={f} />
+      <ComplaintFields f={f} onPickCreditNote={onPickCreditNote} />
 
       {f.submitError && (
         <Card className="p-4 border-red-200 bg-red-50">

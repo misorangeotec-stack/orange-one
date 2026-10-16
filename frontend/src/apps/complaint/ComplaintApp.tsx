@@ -19,6 +19,7 @@ import ManagementReviewQueue from "./pages/queues/ManagementReviewQueue";
 import Masters from "./pages/masters/Masters";
 import MasterRequests from "./pages/MasterRequests";
 import ControlCenter from "./pages/monitoring/ControlCenter";
+import CreditNotes from "./pages/CreditNotes";
 import Setup from "./pages/settings/Setup";
 import AccessDenied from "./pages/system/AccessDenied";
 import NotFound from "./pages/system/NotFound";
@@ -76,6 +77,13 @@ function RequireQueue({ step, children }: { step: StepKey; children: ReactNode }
   return <>{children}</>;
 }
 
+/** Gate to the Customer Credit Notes page — the same rule as its nav link. */
+function RequireCreditNotes({ children }: { children: ReactNode }) {
+  const { canSeeCreditNotes } = useComplaintStore();
+  if (!canSeeCreditNotes) return <AccessDenied />;
+  return <>{children}</>;
+}
+
 /**
  * Root of the Complaint (RM/FG) FMS. Mounted per-user (App.tsx wraps it in
  * RequireModule), so what each person can see is decided by the nav, the store's
@@ -101,6 +109,7 @@ export default function ComplaintApp() {
           <Route path="queues/rm-management" element={<RequireQueue step="rm_management"><RmManagementQueue /></RequireQueue>} />
           <Route path="queues/management-review" element={<RequireQueue step="management_review"><ManagementReviewQueue /></RequireQueue>} />
           <Route path="queues/assignee" element={<RequireQueue step="assignee"><AssigneeQueue /></RequireQueue>} />
+          <Route path="credit-notes" element={<RequireCreditNotes><CreditNotes /></RequireCreditNotes>} />
           <Route path="master-requests" element={<RequireMasterAccess><MasterRequests /></RequireMasterAccess>} />
           <Route path="monitoring" element={<RequireMonitor><ControlCenter /></RequireMonitor>} />
           <Route path="masters" element={<RequireMasterAccess><Masters /></RequireMasterAccess>} />

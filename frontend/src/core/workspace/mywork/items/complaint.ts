@@ -22,7 +22,7 @@ import { appName } from "@/apps/appInfo";
 import type { ComplaintData } from "@/apps/complaint/data/complaintFetch";
 import { buildQueueEntries, complaintDueIso, complaintSnapshotFrom, openStep } from "@/apps/complaint/lib/queues";
 import { stepByKey } from "@/apps/complaint/lib/steps";
-import { queueHref, type QueueSlug } from "@/apps/complaint/lib/routes";
+import { creditNotesHref, queueHref, type QueueSlug } from "@/apps/complaint/lib/routes";
 import type { ComplaintRequest } from "@/apps/complaint/types";
 import { isMineByStepOwners, type StepOwnerRow } from "@/shared/lib/fmsOwners";
 import type { WorkItem } from "../types";
@@ -51,7 +51,30 @@ export function complaintWorkItems(data: ComplaintData, uid: string, isAdmin: bo
       }];
     });
 
-  return [...live, ...held]
+  // CUSTOMER CREDIT NOTES — their own table and two Setup steps. Same owner
+  // rule (isMineByStepOwners), admins see the rest as "team". No SLA is
+  // configured for them, so no due date.
+  const cnItems: WorkItem[] = (data.creditNotes ?? []).flatMap((c) => {
+    const step =
+      c.status === "awaiting_cn_approval" ? "cn_approval" : c.status === "awaiting_cn_tally" ? "cn_tally" : null;
+    if (!step) return [];
+    const isMine = isMineByStepOwners(step, uid, owners);
+    if (!isAdmin && !isMine) return [];
+    return [{
+      id: `${SOURCE}:cn:${c.id}:${step}`,
+      source: SOURCE,
+      sourceLabel: appName(SOURCE),
+      ref: c.cnNo,
+      detail: c.partyName,
+      stage: step === "cn_approval" ? "Credit note approval" : "Credit note — Tally entry",
+      dueIso: null,
+      to: creditNotesHref({ tab: step === "cn_approval" ? "approval" : "tally", open: c.id }),
+      assignment: isMine ? ("direct" as const) : ("team" as const),
+      isApproval: step === "cn_approval",
+    }];
+  });
+
+  const complaintItems: WorkItem[] = [...live, ...held]
     .filter(({ e }) => isAdmin || mine(e.stepKey, byId.get(e.requestId)))
     .map(({ e, held: isHeld }) => {
       const r = byId.get(e.requestId);
@@ -71,4 +94,5 @@ export function complaintWorkItems(data: ComplaintData, uid: string, isAdmin: bo
         ...(isHeld ? { isHeld: true, holdReason: r?.holdReason ?? null } : {}),
       };
     });
+  return complaintItems.concat(cnItems);
 }
