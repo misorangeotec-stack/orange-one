@@ -113,12 +113,12 @@ export function useDeferredActivation(providers: MyWorkProvider[]): Activation {
 }
 
 /**
- * The react-query key root each provider reads, for the warm-cache check.
- * Kept beside the providers rather than on the contract because it is an
- * optimisation detail — a wrong entry costs a slightly later fetch, never
- * incorrect data.
+ * The react-query key root each provider reads — for the warm-cache check here,
+ * and for the refresh WorkPanel runs when it closes. Kept beside the providers
+ * rather than on the contract because it is an optimisation detail — a wrong
+ * entry costs a slightly later fetch, never incorrect data.
  */
-function cacheRootOf(providerKey: string): string | string[] {
+export function cacheRootOf(providerKey: string): string | string[] {
   switch (providerKey) {
     case "tasks":
       return "taskData";
