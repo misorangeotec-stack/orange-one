@@ -315,6 +315,14 @@ export const APPS: Record<string, AppInfo> = {
     basePath: "/ocpi",
     category: "sales",
   },
+  // Machine Resale (MR-1C): the admin side of the pre-owned printer website. Its
+  // data lives in the portal's OWN Supabase project, reached through a short-lived
+  // pass (see apps/machine-resale/data/client.ts); nothing of it is in the hub DB.
+  "machine-resale": {
+    name: "Machine Resale",
+    basePath: "/machine-resale",
+    category: "sales",
+  },
   "fms-control-center": {
     name: "FMS Control Center",
     basePath: "/fms-control-center",
