@@ -3,6 +3,7 @@ import Button from "@/shared/components/ui/Button";
 import Card from "@/shared/components/ui/Card";
 import { FieldLabel, TextArea, TextInput } from "@/shared/components/ui/Form";
 import { StepOwnersWarning } from "./SetupWarnings";
+import ServiceChecklistLink from "./ServiceChecklistLink";
 import { useOcpiStore } from "../store";
 import { useOrgPersonById } from "@/core/platform/orgPeople";
 import { recordServiceCheck } from "../data/ocpiWrites";
@@ -65,6 +66,11 @@ export default function ServiceCheckPanel({ deal }: { deal: OcpiDeal }) {
       ["Site ready", deal.svcSiteReady === null ? "—" : deal.svcSiteReady ? "Yes" : "No"],
     ];
     return (
+      <div className="space-y-4">
+      <ServiceChecklistLink
+        machineId={deal.machineId}
+        note="The checklist for this machine, for the installation visit."
+      />
       <Card className="space-y-4 p-5">
         <div>
           <h2 className="text-[15px] font-bold text-navy">Service Check</h2>
@@ -100,6 +106,7 @@ export default function ServiceCheckPanel({ deal }: { deal: OcpiDeal }) {
         )}
         {deal.svcNote && <p className="text-[13px] text-grey">Note: {deal.svcNote}</p>}
       </Card>
+      </div>
     );
   }
 
@@ -141,6 +148,10 @@ export default function ServiceCheckPanel({ deal }: { deal: OcpiDeal }) {
   return (
     <div className="space-y-4">
       <StepOwnersWarning step="service_check" />
+      <ServiceChecklistLink
+        machineId={deal.machineId}
+        note="Download it and confirm with the customer that the site meets it before installation."
+      />
       {mayAct ? (
         <Card className="space-y-5 p-5">
           <div>

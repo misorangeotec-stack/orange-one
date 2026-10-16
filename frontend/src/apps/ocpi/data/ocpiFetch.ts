@@ -12,7 +12,7 @@ import type {
   OcpiNotification, OcpiStepOwner, QuotationVersion,
   OcpiMasterManager, OcpiMasterRequest, OcpiNamedMaster,
   OcpiDryer, OcpiMachineHead, OcpiSalesPage,
-  OcpiServiceCheckAnswer, OcpiServiceCheckpoint,
+  OcpiServiceCheckAnswer, OcpiServiceCheckpoint, OcpiServiceChecklist,
 } from "../types";
 import type { StepSla } from "../lib/sla";
 // ⚠ A VALUE IMPORT, and safe: `fieldSpec` imports only from `../types`, so this
@@ -63,7 +63,8 @@ type Tbl =
   | "fms_ocpi_machine_head_types"
   | "fms_ocpi_master_managers"
   | "fms_ocpi_master_requests"
-  | "fms_ocpi_service_checkpoints";
+  | "fms_ocpi_service_checkpoints"
+  | "fms_ocpi_service_checklists";
 
 async function fetchAll(table: Tbl, orderBy = "created_at"): Promise<any[]> {
   const out: any[] = [];
@@ -180,6 +181,7 @@ export interface OcpiData {
   masterManagers: OcpiMasterManager[];
   masterRequests: OcpiMasterRequest[];
   serviceCheckpoints: OcpiServiceCheckpoint[];
+  serviceChecklists: OcpiServiceChecklist[];
 }
 
 const num = (v: unknown): number | null => (v === null || v === undefined ? null : Number(v));
@@ -604,6 +606,8 @@ export async function fetchOcpiData(): Promise<OcpiData> {
   // ⚠ SOFT: a database without the Service Check migration has no such table,
   //   and that must not take the whole module down with it.
   const checkpointRows = await fetchAll("fms_ocpi_service_checkpoints", "sort_order").catch(() => []);
+  // ⚠ SOFT for the same reason: missing until migration 20270131120000 is applied.
+  const checklistRows = await fetchAll("fms_ocpi_service_checklists").catch(() => []);
   // ⚠ A SERVICE-ONLY USER CANNOT READ fms_ocpi_deals (restrictive policy), so
   //   their Service Check rows come from fms_ocpi_service_deals — customer,
   //   machine and service fields only. Merged in only where the full row is not
@@ -682,6 +686,12 @@ export async function fetchOcpiData(): Promise<OcpiData> {
     serviceCheckpoints: checkpointRows.map(
       (r: any): OcpiServiceCheckpoint => ({
         id: r.id, name: r.name, active: !!r.active, sortOrder: r.sort_order ?? 0,
+      }),
+    ),
+    serviceChecklists: checklistRows.map(
+      (r: any): OcpiServiceChecklist => ({
+        id: r.id, machineId: r.machine_id, filePath: r.file_path, fileName: r.file_name,
+        uploadedBy: r.uploaded_by ?? null, updatedAt: r.updated_at,
       }),
     ),
   };

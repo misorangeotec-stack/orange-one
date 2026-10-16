@@ -826,6 +826,19 @@ export interface OcpiServiceCheckpoint {
   sortOrder: number;
 }
 
+/**
+ * Masters → Service checklists (PDF): the one checklist PDF a machine carries.
+ * The file is in storage bucket fms-ocpi-service-checklists at `filePath`.
+ */
+export interface OcpiServiceChecklist {
+  id: string;
+  machineId: string;
+  filePath: string;
+  fileName: string;
+  uploadedBy: string | null;
+  updatedAt: string;
+}
+
 /** A plain name/active/order vocabulary row. Satisfies MasterCrud's contract. */
 export interface OcpiNamedMaster {
   id: string;
