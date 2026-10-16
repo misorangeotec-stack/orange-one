@@ -21,7 +21,7 @@ alter table public.pv_settings
   add column if not exists reviewer_ids uuid[] not null default '{}';
 
 comment on table public.pv_settings is
-  'Physical Verification: the one settings row — who sets dates (step 1), counts (step 2) and reviews (step 3). See 20270126120000, 20270127120000.';
+  'Physical Verification: the one settings row — who sets dates (step 1), counts (step 2) and reviews (step 3). See 20270126120000, 20270128120000.';
 
 -- Step 3: may this user review counts?
 create or replace function public.pv_can_review(p_uid uuid)

@@ -65,7 +65,7 @@ export interface PvData {
   schedulers: string[];
   /** Step 2 — who may be given items to count. */
   verifiers: string[];
-  /** Step 3 — who reviews submitted counts (20270127120000). Empty = step 1 reviews. */
+  /** Step 3 — who reviews submitted counts (20270128120000). Empty = step 1 reviews. */
   reviewers: string[];
 }
 
