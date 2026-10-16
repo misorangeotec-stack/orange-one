@@ -114,9 +114,18 @@ function ProviderProbe({
 }) {
   const result = provider.useMyWork(active);
 
-  // Guarded by a cheap signature: without it, React StrictMode's double-invoke
-  // (and every unrelated re-render) dispatches a fresh object identity and loops.
-  const signature = `${result.isLoading}|${!!result.error}|${result.items.length}|${result.items[0]?.id ?? ""}`;
+  // Guarded by a signature: without it, React StrictMode's double-invoke (and every
+  // unrelated re-render) dispatches a fresh object identity and loops.
+  //
+  // ⚠ IT MUST COVER EVERY ROW, not just the count and the first id. It used to be
+  //   `length|items[0].id`, so an approval that moved a request to a step the same
+  //   person also owns (same count, same first row) never reached the screen: the
+  //   store refetched, the provider recomputed, and the home list kept showing the
+  //   approved step as pending until a full reload. Same for a hold or a new due
+  //   date. Joining a few hundred short strings per render is cheap.
+  const signature = `${result.isLoading}|${!!result.error}|${result.items
+    .map((i) => `${i.id}~${i.dueIso ?? ""}~${i.isHeld ? 1 : 0}~${i.holdLabel ?? ""}~${i.category ?? ""}`)
+    .join(",")}`;
 
   useEffect(() => {
     onResult(provider.key, result);

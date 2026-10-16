@@ -28,7 +28,8 @@
  * reflect every filter EXCEPT the bucket selection itself — otherwise clicking
  * "Overdue" would zero the other three tiles and you could never get back.
  */
-import { useMemo, useRef, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { useIsFetching, useQueryClient } from "@tanstack/react-query";
 import { Link, useSearchParams } from "react-router-dom";
 import Card from "@/shared/components/ui/Card";
 import MyProbationCard from "@/core/probation/MyProbationCard";
@@ -51,7 +52,13 @@ import { FitResizer, ResetWidths, thFitStyle } from "@/shared/components/ui/Colu
 import { useColumnWidths, type FitTable } from "@/shared/lib/useColumnWidths";
 import { useMyWork, type AggregateState } from "./mywork/MyWorkAggregator";
 import type { WorkItem } from "./mywork/types";
-import { useOpenWorkItem } from "./WorkPanel";
+import {
+  clearWorkPanelDone,
+  isWatchedWorkQuery,
+  requestWorkPanelClose,
+  useOpenWorkItem,
+  useWorkPanelState,
+} from "./WorkPanel";
 import BucketBoard from "./BucketBoard";
 
 /** Sort weight per bucket: most urgent first, undated last, parked last of all. */
@@ -187,6 +194,34 @@ export function MyWorkView({ state }: { state: AggregateState }) {
   const [q, setQ] = useState("");
   // Rows open in the side panel (WorkPanel) — the FMS's own page, beside this one.
   const setOpenItem = useOpenWorkItem();
+
+  // The row open in the panel has LEFT this list: its step is done (approved,
+  // rejected, sent back, reassigned away). Close the panel, so the reader lands on
+  // a list that already shows it gone instead of on a stale "pending" row. Only
+  // once the row has been seen in the list since it opened, and never while its
+  // module is still loading. If the next step is theirs too, it is a new row.
+  const panel = useWorkPanelState();
+  const seenOpenId = useRef<string | null>(null);
+  const openSource = panel.item ? state.sources.find((s) => s.key === panel.item?.source) : undefined;
+  const openSourceLoading = !!openSource?.isLoading;
+  useEffect(() => {
+    const it = panel.item;
+    if (!it) {
+      seenOpenId.current = null;
+      return;
+    }
+    if (state.items.some((i) => i.id === it.id)) seenOpenId.current = it.id;
+    else if (seenOpenId.current === it.id && !openSourceLoading) requestWorkPanelClose(it.id);
+  }, [panel.item, state.items, openSourceLoading]);
+
+  // Banner Refresh: re-read only the modules this screen shows (never the whole
+  // portal), and spin while any of them is updating — a save in the panel included.
+  const queryClient = useQueryClient();
+  const sourceKeys = useMemo(() => state.sources.map((s) => s.key), [state.sources]);
+  const workPredicate = (q: { queryKey: readonly unknown[]; getObserversCount: () => number }) =>
+    isWatchedWorkQuery(q.queryKey, q.getObserversCount(), sourceKeys);
+  const refreshing = useIsFetching({ predicate: workPredicate }) > 0;
+  const refreshAll = () => void queryClient.invalidateQueries({ predicate: workPredicate }).catch(() => {});
 
   // Admins receive the whole book (they own no workflow steps, so a strict
   // personal filter would otherwise leave them empty). This tab lets them widen
@@ -442,7 +477,11 @@ export function MyWorkView({ state }: { state: AggregateState }) {
         scope={scope}
         onScopeChange={setScopePref}
         rank={showRanking ? <HomeRankChip onOpen={() => setView("ranking")} /> : undefined}
+        refreshing={refreshing}
+        onRefresh={refreshAll}
       />
+
+      <DoneNotice />
 
       <Tabs
         tabs={[
@@ -675,6 +714,8 @@ function Hero({
   scope,
   onScopeChange,
   rank,
+  refreshing,
+  onRefresh,
 }: {
   greeting: string;
   name: string;
@@ -688,6 +729,8 @@ function Hero({
   onScopeChange: (s: "mine" | "all") => void;
   /** The viewer's monthly rank (CC-1), shown in the banner's right column. */
   rank?: ReactNode;
+  refreshing: boolean;
+  onRefresh: () => void;
 }) {
   return (
     <div className="relative overflow-hidden rounded-card bg-navy text-white px-5 py-5 sm:px-6 sm:py-6">
@@ -724,7 +767,33 @@ function Hero({
         </div>
 
         <div className="flex flex-col items-end gap-2">
-          {isAdmin && <ScopeTabs scope={scope} onChange={onScopeChange} />}
+          <div className="flex items-center gap-2">
+            {isAdmin && <ScopeTabs scope={scope} onChange={onScopeChange} />}
+            <button
+              type="button"
+              onClick={onRefresh}
+              disabled={refreshing}
+              title={refreshing ? "Updating…" : "Refresh my work"}
+              aria-label="Refresh my work"
+              className="h-[30px] inline-flex items-center gap-1.5 rounded-pill bg-white/10 px-3 text-[12px] font-medium text-white/80 hover:bg-white/20 hover:text-white disabled:opacity-70 transition-colors"
+            >
+              <svg
+                width="13"
+                height="13"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2.2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                className={cn(refreshing && "animate-spin")}
+              >
+                <path d="M21 12a9 9 0 1 1-2.64-6.36" />
+                <polyline points="21 3 21 9 15 9" />
+              </svg>
+              {refreshing ? "Updating" : "Refresh"}
+            </button>
+          </div>
           {rank}
           {!settling && pending > 0 && (
             <div className="flex items-center gap-2">
@@ -734,6 +803,34 @@ function Hero({
           )}
         </div>
       </div>
+    </div>
+  );
+}
+
+/**
+ * "PR-1043 done" — shown for a few seconds after the panel closed itself because
+ * the item it held left the list (see the effect beside `useOpenWorkItem`).
+ */
+function DoneNotice() {
+  const { done } = useWorkPanelState();
+  useEffect(() => {
+    if (!done) return;
+    const t = window.setTimeout(clearWorkPanelDone, 4000);
+    return () => window.clearTimeout(t);
+  }, [done]);
+  if (!done) return null;
+  return (
+    <div
+      role="status"
+      className="fixed bottom-5 left-1/2 -translate-x-1/2 z-[60] max-w-[calc(100vw-32px)] inline-flex items-center gap-2 rounded-pill bg-navy px-4 py-2.5 text-[13px] text-white shadow-2xl"
+    >
+      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round" className="text-[#7ee2a8] shrink-0">
+        <polyline points="20 6 9 17 4 12" />
+      </svg>
+      <span className="truncate">
+        <span className="font-semibold">{done.ref}</span>
+        <span className="text-white/70"> · {done.label} — done, your list is updated</span>
+      </span>
     </div>
   );
 }
