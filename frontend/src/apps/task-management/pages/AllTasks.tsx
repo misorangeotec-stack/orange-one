@@ -5,6 +5,7 @@ import { rememberReturnTo } from "@/shared/lib/returnTo";
 import { useTaskStore } from "../mock/store";
 import { parseTaskFilters, taskLinkSignature } from "../lib/taskLink";
 import TaskBrowser from "../components/TaskBrowser";
+import { KraReviewQueue } from "../components/KraTaskCard";
 import ScopeToggle, { scopeTasks, type Scope } from "../components/ScopeToggle";
 
 /** Admin view: every task across the organization, filterable by department/person. */
@@ -41,6 +42,9 @@ export default function AllTasks() {
           New Task
         </Link>
       </div>
+
+      {/* A Director's KRA reviews (the HOD / Sub-HOD tasks they gave). Empty = not drawn. */}
+      <KraReviewQueue />
 
       {/* scope toggle: this week vs all time — same placement as the dashboard */}
       <div className="flex items-center justify-between gap-3">

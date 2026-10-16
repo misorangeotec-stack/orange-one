@@ -32,7 +32,7 @@ const LOCAL_KEY = "kra-tasks:local-test:v1";
 import { kraFieldsFromRow as kraFieldsFromColumns, type KraTaskFields } from "./kraColumns";
 export type { KraTaskFields };
 
-const NONE: KraTaskFields = { kraId: null, kraWeight: null, kraCompletionWeight: null, reviewRating: null, reviewedBy: null, reviewedAt: null };
+const NONE: KraTaskFields = { kraId: null, kraWeight: null, kraCompletionWeight: null, reviewRating: null, reviewedBy: null, reviewedAt: null, kraOpen: false, kraReviewerId: null };
 
 const readLocal = (): Record<string, KraTaskFields> => {
   try {
@@ -69,8 +69,12 @@ export function clearReviewLocally(taskId: string) {
   if (m[taskId]) writeLocal({ ...m, [taskId]: { ...m[taskId], reviewRating: null, reviewedBy: null, reviewedAt: null } });
 }
 
-/** Save the HOD's 1-10 rating. An optional note goes on the timeline as a remark. */
-export async function saveKraReview(taskId: string, rating: number, actorId: string, note?: string): Promise<void> {
+/**
+ * Save the reviewer's 1-10 rating. An optional note goes on the timeline as a remark.
+ * `kraId`: a Director's KRA task on the employee path, where the HOD picks the KRA in
+ * the same save (guard_task_kra snapshots its weights).
+ */
+export async function saveKraReview(taskId: string, rating: number, actorId: string, note?: string, kraId?: string): Promise<void> {
   if (!Number.isInteger(rating) || rating < 1 || rating > 10) throw new Error("Pick a rating from 1 to 10.");
   if (KRA_TASKS_LOCAL) {
     const m = readLocal();
@@ -80,7 +84,7 @@ export async function saveKraReview(taskId: string, rating: number, actorId: str
     // The generated Database type predates the column.
     const { error } = await supabase
       .from("tasks")
-      .update({ review_rating: rating } as never)
+      .update({ review_rating: rating, ...(kraId ? { kra_id: kraId } : {}) } as never)
       .eq("id", taskId);
     if (error) throw new Error(error.message);
   }
@@ -91,10 +95,30 @@ export async function saveKraReview(taskId: string, rating: number, actorId: str
   if (actErr) throw new Error(actErr.message);
 }
 
-export const isKraTask = (t: Task) => !!t.kraId;
+/** A KRA task: given against a KRA, or given as "KRA" by a Director (KRA picked later). */
+export const isKraTask = (t: Task) => !!t.kraId || t.kraOpen;
 
-/** Completed, a KRA task, and not yet rated — the HOD's queue. */
-export const awaitingKraReview = (t: Task) => !!t.kraId && t.status === "completed" && t.reviewRating == null;
+/** Completed, a KRA task, and not yet rated — the reviewer's queue. */
+export const awaitingKraReview = (t: Task) => isKraTask(t) && t.status === "completed" && t.reviewRating == null;
+
+/**
+ * Who rates this KRA task: the Director it names (a Director's task given to a HOD /
+ * Sub-HOD), otherwise the assignee's DIRECT HOD. Mirrors guard_task_kra.
+ */
+export function isKraReviewerOf(t: Task, viewerId: string, hodIdsOf: (profileId: string) => string[] | undefined): boolean {
+  if (t.kraReviewerId) return t.kraReviewerId === viewerId;
+  return !!t.assignedTo && !!hodIdsOf(t.assignedTo)?.includes(viewerId);
+}
+
+/**
+ * A Director's KRA task whose KRA is not picked yet. The assignee picks it in the
+ * Mark complete popup (both paths); on the employee path their direct HOD may change it
+ * at review (hodMayChangeKra).
+ */
+export const kraToPick = (t: Task): boolean => t.kraOpen && !t.kraId;
+
+/** Employee path of a Director's KRA task: the reviewing HOD may change the picked KRA. */
+export const hodMayChangeKra = (t: Task): boolean => t.kraOpen && !t.kraReviewerId;
 
 export interface KraScore {
   /** What the task is worth: the KRA's Wt% when it was given. */
@@ -145,8 +169,9 @@ export function taskCategoryFor(
   viewerId: string,
   hodIdsOf: (profileId: string) => string[] | undefined,
 ): TaskCategory | null {
-  if (!t.kraId) return "others";
-  const visible = t.assignedTo === viewerId || (!!t.assignedTo && !!hodIdsOf(t.assignedTo)?.includes(viewerId));
+  if (!isKraTask(t)) return "others";
+  const visible =
+    t.assignedTo === viewerId || t.kraReviewerId === viewerId || (!!t.assignedTo && !!hodIdsOf(t.assignedTo)?.includes(viewerId));
   return visible ? "kra" : null;
 }
 

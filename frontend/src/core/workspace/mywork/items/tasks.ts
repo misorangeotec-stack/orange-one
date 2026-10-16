@@ -54,6 +54,6 @@ export function taskWorkItems(data: TaskData, uid: string): WorkItem[] {
       assignment: "direct" as const,
       // Task Category: given against one of the assignee's KRAs, or an ordinary task.
       // The assignee may always see their own KRA (useKraTaskAccess).
-      category: t.kraId ? "KRA" : "Other",
+      category: t.kraId || t.kraOpen ? "KRA" : "Other",
     }));
 }

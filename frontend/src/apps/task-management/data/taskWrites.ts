@@ -51,6 +51,8 @@ export async function insertTask(input: {
   isPeerAssignment?: boolean;
   /** Task Category: one of the assignee's KRAs, or null/undefined for "Others". */
   kraId?: string | null;
+  /** Director's Task Category "KRA": the KRA itself is picked later (20270130120000). */
+  kraOpen?: boolean;
   /** Only used in local test mode, where no trigger snapshots them. */
   kraWeight?: number | null;
   kraCompletionWeight?: number | null;
@@ -70,6 +72,8 @@ export async function insertTask(input: {
       is_personal: input.isPersonal ?? false,
       is_peer_assignment: input.isPeerAssignment ?? false,
       ...kraInsertColumns(input.kraId),
+      // The generated Database type predates the KRA columns (as kraInsertColumns).
+      ...(input.kraOpen ? ({ kra_open: true } as Record<string, unknown>) : {}),
     })
     .select("id")
     .single();
@@ -298,10 +302,12 @@ export async function startTask(taskId: string, actorId: string): Promise<void> 
  * activity, so we do NOT insert one (avoids double-logging). Any optional note is
  * recorded as a 'remark' so it shows on the timeline.
  */
-export async function completeTask(taskId: string, actorId: string, note?: string): Promise<void> {
+export async function completeTask(taskId: string, actorId: string, note?: string, kraId?: string): Promise<void> {
+  // A Director's KRA task given to a HOD / Sub-HOD: the KRA they picked rides on the
+  // same update — guard_task_kra refuses the completion without it.
   const { error } = await supabase
     .from("tasks")
-    .update({ status: "completed", completed_at: new Date().toISOString() })
+    .update({ status: "completed", completed_at: new Date().toISOString(), ...(kraId ? ({ kra_id: kraId } as Record<string, unknown>) : {}) })
     .eq("id", taskId);
   if (error) throw new Error(error.message);
   if (note) {

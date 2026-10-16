@@ -15,6 +15,14 @@ export interface KraTaskFields {
   reviewRating: number | null;
   reviewedBy: string | null;
   reviewedAt: string | null;
+  /**
+   * Given as "KRA" by a Director without choosing the KRA (20270130120000); kraId stays
+   * null until it is picked — by the assignee before completing (HOD / Sub-HOD path) or
+   * by their direct HOD at review (employee path).
+   */
+  kraOpen: boolean;
+  /** Who gives the 1-10 review. Null = the assignee's direct HOD; else the Director. */
+  kraReviewerId: string | null;
 }
 
 /* eslint-disable-next-line @typescript-eslint/no-explicit-any */
@@ -26,5 +34,7 @@ export function kraFieldsFromRow(r: any): KraTaskFields {
     reviewRating: r.review_rating ?? null,
     reviewedBy: r.reviewed_by ?? null,
     reviewedAt: r.reviewed_at ?? null,
+    kraOpen: r.kra_open ?? false,
+    kraReviewerId: r.kra_reviewer_id ?? null,
   };
 }
