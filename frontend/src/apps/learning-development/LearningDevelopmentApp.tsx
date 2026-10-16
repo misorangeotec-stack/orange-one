@@ -21,6 +21,7 @@ import AccessDenied from "./pages/system/AccessDenied";
 import NotFound from "./pages/system/NotFound";
 import { QUEUE_PATH } from "./nav";
 import { REQUEST_STEPS, type StepKey } from "./lib/steps";
+import { LD_CALENDAR_ONLY } from "./lib/mode";
 
 function RequireAdmin({ children }: { children: ReactNode }) {
   const { isAdmin } = useSession();
@@ -75,6 +76,24 @@ function RequireMasters({ children }: { children: ReactNode }) {
  *   do not "fix" the missing Module Access rows: there are none by design.
  */
 export default function LearningDevelopmentApp() {
+  // Calendar-only mode (lib/mode.ts): only the calendar screens are routed; any
+  // old link (a bell notification, a bookmark) lands on the dashboard.
+  if (LD_CALENDAR_ONLY) {
+    return (
+      <LdStoreProvider>
+        <Routes>
+          <Route element={<LearningDevelopmentLayout />}>
+            <Route index element={<Dashboard />} />
+            <Route path="calendar" element={<TrainingCalendar />} />
+            <Route path="my-learning" element={<MyLearning />} />
+            <Route path="sessions/:id" element={<SessionDetail />} />
+            <Route path="settings" element={<RequireAdmin><Setup /></RequireAdmin>} />
+            <Route path="*" element={<Navigate to="/learning-development" replace />} />
+          </Route>
+        </Routes>
+      </LdStoreProvider>
+    );
+  }
   return (
     <LdStoreProvider>
       <Routes>

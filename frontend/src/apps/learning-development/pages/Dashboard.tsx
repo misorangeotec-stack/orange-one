@@ -10,6 +10,7 @@ import StatusPill from "../components/StatusPill";
 import { REQUEST_STEPS, stepByKey } from "../lib/steps";
 import { isOpen } from "../lib/queues";
 import TrainingDashboard from "../components/calendar/TrainingDashboard";
+import { LD_CALENDAR_ONLY } from "../lib/mode";
 
 function Stat({ label, value, hint }: { label: string; value: string | number; hint?: string }) {
   return (
@@ -64,6 +65,20 @@ export default function Dashboard() {
     (e) => s.canSeeQueue(e.stepKey) && e.dueIso && e.dueIso < todayIso,
   ).length;
   const mineCount = s.queueEntries.filter((e) => s.canSeeQueue(e.stepKey)).length;
+
+  if (LD_CALENDAR_ONLY) {
+    return (
+      <div className="space-y-6">
+        <div>
+          <h1 className="text-[22px] font-bold text-navy">Learning &amp; Development</h1>
+          <p className="text-[13.5px] text-grey-2 mt-1">
+            The training calendar, who attended, and everyone's training hours against the yearly target.
+          </p>
+        </div>
+        <TrainingDashboard />
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-6">

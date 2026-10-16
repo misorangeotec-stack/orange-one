@@ -6,6 +6,7 @@ import { useLdStore } from "../store";
 import { B } from "../nav";
 import { dmy } from "../lib/format";
 import { fyOf, hm, isCancelled, sessionHours } from "../lib/training";
+import { LD_CALENDAR_ONLY } from "../lib/mode";
 
 /**
  * My Learning — the screen almost everybody in the company opens, and for most
@@ -71,30 +72,32 @@ export default function MyLearning() {
       <div>
         <h1 className="text-[22px] font-bold text-navy">My learning</h1>
         <p className="text-[13.5px] text-grey-2 mt-1">
-          What you are invited to, what you owe, and what you have done this year.
+          {LD_CALENDAR_ONLY
+            ? "The trainings you are on, and the hours you have done this financial year."
+            : "What you are invited to, what you owe, and what you have done this year."}
         </p>
       </div>
 
-      <div className="grid gap-4 sm:grid-cols-3">
+      <div className={`grid gap-4 ${LD_CALENDAR_ONLY ? "sm:grid-cols-2" : "sm:grid-cols-3"}`}>
         <Card className="p-4">
           <div className="text-[12px] uppercase tracking-wide text-grey-2">Hours this year</div>
           <div className="mt-1 text-[24px] font-bold text-navy">{hours.toFixed(1)}</div>
           <div className="text-[12px] text-grey-2">Target {s.hoursTarget} · FY {fy.label}</div>
         </Card>
         <Card className="p-4">
-          <div className="text-[12px] uppercase tracking-wide text-grey-2">Sessions attended</div>
+          <div className="text-[12px] uppercase tracking-wide text-grey-2">{LD_CALENDAR_ONLY ? "Trainings attended" : "Sessions attended"}</div>
           <div className="mt-1 text-[24px] font-bold text-navy">{attended.length}</div>
         </Card>
-        <Card className="p-4">
+        {!LD_CALENDAR_ONLY && <Card className="p-4">
           <div className="text-[12px] uppercase tracking-wide text-grey-2">Things you owe</div>
           <div className="mt-1 text-[24px] font-bold text-navy">{owed.length + feedbackOwed.length}</div>
           <div className="text-[12px] text-grey-2">
             {owed.length} assignment{owed.length === 1 ? "" : "s"} · {feedbackOwed.length} feedback
           </div>
-        </Card>
+        </Card>}
       </div>
 
-      {toAnswer.length > 0 && (
+      {!LD_CALENDAR_ONLY && toAnswer.length > 0 && (
         <Card className="border-orange/40 bg-[#FFF8F4] p-5">
           <h2 className="text-[15px] font-semibold text-navy">Please answer</h2>
           <div className="mt-2 space-y-1.5">
@@ -116,7 +119,7 @@ export default function MyLearning() {
         </Card>
       )}
 
-      <div className="grid gap-5 lg:grid-cols-2">
+      <div className={`grid gap-5 ${LD_CALENDAR_ONLY ? "" : "lg:grid-cols-2"}`}>
         <Card className="p-5">
           <h2 className="text-[15px] font-semibold text-navy">Coming up for you</h2>
           {upcoming.length === 0 ? (
@@ -144,7 +147,7 @@ export default function MyLearning() {
           )}
         </Card>
 
-        <Card className="p-5">
+        {!LD_CALENDAR_ONLY && <Card className="p-5">
           <h2 className="text-[15px] font-semibold text-navy">Still to do</h2>
           {owed.length === 0 && feedbackOwed.length === 0 ? (
             <div className="mt-2"><Empty>Nothing outstanding.</Empty></div>
@@ -173,7 +176,7 @@ export default function MyLearning() {
               ))}
             </ul>
           )}
-        </Card>
+        </Card>}
       </div>
 
       <Card className="p-5">

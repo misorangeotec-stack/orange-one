@@ -6,6 +6,7 @@ import StepDueDatesSection from "./StepDueDatesSection";
 import CoordinatorsSection from "./CoordinatorsSection";
 import MasterOwnersSection from "./MasterOwnersSection";
 import TrainingCalendarSection from "./TrainingCalendarSection";
+import { LD_CALENDAR_ONLY } from "../../lib/mode";
 
 /**
  * Setup — the no-code configuration backbone (admin only), laid out the same way
@@ -24,9 +25,9 @@ import TrainingCalendarSection from "./TrainingCalendarSection";
  * this module already has enough moving parts.
  */
 export default function Setup() {
-  const [tab, setTab] = useState("owners");
+  const [tab, setTab] = useState(LD_CALENDAR_ONLY ? "calendar" : "owners");
 
-  const tabs = [
+  const tabs = LD_CALENDAR_ONLY ? [{ key: "calendar", label: "Training Calendar" }] : [
     { key: "owners", label: "Step Owners" },
     { key: "approval", label: "Approval Rules" },
     { key: "due", label: "Due Dates" },
@@ -40,8 +41,8 @@ export default function Setup() {
       <div>
         <h1 className="text-[22px] font-bold text-navy">Setup</h1>
         <p className="text-[13.5px] text-grey-2 mt-1">
-          Who owns each step, when a second approval is needed, the per-step deadlines, who oversees the
-          process, and who owns each master.
+          {LD_CALENDAR_ONLY ? "Who may manage the training calendar, and the yearly training hours target." : <>Who owns each step, when a second approval is needed, the per-step deadlines, who oversees the
+          process, and who owns each master.</>}
         </p>
       </div>
 
