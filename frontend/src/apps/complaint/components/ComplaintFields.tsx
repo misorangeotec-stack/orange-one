@@ -132,11 +132,6 @@ export default function ComplaintFields({
                 strong
                 label="Type"
                 required
-                hint={
-                  f.form.rmOrigin
-                    ? `goes to ${RM_ORIGIN_DESTINATION[f.form.rmOrigin as RmOrigin]}`
-                    : "who handles this complaint"
-                }
               >
                 <Combobox
                   value={f.form.rmOrigin}
@@ -174,7 +169,7 @@ export default function ComplaintFields({
           <div>
             <FieldLabel
               label="LOT Expiry Date"
-              hint="typed — no system holds this"
+             
             >
               <TextInput
                 type="date"
@@ -185,7 +180,7 @@ export default function ComplaintFields({
           </div>
 
           <div>
-            <FieldLabel strong label="Company" hint="whose book this sits in">
+            <FieldLabel strong label="Company">
               <Combobox
                 value={f.form.companyId}
                 onChange={(v) => f.set("companyId", v)}
@@ -271,7 +266,6 @@ export default function ComplaintFields({
             <FieldLabel
               label={partyLabelOf(t)}
               required
-              hint={f.form.companyId ? undefined : "pick a company to narrow this"}
             >
               <Combobox
                 value={f.form.partyId}
@@ -384,7 +378,7 @@ export default function ComplaintFields({
           <div>
             {/* Seeded from mst_items.category — the authoritative 96-value list — and
                 then left editable, because the item master is not always right. */}
-            <FieldLabel strong label="Category of ink" hint="from the item master">
+            <FieldLabel strong label="Category of ink">
               <TextInput
                 value={f.form.category}
                 onChange={(e) => f.set("category", e.target.value)}
@@ -394,7 +388,7 @@ export default function ComplaintFields({
           </div>
 
           <div>
-            <FieldLabel strong label="Ink type" hint="optional">
+            <FieldLabel strong label="Ink type">
               <TextInput
                 value={f.form.inkType}
                 onChange={(e) => f.set("inkType", e.target.value)}
@@ -403,7 +397,7 @@ export default function ComplaintFields({
           </div>
 
           <div>
-            <FieldLabel strong label="Quantity affected" hint="optional">
+            <FieldLabel strong label="Quantity affected">
               <TextInput
                 inputMode="decimal"
                 value={f.form.qtyAffected}
@@ -414,7 +408,7 @@ export default function ComplaintFields({
           </div>
 
           <div>
-            <FieldLabel strong label="Unit" hint="optional">
+            <FieldLabel strong label="Unit">
               <Combobox
                 value={f.form.unitName}
                 onChange={(v) => f.set("unitName", v)}
@@ -439,11 +433,6 @@ export default function ComplaintFields({
               strong
               label="Issue identified on"
               required
-              hint={
-                f.form.invoiceDate
-                  ? `between ${dmy(f.form.invoiceDate)} and now`
-                  : "when it was noticed, not when raised"
-              }
             >
               {/*
                 BOUNDED BY THE INVOICE AND BY NOW. The goods cannot have failed
@@ -472,7 +461,7 @@ export default function ComplaintFields({
           </div>
 
           <div>
-            <FieldLabel strong label="Nature of complaint" hint="optional">
+            <FieldLabel strong label="Nature of complaint">
               <Combobox
                 value={f.form.natureId}
                 onChange={(v) => f.set("natureId", v)}
@@ -504,7 +493,7 @@ export default function ComplaintFields({
               there is nothing to upload against before submit. They then follow
               the complaint through every bucket to the last (ComplaintRecap).
             */}
-            <FieldLabel strong label="Attachments" hint="photos, reports — optional">
+            <FieldLabel strong label="Attachments">
               <input
                 type="file"
                 multiple
@@ -519,7 +508,7 @@ export default function ComplaintFields({
               </p>
             )}
 
-            <FieldLabel strong label="Any other remarks" hint="optional">
+            <FieldLabel strong label="Any other remarks">
               <TextArea
                 rows={3}
                 value={f.form.otherRemarks}
