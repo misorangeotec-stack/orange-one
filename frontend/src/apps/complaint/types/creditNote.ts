@@ -37,6 +37,10 @@ export interface CreditNote {
   partyId: string | null;
   /** FROZEN AT SUBMIT, like a complaint's partyName. */
   partyName: string;
+  /** From the Tally salesperson list, or typed. */
+  salespersonName: string;
+  /** Who agreed to it — one of APPROVED_BY_NAMES, or typed. */
+  approvedByName: string;
   reason: string;
   amount: number;
   details: string;
@@ -72,6 +76,9 @@ export interface CreditNoteDoc {
   uploadedBy: string | null;
   createdAt: string;
 }
+
+/** The names "Approved by" offers. Not a restriction — any typed name is accepted. */
+export const APPROVED_BY_NAMES = ["Karan sir", "Ayush sir", "Manmohan sir", "Nakul sir"];
 
 /** ₹ with Indian grouping — 1,25,000.00. */
 export const formatCnAmount = (n: number): string =>

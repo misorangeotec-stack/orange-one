@@ -84,6 +84,8 @@ export default function CreditNoteModal({ cn, onClose }: { cn: CreditNote; onClo
           <dl className="grid gap-x-6 gap-y-2 sm:grid-cols-2 text-[13px]">
             <Row label="Customer name" value={cn.partyName} />
             <Row label="Company" value={companyName} />
+            <Row label="Salesperson" value={cn.salespersonName} />
+            <Row label="Approved by" value={cn.approvedByName} />
             <Row label="Reason for credit note" value={cn.reason} />
             <Row label="Amount" value={formatCnAmount(cn.amount)} strong />
             <Row label="Raised by" value={cn.requesterName || s.personName(cn.raisedBy)} />

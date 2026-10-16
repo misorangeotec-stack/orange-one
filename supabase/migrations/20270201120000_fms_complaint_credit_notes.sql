@@ -4,8 +4,11 @@
 -- WHAT THE USER ASKED FOR
 --   A fourth choice after Finished Good / Raw Material / Other Supplier
 --   Complaint: "Customer Credit Note". The raiser fills
---     customer name · reason for credit note · amount · full details
---   and submits. It goes to MANAGEMENT APPROVAL. Once approved it goes to
+--     customer name · salesperson · approved by · reason for credit note ·
+--     amount · full details
+--   and submits. Salesperson is picked from the Tally salesperson list and
+--   "Approved by" from Karan / Ayush / Manmohan / Nakul sir — both also take a
+--   typed name, so they are free text here, never a FK. It goes to MANAGEMENT APPROVAL. Once approved it goes to
 --   TALLY, where the credit/debit note is posted; the Tally bucket records
 --     Tally no. · attachment · remark
 --   and that closes the chain.
@@ -57,6 +60,10 @@ create table if not exists public.fms_complaint_credit_notes (
   -- a customer missing from the central master must not block a credit note.
   party_id        uuid references public.mst_parties on delete set null,
   party_name      text not null check (btrim(party_name) <> ''),
+  salesperson_name text not null check (btrim(salesperson_name) <> ''),
+  -- Who agreed to the credit note before it was raised. Free text: the form
+  -- offers four names but accepts any.
+  approved_by_name text not null check (btrim(approved_by_name) <> ''),
   reason          text not null check (btrim(reason) <> ''),
   amount          numeric(14, 2) not null check (amount > 0),
   details         text not null check (btrim(details) <> ''),
@@ -202,6 +209,8 @@ declare
   v_no     text;
   v_party  text := nullif(btrim(p->>'party_name'), '');
   v_reason text := nullif(btrim(p->>'reason'), '');
+  v_sales  text := nullif(btrim(p->>'salesperson_name'), '');
+  v_apprby text := nullif(btrim(p->>'approved_by_name'), '');
   v_det    text := nullif(btrim(p->>'details'), '');
   v_amt    numeric;
   v_me     text := coalesce((select name from public.profiles where id = auth.uid()), 'Someone');
@@ -210,6 +219,8 @@ begin
     raise exception 'Not authorized to raise a credit note';
   end if;
   if v_party is null then raise exception 'Customer name is required.'; end if;
+  if v_sales is null then raise exception 'Salesperson is required.'; end if;
+  if v_apprby is null then raise exception 'Approved by is required.'; end if;
   if v_reason is null then raise exception 'Reason for credit note is required.'; end if;
   if v_det is null then raise exception 'Full details are required.'; end if;
   begin
@@ -226,13 +237,13 @@ begin
 
   insert into public.fms_complaint_credit_notes (
     cn_no, status, current_step, raised_by, requester_name, company_id,
-    party_id, party_name, reason, amount, details, submitted_at
+    party_id, party_name, salesperson_name, approved_by_name, reason, amount, details, submitted_at
   ) values (
     v_no, 'awaiting_cn_approval', 'cn_approval', auth.uid(),
     coalesce(nullif(btrim(p->>'requester_name'), ''), v_me),
     nullif(p->>'company_id', '')::uuid,
     nullif(p->>'party_id', '')::uuid,
-    v_party, v_reason, v_amt, v_det, now()
+    v_party, v_sales, v_apprby, v_reason, v_amt, v_det, now()
   )
   returning id into v_id;
 

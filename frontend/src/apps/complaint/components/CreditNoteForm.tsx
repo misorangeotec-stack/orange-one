@@ -1,4 +1,5 @@
-import { useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import { useQuery } from "@tanstack/react-query";
 import { useNavigate } from "react-router-dom";
 import Button from "@/shared/components/ui/Button";
 import Card from "@/shared/components/ui/Card";
@@ -9,6 +10,29 @@ import { useSavedDrafts } from "@/shared/lib/useSavedDrafts";
 import { useSession } from "@/core/platform/session";
 import { useComplaintStore } from "../store";
 import { creditNotesHref } from "../lib/routes";
+import { APPROVED_BY_NAMES } from "../types/creditNote";
+
+/**
+ * The Tally salesperson list — ext_ledger_tags.salesperson on ConnectWave, the
+ * same list Customer Onboarding's SalespersonPicker offers. Same query key, so
+ * the two share one cached copy. Imported dynamically: the fetcher is a
+ * code-split chunk and must stay out of the entry bundle.
+ */
+function useSalespersonNames(): string[] {
+  const { data } = useQuery({
+    queryKey: ["hub", "salespersonNames"],
+    queryFn: async () => {
+      const { fetchSalespersonNames } = await import("@hub/lib/connectwaveFetcher");
+      return fetchSalespersonNames();
+    },
+    staleTime: 10 * 60 * 1000,
+  });
+  return data ?? [];
+}
+
+/** Dropdown options, plus the current value when it was typed rather than picked. */
+const withTyped = (names: string[], value: string) =>
+  [...(value && !names.includes(value) ? [value] : []), ...names].map((n) => ({ value: n, label: n }));
 
 /**
  * Raise a Customer Credit Note — the fourth option on "Raise a complaint".
@@ -23,12 +47,14 @@ interface CnForm {
   companyId: string;
   partyId: string;
   partyName: string;
+  salespersonName: string;
+  approvedByName: string;
   reason: string;
   amount: string;
   details: string;
 }
 
-const EMPTY: CnForm = { companyId: "", partyId: "", partyName: "", reason: "", amount: "", details: "" };
+const EMPTY: CnForm = { companyId: "", partyId: "", partyName: "", salespersonName: "", approvedByName: "", reason: "", amount: "", details: "" };
 
 function ErrorText({ children }: { children: string }) {
   if (!children) return null;
@@ -46,11 +72,28 @@ export default function CreditNoteForm() {
   const [busy, setBusy] = useState(false);
   const [submitError, setSubmitError] = useState("");
 
+  const salespeople = useSalespersonNames();
+  /**
+   * Default the salesperson to the person raising it when they ARE one — the
+   * admin-set profile tag (exactly one), as Customer Onboarding does. Only fills
+   * a blank field.
+   */
+  const ownTag = useMemo(() => {
+    const tags = (user.receivablesSalespersons ?? []).map((t) => t.trim()).filter(Boolean);
+    if (tags.length !== 1) return "";
+    return salespeople.find((n) => n.toLowerCase() === tags[0].toLowerCase()) ?? tags[0];
+  }, [user.receivablesSalespersons, salespeople]);
+  useEffect(() => {
+    if (ownTag) setForm((f) => (f.salespersonName ? f : { ...f, salespersonName: ownTag }));
+  }, [ownTag]);
+
   const set = <K extends keyof CnForm>(k: K, v: CnForm[K]) => setForm((f) => ({ ...f, [k]: v }));
 
   const amount = Number(form.amount.replace(/,/g, ""));
   const errors: Partial<Record<keyof CnForm, string>> = {};
   if (!form.partyName.trim()) errors.partyName = "Customer name is required.";
+  if (!form.salespersonName.trim()) errors.salespersonName = "Salesperson is required.";
+  if (!form.approvedByName.trim()) errors.approvedByName = "Approved by is required.";
   if (!form.reason.trim()) errors.reason = "Reason for credit note is required.";
   if (!form.amount.trim()) errors.amount = "Amount of the credit note is required.";
   else if (!Number.isFinite(amount) || amount <= 0) errors.amount = "Enter an amount more than zero.";
@@ -82,6 +125,8 @@ export default function CreditNoteForm() {
         companyId: form.companyId || null,
         partyId: form.partyId || null,
         partyName: form.partyName.trim(),
+        salespersonName: form.salespersonName.trim(),
+        approvedByName: form.approvedByName.trim(),
         reason: form.reason.trim(),
         amount: Math.round(amount * 100) / 100,
         details: form.details.trim(),
@@ -163,6 +208,38 @@ export default function CreditNoteForm() {
               />
             )}
             <ErrorText>{err("partyName")}</ErrorText>
+          </div>
+
+          <div>
+            <FieldLabel strong label="Salesperson" required hint="pick, or type a name">
+              <Combobox
+                value={form.salespersonName}
+                onChange={(v) => set("salespersonName", v)}
+                options={withTyped(salespeople, form.salespersonName)}
+                placeholder={salespeople.length ? "Choose a salesperson" : "Loading salespeople…"}
+                searchable
+                clearable
+                onCreate={(n) => n.trim()}
+                createLabel={(q) => `Use “${q}”`}
+              />
+            </FieldLabel>
+            <ErrorText>{err("salespersonName")}</ErrorText>
+          </div>
+
+          <div>
+            <FieldLabel strong label="Approved by" required hint="pick, or type any name">
+              <Combobox
+                value={form.approvedByName}
+                onChange={(v) => set("approvedByName", v)}
+                options={withTyped(APPROVED_BY_NAMES, form.approvedByName)}
+                placeholder="Karan / Ayush / Manmohan / Nakul sir…"
+                searchable
+                clearable
+                onCreate={(n) => n.trim()}
+                createLabel={(q) => `Use “${q}”`}
+              />
+            </FieldLabel>
+            <ErrorText>{err("approvedByName")}</ErrorText>
           </div>
 
           <div>

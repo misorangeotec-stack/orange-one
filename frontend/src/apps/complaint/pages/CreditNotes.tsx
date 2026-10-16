@@ -74,7 +74,7 @@ export default function CreditNotes() {
     return all.filter(TAB_STATUS[tab]).filter(
       (c) =>
         !needle ||
-        [c.cnNo, c.partyName, c.reason, c.requesterName, c.tallyNo ?? ""].some((x) =>
+        [c.cnNo, c.partyName, c.salespersonName, c.approvedByName, c.reason, c.requesterName, c.tallyNo ?? ""].some((x) =>
           x.toLowerCase().includes(needle),
         ),
     );
@@ -128,6 +128,8 @@ export default function CreditNotes() {
                 <th className="px-4 py-2.5 font-medium">CN No.</th>
                 <th className="px-4 py-2.5 font-medium">Date</th>
                 <th className="px-4 py-2.5 font-medium">Customer</th>
+                <th className="px-4 py-2.5 font-medium">Salesperson</th>
+                <th className="px-4 py-2.5 font-medium">Approved by</th>
                 <th className="px-4 py-2.5 font-medium">Reason</th>
                 <th className="px-4 py-2.5 font-medium text-right">Amount</th>
                 <th className="px-4 py-2.5 font-medium">Raised by</th>
@@ -139,7 +141,7 @@ export default function CreditNotes() {
             <tbody>
               {rows.length === 0 ? (
                 <tr>
-                  <td colSpan={9} className="px-4 py-8 text-center text-grey-2">
+                  <td colSpan={11} className="px-4 py-8 text-center text-grey-2">
                     No credit notes here.
                   </td>
                 </tr>
@@ -155,6 +157,8 @@ export default function CreditNotes() {
                       <td className="px-4 py-2.5 font-semibold text-navy whitespace-nowrap">{c.cnNo}</td>
                       <td className="px-4 py-2.5 whitespace-nowrap">{dmy(c.submittedAt)}</td>
                       <td className="px-4 py-2.5">{c.partyName}</td>
+                      <td className="px-4 py-2.5 whitespace-nowrap">{c.salespersonName || "—"}</td>
+                      <td className="px-4 py-2.5 whitespace-nowrap">{c.approvedByName || "—"}</td>
                       <td className="px-4 py-2.5 max-w-[260px] truncate" title={c.reason}>{c.reason}</td>
                       <td className="px-4 py-2.5 text-right whitespace-nowrap font-medium">{formatCnAmount(c.amount)}</td>
                       <td className="px-4 py-2.5 whitespace-nowrap">{c.requesterName}</td>
