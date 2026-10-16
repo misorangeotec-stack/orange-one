@@ -3,6 +3,7 @@ import Card from "@/shared/components/ui/Card";
 import PaperSet from "./PaperSet";
 import { useOcpiStore } from "../store";
 import { fetchStoredPdf } from "../lib/docUrls";
+import { fetchServiceChecklistPdf } from "../data/ocpiServiceChecklists";
 import { ocFileName, ocPdfBlob, ocSummaryFileName } from "../lib/ocPdf";
 import { piFileName, piPdfBlob } from "../lib/piPdf";
 import { quotationPdfBlob } from "../lib/quotationPdf";
@@ -47,6 +48,26 @@ export default function ApprovedOcPreview({
   const [busy, setBusy] = useState(true);
   const [rebuilt, setRebuilt] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  /*
+    The machine's service checklist PDF (Masters → Service checklists), as the
+    4th paper — so it is downloaded and sent to the customer with the contract,
+    before installation. Fetched on its own: it is not part of the approved set,
+    so a missing checklist never raises the "rebuilt" banner or delays the rest.
+  */
+  const checklist = s.serviceChecklistFor(deal.machineId);
+  const [checklistPdf, setChecklistPdf] = useState<Blob | null>(null);
+  const [checklistBusy, setChecklistBusy] = useState(false);
+  useEffect(() => {
+    let cancelled = false;
+    setChecklistPdf(null);
+    if (!checklist) return;
+    setChecklistBusy(true);
+    fetchServiceChecklistPdf(checklist)
+      .then((b) => { if (!cancelled) setChecklistPdf(b); })
+      .finally(() => { if (!cancelled) setChecklistBusy(false); });
+    return () => { cancelled = true; };
+  }, [checklist?.filePath]);
 
   useEffect(() => {
     let cancelled = false;
@@ -164,6 +185,18 @@ export default function ApprovedOcPreview({
             missingNote: machine
               ? `${machine.name} has no detailed template, so the summary and the PI are the whole of this contract.`
               : "There is no detailed sheet on this deal.",
+          },
+          {
+            key: "service-checklist",
+            label: "Service checklist",
+            blob: checklistPdf,
+            fileName: `${(deal.ocNo ?? "OC").replace(/[\\/:*?"<>|]+/g, "-")} - Service checklist - ${
+              (machine?.name ?? "machine").replace(/[\\/:*?"<>|]+/g, "-")}.pdf`,
+            missingNote: checklistBusy
+              ? "Loading the service checklist…"
+              : checklist
+                ? "The service checklist PDF could not be loaded."
+                : `No service checklist PDF is uploaded for ${machine?.name ?? "this machine"} yet. Add it on Masters → Service checklists (PDF).`,
           },
         ]}
       />

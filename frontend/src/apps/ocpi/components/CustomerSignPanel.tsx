@@ -3,7 +3,6 @@ import Button from "@/shared/components/ui/Button";
 import Card from "@/shared/components/ui/Card";
 import { FieldLabel, TextArea } from "@/shared/components/ui/Form";
 import ApprovedOcPreview from "./ApprovedOcPreview";
-import ServiceChecklistLink from "./ServiceChecklistLink";
 import SignedDocCapture, { asStored, uploadPages, type SignedPage } from "./SignedDocCapture";
 import { useOcpiStore } from "../store";
 import { recordCustomerSign } from "../data/ocpiWrites";
@@ -71,12 +70,7 @@ export default function CustomerSignPanel({ deal }: { deal: OcpiDeal }) {
 
       <ApprovedOcPreview
         deal={deal}
-        note="Print this, get the customer to sign it, then photograph every page below."
-      />
-
-      <ServiceChecklistLink
-        machineId={deal.machineId}
-        note="Download it and give it to the customer with the order confirmation, so the site is ready before the machine is installed."
+        note="Print this, get the customer to sign it, then photograph every page below. Send the Service checklist with it, so the site is ready before installation."
       />
 
       {mayAct ? (

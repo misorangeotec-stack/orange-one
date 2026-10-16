@@ -81,6 +81,17 @@ export async function removeServiceChecklist(row: OcpiServiceChecklist): Promise
 }
 
 /**
+ * The PDF itself, as a blob — so it can sit in the deal's paper set beside the
+ * Summary, PI and OC (tab, Download all, Print). Null when it cannot be read.
+ */
+export async function fetchServiceChecklistPdf(row: OcpiServiceChecklist | undefined): Promise<Blob | null> {
+  if (!row) return null;
+  const { data, error } = await supabase.storage.from(OCPI_CHECKLIST_BUCKET).download(row.filePath);
+  if (error || !data) return null;
+  return data.type === "application/pdf" ? data : new Blob([data], { type: "application/pdf" });
+}
+
+/**
  * A short-lived link to the PDF. `download: true` makes the browser save it
  * under its original name instead of opening it.
  */

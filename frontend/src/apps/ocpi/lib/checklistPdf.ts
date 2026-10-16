@@ -42,7 +42,27 @@ export function cleanChecklistLine(raw: string): string {
   return raw.replace(/\s+/g, " ").replace(LEAD, "").replace(TRAIL, "").trim();
 }
 
-interface Frag { x: number; y: number; s: string }
+/** A text fragment: position, width (pt) and font size (pt). */
+interface Frag { x: number; y: number; s: string; w: number; size: number }
+
+/**
+ * ⚠ A SPACE ONLY WHERE THE PDF LEAVES A GAP. Word/Excel PDFs often split one
+ *   word into several fragments ("f" + "or", "l" + "i" + "te" + "r"); joining
+ *   every fragment with a space printed "f or" and "l i te r". A space goes in
+ *   only when the next fragment starts more than ~a fifth of the font size
+ *   after the previous one ends.
+ */
+function joinFrags(parts: Frag[]): string {
+  let out = "";
+  let end = -Infinity;
+  for (const p of parts) {
+    const gap = p.x - end;
+    if (out && !/\s$/.test(out) && !/^\s/.test(p.s) && gap > Math.max(1, p.size * 0.2)) out += " ";
+    out += p.s;
+    end = p.x + p.w;
+  }
+  return out.replace(/\s+/g, " ").trim();
+}
 interface Line { y: number; x: number; text: string }
 
 /** Fragments within 3pt of each other vertically form one line, read left to right. */
@@ -56,7 +76,7 @@ function toLines(frags: Frag[]): Line[] {
   return rows
     .map((r) => {
       const parts = r.parts.sort((a, b) => a.x - b.x);
-      return { y: r.y, x: parts[0].x, text: parts.map((p) => p.s).join(" ").replace(/\s+/g, " ").trim() };
+      return { y: r.y, x: parts[0].x, text: joinFrags(parts) };
     })
     .sort((a, b) => b.y - a.y); // PDF y grows upwards → top of page first
 }
@@ -146,7 +166,12 @@ export async function readChecklistPdf(file: File): Promise<string[]> {
       for (const it of content.items as any[]) {
         const s: string = it.str ?? "";
         if (!s.trim()) continue;
-        frags.push({ x: it.transform?.[4] ?? 0, y: it.transform?.[5] ?? 0, s });
+        const t = it.transform ?? [];
+        frags.push({
+          x: t[4] ?? 0, y: t[5] ?? 0, s,
+          w: Number(it.width) || 0,
+          size: Math.hypot(t[0] ?? 0, t[1] ?? 0) || Number(it.height) || 10,
+        });
       }
       const serials = serialColumn(frags);
       for (const text of serials ? tablePoints(frags, serials) : plainPoints(frags)) {
