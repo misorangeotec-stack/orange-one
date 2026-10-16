@@ -5,6 +5,8 @@ import { supabase } from "@/core/platform/supabase";
 // below already treat rows as any.
 const db = supabase as any;
 import { resolveStepSla, type StepSlaMap } from "../lib/sla";
+import { mapCreditNote, mapCreditNoteDoc } from "./creditNotes";
+import type { CreditNote, CreditNoteDoc } from "../types/creditNote";
 import type {
   AckDecision,
   CauseGroup,
@@ -55,6 +57,8 @@ type Tbl =
   | "fms_complaint_docs"
   | "fms_complaint_activity"
   | "fms_complaint_notifications"
+  | "fms_complaint_credit_notes"
+  | "fms_complaint_credit_note_docs"
   | "designations";
 
 /**
@@ -86,6 +90,21 @@ async function fetchAll(table: Tbl, orderBy = "created_at", tiebreak: string | n
   return out;
 }
 
+/**
+ * fetchAll, but an error yields [] instead of failing the module.
+ *
+ * ⚠ FOR THE CREDIT-NOTE TABLES ONLY. If the frontend ever reaches live before
+ *   migration 20270201120000, a missing table would otherwise reject the whole
+ *   Promise.all below and empty every complaint screen.
+ */
+async function fetchOptional(table: Tbl, orderBy = "created_at"): Promise<any[]> {
+  try {
+    return await fetchAll(table, orderBy);
+  } catch {
+    return [];
+  }
+}
+
 export interface ComplaintConfig {
   processCoordinatorIds: string[];
   stepSla: StepSlaMap;
@@ -109,6 +128,9 @@ export interface ComplaintData {
   docs: ComplaintDoc[];
   activity: ComplaintActivity[];
   notifications: ComplaintNotification[];
+  /** Customer credit notes — the fourth option on the raise page. */
+  creditNotes: CreditNote[];
+  creditNoteDocs: CreditNoteDoc[];
 }
 
 /* --------------------------------- mappers -------------------------------- */
@@ -368,6 +390,8 @@ export async function fetchComplaintData(): Promise<ComplaintData> {
     docs,
     activity,
     notifications,
+    creditNotes,
+    creditNoteDocs,
   ] = await Promise.all([
     fetchAll("fms_complaint_step_owners"),
     fetchAll("fms_complaint_config", "key", null),   // keyed on `key`; no id column
@@ -380,6 +404,8 @@ export async function fetchComplaintData(): Promise<ComplaintData> {
     fetchAll("fms_complaint_docs"),
     fetchAll("fms_complaint_activity"),
     fetchAll("fms_complaint_notifications"),
+    fetchOptional("fms_complaint_credit_notes", "submitted_at"),
+    fetchOptional("fms_complaint_credit_note_docs"),
   ]);
 
   const byKey = new Map<string, any>(configRows.map((r) => [r.key, r.value ?? {}]));
@@ -401,5 +427,7 @@ export async function fetchComplaintData(): Promise<ComplaintData> {
     docs: docs.map(mapDoc),
     activity: activity.map(mapActivity),
     notifications: notifications.map(mapNotification),
+    creditNotes: creditNotes.map(mapCreditNote),
+    creditNoteDocs: creditNoteDocs.map(mapCreditNoteDoc),
   };
 }

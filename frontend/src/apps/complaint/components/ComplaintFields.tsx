@@ -37,7 +37,49 @@ function ErrorText({ children }: { children: string }) {
   return <p className="mt-1 text-[12px] text-red-600">{children}</p>;
 }
 
-export default function ComplaintFields({ f }: { f: ComplaintFormApi }) {
+/** The fourth choice on the type card. Not a ComplaintType — it opens a different form. */
+export const CREDIT_NOTE_CHOICE = "credit_note" as const;
+export type RaiseChoice = ComplaintType | typeof CREDIT_NOTE_CHOICE;
+
+/**
+ * "Type of complaint" — Finished Good / Raw Material / Other Supplier Complaint,
+ * plus Customer Credit Note. Shared by the complaint form and the credit-note
+ * form so the four buttons never move when the user switches between them.
+ */
+export function ComplaintTypeCard({
+  value,
+  onChange,
+  withCreditNote = true,
+}: {
+  value: RaiseChoice;
+  onChange: (v: RaiseChoice) => void;
+  withCreditNote?: boolean;
+}) {
+  const options = COMPLAINT_TYPES.map((v) => ({ value: v as string, label: COMPLAINT_TYPE_LABEL[v] }));
+  if (withCreditNote) options.push({ value: CREDIT_NOTE_CHOICE, label: "Customer Credit Note" });
+  return (
+    <Card className="p-5">
+      <h2 className="text-[15px] font-bold text-navy">Type of complaint</h2>
+      <div className="mt-3 max-w-3xl">
+        <ChoiceButtons
+          ariaLabel="Type of complaint"
+          options={options}
+          value={value}
+          onChange={(v) => onChange(v as RaiseChoice)}
+        />
+      </div>
+    </Card>
+  );
+}
+
+export default function ComplaintFields({
+  f,
+  onPickCreditNote,
+}: {
+  f: ComplaintFormApi;
+  /** Shows the fourth "Customer Credit Note" choice; called when it is picked. */
+  onPickCreditNote?: () => void;
+}) {
   const s = useComplaintStore();
   const t = f.form.complaintType;
 
@@ -60,17 +102,11 @@ export default function ComplaintFields({ f }: { f: ComplaintFormApi }) {
   return (
     <div className="space-y-5">
       {/* ---------------------------- what kind ---------------------------- */}
-      <Card className="p-5">
-        <h2 className="text-[15px] font-bold text-navy">Type of complaint</h2>
-        <div className="mt-3 max-w-xl">
-          <ChoiceButtons
-            ariaLabel="Type of complaint"
-            options={COMPLAINT_TYPES.map((v) => ({ value: v, label: COMPLAINT_TYPE_LABEL[v] }))}
-            value={t}
-            onChange={(v) => f.setComplaintType(v as ComplaintType)}
-          />
-        </div>
-      </Card>
+      <ComplaintTypeCard
+        value={t}
+        onChange={(v) => (v === CREDIT_NOTE_CHOICE ? onPickCreditNote?.() : f.setComplaintType(v))}
+        withCreditNote={!!onPickCreditNote}
+      />
 
       {/* ------------------------- the LOT and its facts ------------------- */}
       <Card className="p-5">
@@ -96,11 +132,6 @@ export default function ComplaintFields({ f }: { f: ComplaintFormApi }) {
                 strong
                 label="Type"
                 required
-                hint={
-                  f.form.rmOrigin
-                    ? `goes to ${RM_ORIGIN_DESTINATION[f.form.rmOrigin as RmOrigin]}`
-                    : "who handles this complaint"
-                }
               >
                 <Combobox
                   value={f.form.rmOrigin}
@@ -138,7 +169,7 @@ export default function ComplaintFields({ f }: { f: ComplaintFormApi }) {
           <div>
             <FieldLabel
               label="LOT Expiry Date"
-              hint="typed — no system holds this"
+             
             >
               <TextInput
                 type="date"
@@ -149,7 +180,7 @@ export default function ComplaintFields({ f }: { f: ComplaintFormApi }) {
           </div>
 
           <div>
-            <FieldLabel strong label="Company" hint="whose book this sits in">
+            <FieldLabel strong label="Company">
               <Combobox
                 value={f.form.companyId}
                 onChange={(v) => f.set("companyId", v)}
@@ -235,7 +266,6 @@ export default function ComplaintFields({ f }: { f: ComplaintFormApi }) {
             <FieldLabel
               label={partyLabelOf(t)}
               required
-              hint={f.form.companyId ? undefined : "pick a company to narrow this"}
             >
               <Combobox
                 value={f.form.partyId}
@@ -348,7 +378,7 @@ export default function ComplaintFields({ f }: { f: ComplaintFormApi }) {
           <div>
             {/* Seeded from mst_items.category — the authoritative 96-value list — and
                 then left editable, because the item master is not always right. */}
-            <FieldLabel strong label="Category of ink" hint="from the item master">
+            <FieldLabel strong label="Category of ink">
               <TextInput
                 value={f.form.category}
                 onChange={(e) => f.set("category", e.target.value)}
@@ -358,7 +388,7 @@ export default function ComplaintFields({ f }: { f: ComplaintFormApi }) {
           </div>
 
           <div>
-            <FieldLabel strong label="Ink type" hint="optional">
+            <FieldLabel strong label="Ink type">
               <TextInput
                 value={f.form.inkType}
                 onChange={(e) => f.set("inkType", e.target.value)}
@@ -367,7 +397,7 @@ export default function ComplaintFields({ f }: { f: ComplaintFormApi }) {
           </div>
 
           <div>
-            <FieldLabel strong label="Quantity affected" hint="optional">
+            <FieldLabel strong label="Quantity affected">
               <TextInput
                 inputMode="decimal"
                 value={f.form.qtyAffected}
@@ -378,7 +408,7 @@ export default function ComplaintFields({ f }: { f: ComplaintFormApi }) {
           </div>
 
           <div>
-            <FieldLabel strong label="Unit" hint="optional">
+            <FieldLabel strong label="Unit">
               <Combobox
                 value={f.form.unitName}
                 onChange={(v) => f.set("unitName", v)}
@@ -403,11 +433,6 @@ export default function ComplaintFields({ f }: { f: ComplaintFormApi }) {
               strong
               label="Issue identified on"
               required
-              hint={
-                f.form.invoiceDate
-                  ? `between ${dmy(f.form.invoiceDate)} and now`
-                  : "when it was noticed, not when raised"
-              }
             >
               {/*
                 BOUNDED BY THE INVOICE AND BY NOW. The goods cannot have failed
@@ -436,7 +461,7 @@ export default function ComplaintFields({ f }: { f: ComplaintFormApi }) {
           </div>
 
           <div>
-            <FieldLabel strong label="Nature of complaint" hint="optional">
+            <FieldLabel strong label="Nature of complaint">
               <Combobox
                 value={f.form.natureId}
                 onChange={(v) => f.set("natureId", v)}
@@ -468,7 +493,7 @@ export default function ComplaintFields({ f }: { f: ComplaintFormApi }) {
               there is nothing to upload against before submit. They then follow
               the complaint through every bucket to the last (ComplaintRecap).
             */}
-            <FieldLabel strong label="Attachments" hint="photos, reports — optional">
+            <FieldLabel strong label="Attachments">
               <input
                 type="file"
                 multiple
@@ -483,7 +508,7 @@ export default function ComplaintFields({ f }: { f: ComplaintFormApi }) {
               </p>
             )}
 
-            <FieldLabel strong label="Any other remarks" hint="optional">
+            <FieldLabel strong label="Any other remarks">
               <TextArea
                 rows={3}
                 value={f.form.otherRemarks}

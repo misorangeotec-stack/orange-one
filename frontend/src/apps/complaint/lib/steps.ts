@@ -68,7 +68,10 @@ export type StepKey =
   | "purchase"
   | "rm_management"
   | "assignee"
-  | "management_review";
+  | "management_review"
+  // Customer Credit Note — its own two-step chain, see CN_STEPS below.
+  | "cn_approval"
+  | "cn_tally";
 
 /** One scope — a complaint is one entity from raise to close. */
 export type StepScope = "request";
@@ -110,7 +113,22 @@ export const STEPS: StepDef[] = [
   { key: "management_review", index: 8, title: "Management Review", short: "Review", scope: "request" },
 ];
 
-export const stepByKey = (key: string): StepDef | undefined => STEPS.find((s) => s.key === key);
+/**
+ * CUSTOMER CREDIT NOTE — raise → management approval → Tally → closed.
+ *
+ * ⚠ DELIBERATELY NOT IN `STEPS`. Those drive the complaint pipeline, the SLA
+ *   editor and the Control Center, all of which are built from complaint rows;
+ *   a credit note is its own table (fms_complaint_credit_notes) with its own
+ *   page. These two exist so Setup can staff them — step owners are the same
+ *   fms_complaint_step_owners table, keyed `cn_approval` / `cn_tally`.
+ */
+export const CN_STEPS: StepDef[] = [
+  { key: "cn_approval", index: 9, title: "Credit Note — Management Approval", short: "CN approval", scope: "request" },
+  { key: "cn_tally", index: 10, title: "Credit Note — Tally Entry", short: "CN Tally", scope: "request" },
+];
+
+export const stepByKey = (key: string): StepDef | undefined =>
+  STEPS.find((s) => s.key === key) ?? CN_STEPS.find((s) => s.key === key);
 
 /** The steps that can hold work — everything the sidebar offers a queue for. */
 export const QUEUE_STEPS: StepKey[] = STEPS.filter((s) => !s.noQueue).map((s) => s.key);

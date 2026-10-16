@@ -5,11 +5,15 @@ import { roleLabel, useSession } from "@/core/platform/session";
 import { useOrgPersonById } from "@/core/platform/orgPeople";
 import { buildComplaintNav } from "./nav";
 import { useComplaintStore } from "./store";
-import { B, requestHref } from "./lib/routes";
+import { B, creditNotesHref, requestHref } from "./lib/routes";
 import type { ComplaintNotification } from "./types";
 
 const linkFor = (n: ComplaintNotification): string =>
-  n.entityType === "request" ? requestHref(n.entityId) : B;
+  n.entityType === "request"
+    ? requestHref(n.entityId)
+    : n.entityType === "credit_note"
+      ? creditNotesHref({ tab: "all", open: n.entityId })
+      : B;
 
 /**
  * Wires the portal session + complaint store into the shared AppShell.
@@ -66,6 +70,7 @@ export default function ComplaintLayout() {
         canRaise: s.canRaise,
         canEdit: s.canEdit,
         hasRequests,
+        canSeeCreditNotes: s.canSeeCreditNotes,
       }),
     [
       isAdmin,
@@ -81,6 +86,7 @@ export default function ComplaintLayout() {
       s.canRaise,
       s.canEdit,
       hasRequests,
+      s.canSeeCreditNotes,
     ],
   );
 

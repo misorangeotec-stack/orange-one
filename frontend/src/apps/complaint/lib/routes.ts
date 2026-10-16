@@ -24,6 +24,16 @@ export const mastersHref = () => `${B}/masters`;
 export const monitoringHref = () => `${B}/monitoring`;
 export const settingsHref = () => `${B}/settings`;
 
+/** The Customer Credit Notes page. `tab` picks the bucket; `open` opens one credit note. */
+export type CreditNoteTab = "approval" | "tally" | "closed" | "rejected" | "all";
+export const creditNotesHref = (opts: { tab?: CreditNoteTab; open?: string } = {}) => {
+  const q = new URLSearchParams();
+  if (opts.tab) q.set("tab", opts.tab);
+  if (opts.open) q.set("open", opts.open);
+  const qs = q.toString();
+  return `${B}/credit-notes${qs ? `?${qs}` : ""}`;
+};
+
 /**
  * A step's queue. The slugs are deliberately the STEP KEYS with underscores
  * turned to hyphens, so a reader landing on `/complaint/queues/capa` can find
