@@ -10,6 +10,16 @@ import { useTravellerProfiles } from "../data/travellerDirectory";
 import { todayLocalIso } from "@/shared/lib/dueBuckets";
 import { useTravelStore } from "../store";
 import { money } from "../lib/format";
+import { isHiddenStep } from "../lib/steps";
+
+/**
+ * The Travel Advance step is HIDDEN by the new process (2026-10, lib/steps
+ * HIDDEN_STEPS): the trip closes at booking, so there is no claim to adjust an
+ * advance against. The section below is kept, not deleted, and comes back if
+ * the step is un-hidden. (The database also forces the advance off — migration
+ * 20270124120000 — so un-hiding needs that reverted too.)
+ */
+const SHOW_ADVANCE = !isHiddenStep("advance");
 import { needsDirectorApproval } from "../lib/entitlement";
 import EntitlementPanel from "./EntitlementPanel";
 import PassengerRows from "./PassengerRows";
@@ -67,7 +77,7 @@ export default function TripForm({ draft }: { draft?: Trip }) {
   );
   const [emergency, setEmergency] = useState(draft?.isEmergency ?? false);
   const [emergencyReason, setEmergencyReason] = useState(draft?.emergencyReason ?? "");
-  const [advance, setAdvance] = useState(draft?.advanceRequested ?? false);
+  const [advance, setAdvance] = useState(SHOW_ADVANCE && (draft?.advanceRequested ?? false));
   const [advanceAmount, setAdvanceAmount] = useState(
     draft?.advanceRequestedAmount === null || draft?.advanceRequestedAmount === undefined
       ? ""
@@ -461,7 +471,7 @@ export default function TripForm({ draft }: { draft?: Trip }) {
               <FieldLabel
                 label="Estimated cost"
                 required
-                hint={`The advance is capped at ${s.config.policy.advanceMaxPct}% of this`}
+                hint={SHOW_ADVANCE ? `The advance is capped at ${s.config.policy.advanceMaxPct}% of this` : undefined}
               >
                 <TextInput
                   type="number"
@@ -513,6 +523,7 @@ export default function TripForm({ draft }: { draft?: Trip }) {
             )}
           </Card>
 
+          {SHOW_ADVANCE && (
           <Card className="space-y-4 p-4">
             <h2 className={SECTION_HEADING_CLASS}>Travel advance</h2>
             <label className="flex items-center gap-2 text-[13px] text-navy">
@@ -543,6 +554,7 @@ export default function TripForm({ draft }: { draft?: Trip }) {
               </p>
             )}
           </Card>
+          )}
 
           <Card className="space-y-3 p-4">
             <div>

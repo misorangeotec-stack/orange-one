@@ -9,7 +9,7 @@ import { todayLocalIso } from "@/shared/lib/dueBuckets";
 import { queueRollup } from "@/shared/lib/fmsDashboard";
 
 import { useTravelStore } from "../../store";
-import { STAGES, STEPS, stepByKey } from "../../lib/steps";
+import { shownStages, shownSteps, stepByKey } from "../../lib/steps";
 import type { QueueEntry, QueueStep } from "../../lib/queues";
 import { STATUS_LABEL } from "../../lib/format";
 
@@ -32,9 +32,17 @@ export default function ControlCenter() {
 
   // Only steps that can hold work. `request` is a structural anchor and would
   // render as a permanently empty node.
+  // Hidden steps (lib/steps HIDDEN_STEPS) appear only while a trip still waits at one.
+  const inUse = useMemo(() => {
+    const keys = new Set(s.entries.map((e) => e.stepKey as string));
+    return (k: string) => keys.has(k);
+  }, [s.entries]);
   const pipelineSteps = useMemo(
-    () => STEPS.filter((st) => !st.noQueue).map((st) => ({ key: st.key as QueueStep, index: st.index, short: st.short })),
-    [],
+    () =>
+      shownSteps(inUse)
+        .filter((st) => !st.noQueue)
+        .map((st) => ({ key: st.key as QueueStep, index: st.index, short: st.short })),
+    [inUse],
   );
 
   const { counts, nodes } = useMemo(
@@ -123,7 +131,7 @@ export default function ControlCenter() {
           nodes={nodes}
           selectedKeys={selected}
           onChange={setSelected}
-          groups={STAGES.map((st) => ({ label: st.label, keys: st.keys as QueueStep[] }))}
+          groups={shownStages(inUse).map((st) => ({ label: st.label, keys: st.keys as QueueStep[] }))}
         />
       </Card>
 

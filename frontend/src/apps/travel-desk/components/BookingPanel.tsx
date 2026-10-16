@@ -54,7 +54,8 @@ export default function BookingPanel({ trip }: { trip: Trip }) {
         <h2 className={SECTION_HEADING_CLASS}>Booking</h2>
         <p className="mt-1 text-[12.5px] text-grey">
           Record every flight, train, bus, cab and hotel, then mark the trip booked. Uploading the
-          ticket is what shares it with the traveller.
+          ticket is what shares it with the traveller. Marking it booked closes the trip — there is
+          no expense claim afterwards.
         </p>
         {err && <p className="mt-2 break-words text-[12.5px] text-ryg-red">{err}</p>}
         <div className="mt-3 flex flex-wrap items-center gap-3">
@@ -62,7 +63,7 @@ export default function BookingPanel({ trip }: { trip: Trip }) {
             onClick={() => run(() => s.completeBooking(trip.id), "book")}
             disabled={!!busy || legs.length === 0}
           >
-            {busy === "book" ? "Saving…" : `Mark booked — ${money(total)}`}
+            {busy === "book" ? "Saving…" : `Mark booked and close — ${money(total)}`}
           </Button>
           {legs.length === 0 && (
             <span className="text-[12.5px] text-grey-2">

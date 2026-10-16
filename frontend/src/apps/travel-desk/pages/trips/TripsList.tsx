@@ -65,6 +65,7 @@ export default function TripsList() {
             : "No trip matches this view yet."
         }
         exportName="Travel_Trips"
+        bulkExport={s.isProcessCoordinator || s.isAdmin}
       />
     </div>
   );
