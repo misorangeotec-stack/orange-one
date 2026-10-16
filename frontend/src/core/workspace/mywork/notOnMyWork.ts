@@ -32,4 +32,9 @@ export const NOT_ON_MY_WORK: Record<string, string> = {
   "announcements": "publishing tool",
   "knowledge-base": "questions sent to HR have no named answerer",
   "training-videos": "reference links",
+  // ⚠ OPEN, not decided-against (16-10-2026). Inquiries name a salesperson, but have no
+  //   follow-up date and no fixed closed status (statuses are a master list), and they
+  //   live in the portal's own Supabase project. Needs the user to say which statuses
+  //   mean "still open" before it can get a provider.
+  "machine-resale": "inquiries have a salesperson but no follow-up date or fixed open/closed status — awaiting a decision",
 };
