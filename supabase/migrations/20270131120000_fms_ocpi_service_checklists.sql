@@ -3,8 +3,8 @@
 --
 -- The check points the service team answers on a deal now come from the
 -- machine's checklist PDF: when the PDF is uploaded, the app reads its text and
--- stores one check point per line in `items`. On the Service Check every point
--- must be ACCEPTED or REJECTED (a rejection needs a reason). The manual master
+-- stores one check point per Sr. No row (or per line) in `items`. On the Service
+-- Check every point is marked READY or NOT READY, as on the PDF. The manual master
 -- fms_ocpi_service_checkpoints is no longer consulted (the table is kept, so
 -- nothing is lost; its Masters tab is hidden).
 --
@@ -118,7 +118,7 @@ comment on column public.fms_ocpi_service_checklists.items is
 -- ── 3 · The Service Check answers the machine's PDF points ─────────────────
 -- Same as 20270119120000 except the "every check point" rule: instead of every
 -- active row of fms_ocpi_service_checkpoints, every point of the deal machine's
--- checklist must be answered (accepted = ok true, rejected = ok false + reason).
+-- checklist must be answered (Ready = ok true, Not Ready = ok false, remark optional).
 create or replace function public.fms_ocpi_record_service_check(p_deal uuid, p jsonb)
 returns void
 language plpgsql
@@ -180,14 +180,11 @@ begin
       case when v_ready is not true then 'Site is ready for installation' end
     ]) as x
     union all
-    -- Every point of the machine's checklist PDF must be accepted or rejected,
-    -- and a rejection must say why.
+    -- Every point of the machine's checklist PDF must be marked Ready or Not
+    -- Ready (the remark on a Not Ready point is optional).
     select case
              when e.elem is null or jsonb_typeof(e.elem->'ok') <> 'boolean'
                then i.item
-             when (e.elem->>'ok')::boolean is false
-                  and nullif(btrim(coalesce(e.elem->>'remark', '')), '') is null
-               then 'Reason for rejecting "' || i.item || '"'
            end
       from public.fms_ocpi_service_checklists c
       cross join lateral jsonb_array_elements_text(c.items) as i(item)

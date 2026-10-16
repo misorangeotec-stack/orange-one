@@ -19,7 +19,7 @@ const btn =
  * Masters → Service checklists (PDF): one checklist PDF per machine.
  *
  * ⚠ THE PDF IS THE CHECKLIST. On upload the app reads the PDF's text and every
- *   line becomes a check point the service team accepts or rejects on the
+ *   Sr. No row (or line) becomes a check point the service team marks Ready / Not Ready on the
  *   Service Check — nothing is typed by hand. The uploader sees the points
  *   before saving and can untick a line that is not a check point (a title, a
  *   column heading).
@@ -138,8 +138,8 @@ export default function ServiceChecklistsTab({ canManage }: { canManage: boolean
       <Card className="p-4">
         <p className="text-[13.5px] font-semibold text-navy">One service checklist PDF per machine</p>
         <p className="mt-0.5 text-[12.5px] text-grey-2">
-          Upload it once here. Each line of the PDF becomes a check point the service team accepts
-          or rejects on the Service Check. Every deal for that machine also offers the PDF for
+          Upload it once here. Each Sr. No row of the PDF becomes a point the service team marks
+          Ready or Not Ready on the Service Check. Every deal for that machine also offers the PDF for
           download at the Customer Sign step &mdash; so the customer gets it before installation.{" "}
           {uploaded} of {s.machines.length} machines have one.
           {!canManage && " Only admins and the Machine master owner can upload."}
