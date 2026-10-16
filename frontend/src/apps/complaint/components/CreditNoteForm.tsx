@@ -166,13 +166,10 @@ export default function CreditNoteForm() {
 
       <Card className="p-5">
         <h2 className="text-[15px] font-bold text-navy">Customer credit note</h2>
-        <p className="mt-1 text-[12.5px] text-grey-2">
-          Goes to management for approval, then to the Tally desk to post it. Closed once Tally no. is entered.
-        </p>
 
         <div className="mt-4 grid gap-4 sm:grid-cols-2">
           <div>
-            <FieldLabel label="Company" hint="narrows the customer list — optional">
+            <FieldLabel label="Company">
               <Combobox
                 value={form.companyId}
                 onChange={(v) => setForm((f) => ({ ...f, companyId: v }))}
@@ -211,7 +208,7 @@ export default function CreditNoteForm() {
           </div>
 
           <div>
-            <FieldLabel strong label="Salesperson" required hint="pick, or type a name">
+            <FieldLabel strong label="Salesperson" required>
               <Combobox
                 value={form.salespersonName}
                 onChange={(v) => set("salespersonName", v)}
@@ -227,7 +224,7 @@ export default function CreditNoteForm() {
           </div>
 
           <div>
-            <FieldLabel strong label="Approved by" required hint="pick, or type any name">
+            <FieldLabel strong label="Approved by" required>
               <Combobox
                 value={form.approvedByName}
                 onChange={(v) => set("approvedByName", v)}
@@ -278,7 +275,7 @@ export default function CreditNoteForm() {
           </div>
 
           <div className="sm:col-span-2">
-            <FieldLabel strong label="Attachments" hint="supporting papers — optional">
+            <FieldLabel strong label="Attachments">
               <input
                 type="file"
                 multiple
