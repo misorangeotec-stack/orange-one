@@ -79,9 +79,9 @@ interface TaskStoreValue {
   getTask: (id: string) => Task | undefined;
   activityFor: (taskId: string) => TaskActivity[];
   revisionInfo: (task: Task) => RevisionInfo;
-  createTask: (input: { title: string; description?: string; assignedTo: string | null; departmentId: string | null; dueDate: string | null; locationIds?: string[]; isPeerAssignment?: boolean; kraId?: string | null; kraWeight?: number | null; kraCompletionWeight?: number | null }) => Promise<string>;
+  createTask: (input: { title: string; description?: string; assignedTo: string | null; departmentId: string | null; dueDate: string | null; locationIds?: string[]; isPeerAssignment?: boolean; kraId?: string | null; kraOpen?: boolean; kraWeight?: number | null; kraCompletionWeight?: number | null }) => Promise<string>;
   /** The assignee's direct HOD rates a completed KRA task 1-10 (lib/kraTasks.ts). */
-  reviewKraTask: (id: string, rating: number, note?: string) => Promise<void>;
+  reviewKraTask: (id: string, rating: number, note?: string, kraId?: string) => Promise<void>;
   /** Create a personal (self-tracking) task. Self-assigned and excluded from every score/RYG/dashboard metric. */
   createPersonalTask: (input: { title: string; description?: string; dueDate: string | null }) => Promise<string>;
   /** Edit a personal task's title/description/due date. */
@@ -96,7 +96,7 @@ interface TaskStoreValue {
   updateTask: (id: string, patch: { title: string; description?: string; dueDate: string | null; locationIds: string[] }) => Promise<void>;
   deleteTask: (id: string) => Promise<void>;
   startTask: (id: string) => Promise<void>;
-  completeTask: (id: string, note?: string) => Promise<void>;
+  completeTask: (id: string, note?: string, kraId?: string) => Promise<void>;
   reopenTask: (id: string) => Promise<void>;
   /** Mark a "when" task instance Not Applicable for its day, or back to applicable. Reversible. */
   setTaskNotApplicable: (id: string, value: boolean) => Promise<void>;
@@ -595,9 +595,9 @@ export function TaskStoreProvider({ children }: { children: ReactNode }) {
         await startTaskWrite(id, user.id);
         await refreshTasks(id);
       },
-      completeTask: async (id, note) => {
+      completeTask: async (id, note, kraId) => {
         try {
-          await completeTaskWrite(id, user.id, note);
+          await completeTaskWrite(id, user.id, note, kraId);
         } catch (e) {
           // The `enforce_task_locations_complete` trigger rejects a completion
           // whose checklist isn't fully resolved, and the modal renders that
@@ -617,8 +617,8 @@ export function TaskStoreProvider({ children }: { children: ReactNode }) {
         await reopenTaskWrite(id, user.id);
         await refreshTasks(id);
       },
-      reviewKraTask: async (id, rating, note) => {
-        await saveKraReview(id, rating, user.id, note);
+      reviewKraTask: async (id, rating, note, kraId) => {
+        await saveKraReview(id, rating, user.id, note, kraId);
         await refreshTasks(id);
       },
       // setTaskNotApplicable: LIVE. A plain not_applicable column update under the

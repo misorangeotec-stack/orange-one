@@ -160,6 +160,10 @@ export interface Task {
   reviewRating: number | null;
   reviewedBy: string | null;
   reviewedAt: string | null;
+  // Director KRA task (20270130120000): category "KRA" with the KRA picked later, and
+  // who reviews it (null = the assignee's direct HOD). See lib/kraColumns.ts.
+  kraOpen: boolean;
+  kraReviewerId: string | null;
   createdAt: string; // ISO datetime
   updatedAt: string; // ISO datetime — bumped on any task change (status, revise, remark, reschedule)
   lastRemarkAt: string | null;

@@ -455,6 +455,7 @@ export default function TaskTable({ tasks, sort, onSort, showDepartment = false,
                         <div className="min-w-0" title={name ? `KRA: ${name}` : "KRA task"}>
                           <span className="inline-flex items-center text-[10px] font-semibold uppercase tracking-wide text-[#0f7b6c] bg-[#E3F5F1] rounded-pill px-1.5 py-0.5">KRA</span>
                           {name && <div className="text-[11px] text-grey mt-0.5 truncate">{name}</div>}
+                          {!task.kraId && <div className="text-[11px] text-[#9a6200] mt-0.5 truncate">KRA to be picked</div>}
                         </div>
                       );
                     }
