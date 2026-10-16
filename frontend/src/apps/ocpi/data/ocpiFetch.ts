@@ -691,6 +691,7 @@ export async function fetchOcpiData(): Promise<OcpiData> {
     serviceChecklists: checklistRows.map(
       (r: any): OcpiServiceChecklist => ({
         id: r.id, machineId: r.machine_id, filePath: r.file_path, fileName: r.file_name,
+        items: Array.isArray(r.items) ? r.items.map(String) : [],
         uploadedBy: r.uploaded_by ?? null, updatedAt: r.updated_at,
       }),
     ),

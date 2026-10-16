@@ -22,7 +22,7 @@ function safeName(name: string): string {
 }
 
 /**
- * Upload (or replace) a machine's checklist PDF.
+ * Upload (or replace) a machine's checklist PDF, with the check points read from it.
  *
  * Writes a NEW path every time and removes the old object only after the row
  * points at the new one, so a failed upload never leaves a deal pointing at
@@ -32,6 +32,8 @@ export async function uploadServiceChecklist(
   machineId: string,
   file: File,
   existing: OcpiServiceChecklist | undefined,
+  /** The check points read from the PDF (lib/checklistPdf.ts). */
+  items: string[],
 ): Promise<void> {
   const isPdf = file.type === "application/pdf" || /\.pdf$/i.test(file.name);
   if (!isPdf) throw new Error("Only a PDF can be uploaded as the service checklist.");
@@ -55,6 +57,7 @@ export async function uploadServiceChecklist(
       machine_id: machineId,
       file_path: path,
       file_name: file.name,
+      items,
       uploaded_by: auth.user?.id ?? null,
     },
     { onConflict: "machine_id" },

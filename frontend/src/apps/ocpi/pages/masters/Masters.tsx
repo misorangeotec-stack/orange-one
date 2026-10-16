@@ -32,7 +32,8 @@ const TABS: { key: Tab; label: string }[] = [
   { key: "ink_type", label: "Ink types" },
   { key: "dryer_type", label: "Dryer categories" },
   { key: "dryer", label: "Dryers" },
-  { key: "service_check", label: "Service check points" },
+  // "Service check points" (service_check) is retired from the menu: the check points now
+  // come from each machine's checklist PDF (Service checklists tab, migration 20270131120000).
   { key: "service_checklist", label: "Service checklists (PDF)" },
 ];
 

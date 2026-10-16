@@ -835,6 +835,8 @@ export interface OcpiServiceChecklist {
   machineId: string;
   filePath: string;
   fileName: string;
+  /** The check points read from the PDF, one per line — the Service Check's boxes. */
+  items: string[];
   uploadedBy: string | null;
   updatedAt: string;
 }

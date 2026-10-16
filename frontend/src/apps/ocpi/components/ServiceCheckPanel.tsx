@@ -42,14 +42,20 @@ function Tick({ label, checked, onChange, disabled }: {
 export default function ServiceCheckPanel({ deal }: { deal: OcpiDeal }) {
   const s = useOcpiStore();
   const personById = useOrgPersonById();
-  const activePoints = s.serviceCheckpoints.filter((c) => c.active);
+  // ⚠ THE CHECK POINTS ARE THE MACHINE'S CHECKLIST PDF, read into lines when it
+  //   was uploaded (Masters → Service checklists). The old manual master
+  //   (fms_ocpi_service_checkpoints) is no longer used.
+  const points = s.serviceChecklistFor(deal.machineId)?.items ?? [];
 
   const [installationDate, setInstallationDate] = useState("");
   const [engineer, setEngineer] = useState("");
   const [contactName, setContactName] = useState("");
   const [contactPhone, setContactPhone] = useState("");
   const [siteReady, setSiteReady] = useState(false);
-  const [ticked, setTicked] = useState<Record<string, boolean>>({});
+  /** Per point: accepted (true) / rejected (false), and the reason for a rejection. */
+  const [answers, setAnswers] = useState<Record<string, { ok: boolean; remark: string }>>({});
+  const answer = (name: string, patch: Partial<{ ok: boolean; remark: string }>) =>
+    setAnswers((a) => ({ ...a, [name]: { ...(a[name] ?? { ok: true, remark: "" }), ...patch } }));
   const [note, setNote] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -98,7 +104,7 @@ export default function ServiceCheckPanel({ deal }: { deal: OcpiDeal }) {
                   {c.remark && <span className="block text-[12.5px] text-grey-2">{c.remark}</span>}
                 </span>
                 <span className={`shrink-0 font-semibold ${c.ok ? "text-ryg-green" : "text-ryg-red"}`}>
-                  {c.ok ? "Yes" : "No"}
+                  {c.ok ? "Accepted" : "Rejected"}
                 </span>
               </li>
             ))}
@@ -113,7 +119,10 @@ export default function ServiceCheckPanel({ deal }: { deal: OcpiDeal }) {
   if (!isServiceOpen(deal)) return null;
 
   const mayAct = s.canActOn("service_check");
-  const allTicked = siteReady && activePoints.every((c) => ticked[c.name]);
+  // Every point answered; a rejected point needs its reason.
+  const allTicked =
+    siteReady &&
+    points.every((p) => answers[p] && (answers[p].ok || !!answers[p].remark.trim()));
   const filled =
     !!installationDate && !!engineer.trim() && !!contactName.trim() && !!contactPhone.trim();
 
@@ -128,7 +137,11 @@ export default function ServiceCheckPanel({ deal }: { deal: OcpiDeal }) {
         siteContactPhone: contactPhone,
         siteReady,
         siteRemark: "",
-        checks: activePoints.map((c) => ({ name: c.name, ok: !!ticked[c.name], remark: "" })),
+        checks: points.map((p) => ({
+          name: p,
+          ok: !!answers[p]?.ok,
+          remark: answers[p]?.ok ? "" : (answers[p]?.remark ?? "").trim(),
+        })),
         note,
       });
       await s.refresh();
@@ -158,7 +171,8 @@ export default function ServiceCheckPanel({ deal }: { deal: OcpiDeal }) {
             <h2 className="text-[15px] font-bold text-navy">Service Check</h2>
             <p className="mt-0.5 text-[13.5px] text-grey-2">
               Sent to the service team on {dmy(deal.svcOpenedAt)}, together with the Finance handover.
-              Fill the four fields and tick every box, then submit. This completes the service
+              Fill the four fields, tick &ldquo;Site is ready&rdquo;, and accept or reject every
+              point of the machine&rsquo;s service checklist, then submit. This completes the service
               team&rsquo;s part and changes nothing else on the deal.
             </p>
           </div>
@@ -198,22 +212,57 @@ export default function ServiceCheckPanel({ deal }: { deal: OcpiDeal }) {
           </div>
 
           <div className="space-y-2">
-            <h3 className="text-[13.5px] font-bold text-navy">Tick every box</h3>
             <div className="divide-y divide-line rounded-xl border border-line">
               <Tick label="Site is ready for installation" checked={siteReady} onChange={setSiteReady} disabled={busy} />
-              {activePoints.map((c) => (
-                <Tick
-                  key={c.id}
-                  label={c.name}
-                  checked={!!ticked[c.name]}
-                  onChange={(v) => setTicked((t) => ({ ...t, [c.name]: v }))}
-                  disabled={busy}
-                />
-              ))}
             </div>
-            {activePoints.length === 0 && (
+
+            <h3 className="pt-2 text-[13.5px] font-bold text-navy">
+              Service checklist{points.length > 0 && ` — ${points.length} points`}
+            </h3>
+            {points.length > 0 ? (
+              <ol className="divide-y divide-line rounded-xl border border-line">
+                {points.map((p, i) => {
+                  const a = answers[p];
+                  const choice = (ok: boolean, label: string, on: string) => (
+                    <button
+                      type="button"
+                      onClick={() => answer(p, { ok })}
+                      disabled={busy}
+                      className={`rounded-lg border px-3 py-1 text-[12.5px] font-semibold transition disabled:opacity-50 ${
+                        a?.ok === ok ? on : "border-line text-grey-2 hover:text-navy"
+                      }`}
+                    >
+                      {label}
+                    </button>
+                  );
+                  return (
+                    <li key={p} className="space-y-2 px-4 py-2.5">
+                      <div className="flex items-start justify-between gap-3">
+                        <span className="text-[13.5px] text-navy">
+                          <span className="mr-2 text-grey-2">{i + 1}.</span>
+                          {p}
+                        </span>
+                        <span className="flex shrink-0 gap-1.5">
+                          {choice(true, "Accept", "border-ryg-green bg-ryg-green text-white")}
+                          {choice(false, "Reject", "border-ryg-red bg-ryg-red text-white")}
+                        </span>
+                      </div>
+                      {a && !a.ok && (
+                        <TextInput
+                          value={a.remark}
+                          onChange={(e) => answer(p, { remark: e.target.value })}
+                          placeholder="Reason for rejecting (required)"
+                          disabled={busy}
+                        />
+                      )}
+                    </li>
+                  );
+                })}
+              </ol>
+            ) : (
               <p className="text-[12.5px] text-grey-2">
-                More check points can be added under Masters → Service check points.
+                No service checklist with check points is uploaded for this machine. Upload its PDF
+                on Masters → Service checklists (PDF).
               </p>
             )}
           </div>
@@ -228,7 +277,8 @@ export default function ServiceCheckPanel({ deal }: { deal: OcpiDeal }) {
             </Button>
             {(!allTicked || !filled) && (
               <span className="ml-3 text-[12.5px] text-grey-2">
-                Fill all four fields and tick every box to submit.
+                Fill all four fields, tick &ldquo;Site is ready&rdquo; and answer every checklist
+                point (a rejection needs a reason) to submit.
               </span>
             )}
           </div>
