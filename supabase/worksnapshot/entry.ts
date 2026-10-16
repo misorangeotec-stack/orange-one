@@ -219,6 +219,10 @@ export const DELIBERATELY_UNCOVERED: Record<string, string> = {
   // client for (the browser's reads import.meta.env). Screen only until a ConnectWave
   // server shim exists.
   "ink-stabilisation": "untested retests need ConnectWave lots — no server reader for them yet",
+  // Added 14-10-2026 with its My Work provider. Its rows are all in Orange One, but
+  // `fetchPv` shares a module with the ConnectWave stock reader the server bundle
+  // cannot load. Screen only until that fetcher is split out.
+  "physical-verification": "fetcher sits beside the ConnectWave stock reader — no server reader for it yet",
 };
 
 // ── Clock ─────────────────────────────────────────────────────────────────────

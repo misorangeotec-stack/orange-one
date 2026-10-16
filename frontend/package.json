@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "tsc && vite build",
+    "build": "node scripts/check-mywork-coverage.mjs && tsc && vite build",
     "preview": "vite preview",
     "backup": "node scripts/backup-db.mjs",
     "handbook": "node scripts/ingest-handbook.mjs",
