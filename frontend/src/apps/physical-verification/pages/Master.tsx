@@ -15,6 +15,8 @@ import {
 } from "@/apps/ink-expiry/components/SortFilterHead";
 import { DEFAULT_PRIMARY, fmtDate, fmtInr, fmtQty, fmtStamp, OTEC_SURAT_NAME, type StockItem } from "../lib/stock";
 import { canSchedule, PV_QUERY, scheduleItems, STATUS_LABEL, unscheduleItems, usePv, useStock, type CountRow } from "../lib/pv";
+import { centralLink, CENTRAL_QUERY, saveCentralField, useCentral } from "../lib/central";
+import type { ImsLink } from "@/apps/bushra-central-master/lib/imsLink";
 import { Diff, inputCls, PageHead, PvUnavailable, StatusPill, Tile } from "../components/parts";
 
 /**
@@ -23,6 +25,10 @@ import { Diff, inputCls, PageHead, PvUnavailable, StatusPill, Tile } from "../co
  * Every column heading sorts and filters (Excel style); Primary group and Sub group also sit
  * above the table. The admin ticks items, picks a verification date and a verifier, and sets
  * it. On that date the items appear on the verifier's Count page — and nothing else does.
+ *
+ * LINE BY LINE TOO (asked 17-10-2026): the Verification date and Verifier cells are boxes, so
+ * one item can be given its own date without ticking it. Ticking + "Set date" still works.
+ * Central group / Central category come from Bushra Central Master and save back into it.
  */
 
 type Filter = "all" | "none" | "scheduled" | "submitted" | "returned" | "accepted";
@@ -31,7 +37,12 @@ interface Row {
   s: StockItem;
   open: CountRow | null;
   last: CountRow | null;
+  /** The item's Bushra Central Master row; missing when Central Masters does not carry it. */
+  link: ImsLink | undefined;
 }
+
+/** A date the picker is still being typed into (year 0002, 0020 …) is not a date yet. */
+const isWholeDate = (v: string) => /^\d{4}-\d{2}-\d{2}$/.test(v) && Number(v.slice(0, 4)) >= 2000;
 
 const statusOf = (r: Row): Filter => r.open?.status ?? (r.last ? "accepted" : "none");
 // "No date" = no open round; "Verified" = no open round and a past accepted count.
@@ -45,6 +56,42 @@ const F: { v: Filter; label: string }[] = [
 const STATUS_TEXT = (r: Row) => (r.open ? STATUS_LABEL[r.open.status] : r.last ? "Verified" : "Not scheduled");
 
 const barFilterCls = "h-8 rounded-lg px-2.5 py-0 text-[12px]";
+const cellInputCls = cn(inputCls, "h-7 px-1.5 text-[12px]");
+
+/** A line's date box: saves as soon as a whole date is picked; clearing it and leaving removes the date. */
+function LineDate({ saved, disabled, title, onCommit }: {
+  saved: string; disabled: boolean; title: string; onCommit: (d: string) => void;
+}) {
+  const [v, setV] = useState(saved);
+  useEffect(() => setV(saved), [saved]);
+  return (
+    <input type="date" value={v} disabled={disabled} title={title}
+      onChange={(e) => { setV(e.target.value); if (isWholeDate(e.target.value)) onCommit(e.target.value); }}
+      onBlur={() => { if (!v) { if (saved) onCommit(""); } else if (!isWholeDate(v)) setV(saved); }}
+      className={cn(cellInputCls, "w-[130px]", !v && "text-grey-2")} />
+  );
+}
+
+/** A Bushra Central Master field: a box for its editors (saves on Enter / leaving it), text for everyone else. */
+function CentralCell({ saved, linked, canEdit, disabled, list, onSave }: {
+  saved: string; linked: boolean; canEdit: boolean; disabled: boolean; list: string; onSave: (v: string) => void;
+}) {
+  const [v, setV] = useState(saved);
+  useEffect(() => setV(saved), [saved]);
+  if (!linked) return <span className="text-[11.5px] text-grey-2" title="This item is not in Central Masters">Not in Central</span>;
+  if (!canEdit) return <span>{saved || <span className="text-grey-2">—</span>}</span>;
+  return (
+    <input value={v} list={list} disabled={disabled} placeholder="—"
+      onChange={(e) => setV(e.target.value)}
+      onKeyDown={(e) => {
+        if (e.key === "Enter") e.currentTarget.blur();
+        if (e.key === "Escape") setV(saved);
+      }}
+      // Blank is not saved — the box goes back to Central's value.
+      onBlur={() => { if (!v.trim()) setV(saved); else if (v.trim() !== saved.trim()) onSave(v); }}
+      className={cn(cellInputCls, "w-full min-w-[120px]")} />
+  );
+}
 
 export default function Master() {
   const { user, isAdmin: admin, canEditModule } = useSession();
@@ -54,6 +101,8 @@ export default function Master() {
   const pv = pvQ.data;
   // Step 1 rights (Settings), not only admins. Named isAdmin below to keep the checks short.
   const isAdmin = canSchedule(user.id, admin, canEditModule("physical-verification"), pv);
+  const centralQ = useCentral();
+  const canEditCentral = (admin || canEditModule("bushra-central-master")) && (centralQ.data?.canSave ?? false);
   const people = useQuery({ queryKey: ["orgPeople"], queryFn: fetchOrgPeople, staleTime: 10 * 60_000 });
   const nameOf = (id: string | null | undefined) => (id ? people.data?.find((p) => p.id === id)?.name ?? "—" : "—");
 
@@ -67,9 +116,16 @@ export default function Master() {
 
   const rows: Row[] = useMemo(() => (stockQ.data ?? []).map((s) => ({
     s, open: pv?.open.get(s.item) ?? null, last: pv?.lastAccepted.get(s.item) ?? null,
-  })), [stockQ.data, pv]);
-  const searched = useMemo(() => rows.filter((r) =>
-    matchesSearch(search, `${r.s.item} ${r.s.primaryGroup} ${r.s.subGroup} ${r.s.group}`)), [rows, search]);
+    link: centralLink(centralQ.data?.byKey, s.item),
+  })), [stockQ.data, pv, centralQ.data]);
+  const searched = useMemo(() => rows.filter((r) => matchesSearch(search,
+    `${r.s.item} ${r.s.primaryGroup} ${r.s.subGroup} ${r.s.group} ${r.link?.values.groupName ?? ""} ${r.link?.values.category ?? ""}`)),
+  [rows, search]);
+
+  // Suggestion lists for the two Central boxes.
+  const centralGroups = useMemo(() => [...new Set([...(centralQ.data?.byKey.values() ?? [])]
+    .map((l) => l.values.groupName.trim()).filter(Boolean))].sort((a, b) => a.localeCompare(b)), [centralQ.data]);
+  const centralCats = centralQ.data?.categories ?? [];
 
   const toggle = (item: string) => setPicked((p) => {
     const n = new Set(p);
@@ -85,6 +141,14 @@ export default function Master() {
       ),
     } satisfies Col<Row>] : []),
     { key: "item", label: "Stock item", text: (r) => r.s.item, sort: (r) => r.s.item, className: "font-medium text-navy" },
+    {
+      key: "cgroup", label: "Central group", text: (r) => r.link?.values.groupName ?? "", sort: (r) => r.link?.values.groupName || null,
+      render: (r) => centralCell(r, "groupName", "pv-central-groups"),
+    },
+    {
+      key: "ccat", label: "Central category", text: (r) => r.link?.values.category ?? "", sort: (r) => r.link?.values.category || null,
+      render: (r) => centralCell(r, "category", "pv-central-cats"),
+    },
     { key: "primary", label: "Primary group", text: (r) => r.s.primaryGroup, sort: (r) => r.s.primaryGroup },
     { key: "sub", label: "Sub group", text: (r) => r.s.subGroup, sort: (r) => r.s.subGroup },
     { key: "group", label: "Stock group", text: (r) => r.s.group, sort: (r) => r.s.group, className: "text-grey" },
@@ -100,8 +164,25 @@ export default function Master() {
     {
       key: "date", label: "Verification date", text: (r) => (r.open ? fmtDate(r.open.verifyDate) : ""),
       sort: (r) => r.open?.verifyDate ?? null, className: "font-semibold",
+      render: (r) => (lineEditable(r)
+        ? (
+          <LineDate saved={r.open?.verifyDate.slice(0, 10) ?? ""} disabled={lineBusy.has(r.s.item)} onCommit={(d) => setLineDate(r, d)}
+            title={r.open?.status === "returned" ? "Sent back for recount — a new date re-schedules the recount." : "Pick a date to schedule this item"} />
+        )
+        : <span>{r.open ? fmtDate(r.open.verifyDate) : ""}</span>),
     },
-    { key: "verifier", label: "Verifier", text: (r) => (r.open ? nameOf(r.open.assignedTo) : ""), sort: (r) => (r.open ? nameOf(r.open.assignedTo) : null) },
+    {
+      key: "verifier", label: "Verifier", text: (r) => (r.open ? nameOf(r.open.assignedTo) : ""), sort: (r) => (r.open ? nameOf(r.open.assignedTo) : null),
+      render: (r) => (lineEditable(r)
+        ? (
+          <select value={lineWho(r)} disabled={lineBusy.has(r.s.item)} onChange={(e) => setLineVerifier(r, e.target.value)}
+            className={cn(cellInputCls, "w-full min-w-[110px]")}>
+            <option value="">{verifierOpts.length ? "Pick…" : "Add in Settings"}</option>
+            {verifierOpts.map((v) => <option key={v.id} value={v.id}>{v.name}</option>)}
+          </select>
+        )
+        : <span>{r.open ? nameOf(r.open.assignedTo) : ""}</span>),
+    },
     {
       key: "status", label: "Status", text: STATUS_TEXT, sort: STATUS_TEXT,
       render: (r) => (r.open || !r.last ? <StatusPill status={r.open?.status ?? null} /> : <StatusPill status="accepted" />),
@@ -180,6 +261,73 @@ export default function Master() {
     return `Date removed from ${n} item${n === 1 ? "" : "s"}.`;
   });
 
+  /* ---------------------------------------------------------- line by line -- */
+
+  const [lineBusy, setLineBusy] = useState<Set<string>>(new Set());
+  /** Verifier picked on a line that has no date yet — used when its date is set. */
+  const [lineAssignee, setLineAssignee] = useState<Record<string, string>>({});
+  // A count awaiting review is the reviewer's; the database skips it, so no boxes are offered.
+  function lineEditable(r: Row) { return isAdmin && r.open?.status !== "submitted"; }
+  function lineWho(r: Row) { return r.open?.assignedTo ?? lineAssignee[r.s.item] ?? who; }
+
+  async function runLine(r: Row, fn: () => Promise<string>) {
+    setLineBusy((b) => new Set(b).add(r.s.item)); setNote(null);
+    try {
+      const text = await fn();
+      await qc.invalidateQueries({ queryKey: PV_QUERY });
+      setNote({ ok: true, text });
+    } catch (e) {
+      setNote({ ok: false, text: `${r.s.item}: ${(e as Error).message}` });
+    } finally {
+      setLineBusy((b) => { const n = new Set(b); n.delete(r.s.item); return n; });
+    }
+  }
+
+  function setLineDate(r: Row, d: string) {
+    if (d === (r.open?.verifyDate.slice(0, 10) ?? "")) return;
+    if (!d) {
+      if (r.open?.status !== "scheduled") return;
+      void runLine(r, async () => { await unscheduleItems([r.open!.id]); return `Date removed from ${r.s.item}.`; });
+      return;
+    }
+    const v = lineWho(r);
+    if (!v) { setNote({ ok: false, text: `${r.s.item}: pick the verifier on that line first.` }); return; }
+    void runLine(r, async () => {
+      const n = await scheduleItems([r.s], d, v);
+      return n ? `${r.s.item} set for ${fmtDate(d)} — ${nameOf(v)}.` : `${r.s.item} skipped: its count is awaiting review.`;
+    });
+  }
+
+  function setLineVerifier(r: Row, v: string) {
+    if (!r.open) { setLineAssignee((a) => ({ ...a, [r.s.item]: v })); return; }
+    if (!v || v === r.open.assignedTo) return;
+    const d = r.open.verifyDate.slice(0, 10);
+    void runLine(r, async () => { await scheduleItems([r.s], d, v); return `${r.s.item} now with ${nameOf(v)}.`; });
+  }
+
+  /* ------------------------------------------------- Bushra Central Master -- */
+
+  const [centralBusy, setCentralBusy] = useState<string | null>(null);
+  async function saveCentral(r: Row, field: "groupName" | "category", value: string) {
+    if (!r.link) return;
+    setCentralBusy(r.s.item); setNote(null);
+    try {
+      await saveCentralField(r.link, field, value, user.id);
+      await qc.invalidateQueries({ queryKey: CENTRAL_QUERY });
+      setNote({ ok: true, text: `${r.s.item}: ${field === "groupName" ? "group" : "category"} saved in Bushra Central Master.` });
+    } catch (e) {
+      setNote({ ok: false, text: `${r.s.item}: ${(e as Error).message}` });
+    } finally {
+      setCentralBusy(null);
+    }
+  }
+  function centralCell(r: Row, field: "groupName" | "category", list: string) {
+    return (
+      <CentralCell saved={r.link?.values[field] ?? ""} linked={!!r.link} canEdit={canEditCentral}
+        disabled={centralBusy === r.s.item} list={list} onSave={(v) => void saveCentral(r, field, v)} />
+    );
+  }
+
   const exportList = () => exportRowsToXlsx({
     fileName: "Physical_Verification_Master",
     sheetName: "Master",
@@ -194,6 +342,8 @@ export default function Master() {
     notes: [`Closing stock is Tally's, as at ${fmtStamp(asAt)} (ConnectWave sync).`, "Provision Ink groups and items without stock are left out."],
     columns: [
       { header: "Stock item", width: 40, value: (r) => r.s.item },
+      { header: "Central group", width: 22, value: (r) => r.link?.values.groupName ?? "" },
+      { header: "Central category", width: 22, value: (r) => r.link?.values.category ?? "" },
       { header: "Primary group", width: 20, value: (r) => r.s.primaryGroup },
       { header: "Sub group", width: 22, value: (r) => r.s.subGroup },
       { header: "Stock group", width: 26, value: (r) => r.s.group },
@@ -213,7 +363,7 @@ export default function Master() {
       <PageHead
         kicker="Physical Verification · Master"
         title={`${OTEC_SURAT_NAME} — stock master`}
-        sub={<>Items holding closing stock in Tally, as at <b>{fmtStamp(asAt)}</b>. Filter, tick items, set the verification date and verifier.</>}
+        sub={<>Items holding closing stock in Tally, as at <b>{fmtStamp(asAt)}</b>. Pick a date on any line, or tick items and set one date for all of them.</>}
         right={<Button variant="ghost" size="sm" onClick={exportList} disabled={!shown.length}>Export Excel</Button>}
       />
 
@@ -253,6 +403,9 @@ export default function Master() {
           <button className="ml-auto text-[12px] text-grey hover:text-navy" onClick={() => setPicked(new Set())}>Clear</button>
         </Card>
       )}
+      {centralQ.data?.note && <div className="text-[12px] text-[#B7791F]">{centralQ.data.note}</div>}
+      <datalist id="pv-central-groups">{centralGroups.map((g) => <option key={g} value={g} />)}</datalist>
+      <datalist id="pv-central-cats">{centralCats.map((c) => <option key={c} value={c} />)}</datalist>
       {note && <div className={cn("text-[12.5px]", note.ok ? "text-ryg-green" : "text-ryg-red")}>{note.text}</div>}
 
       <Card className="overflow-hidden">
