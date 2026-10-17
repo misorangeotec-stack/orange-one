@@ -1,3 +1,4 @@
+import { useBackState } from "@/shared/lib/backState";
 import { useMemo, useState } from "react";
 import * as XLSX from "xlsx-js-style";
 import { allocLabel } from "@hub/lib/allocation";
@@ -75,7 +76,7 @@ export default function OtherPaymentsReport() {
   const { loading, error, allCustomers, customerDetail, salesPersonOptions, collectionTeamOptions } = useAppData();
   const { label: fyLabel } = useFY();
 
-  const [search, setSearch] = useState("");
+  const [search, setSearch] = useBackState("OtherPaymentsReport.search", "");
   const [salesPersons, setSalesPersons] = useState<string[]>([]);
   const [collectionTeams, setCollectionTeams] = useState<string[]>([]);
   const [categories, setCategories] = useState<string[]>([]);

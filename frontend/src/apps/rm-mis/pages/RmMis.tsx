@@ -35,6 +35,7 @@
  * ETD IS EXCLUDED FROM COVER. Only ETA and AT PORT count towards the total, matching the
  * sheet's "ETA + AT PORT + STOCK". Goods that have not left the supplier are not cover.
  */
+import { useBackState } from "@/shared/lib/backState";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { CSSProperties, ReactNode } from "react";
 import { Link } from "react-router-dom";
@@ -101,7 +102,7 @@ export default function RmMis() {
 
   // One book, so one tab: the book itself. (Ink IMS opens on "combined" across four.)
   const [tab, setTab] = useState<string>(INK_COMPANIES[0].key);
-  const [search, setSearch] = useState("");
+  const [search, setSearch] = useBackState("RmMis.search", "");
   /**
    * A FILTER ON EVERY HEADING, keyed by column id.
    *

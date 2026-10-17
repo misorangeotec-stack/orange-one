@@ -6,6 +6,7 @@
  * Mirrors the Risk Register's list scaffolding (filter bar + FilterChips + hand-rolled 25/page
  * pagination) rather than TallyReportFrame, which is company-card oriented.
  */
+import { useBackState } from "@/shared/lib/backState";
 import { useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
@@ -87,7 +88,7 @@ export default function LedgerOutstandingList() {
     return (guid: string) => m.get(guid) ?? guid;
   }, [companies]);
 
-  const [search, setSearch] = useState("");
+  const [search, setSearch] = useBackState("LedgerOutstandingList.search", "");
   const [companyFilters, setCompanyFilters] = useState<string[]>([]);
   const [groupFilters, setGroupFilters] = useState<string[]>([]);
   const [page, setPage] = useState(1);

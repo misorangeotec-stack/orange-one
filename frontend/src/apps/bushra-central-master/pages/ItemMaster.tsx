@@ -1,3 +1,4 @@
+import { useBackState } from "@/shared/lib/backState";
 import { useCallback, useEffect, useMemo, useRef, useState, type ChangeEvent } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useSearchParams } from "react-router-dom";
@@ -217,7 +218,7 @@ export default function ItemMaster() {
   const focusOn = focusNames.size > 0;
   const leaveFocus = () => setParams({}, { replace: true });
 
-  const [q, setQ] = useState("");
+  const [q, setQ] = useBackState("ItemMaster.q", "");
   const [filter, setFilter] = useState<Filter>("all");
   const [colFilters, setColFilters] = useState<Record<string, string[]>>({});
   const [sort, setSort] = useState<{ key: ColKey; dir: 1 | -1 } | null>(null);

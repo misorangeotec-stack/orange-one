@@ -10,6 +10,7 @@
  * The per-company Refresh control is not repeated here: the snapshot rebuilds after every Tally
  * sync, and the manual refresh stays on the Tally report.
  */
+import { useBackState } from "@/shared/lib/backState";
 import { useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
@@ -186,7 +187,7 @@ export default function BushraSalesRegister() {
 
   /* -------- filters (same one-pass cascade as the Tally Sales Register) -------- */
   const [sel, setSel] = useState<Record<FilterKey, string[]>>(NO_FILTERS);
-  const [search, setSearch] = useState("");
+  const [search, setSearch] = useBackState("BushraSalesRegister.search", "");
 
   const searched = useMemo(() => {
     const q = search.trim().toLowerCase();

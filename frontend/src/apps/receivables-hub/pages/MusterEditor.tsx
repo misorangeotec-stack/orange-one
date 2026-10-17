@@ -1,3 +1,4 @@
+import { useBackState } from "@/shared/lib/backState";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
@@ -165,7 +166,7 @@ function TagMuster({ rows, snapByGuid, master, knownNames, onReload }: {
   master: NameMasterRow[]; knownNames: Set<string>; onReload: () => void;
 }) {
   const { toast } = useToast();
-  const [search, setSearch] = useState("");
+  const [search, setSearch] = useBackState("MusterEditor.search.1", "");
   const [balanceOnly, setBalanceOnly] = useState(false);
   const [page, setPage] = useState(1);
   const [draft, setDraft] = useState<Record<string, TagDraft>>({});
@@ -415,7 +416,7 @@ function GroupMuster({ rows, snapByGuid, master, knownNames, onReload }: {
   master: NameMasterRow[]; knownNames: Set<string>; onReload: () => void;
 }) {
   const { toast } = useToast();
-  const [search, setSearch] = useState("");
+  const [search, setSearch] = useBackState("MusterEditor.search.2", "");
   const [balanceOnly, setBalanceOnly] = useState(false);
   const [page, setPage] = useState(1);
   const [draft, setDraft] = useState<Record<string, GroupDraft>>({});
@@ -669,7 +670,7 @@ function CompanyMuster({ rows, custCounts, onReload }: {
   onReload: () => void;
 }) {
   const { toast } = useToast();
-  const [search, setSearch] = useState("");
+  const [search, setSearch] = useBackState("MusterEditor.search.3", "");
   const [draft, setDraft] = useState<Record<string, { company: string; location: string; checked: boolean }>>({});
   const [saving, setSaving] = useState<string | null>(null);
 
@@ -842,7 +843,7 @@ function CustomerPicker({ snap, value, onPick }: {
   snap: SnapRow[]; value: string | null; onPick: (s: SnapRow) => void;
 }) {
   const [open, setOpen] = useState(false);
-  const [q, setQ] = useState("");
+  const [q, setQ] = useBackState("MusterEditor.q.4", "");
   const picked = value ? snap.find((s) => s.ledger_id === value) : undefined;
   const matches = useMemo(() => {
     const needle = q.trim().toUpperCase();
@@ -1009,7 +1010,7 @@ function OtherPaymentMuster({ rows, snap, snapByGuid, onReload }: {
   const [addOpen, setAddOpen] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState<OtherPaymentRow | null>(null);
 
-  const [search, setSearch] = useState("");
+  const [search, setSearch] = useBackState("MusterEditor.search.5", "");
   const [page, setPage] = useState(1);
 
   const cur = (r: OtherPaymentRow): OpDraft => draft[String(r.id)] ?? draftOf(r);
@@ -1415,7 +1416,7 @@ function RedMarkMuster({ rows, snap, snapByGuid, teamByGuid, master, knownNames,
   const [clearView, setClearView] = useState<ClearView>(CLEAR_VIEW_DEFAULT);
   const canClear = useCanClear();
 
-  const [search, setSearch] = useState("");
+  const [search, setSearch] = useBackState("MusterEditor.search.6", "");
   const [page, setPage] = useState(1);
 
   const cur = (r: RedMarkRow): RmDraft => draft[r.ledger_id] ?? rmDraftOf(r);
@@ -1750,7 +1751,7 @@ function DisputeMuster({ snap, snapByGuid, teamByGuid }: {
   const [clearing, setClearing] = useState<{ row: DisputeRow; mode: "clear" | "reopen" } | null>(null);
   const [clearBusy, setClearBusy] = useState(false);
   const [clearView, setClearView] = useState<ClearView>(CLEAR_VIEW_DEFAULT);
-  const [search, setSearch] = useState("");
+  const [search, setSearch] = useBackState("MusterEditor.search.7", "");
   const [page, setPage] = useState(1);
 
   /** Every open (ledger, bill) — "is this dispute's bill still open?" — and the bills per customer. */
