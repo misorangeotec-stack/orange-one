@@ -12,7 +12,7 @@ import { useTaskStore } from "../mock/store";
 import LocationPicker from "../components/LocationPicker";
 import { MONTH_LAST_DAY, type RecurrenceType } from "../types";
 import { fetchKras, KRAS_QUERY_KEY, reviewWeightOf } from "@/core/admin/kras";
-import { pctLabel } from "../lib/kraTasks";
+import { pctLabel, seesKraWeights } from "../lib/kraTasks";
 
 /** Task Category value for the ordinary task — no KRA, no review (same as Create Task). */
 const OTHERS = "others";
@@ -185,11 +185,11 @@ export default function RecurringForm() {
                 onChange={(v) => setCategory(v || OTHERS)}
                 options={[
                   { value: OTHERS, label: "Others", sublabel: "Ordinary task — no KRA, no review" },
-                  ...assigneeKras.map((k) => ({ value: k.id, label: k.name, sublabel: `KRA · Wt ${pctLabel(k.weight)}`, group: "KRAs" })),
+                  ...assigneeKras.map((k) => ({ value: k.id, label: k.name, sublabel: seesKraWeights(role) ? `KRA · Wt ${pctLabel(k.weight)}` : "KRA", group: "KRAs" })),
                   ...(staleKra ? [{ value: category, label: "KRA switched off", sublabel: "Tasks generate as Others until you pick a KRA", group: "KRAs" }] : []),
                 ]}
               />
-              {pickedKra && (
+              {pickedKra && seesKraWeights(role) && (
                 <p className="mt-1.5 text-[12px] text-grey">
                   Every task this generates is worth <b className="text-navy">{pctLabel(pickedKra.weight)}</b>:{" "}
                   {pctLabel(pickedKra.completionWeight)} when it is completed, and up to{" "}
