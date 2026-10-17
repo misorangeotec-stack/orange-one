@@ -1,3 +1,4 @@
+import { useBackState } from "@/shared/lib/backState";
 import {
   useState, useMemo, useEffect, useRef, useLayoutEffect, useCallback, Fragment,
   type ReactNode, type CSSProperties,
@@ -174,7 +175,7 @@ function OverdueAgingInner() {
   const horizonStart = useMemo(() => horizonStartFrom(months), [months]);
 
   // ── Filters ───────────────────────────────────────────────────────────────────────
-  const [search, setSearch] = useState("");
+  const [search, setSearch] = useBackState("OverdueAgingReport.search", "");
   const [customerNames, setCustomerNames] = useState<string[]>([]);
   const [groupNamesSel, setGroupNamesSel] = useState<string[]>([]);
   const [salespersons, setSalespersons] = useState<string[]>([]);

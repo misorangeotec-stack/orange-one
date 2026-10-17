@@ -34,6 +34,7 @@
  * Quantities are only totalled when the filtered set has ONE base unit. Summing KGS + MTR + PCS is
  * not a number anybody can use, which is what earns the Base Unit filter its slot.
  */
+import { useBackState } from "@/shared/lib/backState";
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { CSSProperties } from "react";
 import { Link, useSearchParams } from "react-router-dom";
@@ -205,8 +206,8 @@ export default function StockSummary() {
   const [categories, setCategories] = useState<string[]>([]);
   const [units, setUnits] = useState<string[]>([]);
   const [show, setShow] = useState<ShowMode>("all");
-  const [searchRaw, setSearchRaw] = useState("");
-  const [search, setSearch] = useState("");
+  const [searchRaw, setSearchRaw] = useBackState("StockSummary.searchRaw", "");
+  const [search, setSearch] = useBackState("StockSummary.search", "");
   const [panelOpen, setPanelOpen] = useState(false);
 
   // 8,000 items × every keystroke is the one place this page can feel slow.

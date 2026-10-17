@@ -21,6 +21,7 @@
  * come from the `rpt_sales_despatch` sidecar merged in lib/salesRegister.ts; a voucher with an
  * empty despatch block renders them blank, which is the honest reading — Tally holds nothing there.
  */
+import { useBackState } from "@/shared/lib/backState";
 import { useMemo, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
@@ -106,7 +107,7 @@ export default function SalesRegister() {
   // special cases — the house rule is that a column's options come from the rows surviving every
   // OTHER filter, so adding a fifth column must not mean rewriting the other four.
   const [sel, setSel] = useState<Record<FilterKey, string[]>>(NO_FILTERS);
-  const [search, setSearch] = useState("");
+  const [search, setSearch] = useBackState("SalesRegister.search", "");
 
   const searched = useMemo(() => {
     const q = search.trim().toLowerCase();

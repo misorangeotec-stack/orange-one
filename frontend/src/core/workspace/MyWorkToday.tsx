@@ -44,6 +44,7 @@ import { ScrollableTable } from "@/core/shared/components/ScrollableTable";
 import Pagination from "@/shared/components/ui/Pagination";
 import { usePagination } from "@/shared/lib/usePagination";
 import { matchesSearch } from "@/shared/lib/search";
+import { useBackState } from "@/shared/lib/backState";
 import { bucketOf, holdAwareBucketOf, todayLocalIso, type Bucket, type WorkBucket } from "@/shared/lib/dueBuckets";
 import { useSession } from "@/core/platform/session";
 import { cn } from "@/shared/lib/cn";
@@ -180,11 +181,13 @@ export function MyWorkView({ state }: { state: AggregateState }) {
       { replace: true },
     );
 
-  const [bucketFilter, setBucketFilter] = useState<WorkBucket | null>(null);
-  const [sources, setSources] = useState<string[]>([]);
-  const [stages, setStages] = useState<string[]>([]);
-  const [assignment, setAssignment] = useState<string[]>([]);
-  const [q, setQ] = useState("");
+  // The search and filters come back with the browser's Back button (shared/lib/backState):
+  // search, open a row in its FMS, press Back, and this list is the one you left.
+  const [bucketFilter, setBucketFilter] = useBackState<WorkBucket | null>("bucket", null);
+  const [sources, setSources] = useBackState<string[]>("sources", []);
+  const [stages, setStages] = useBackState<string[]>("stages", []);
+  const [assignment, setAssignment] = useBackState<string[]>("assignment", []);
+  const [q, setQ] = useBackState("q", "");
   // Rows open in the side panel (WorkPanel) — the FMS's own page, beside this one.
   const setOpenItem = useOpenWorkItem();
 
@@ -203,7 +206,7 @@ export function MyWorkView({ state }: { state: AggregateState }) {
   //
   // Non-admins are already scoped to their own work by each provider, so the tab
   // is hidden for them and scope is pinned to "all" (a no-op on their data).
-  const [adminScope, setAdminScope] = useState<"mine" | "all">("mine");
+  const [adminScope, setAdminScope] = useBackState<"mine" | "all">("adminScope", "mine");
   const scope: "mine" | "all" = isAdmin ? adminScope : "all";
   const setScopePref = (s: "mine" | "all") => {
     setAdminScope(s);
@@ -223,7 +226,8 @@ export function MyWorkView({ state }: { state: AggregateState }) {
   // its FMS is picked on the bucket board. Which groups are open is therefore not
   // remembered between visits — it used to be, and a group left open last time
   // greeted the reader already expanded.
-  const [expanded, setExpanded] = useState<Set<string>>(() => new Set());
+  // (Back onto this screen is not a visit: it reopens the groups you had open.)
+  const [expanded, setExpanded] = useBackState<Set<string>>("expanded", () => new Set());
 
   const setGrouping = (on: boolean) => {
     setGroupBySource(on);
