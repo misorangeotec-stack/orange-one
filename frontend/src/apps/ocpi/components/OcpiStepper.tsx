@@ -229,12 +229,14 @@ export default function OcpiStepper({ deal, fit }: { deal: OcpiDeal; fit?: boole
         key: st.key,
         label: st.label,
         departments: [],
-        // Falling back to the owner list when a finished step has no actor on
-        // record keeps the column from reading "Unassigned" for work that was
-        // demonstrably done.
-        people: actor
-          ? [actor]
-          : (s.ownersOf(st.step).map(name).filter(Boolean) as string[]),
+        // A done step's actor goes to `doneBy`, which the rail shows in place of the
+        // owners. Falling back to the owner list when it has no actor on record keeps
+        // the column from reading "Unassigned" for work that was demonstrably done.
+        people:
+          actor && !isDone
+            ? [actor]
+            : (s.ownersOf(st.step).map(name).filter(Boolean) as string[]),
+        doneBy: actor && isDone ? [actor] : undefined,
         hasStep: true,
         note: isDone && doneAt ? dmy(doneAt) : undefined,
       };

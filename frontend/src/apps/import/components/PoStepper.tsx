@@ -1,7 +1,7 @@
 import { useMemo } from "react";
 import PoStageRail, { type PoStageRailNode } from "@/shared/components/ui/PoStageRail";
 import { useImportStore } from "../store";
-import { buildFlowNodes, poFlowIndex } from "./flowNodes";
+import { buildFlowNodes, flowDoneBy, poFlowIndex } from "./flowNodes";
 import type { PurchaseOrder } from "../types";
 
 /**
@@ -25,7 +25,20 @@ export default function PoStepper({ po }: { po: PurchaseOrder }) {
   // something — otherwise those two nodes never existed for it.
   const showReturnBranch = s.qcInspections.some((q) => q.poId === po.id && q.result === "rejected");
 
-  const nodes: PoStageRailNode[] = useMemo(() => buildFlowNodes(s, showReturnBranch), [s, showReturnBranch]);
+  // Who did each stage: the request half from this PO's own lines (and their
+  // requisitions), the PO half from this PO alone.
+  const doneBy = useMemo(() => {
+    const lines = s
+      .poItemsForPo(po.id)
+      .map((pi) => s.lineById(pi.requestItemId))
+      .filter((l): l is NonNullable<typeof l> => !!l);
+    return flowDoneBy(s, lines, [po.id]);
+  }, [s, po.id]);
+
+  const nodes: PoStageRailNode[] = useMemo(
+    () => buildFlowNodes(s, showReturnBranch, doneBy),
+    [s, showReturnBranch, doneBy],
+  );
 
   return (
     <PoStageRail
