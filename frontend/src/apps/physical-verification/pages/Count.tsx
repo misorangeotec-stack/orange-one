@@ -79,7 +79,7 @@ export default function Count() {
   [counts, who, user.id, isAdmin]);
 
   // Lot NAMES as suggestions only — the quantities stay hidden.
-  const lotsQ = useLots(due.map((c) => ({ companyGuid: c.companyGuid, item: c.item })));
+  const lotsQ = useLots(due.map((c) => ({ companyGuid: c.companyGuid, item: c.item, closing: null })));
 
   // Seed the boxes from what is already saved on each row.
   useEffect(() => {
@@ -131,12 +131,13 @@ export default function Count() {
       // Fresh Tally closing and lot balances at the moment of saving — frozen on the row. The lot
       // read is capped at 8 s (Enterprises Surat's lot table can time out); without it the count
       // still saves and the row keeps its earlier lot snapshot.
-      const [by, lotsNow] = await Promise.all([
-        stock.refetch(),
-        Promise.race([
-          fetchLots(rows.map((c) => ({ companyGuid: c.companyGuid, item: c.item }))).catch(() => null),
-          new Promise<null>((res) => setTimeout(() => res(null), 8000)),
-        ]),
+      // Lots are tied to the fresh closing, so they add up to exactly what Tally shows.
+      const by = await stock.refetch();
+      const lotsNow = await Promise.race([
+        fetchLots(rows.map((c) => ({
+          companyGuid: c.companyGuid, item: c.item, closing: by.get(itemKey(c.companyGuid, c.item))?.closingQty ?? 0,
+        }))).catch(() => null),
+        new Promise<null>((res) => setTimeout(() => res(null), 8000)),
       ]);
       const n = await saveCounts(rows.map((c) => ({
         id: c.id,

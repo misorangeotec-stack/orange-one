@@ -16,7 +16,7 @@ import { COMPANIES, companyName, fmtDate, fmtInr, fmtQty, fmtStamp, itemKey } fr
 import {
   canReview, diffValue, lotTotal, PV_QUERY, reviewRows, STATUS_LABEL, usePv, type CountRow, type CountStatus, type LotClosing,
 } from "../lib/pv";
-import { lotCompare, useLots } from "../lib/lots";
+import { lotCompare, NO_LOT, useLots } from "../lib/lots";
 import { Diff, inputCls, PageHead, PvUnavailable, StatusPill, Tile } from "../components/parts";
 
 /**
@@ -25,8 +25,8 @@ import { Diff, inputCls, PageHead, PvUnavailable, StatusPill, Tile } from "../co
  * 20-10-2026 (asked):
  *   • Every column sorts, filters and can be hidden (Columns) — remarks run long.
  *   • Lots side by side: the counter's lots and Tally's lots, each with its quantity, and the
- *     difference lot by lot. Tally's lots are the ones frozen at count time; for counts saved
- *     before that existed, Tally's CURRENT lots are shown and marked "now".
+ *     difference lot by lot. Tally's lots are its lot-wise CLOSING, tied to the closing on the
+ *     row (lib/lots.ts) — frozen at count time, or rebuilt as at the count date for older rows.
  *   • Tick → Accept & submit → a pop-up asks a remark for each item. Matching items need none
  *     and are closed; items with a difference need one and go on to 4 · Post to Tally.
  *     Send for recount needs a remark for every item.
@@ -66,7 +66,10 @@ export default function Review() {
 
   // Tally's CURRENT lots, only for rows that froze none at count time.
   const needLive = useMemo(() => searched.filter((c) => !c.lotClosing.length), [searched]);
-  const liveQ = useLots(needLive.map((c) => ({ companyGuid: c.companyGuid, item: c.item })));
+  // Tied to the closing frozen on the row, as at the day it was counted.
+  const liveQ = useLots(needLive.map((c) => ({
+    companyGuid: c.companyGuid, item: c.item, closing: c.closingQty, asOf: c.tallyAsAt ?? c.countedAt,
+  })));
   const tallyLots = (c: CountRow): { lots: LotClosing[]; live: boolean } => (c.lotClosing.length
     ? { lots: c.lotClosing, live: false }
     : { lots: liveQ.data?.get(itemKey(c.companyGuid, c.item)) ?? [], live: true });
@@ -344,7 +347,7 @@ function LotTable({ c, tally, loading }: { c: CountRow; tally: { lots: LotClosin
           <tr className="text-[10px] uppercase tracking-wide text-grey">
             <th className="pr-2 text-left font-semibold">Lot</th>
             <th className="pr-2 text-right font-semibold">Counted</th>
-            <th className="pr-2 text-right font-semibold">Tally{tally.live ? " (now)" : ""}</th>
+            <th className="pr-2 text-right font-semibold">Tally closing</th>
             <th className="text-right font-semibold">Diff</th>
           </tr>
         </thead>
@@ -369,7 +372,7 @@ function LotTable({ c, tally, loading }: { c: CountRow; tally: { lots: LotClosin
         </tbody>
       </table>
       {!c.lotCounts.length && <div className="mt-0.5 text-[10.5px] text-grey">Counted before lot-wise counting — no lots typed.</div>}
-      {tally.live && tally.lots.length > 0 && <div className="mt-0.5 text-[10.5px] text-grey">Tally lots as they are now (none frozen at count time).</div>}
+      {tally.lots.some((l) => l.lot === NO_LOT) && <div className="mt-0.5 text-[10.5px] text-grey">"(no lot record)" = closing stock Tally holds without a lot (opening stock older than the synced entries).</div>}
       {off && <div className="mt-0.5 text-[10.5px] text-[#B7791F]">Tally's lots add up to {fmtQty(tallySum)}, not its closing {fmtQty(c.closingQty)}.</div>}
     </div>
   );
