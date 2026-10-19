@@ -41,10 +41,13 @@ export function physicalVerificationWorkItems(
   const stepOne = isAdmin || isScheduler;
   const base = appBasePath(SOURCE);
 
-  // Same rule as canPost / pv_can_post: step 4 list; empty = step 3 (whose empty = step 1).
+  // Same rule as canReview / pv_can_review: step 3 list; empty = step 1. (Review used to go to
+  // step 1 even with a reviewer list set — those people could not act on it.)
+  const isReviewer = pv.reviewers.includes(uid);
+  const stepThree = isAdmin || (pv.reviewers.length ? isReviewer : isScheduler);
+  // Same rule as canPost / pv_can_post: step 4 list; empty = step 3.
   const isPoster = pv.tallyPeople.includes(uid);
-  const stepFour = isAdmin || (pv.tallyPeople.length ? isPoster
-    : pv.reviewers.length ? pv.reviewers.includes(uid) : isScheduler);
+  const stepFour = isAdmin || (pv.tallyPeople.length ? isPoster : stepThree);
 
   const item = (c: CountRow, step: "count" | "assign" | "review" | "tally"): WorkItem => ({
     id: `${SOURCE}:${c.id}:${step}`,
@@ -59,7 +62,8 @@ export function physicalVerificationWorkItems(
       : c.status === "returned" ? "Recount" : "To count",
     dueIso: step === "review" || step === "tally" ? null : c.verifyDate,
     to: step === "count" ? `${base}/count` : step === "review" ? `${base}/review` : step === "tally" ? `${base}/tally` : `${base}/master`,
-    assignment: step === "count" || (step === "tally" ? isPoster : isScheduler) ? "direct" : "team",
+    assignment: step === "count" || (step === "tally" ? isPoster : step === "review" ? isReviewer || (!pv.reviewers.length && isScheduler) : isScheduler)
+      ? "direct" : "team",
     isApproval: step === "review",
   });
 
@@ -68,7 +72,7 @@ export function physicalVerificationWorkItems(
     if (c.status === "scheduled" || c.status === "returned") {
       if (c.assignedTo === uid) out.push(item(c, "count"));
       else if (c.assignedTo === null && stepOne) out.push(item(c, "assign"));
-    } else if (c.status === "submitted" && stepOne) {
+    } else if (c.status === "submitted" && stepThree) {
       out.push(item(c, "review"));
     } else if (c.status === "accepted" && (c.difference ?? 0) !== 0 && !c.tallyPostedAt && stepFour) {
       out.push(item(c, "tally"));

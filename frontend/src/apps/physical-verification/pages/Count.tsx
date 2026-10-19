@@ -128,10 +128,15 @@ export default function Count() {
     if (submit && !window.confirm(`Submit ${rows.length} item${rows.length === 1 ? "" : "s"} for review? You cannot change them after this.`)) return;
     setBusy(true); setNote(null);
     try {
-      // Fresh Tally closing and lot balances at the moment of saving — frozen on the row.
+      // Fresh Tally closing and lot balances at the moment of saving — frozen on the row. The lot
+      // read is capped at 8 s (Enterprises Surat's lot table can time out); without it the count
+      // still saves and the row keeps its earlier lot snapshot.
       const [by, lotsNow] = await Promise.all([
         stock.refetch(),
-        fetchLots(rows.map((c) => ({ companyGuid: c.companyGuid, item: c.item }))).catch(() => null),
+        Promise.race([
+          fetchLots(rows.map((c) => ({ companyGuid: c.companyGuid, item: c.item }))).catch(() => null),
+          new Promise<null>((res) => setTimeout(() => res(null), 8000)),
+        ]),
       ]);
       const n = await saveCounts(rows.map((c) => ({
         id: c.id,
