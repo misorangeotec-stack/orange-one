@@ -3,27 +3,39 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Search } from "lucide-react";
 import Card from "@/shared/components/ui/Card";
 import Button from "@/shared/components/ui/Button";
+import Modal from "@/shared/components/ui/Modal";
 import { useSession } from "@/core/platform/session";
 import { fetchOrgPeople } from "@/core/platform/orgPeople";
 import { matchesSearch } from "@/shared/lib/search";
 import { exportRowsToXlsx } from "@/shared/lib/exportXlsx";
 import { cn } from "@/shared/lib/cn";
-import { COMPANIES, companyName, fmtDate, fmtInr, fmtQty, fmtStamp } from "../lib/stock";
-import { canReview, diffValue, lotTotal, PV_QUERY, reviewRows, STATUS_LABEL, usePv, type CountRow, type CountStatus } from "../lib/pv";
-import { lotCompare } from "../lib/lots";
-import { Diff, inputCls, PageHead, PvUnavailable, StatusPill, tdCls, thCls, Tile } from "../components/parts";
+import {
+  ActiveFilters, SortFilterBody, SortFilterHead, TableTools, useSortFilter, type Col,
+} from "@/apps/ink-expiry/components/SortFilterHead";
+import { COMPANIES, companyName, fmtDate, fmtInr, fmtQty, fmtStamp, itemKey } from "../lib/stock";
+import {
+  canReview, diffValue, lotTotal, PV_QUERY, reviewRows, STATUS_LABEL, usePv, type CountRow, type CountStatus, type LotClosing,
+} from "../lib/pv";
+import { lotCompare, useLots } from "../lib/lots";
+import { Diff, inputCls, PageHead, PvUnavailable, StatusPill, Tile } from "../components/parts";
 
 /**
- * REVIEW — the admin's side. Submitted counts arrive here with their difference against the
- * Tally closing frozen at count time. Accept closes the round; Recount sends it back to the
- * verifier with a reason. "History" is every round ever counted, for export.
+ * REVIEW — submitted counts against Tally's closing frozen at count time.
  *
- * 19-10-2026: each item shows its lots — counted vs Tally's lot balance frozen at the count —
- * and needs its OWN remark to accept or send back. Accepted with no difference is closed;
- * accepted with a difference goes on to 4 · Post to Tally.
+ * 20-10-2026 (asked):
+ *   • Every column sorts, filters and can be hidden (Columns) — remarks run long.
+ *   • Lots side by side: the counter's lots and Tally's lots, each with its quantity, and the
+ *     difference lot by lot. Tally's lots are the ones frozen at count time; for counts saved
+ *     before that existed, Tally's CURRENT lots are shown and marked "now".
+ *   • Tick → Accept & submit → a pop-up asks a remark for each item. Matching items need none
+ *     and are closed; items with a difference need one and go on to 4 · Post to Tally.
+ *     Send for recount needs a remark for every item.
  */
 
 type Tab = "submitted" | "returned" | "accepted";
+type Action = "accept" | "recount";
+
+const hasDiff = (c: CountRow) => Math.abs(c.difference ?? 0) >= 0.0005;
 
 export default function Review() {
   const { user, isAdmin: admin, canEditModule } = useSession();
@@ -38,6 +50,7 @@ export default function Review() {
   const [search, setSearch] = useState("");
   const [company, setCompany] = useState("");
   const [picked, setPicked] = useState<Set<string>>(new Set());
+  const [dialog, setDialog] = useState<Action | null>(null);
   const [remarks, setRemarks] = useState<Record<string, string>>({});
   const [busy, setBusy] = useState(false);
   const [note, setNote] = useState<{ ok: boolean; text: string } | null>(null);
@@ -46,32 +59,111 @@ export default function Review() {
   const counts = useMemo(() => (company ? allCounts.filter((c) => c.companyGuid === company) : allCounts), [allCounts, company]);
   const multiCompany = new Set(allCounts.map((c) => c.companyGuid)).size > 1;
   const byTab = (t: Tab) => counts.filter((c) => c.status === t);
-  const rows = useMemo(() => counts
+  const searched = useMemo(() => counts
     .filter((c) => c.status === tab && matchesSearch(search, `${c.item} ${c.subGroup ?? ""} ${c.group ?? ""}`))
     .sort((a, b) => (b.submittedAt ?? b.reviewedAt ?? "").localeCompare(a.submittedAt ?? a.reviewedAt ?? "")),
   [counts, tab, search]);
+
+  // Tally's CURRENT lots, only for rows that froze none at count time.
+  const needLive = useMemo(() => searched.filter((c) => !c.lotClosing.length), [searched]);
+  const liveQ = useLots(needLive.map((c) => ({ companyGuid: c.companyGuid, item: c.item })));
+  const tallyLots = (c: CountRow): { lots: LotClosing[]; live: boolean } => (c.lotClosing.length
+    ? { lots: c.lotClosing, live: false }
+    : { lots: liveQ.data?.get(itemKey(c.companyGuid, c.item)) ?? [], live: true });
+
+  const canAct = isAdmin && tab === "submitted";
+  const toggle = (id: string) => setPicked((p) => { const n = new Set(p); if (n.has(id)) n.delete(id); else n.add(id); return n; });
+
+  const cols: Col<CountRow>[] = [
+    ...(canAct ? [{
+      key: "pick", label: "✓", filter: false, text: () => "", sort: (c: CountRow) => (picked.has(c.id) ? 0 : 1),
+      render: (c: CountRow) => (
+        <input type="checkbox" className="accent-orange" checked={picked.has(c.id)} onChange={() => toggle(c.id)} />
+      ),
+    } satisfies Col<CountRow>] : []),
+    { key: "date", label: "Date", text: (c) => fmtDate(c.verifyDate), sort: (c) => c.verifyDate },
+    {
+      key: "item", label: "Stock item", text: (c) => c.item, sort: (c) => c.item,
+      render: (c) => (
+        <div className="whitespace-normal">
+          <div className="font-medium text-navy">{c.item}</div>
+          <div className="text-[11px] text-grey">
+            {[multiCompany ? companyName(c.companyGuid) : null, c.subGroup, c.group].filter((g, i, a) => g && a.indexOf(g) === i).join(" · ")}
+          </div>
+        </div>
+      ),
+    },
+    ...(multiCompany ? [{ key: "company", label: "Company", text: (c: CountRow) => companyName(c.companyGuid), sort: (c: CountRow) => companyName(c.companyGuid) }] : []),
+    { key: "sub", label: "Sub group", text: (c) => c.subGroup ?? "", sort: (c) => c.subGroup ?? null },
+    { key: "unit", label: "Unit", text: (c) => c.unit ?? "", sort: (c) => c.unit ?? null },
+    {
+      key: "closing", label: "Closing", align: "right", text: (c) => fmtQty(c.closingQty), sort: (c) => c.closingQty,
+      filter: false, className: "tabular-nums",
+    },
+    {
+      key: "physical", label: "Physical", align: "right", text: (c) => fmtQty(c.physicalQty), sort: (c) => c.physicalQty,
+      filter: false, className: "tabular-nums font-semibold",
+    },
+    {
+      key: "diff", label: "Difference", align: "right", sort: (c) => c.difference,
+      text: (c) => (!hasDiff(c) ? "Matches" : (c.difference ?? 0) < 0 ? "Short" : "Extra"),
+      render: (c) => <Diff value={c.difference} />,
+    },
+    {
+      key: "value", label: "Value", align: "right", filter: false, className: "tabular-nums text-grey",
+      text: (c) => fmtInr(diffValue(c.difference, c.closingRate)), sort: (c) => diffValue(c.difference, c.closingRate),
+    },
+    {
+      key: "lots", label: "Lots · counted vs Tally", filter: false, text: () => "", sort: (c) => c.lotCounts.length,
+      render: (c) => <LotTable c={c} tally={tallyLots(c)} loading={liveQ.isLoading && !c.lotClosing.length} />,
+    },
+    { key: "verifier", label: "Verifier", text: (c) => nameOf(c.countedBy ?? c.assignedTo), sort: (c) => nameOf(c.countedBy ?? c.assignedTo) },
+    {
+      key: "vremarks", label: "Verifier remarks", text: (c) => c.verifierRemarks ?? "", sort: (c) => c.verifierRemarks ?? null,
+      filter: false, render: (c) => <Clip text={c.verifierRemarks} />,
+    },
+    {
+      key: "rremarks", label: "Review remarks", text: (c) => c.reviewRemarks ?? "", sort: (c) => c.reviewRemarks ?? null,
+      filter: false, render: (c) => <Clip text={c.reviewRemarks} />,
+    },
+    {
+      key: "when", label: tab === "submitted" ? "Submitted" : "Reviewed", filter: false, className: "text-grey",
+      text: (c) => fmtStamp(tab === "submitted" ? c.submittedAt : c.reviewedAt), sort: (c) => (tab === "submitted" ? c.submittedAt : c.reviewedAt),
+    },
+    {
+      key: "status", label: "Status", text: (c) => STATUS_LABEL[c.status], sort: (c) => STATUS_LABEL[c.status],
+      render: (c) => <StatusPill status={c.status} />,
+    },
+  ];
+
+  const ctl = useSortFilter(searched, cols, "pv-review");
+  const rows = ctl.view;
 
   const short = rows.filter((c) => (c.difference ?? 0) < 0);
   const extra = rows.filter((c) => (c.difference ?? 0) > 0);
   const sumVal = (list: CountRow[]) => list.reduce((a, c) => a + (diffValue(c.difference, c.closingRate) ?? 0), 0);
 
   const allPicked = rows.length > 0 && rows.every((c) => picked.has(c.id));
-  const toggle = (id: string) => setPicked((p) => { const n = new Set(p); if (n.has(id)) n.delete(id); else n.add(id); return n; });
   const toggleAll = () => setPicked(allPicked ? new Set() : new Set(rows.map((c) => c.id)));
-  const ids = rows.filter((c) => picked.has(c.id)).map((c) => c.id);
+  const chosen = rows.filter((c) => picked.has(c.id));
 
-  const act = async (action: "accept" | "recount") => {
-    const missing = rows.filter((c) => picked.has(c.id) && !(remarks[c.id] ?? "").trim());
-    if (missing.length) { setNote({ ok: false, text: `Write a remark for: ${missing.map((c) => c.item).join(", ")}` }); return; }
+  /** Remark needed: every item sent back; on accept, only items with a difference. */
+  const needsRemark = (c: CountRow, a: Action) => a === "recount" || hasDiff(c);
+  const missing = dialog ? chosen.filter((c) => needsRemark(c, dialog) && !(remarks[c.id] ?? "").trim()) : [];
+
+  const submit = async () => {
+    if (!dialog || missing.length) return;
     setBusy(true); setNote(null);
     try {
-      const n = await reviewRows(ids.map((id) => ({ id, remarks: remarks[id] ?? "" })), action);
+      const ids = chosen.map((c) => c.id);
+      const n = await reviewRows(chosen.map((c) => ({ id: c.id, remarks: remarks[c.id] ?? "" })), dialog);
       await qc.invalidateQueries({ queryKey: PV_QUERY });
+      const toTally = chosen.filter(hasDiff).length;
       setPicked(new Set());
       setRemarks((r) => { const x = { ...r }; ids.forEach((id) => delete x[id]); return x; });
-      const toTally = rows.filter((c) => ids.includes(c.id) && (c.difference ?? 0) !== 0).length;
-      setNote({ ok: true, text: action === "accept"
-        ? `${n} accepted${toTally ? ` — ${toTally} with a difference go to Post to Tally; the rest are closed` : " and closed"}.`
+      setDialog(null);
+      setNote({ ok: true, text: dialog === "accept"
+        ? `${n} accepted — ${n - toTally} matching closed${toTally ? `, ${toTally} with a difference sent to Post to Tally` : ""}.`
         : `${n} sent back for recount.` });
     } catch (e) {
       setNote({ ok: false, text: (e as Error).message });
@@ -98,7 +190,7 @@ export default function Review() {
       { header: "Closing stock", width: 13, value: (c) => c.closingQty ?? "" },
       { header: "Physical stock", width: 13, value: (c) => c.physicalQty ?? "" },
       { header: "Lots counted", width: 30, value: (c) => c.lotCounts.map((l) => `${l.lot}: ${l.qty ?? ""}`).join("; ") },
-      { header: "Lots in Tally", width: 30, value: (c) => c.lotClosing.map((l) => `${l.lot}: ${l.qty}`).join("; ") },
+      { header: "Lots in Tally", width: 30, value: (c) => tallyLots(c).lots.map((l) => `${l.lot}: ${l.qty}`).join("; ") },
       { header: "Difference", width: 12, value: (c) => c.difference ?? "" },
       { header: "Difference value", width: 14, value: (c) => Math.round(diffValue(c.difference, c.closingRate) ?? 0) },
       { header: "Verifier", width: 20, value: (c) => nameOf(c.countedBy ?? c.assignedTo) },
@@ -115,11 +207,11 @@ export default function Review() {
   ];
 
   return (
-    <div className="mx-auto max-w-[1500px] space-y-4 px-4 py-5">
+    <div className="mx-auto max-w-[1600px] space-y-4 px-4 py-5">
       <PageHead
         kicker="Physical Verification · Review"
         title="Review counts"
-        sub="Physical vs Tally closing at count time. Accept closes it; Recount sends it back to the verifier."
+        sub="Physical vs Tally closing at count time, lot by lot. Matching items close on accept; items with a difference need a remark and go to Post to Tally."
         right={<Button variant="ghost" size="sm" onClick={exportList} disabled={!rows.length}>Export Excel</Button>}
       />
       {pvQ.isError && <PvUnavailable error={pvQ.error} />}
@@ -130,6 +222,19 @@ export default function Review() {
         <Tile label={`Short · ${fmtInr(sumVal(short))}`} value={short.length} tone="text-ryg-red" />
         <Tile label={`Extra · ${fmtInr(sumVal(extra))}`} value={extra.length} tone="text-[#B7791F]" />
       </div>
+
+      {canAct && chosen.length > 0 && (
+        <Card className="sticky top-2 z-30 flex flex-wrap items-center gap-3 border-orange/40 bg-orange/[0.04] px-4 py-2.5">
+          <b className="text-[13px] text-navy">{chosen.length} selected</b>
+          <span className="text-[12px] text-grey">
+            {chosen.filter((c) => !hasDiff(c)).length} matching · {chosen.filter(hasDiff).length} with a difference
+          </span>
+          <Button size="sm" onClick={() => setDialog("accept")} disabled={busy}>Accept &amp; submit</Button>
+          <Button size="sm" variant="ghost" onClick={() => setDialog("recount")} disabled={busy}>Send for recount</Button>
+          <button className="ml-auto text-[12px] text-grey hover:text-navy" onClick={() => setPicked(new Set())}>Clear</button>
+        </Card>
+      )}
+      {note && <div className={cn("text-[12.5px]", note.ok ? "text-ryg-green" : "text-ryg-red")}>{note.text}</div>}
 
       <Card className="overflow-hidden">
         <div className="flex flex-wrap items-center gap-2 border-b border-line px-3 py-2.5">
@@ -142,15 +247,6 @@ export default function Review() {
               </button>
             ))}
           </div>
-          {isAdmin && tab === "submitted" && ids.length > 0 && (
-            <div className="flex flex-wrap items-center gap-2">
-              <b className="text-[12.5px] text-navy">{ids.length} selected</b>
-              <Button size="sm" onClick={() => act("accept")} disabled={busy}>Accept &amp; submit</Button>
-              <Button size="sm" variant="ghost" onClick={() => act("recount")} disabled={busy}>Send for recount</Button>
-              <span className="text-[11.5px] text-grey">Each ticked item needs its remark.</span>
-            </div>
-          )}
-          {note && <span className={cn("text-[12.5px]", note.ok ? "text-ryg-green" : "text-ryg-red")}>{note.text}</span>}
           <select value={company} onChange={(e) => { setCompany(e.target.value); setPicked(new Set()); }}
             className={cn(inputCls, "ml-auto h-8 py-0 text-[12px]")}>
             <option value="">All companies</option>
@@ -161,110 +257,120 @@ export default function Review() {
             <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search item or group"
               className={cn(inputCls, "w-56 pl-8")} />
           </div>
+          <TableTools cols={cols} ctl={ctl} />
         </div>
+        {canAct && rows.length > 0 && (
+          <div className="flex items-center border-b border-line px-3 py-2">
+            <label className="flex cursor-pointer items-center gap-2 text-[12px] font-semibold text-navy">
+              <input type="checkbox" className="accent-orange" checked={allPicked} onChange={toggleAll} />
+              Select all {rows.length} shown
+            </label>
+          </div>
+        )}
+        <ActiveFilters ctl={ctl} shown={rows.length} total={searched.length} />
 
         <div className="max-h-[66vh] overflow-auto">
-          <table className="w-full border-separate border-spacing-0">
-            <thead>
-              <tr>
-                {isAdmin && tab === "submitted" && (
-                  <th className={cn(thCls, "w-8")}>
-                    <input type="checkbox" className="accent-orange" checked={allPicked} onChange={toggleAll} />
-                  </th>
-                )}
-                <th className={thCls}>Date</th>
-                <th className={thCls}>Stock item</th>
-                <th className={thCls}>Unit</th>
-                <th className={cn(thCls, "text-right")}>Closing</th>
-                <th className={cn(thCls, "text-right")}>Physical</th>
-                <th className={cn(thCls, "text-right")}>Difference</th>
-                <th className={cn(thCls, "text-right")}>Value</th>
-                <th className={cn(thCls, "min-w-[280px]")}>Lot · Counted · Tally · Diff</th>
-                <th className={thCls}>Verifier</th>
-                <th className={thCls}>Remarks</th>
-                {isAdmin && tab === "submitted" && <th className={thCls}>Review remark *</th>}
-                <th className={thCls}>{tab === "submitted" ? "Submitted" : "Reviewed"}</th>
-                <th className={thCls}>Status</th>
-              </tr>
-            </thead>
-            <tbody>
-              {rows.map((c) => (
-                <tr key={c.id} className={cn("align-top", picked.has(c.id) ? "bg-orange/[0.06]" : "hover:bg-page/60")}>
-                  {isAdmin && tab === "submitted" && (
-                    <td className={tdCls}><input type="checkbox" className="accent-orange" checked={picked.has(c.id)} onChange={() => toggle(c.id)} /></td>
-                  )}
-                  <td className={tdCls}>{fmtDate(c.verifyDate)}</td>
-                  <td className={cn(tdCls, "whitespace-normal")}>
-                    <div className="font-medium text-navy">{c.item}</div>
-                    <div className="text-[11px] text-grey">{[multiCompany ? companyName(c.companyGuid) : null, c.subGroup, c.group].filter((g, i, a) => g && a.indexOf(g) === i).join(" · ")}</div>
-                  </td>
-                  <td className={tdCls}>{c.unit}</td>
-                  <td className={cn(tdCls, "text-right tabular-nums")} title={`Tally as at ${fmtStamp(c.tallyAsAt)}`}>{fmtQty(c.closingQty)}</td>
-                  <td className={cn(tdCls, "text-right tabular-nums font-semibold")}>{fmtQty(c.physicalQty)}</td>
-                  <td className={cn(tdCls, "text-right")}><Diff value={c.difference} /></td>
-                  <td className={cn(tdCls, "text-right tabular-nums text-grey")}>{fmtInr(diffValue(c.difference, c.closingRate))}</td>
-                  <td className={tdCls}><LotTable c={c} /></td>
-                  <td className={tdCls}>{nameOf(c.countedBy ?? c.assignedTo)}</td>
-                  <td className={cn(tdCls, "max-w-[260px] whitespace-normal text-grey")}>
-                    {c.verifierRemarks}
-                    {c.reviewRemarks && <div className="text-[11.5px] text-ryg-red">Review: {c.reviewRemarks}</div>}
-                  </td>
-                  {isAdmin && tab === "submitted" && (
-                    <td className={tdCls}>
-                      <input value={remarks[c.id] ?? ""} placeholder="Required"
-                        onChange={(e) => {
-                          const v = e.target.value;
-                          setRemarks((r) => ({ ...r, [c.id]: v }));
-                          if (v.trim()) setPicked((p) => new Set(p).add(c.id));
-                        }}
-                        className={cn(inputCls, "h-7 w-52 px-1.5 text-[12px]", picked.has(c.id) && !(remarks[c.id] ?? "").trim() && "border-ryg-red")} />
-                    </td>
-                  )}
-                  <td className={cn(tdCls, "text-grey")}>{fmtStamp(tab === "submitted" ? c.submittedAt : c.reviewedAt)}</td>
-                  <td className={tdCls}><StatusPill status={c.status} /></td>
-                </tr>
-              ))}
-              {rows.length === 0 && (
-                <tr><td colSpan={14} className="p-10 text-center text-[13px] text-grey">Nothing here.</td></tr>
-              )}
-            </tbody>
+          <table className="w-full [&_thead]:sticky [&_thead]:top-0 [&_thead]:z-20 [&_td]:align-top">
+            <SortFilterHead cols={cols} ctl={ctl} />
+            <SortFilterBody cols={cols} rows={rows} rowKey={(c) => c.id} empty="Nothing here." ctl={ctl} />
           </table>
         </div>
       </Card>
+
+      <Modal
+        open={!!dialog}
+        onClose={() => !busy && setDialog(null)}
+        size="xl"
+        title={dialog === "accept" ? `Accept & submit ${chosen.length} item${chosen.length === 1 ? "" : "s"}` : `Send ${chosen.length} for recount`}
+        subtitle={dialog === "accept"
+          ? "Matching items close. Items with a difference need a remark and go to Post to Tally."
+          : "Say what to recount on each item — the verifier sees it."}
+        footer={<>
+          {missing.length > 0 && <span className="mr-auto text-[12px] text-ryg-red">{missing.length} remark{missing.length === 1 ? "" : "s"} still needed</span>}
+          <Button variant="ghost" onClick={() => setDialog(null)} disabled={busy}>Cancel</Button>
+          <Button onClick={() => void submit()} disabled={busy || missing.length > 0}>
+            {busy ? "Submitting…" : dialog === "accept" ? "Submit" : "Send back"}
+          </Button>
+        </>}
+      >
+        <div className="max-h-[60vh] space-y-2 overflow-auto">
+          {dialog && chosen.map((c) => {
+            const need = needsRemark(c, dialog);
+            return (
+              <div key={c.id} className="rounded-lg border border-line p-2.5">
+                <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[12.5px]">
+                  <b className="text-navy">{c.item}</b>
+                  <span className="text-grey">Closing {fmtQty(c.closingQty)} · Physical {fmtQty(c.physicalQty)}</span>
+                  <Diff value={c.difference} unit={c.unit} />
+                  {dialog === "accept" && (
+                    <span className={cn("ml-auto rounded-full px-2 py-0.5 text-[11px] font-semibold",
+                      hasDiff(c) ? "bg-orange/10 text-orange" : "bg-ryg-green/10 text-ryg-green")}>
+                      {hasDiff(c) ? "→ Post to Tally" : "→ Closed"}
+                    </span>
+                  )}
+                </div>
+                <textarea value={remarks[c.id] ?? ""} rows={2}
+                  onChange={(e) => setRemarks((r) => ({ ...r, [c.id]: e.target.value }))}
+                  placeholder={need ? "Remark (required)" : "Remark (optional)"}
+                  className={cn(inputCls, "mt-1.5 h-auto w-full py-1.5",
+                    need && !(remarks[c.id] ?? "").trim() && "border-ryg-red/60")} />
+              </div>
+            );
+          })}
+        </div>
+      </Modal>
     </div>
   );
 }
 
-/** Lot by lot: what was counted against Tally's lot balance when it was counted. */
-function LotTable({ c }: { c: CountRow }) {
-  if (!c.lotCounts.length && !c.lotClosing.length) return <span className="text-[11.5px] text-grey-2">No lots</span>;
-  const rows = lotCompare(c.lotCounts, c.lotClosing);
-  const tallyLots = c.lotClosing.reduce((s, l) => s + l.qty, 0);
-  const off = c.closingQty !== null && c.lotClosing.length > 0 && Math.abs(tallyLots - c.closingQty) > 0.0005;
+/** Long text kept to two lines; the whole of it on hover. */
+function Clip({ text }: { text: string | null }) {
+  if (!text) return <span className="text-grey-2">—</span>;
+  return <div className="line-clamp-2 max-w-[240px] whitespace-normal text-[12px] text-grey" title={text}>{text}</div>;
+}
+
+/** The counter's lots and Tally's lots, each with its quantity, and the difference lot by lot. */
+function LotTable({ c, tally, loading }: { c: CountRow; tally: { lots: LotClosing[]; live: boolean }; loading: boolean }) {
+  if (!c.lotCounts.length && !tally.lots.length) {
+    return <span className="text-[11.5px] text-grey-2">{loading ? "Reading Tally lots…" : "No lots counted, none in Tally"}</span>;
+  }
+  const rows = lotCompare(c.lotCounts, tally.lots);
+  const tallySum = tally.lots.reduce((s, l) => s + l.qty, 0);
+  const off = c.closingQty !== null && tally.lots.length > 0 && Math.abs(tallySum - c.closingQty) > 0.0005;
   return (
-    <div className="text-[11.5px]">
+    <div className="min-w-[260px] text-[11.5px]">
       <table className="w-full">
+        <thead>
+          <tr className="text-[10px] uppercase tracking-wide text-grey">
+            <th className="pr-2 text-left font-semibold">Lot</th>
+            <th className="pr-2 text-right font-semibold">Counted</th>
+            <th className="pr-2 text-right font-semibold">Tally{tally.live ? " (now)" : ""}</th>
+            <th className="text-right font-semibold">Diff</th>
+          </tr>
+        </thead>
         <tbody>
           {rows.map((r) => (
             <tr key={r.lot}>
               <td className="pr-2 font-medium text-navy">{r.lot}</td>
-              <td className="pr-2 text-right tabular-nums">{fmtQty(r.counted)}</td>
-              <td className="pr-2 text-right tabular-nums text-grey">{fmtQty(r.closing)}</td>
+              <td className="pr-2 text-right tabular-nums">{r.counted === null ? <span className="text-grey-2">—</span> : fmtQty(r.counted)}</td>
+              <td className="pr-2 text-right tabular-nums text-grey">{r.closing === null ? <span className="text-grey-2">—</span> : fmtQty(r.closing)}</td>
               <td className={cn("text-right font-semibold tabular-nums",
                 Math.abs(r.diff) < 0.0005 ? "text-ryg-green" : r.diff < 0 ? "text-ryg-red" : "text-[#B7791F]")}>
                 {r.diff > 0 ? "+" : ""}{fmtQty(Math.round(r.diff * 1000) / 1000)}
               </td>
             </tr>
           ))}
-          <tr className="border-t border-line">
+          <tr className="border-t border-line font-semibold">
             <td className="pr-2 text-grey">Total</td>
             <td className="pr-2 text-right tabular-nums">{fmtQty(lotTotal(c.lotCounts))}</td>
-            <td className="pr-2 text-right tabular-nums text-grey">{fmtQty(tallyLots)}</td>
+            <td className="pr-2 text-right tabular-nums text-grey">{fmtQty(tallySum)}</td>
             <td />
           </tr>
         </tbody>
       </table>
-      {off && <div className="mt-0.5 text-[10.5px] text-[#B7791F]">Tally's lots add up to {fmtQty(tallyLots)}, not its closing {fmtQty(c.closingQty)}.</div>}
+      {!c.lotCounts.length && <div className="mt-0.5 text-[10.5px] text-grey">Counted before lot-wise counting — no lots typed.</div>}
+      {tally.live && tally.lots.length > 0 && <div className="mt-0.5 text-[10.5px] text-grey">Tally lots as they are now (none frozen at count time).</div>}
+      {off && <div className="mt-0.5 text-[10.5px] text-[#B7791F]">Tally's lots add up to {fmtQty(tallySum)}, not its closing {fmtQty(c.closingQty)}.</div>}
     </div>
   );
 }

@@ -10,7 +10,9 @@ import { itemKey } from "./stock";
  * the Review can show lot-wise closing beside the lot-wise count.
  *
  * ⚠ These balances do not always add up to the item's closing (Otec Surat ink: 45 of 176
- *   items tied on 17-10-2026; some lots are negative). The Review says so where they differ.
+ *   items tied on 17-10-2026). Two reasons, both in Tally's own entries: a lot driven NEGATIVE
+ *   (more issued from it than received — e.g. at a job-work godown), and stock moved under
+ *   "Primary Batch" (no lot chosen), which no lot carries. The Review says so where they differ.
  */
 
 export interface Lot { lot: string; qty: number; godown: string }
@@ -36,6 +38,11 @@ export async function fetchLots(pairs: { companyGuid: string; item: string }[]):
         .returns<{ stock_item: string; batch_name: string | null; balance: number; last_godown: string | null }[]>();
       if (error) throw new Error(error.message);
       for (const r of data ?? []) {
+        // ⚠ "Any" is not a lot. It is the batch Tally puts on PURCHASE ORDERS and PROFORMA
+        //   INVOICES — goods ordered, not on the shelf — and rpt_lot_balance adds them in as if
+        //   they were stock (Sublimation F-Series Magenta: 75,350 kg of "Any" vs 8,615 closing;
+        //   checked 20-10-2026). Never show it as stock.
+        if ((r.batch_name ?? "").trim().toUpperCase() === "ANY") continue;
         const k = itemKey(guid, r.stock_item);
         out.set(k, [...(out.get(k) ?? []), { lot: r.batch_name ?? "Primary Batch", qty: Number(r.balance) || 0, godown: r.last_godown ?? "" }]);
       }

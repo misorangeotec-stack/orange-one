@@ -7,8 +7,9 @@
 --      figure is still stored for the review). After the total, they split it by LOT NO.:
 --      lot_counts = [{ "lot": text, "qty": number }, …]. Submit only when the lots add up to
 --      the total. Tally's lot-wise closing at that moment is frozen beside it (lot_closing).
---   3. REVIEW — a remark is required to accept as well as to send back. Accepted with no
---      difference = closed. Accepted WITH a difference goes to step 4.
+--   3. REVIEW — matching items (physical = closing) are simply accepted and closed. An item
+--      WITH a difference needs a remark to accept, and goes on to step 4. Sending back for a
+--      recount always needs a remark.
 --   4. POST TO TALLY — the step 4 person adjusts the stock in Tally by hand, then records
 --      Tally's voucher no. + date + an attachment (required). That closes the item.
 --
@@ -183,7 +184,8 @@ end;
 $$;
 
 -- ----------------------------------------------------------- the review --
--- Same as 20270128120000, but a remark is required to accept too (asked 19-10-2026).
+-- Same as 20270128120000, but through pv_review_rows: accepting an item with a difference
+-- needs a remark too (asked 19/20-10-2026).
 create or replace function public.pv_review(p_ids uuid[], p_action text, p_remarks text)
 returns integer
 language plpgsql
@@ -198,6 +200,7 @@ end;
 $$;
 
 -- One remark per item: p_rows = [{ "id": uuid, "remarks": text }, …]. All or nothing.
+-- Remark required: every recount, and every accept of an item whose physical ≠ closing.
 create or replace function public.pv_review_rows(p_rows jsonb, p_action text)
 returns integer
 language plpgsql
@@ -219,14 +222,15 @@ begin
   select string_agg(c.stock_item, ', ') into v_bad
     from jsonb_array_elements(coalesce(p_rows, '[]'::jsonb)) r
     join public.pv_counts c on c.id = (r->>'id')::uuid
-   where nullif(btrim(r->>'remarks'), '') is null;
+   where nullif(btrim(r->>'remarks'), '') is null
+     and (p_action = 'recount' or coalesce(c.difference, 0) <> 0);
   if v_bad is not null then
     raise exception 'Write a remark for: %', v_bad;
   end if;
   v_new := case p_action when 'accept' then 'accepted' else 'returned' end;
 
   with r as (
-    select (x->>'id')::uuid id, btrim(x->>'remarks') remarks from jsonb_array_elements(p_rows) x
+    select (x->>'id')::uuid id, nullif(btrim(x->>'remarks'), '') remarks from jsonb_array_elements(p_rows) x
   ), done as (
     update public.pv_counts c
        set status = v_new, review_remarks = r.remarks, reviewed_by = v_uid, reviewed_at = now()
