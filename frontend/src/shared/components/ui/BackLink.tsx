@@ -15,9 +15,9 @@ import { Link, useLocation, useNavigate } from "react-router-dom";
  * instead when:
  *   - there is nowhere to go back to (opened in a new tab or from a shared link) —
  *     and then it says which list ("← Requests");
- *   - the page before was a FORM (…/new, …/edit, a draft). Submitting a new request
- *     lands on its page with the form one step behind; stepping back into a blank
- *     form is never what "Back" means.
+ *   - the page before was a FORM (…/new, …/edit, a draft), or the landing / login
+ *     page. Submitting a new request lands on its page with the form one step
+ *     behind; stepping back into a blank form is never what "Back" means.
  *
  * `href` stays `to`, so ctrl-click / middle-click still open the list in a new tab.
  */
@@ -28,14 +28,17 @@ const currentIdx = (): number => (window.history.state as { idx?: number } | nul
 
 /** Call once, at the app root, so BackLink knows what the previous page was. */
 export function useHistoryTrail(): void {
-  const { pathname, search } = useLocation();
+  const { pathname, search, key } = useLocation();
+  // On every navigation (the key), not just a new path: two steps can share an address.
   useEffect(() => {
     trail.set(currentIdx(), `${pathname}${search}`);
-  }, [pathname, search]);
+  }, [pathname, search, key]);
 }
 
+/** A page Back must not step into: a form, or the public landing / login (signed-in users have left them). */
 const isForm = (href: string): boolean => {
   const [path, query = ""] = href.split("?");
+  if (path === "/" || path === "/login") return true;
   return /\/(new|edit)\/?$/.test(path) || /\/drafts\/[^/]+\/?$/.test(path) || /(^|&)edit=1(&|$)/.test(query);
 };
 

@@ -1,6 +1,6 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { Dispatch, SetStateAction } from "react";
-import { useLocation } from "react-router-dom";
+import { useLocation, useNavigationType } from "react-router-dom";
 
 /**
  * State that comes back with the browser's Back button.
@@ -22,9 +22,18 @@ import { useLocation } from "react-router-dom";
  * A list that rewrites its own URL with `replace` (a tab in ?view=) gets a NEW
  * location key for the same history entry, so the value is re-saved whenever the
  * key changes, not only when the value does.
+ *
+ * ⚠ RESTORES ONLY ON ARRIVAL BY BACK / FORWARD, and only the first time each value
+ *   mounts on that arrival. Several screens remount a table on purpose when you
+ *   switch tabs (`<QueueTable key={tab}>`, Radix tab panels) "so a filter set on one
+ *   list does not silently narrow the next" — and two tabs with the same columns
+ *   share a key here. Any mount that is not that first one after Back starts clean,
+ *   exactly as it did before this file existed.
  */
 const MAX_ENTRIES = 300;
 const store = new Map<string, unknown>();
+/** Per arrival (location object), the values that have already been handed back once. */
+const restored = new WeakMap<object, Set<string>>();
 
 export function clearAllBackState(): void {
   store.clear();
@@ -47,12 +56,26 @@ function save(id: string, value: unknown): void {
  */
 export function useBackState<T>(key: string, initial: T | (() => T)): [T, Dispatch<SetStateAction<T>>] {
   const location = useLocation();
+  const navType = useNavigationType();
   const id = `${location.key}|${location.pathname}|${key}`;
+  // The arrival this value first mounted on. React Router hands out a new location
+  // object on every navigation, so the object itself identifies one arrival.
+  const mountedOn = useRef(location);
 
   const [value, setValue] = useState<T>(() => {
-    if (store.has(id)) return store.get(id) as T;
+    if (navType === "POP" && store.has(id) && !restored.get(location)?.has(id)) return store.get(id) as T;
     return typeof initial === "function" ? (initial as () => T)() : initial;
   });
+
+  // Marked after commit (not in the initialiser, which StrictMode runs twice), so a
+  // later remount on the same arrival — a tab switch — no longer restores.
+  useEffect(() => {
+    const at = mountedOn.current;
+    let done = restored.get(at);
+    if (!done) restored.set(at, (done = new Set()));
+    done.add(`${at.key}|${at.pathname}|${key}`);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   useEffect(() => {
     save(id, value);
