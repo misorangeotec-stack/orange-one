@@ -16,6 +16,7 @@
  * by its invoice line. So Pending appears in both reports and reconciles between them; Converted
  * and Rejected appear only here.
  */
+import { useBackState } from "@/shared/lib/backState";
 import { useMemo, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
@@ -86,7 +87,7 @@ export default function SOARegister() {
   /* -------- tab + filters -------- */
   const [tab, setTab] = useState<SoaTab>("all");
   const [sel, setSel] = useState<Record<FilterKey, string[]>>(NO_FILTERS);
-  const [search, setSearch] = useState("");
+  const [search, setSearch] = useBackState("SOARegister.search", "");
 
   // Tab counts are of the WHOLE window, not of the current filters — they are a map of what is
   // there, and recomputing them under the filters would make them move as you narrow.

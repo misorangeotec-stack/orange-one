@@ -1,3 +1,4 @@
+import { useBackState } from "@/shared/lib/backState";
 import {
   useState, useMemo, useEffect, useRef, useLayoutEffect, useCallback, Fragment,
   type ReactNode, type CSSProperties,
@@ -382,7 +383,7 @@ function CollectionPerformanceInner({ variant }: { variant?: "dormant" }) {
   const [countJournalSettlements, setCountJournalSettlements] = useState(true);
 
   // ── Filters (the bar; the rest behind "More") ─────────────────────────────────────
-  const [search, setSearch] = useState("");
+  const [search, setSearch] = useBackState("CollectionPerformanceReport.search", "");
   const [salespersons, setSalespersons] = useState<string[]>([]);
   const [collectionTeams, setCollectionTeams] = useState<string[]>([]);
   const [companies, setCompanies] = useState<string[]>([]);

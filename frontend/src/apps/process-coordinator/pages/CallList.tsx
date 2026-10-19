@@ -1,3 +1,4 @@
+import { useBackState } from "@/shared/lib/backState";
 import { useCallback, useMemo, useState, type ReactNode } from "react";
 import Avatar from "@/shared/components/ui/Avatar";
 import Card from "@/shared/components/ui/Card";
@@ -99,7 +100,7 @@ export default function CallList() {
   const { rows, modules, knownRefs, peopleLoading, contactsMissing, todayIso, updatedAt, refreshing, refresh } = usePeopleWork();
   const openItem = useOpenWorkItem();
 
-  const [search, setSearch] = useState("");
+  const [search, setSearch] = useBackState("CallList.search", "");
   const q = normRef(search);
   const [persons, setPersons] = useState<string[]>([]);
   const [parties, setParties] = useState<string[]>([]);

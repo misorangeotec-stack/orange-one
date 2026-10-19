@@ -1,3 +1,4 @@
+import { useBackState } from "@/shared/lib/backState";
 import { ScrollableTable } from "@/core/shared/components/ScrollableTable";
 import { useState, useMemo, useEffect, useRef, useLayoutEffect, useCallback, type CSSProperties } from "react";
 import { useNavigate } from "react-router-dom";
@@ -157,7 +158,7 @@ export default function SalespersonAnalysis() {
   const navigate = useNavigate();
 
   // Filter state
-  const [search, setSearch] = useState("");
+  const [search, setSearch] = useBackState("SalespersonAnalysis.search", "");
   const [riskLevels, setRiskLevels] = useState<string[]>([]);
   const [agingFilters, setAgingFilters] = useState<string[]>([]);
   const [customerSegment, setCustomerSegment] = useState<"all" | "active" | "no_activity">("active");

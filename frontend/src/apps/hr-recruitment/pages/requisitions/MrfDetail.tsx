@@ -1,3 +1,4 @@
+import BackLink from "@/shared/components/ui/BackLink";
 import { useRef, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import Card from "@/shared/components/ui/Card";
@@ -623,9 +624,7 @@ export default function MrfDetail() {
         </ul>
       </Card>
 
-      <Link to="/hr-recruitment/requisitions" className="inline-block text-[12.5px] font-semibold text-grey-2 hover:text-navy">
-        ← All requisitions
-      </Link>
+      <BackLink to="/hr-recruitment/requisitions" label="All requisitions" className="inline-block text-[12.5px] font-semibold text-grey-2 hover:text-navy" />
 
       {decideStage && (
         <MrfDecisionModal

@@ -1,3 +1,4 @@
+import BackLink from "@/shared/components/ui/BackLink";
 import { useRef, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import Card from "@/shared/components/ui/Card";
@@ -667,9 +668,7 @@ export default function OrderDetail() {
       )}
 
       <p className="text-[12.5px] text-grey-2">
-        <Link to="/order-to-dispatch/orders" className="font-semibold text-orange hover:underline">
-          ← All orders
-        </Link>
+        <BackLink to="/order-to-dispatch/orders" label="All orders" className="font-semibold text-orange hover:underline" />
       </p>
 
       <Modal
