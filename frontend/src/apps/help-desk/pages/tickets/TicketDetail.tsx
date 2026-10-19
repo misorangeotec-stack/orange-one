@@ -1,3 +1,4 @@
+import BackLink from "@/shared/components/ui/BackLink";
 import { Link, useParams, useSearchParams } from "react-router-dom";
 import Card from "@/shared/components/ui/Card";
 import DueCell from "@/shared/components/ui/DueCell";
@@ -54,9 +55,7 @@ export default function TicketDetail() {
 
   return (
     <div className="mx-auto max-w-4xl">
-      <Link to={`${B}/mine`} className="text-[12.5px] font-semibold text-grey-2 hover:text-navy">
-        ← Back to my tickets
-      </Link>
+      <BackLink to={`${B}/mine`} label="Back to my tickets" className="text-[12.5px] font-semibold text-grey-2 hover:text-navy" />
 
       <div className="mt-2 flex flex-wrap items-start justify-between gap-3">
         <div>
