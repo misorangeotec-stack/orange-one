@@ -54,16 +54,23 @@ export interface CountRow {
   reviewRemarks: string | null;
   reviewedBy: string | null;
   reviewedAt: string | null;
-  /** Step 4 — where the difference goes in Tally (20270203120000). */
-  tallyAlloc: TallyAlloc[] | null;
+  /** The verifier's count split by lot (20270203120000). Adds up to physicalQty at submit. */
+  lotCounts: LotLine[];
+  /** Tally's lot-wise closing frozen at the last count save — for the review only. */
+  lotClosing: LotClosing[];
+  /** Step 4 — closed in Tally under this voucher, with its attachment. */
   tallyVoucherNo: string | null;
   tallyVoucherDate: string | null;
+  tallyAttachment: string | null;
+  tallyAttachmentName: string | null;
   tallyPostedBy: string | null;
   tallyPostedAt: string | null;
 }
 
-/** One godown / batch line of a difference posted to Tally. Qty is positive. */
-export interface TallyAlloc { godown: string; batch: string; qty: number }
+/** One lot line the verifier counted. */
+export interface LotLine { lot: string; qty: number | null }
+/** One lot's closing in Tally (ConnectWave lot balance) when the count was saved. */
+export interface LotClosing { lot: string; qty: number; godown: string }
 
 export interface PvData {
   counts: CountRow[];
@@ -79,6 +86,8 @@ export interface PvData {
   reviewers: string[];
   /** Step 4 — who posts accepted differences to Tally (20270203120000). Empty = step 3 posts. */
   tallyPeople: string[];
+  /** Items step 1 chose to show on the Master, per company GUID. Missing / empty = show all. */
+  masterLines: Map<string, Set<string>>;
 }
 
 const num = (v: unknown) => (v === null || v === undefined ? null : Number(v));
@@ -106,10 +115,19 @@ async function readAll<T>(table: string, order: string): Promise<T[]> {
 }
 
 export async function fetchPv(): Promise<PvData> {
-  const [rows, settings] = await Promise.all([
+  const [rows, settings, lines] = await Promise.all([
     readAll<Record<string, unknown>>("pv_counts", "id"),
     readAll<Record<string, unknown>>("pv_settings", "id"),
+    // Chosen lines came with 20270203120000; without it the Master simply shows every item.
+    readAll<Record<string, unknown>>("pv_master_lines", "stock_item").catch(() => []),
   ]);
+  const masterLines = new Map<string, Set<string>>();
+  for (const l of lines) {
+    const g = l.company_guid as string;
+    if (!masterLines.has(g)) masterLines.set(g, new Set());
+    masterLines.get(g)!.add(l.stock_item as string);
+  }
+  const arr = (v: unknown) => (Array.isArray(v) ? (v as Record<string, unknown>[]) : []);
   const counts: CountRow[] = rows
     .filter((r) => COMPANY_GUIDS.includes(r.company_guid as string))
     .map((r) => ({
@@ -135,13 +153,12 @@ export async function fetchPv(): Promise<PvData> {
       reviewRemarks: r.review_remarks as string | null,
       reviewedBy: r.reviewed_by as string | null,
       reviewedAt: r.reviewed_at as string | null,
-      tallyAlloc: Array.isArray(r.tally_alloc)
-        ? (r.tally_alloc as Record<string, unknown>[]).map((a) => ({
-          godown: String(a.godown ?? ""), batch: String(a.batch ?? ""), qty: Number(a.qty) || 0,
-        }))
-        : null,
+      lotCounts: arr(r.lot_counts).map((l) => ({ lot: String(l.lot ?? ""), qty: num(l.qty) })),
+      lotClosing: arr(r.lot_closing).map((l) => ({ lot: String(l.lot ?? ""), qty: Number(l.qty) || 0, godown: String(l.godown ?? "") })),
       tallyVoucherNo: (r.tally_voucher_no as string | null) ?? null,
       tallyVoucherDate: (r.tally_voucher_date as string | null) ?? null,
+      tallyAttachment: (r.tally_attachment as string | null) ?? null,
+      tallyAttachmentName: (r.tally_attachment_name as string | null) ?? null,
       tallyPostedBy: (r.tally_posted_by as string | null) ?? null,
       tallyPostedAt: (r.tally_posted_at as string | null) ?? null,
     }));
@@ -161,6 +178,7 @@ export async function fetchPv(): Promise<PvData> {
     verifiers: (settings[0]?.verifier_ids as string[]) ?? [],
     reviewers: (settings[0]?.reviewer_ids as string[]) ?? [],
     tallyPeople: (settings[0]?.tally_ids as string[]) ?? [],
+    masterLines,
   };
 }
 
@@ -238,6 +256,9 @@ export function canPost(userId: string, isAdmin: boolean, canEdit: boolean, pv: 
   return canReview(userId, isAdmin, canEdit, pv);
 }
 
+/** Sum of the lot lines typed so far. */
+export const lotTotal = (lots: LotLine[]) => lots.reduce((s, l) => s + (l.qty ?? 0), 0);
+
 /** An accepted count whose difference still has to go into Tally. */
 export const toPost = (c: CountRow) => c.status === "accepted" && (c.difference ?? 0) !== 0 && !c.tallyPostedAt;
 
@@ -273,6 +294,10 @@ export interface CountInput {
   remarks: string;
   /** Tally's closing at this moment — frozen on the row by the save. */
   stock: StockItem | undefined;
+  /** The count split by lot. */
+  lots: LotLine[];
+  /** Tally's lot balances at this moment (frozen; the verifier never sees them). Null = keep. */
+  lotClosing: LotClosing[] | null;
 }
 
 export async function saveCounts(rows: CountInput[], submit: boolean): Promise<number> {
@@ -281,6 +306,8 @@ export async function saveCounts(rows: CountInput[], submit: boolean): Promise<n
       id: r.id,
       physical_qty: r.physicalQty,
       remarks: r.remarks,
+      lots: r.lots,
+      lot_closing: r.lotClosing,
       // An item that has dropped out of stock since scheduling is closing 0 now.
       closing_qty: r.stock ? r.stock.closingQty : 0,
       closing_rate: r.stock?.closingRate ?? null,
@@ -292,22 +319,43 @@ export async function saveCounts(rows: CountInput[], submit: boolean): Promise<n
   return data as number;
 }
 
-export async function reviewCounts(ids: string[], action: "accept" | "recount", remarks: string): Promise<number> {
-  const { data, error } = await db.rpc("pv_review", { p_ids: ids, p_action: action, p_remarks: remarks });
+/** Accept or send back, each item with its own remark (required either way). */
+export async function reviewRows(rows: { id: string; remarks: string }[], action: "accept" | "recount"): Promise<number> {
+  const { data, error } = await db.rpc("pv_review_rows", { p_rows: rows, p_action: action });
   if (error) throw new Error(error.message);
   return data as number;
 }
 
-export async function saveTallyAlloc(rows: { id: string; alloc: TallyAlloc[] }[]): Promise<number> {
-  const { data, error } = await db.rpc("pv_tally_save", { p_rows: rows });
+/** Step 1: the items the Master shows for one company. Empty = every item. */
+export async function setMasterLines(companyGuid: string, items: string[]): Promise<number> {
+  const { data, error } = await db.rpc("pv_set_lines", { p_company: companyGuid, p_items: items });
   if (error) throw new Error(error.message);
   return data as number;
 }
 
-export async function markPosted(ids: string[], voucherNo: string, voucherDate: string): Promise<number> {
-  const { data, error } = await db.rpc("pv_tally_post", { p_ids: ids, p_voucher_no: voucherNo, p_voucher_date: voucherDate });
+const TALLY_BUCKET = "pv-tally-docs";
+
+/**
+ * Step 4: upload the Tally voucher, then close the lines under it. The file goes into the first
+ * line's folder — the storage policy only lets it in while that line is still waiting.
+ */
+export async function closeInTally(ids: string[], voucherNo: string, voucherDate: string, file: File): Promise<number> {
+  const path = `${ids[0]}/${Date.now()}-${file.name.replace(/[^\w.-]+/g, "_")}`;
+  const { error: upErr } = await supabase.storage.from(TALLY_BUCKET)
+    .upload(path, file, { cacheControl: "3600", upsert: false, contentType: file.type || undefined });
+  if (upErr) throw new Error(`${file.name}: ${upErr.message}`);
+  const { data, error } = await db.rpc("pv_tally_post", {
+    p_ids: ids, p_voucher_no: voucherNo, p_voucher_date: voucherDate, p_attachment: path, p_attachment_name: file.name,
+  });
   if (error) throw new Error(error.message);
   return data as number;
+}
+
+/** A 10-minute link to a Tally attachment — made on click, never on render. */
+export async function tallyDocUrl(path: string): Promise<string> {
+  const { data, error } = await supabase.storage.from(TALLY_BUCKET).createSignedUrl(path, 600);
+  if (error) throw new Error(error.message);
+  return data.signedUrl;
 }
 
 export async function unpost(ids: string[], reason: string): Promise<number> {

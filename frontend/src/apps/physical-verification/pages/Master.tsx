@@ -16,7 +16,9 @@ import {
 import {
   COMPANIES, companyName, DEFAULT_PRIMARY, fmtDate, fmtInr, fmtQty, fmtStamp, itemKey, OTEC_SURAT_GUID, type StockItem,
 } from "../lib/stock";
-import { canSchedule, PV_QUERY, scheduleItems, STATUS_LABEL, unscheduleItems, usePv, useStock, type CountRow } from "../lib/pv";
+import {
+  canSchedule, PV_QUERY, scheduleItems, setMasterLines, STATUS_LABEL, unscheduleItems, usePv, useStock, type CountRow,
+} from "../lib/pv";
 import { centralLink, CENTRAL_QUERY, saveCentralField, useCentral } from "../lib/central";
 import type { ImsLink } from "@/apps/bushra-central-master/lib/imsLink";
 import { Diff, inputCls, PageHead, PvUnavailable, StatusPill, Tile } from "../components/parts";
@@ -36,6 +38,9 @@ import { Diff, inputCls, PageHead, PvUnavailable, StatusPill, Tile } from "../co
  * one item can be given its own date without ticking it. Ticking + "Set date" still works.
  * Central group / Central category come from Bushra Central Master and save back into it;
  * both are also filters in the bar, so a category can be picked and dated in one go.
+ *
+ * CHOOSE LINES (asked 19-10-2026): step 1 ticks the items the Master should show for this
+ * company and saves — everyone then sees only those (pv_master_lines). None chosen = all.
  */
 
 type Filter = "all" | "none" | "scheduled" | "submitted" | "returned" | "accepted";
@@ -131,10 +136,19 @@ export default function Master() {
   const [busy, setBusy] = useState(false);
   const [note, setNote] = useState<{ ok: boolean; text: string } | null>(null);
 
-  const rows: Row[] = useMemo(() => (stockQ.data ?? []).map((s) => ({
+  // Choose lines: the chosen set for this company, and the edit mode that changes it.
+  const chosenLines = pv?.masterLines.get(company);
+  const [choosing, setChoosing] = useState(false);
+  const [chooseSet, setChooseSet] = useState<Set<string>>(new Set());
+  const [showAll, setShowAll] = useState(false);
+  const limited = !choosing && !showAll && !!chosenLines?.size;
+
+  const allRows: Row[] = useMemo(() => (stockQ.data ?? []).map((s) => ({
     s, open: pv?.open.get(itemKey(s.companyGuid, s.item)) ?? null, last: pv?.lastAccepted.get(itemKey(s.companyGuid, s.item)) ?? null,
     link: centralLink(centralQ.data?.byKey, s.companyGuid, s.item),
   })), [stockQ.data, pv, centralQ.data]);
+  const rows = useMemo(() => (limited ? allRows.filter((r) => chosenLines!.has(r.s.item)) : allRows),
+    [allRows, limited, chosenLines]);
   const searched = useMemo(() => rows.filter((r) => matchesSearch(search,
     `${r.s.item} ${r.s.primaryGroup} ${r.s.subGroup} ${r.s.group} ${r.link?.values.groupName ?? ""} ${r.link?.values.category ?? ""}`)),
   [rows, search]);
@@ -151,7 +165,13 @@ export default function Master() {
   });
 
   const cols: Col<Row>[] = [
-    ...(isAdmin ? [{
+    ...(choosing ? [{
+      key: "show", label: "Show", filter: false, text: () => "", sort: (r: Row) => (chooseSet.has(r.s.item) ? 0 : 1),
+      render: (r: Row) => (
+        <input type="checkbox" className="accent-orange" checked={chooseSet.has(r.s.item)}
+          onChange={() => setChooseSet((p) => { const n = new Set(p); if (n.has(r.s.item)) n.delete(r.s.item); else n.add(r.s.item); return n; })} />
+      ),
+    } satisfies Col<Row>] : isAdmin ? [{
       key: "pick", label: "✓", filter: false, text: () => "", sort: (r: Row) => (picked.has(r.s.item) ? 0 : 1),
       render: (r: Row) => (
         <input type="checkbox" className="accent-orange" checked={picked.has(r.s.item)} onChange={() => toggle(r.s.item)} />
@@ -228,6 +248,8 @@ export default function Master() {
     setCompany(guid);
     try { localStorage.setItem(COMPANY_KEY, guid); } catch { /* this visit only */ }
     setPicked(new Set());
+    setChoosing(false);
+    setShowAll(false);
     setLineAssignee({});
     setNote(null);
     ctl.setFilters({});
@@ -288,6 +310,26 @@ export default function Master() {
   const removeDates = () => run(async () => {
     const n = await unscheduleItems(removable.map((r) => r.open!.id));
     return `Date removed from ${n} item${n === 1 ? "" : "s"}.`;
+  });
+
+  /* --------------------------------------------------------- choose lines -- */
+
+  const startChoosing = () => {
+    setChooseSet(new Set(chosenLines ?? []));
+    setPicked(new Set());
+    setChoosing(true);
+  };
+  const allShownChosen = shown.length > 0 && shown.every((r) => chooseSet.has(r.s.item));
+  const toggleAllChosen = () => setChooseSet((p) => {
+    const n = new Set(p);
+    if (allShownChosen) shown.forEach((r) => n.delete(r.s.item)); else shown.forEach((r) => n.add(r.s.item));
+    return n;
+  });
+  const saveLines = () => run(async () => {
+    const n = await setMasterLines(company, [...chooseSet]);
+    setChoosing(false);
+    return n ? `${n} line${n === 1 ? "" : "s"} chosen — the Master now shows only these for ${companyName(company)}.`
+      : `No lines chosen — the Master shows every item for ${companyName(company)}.`;
   });
 
   /* ---------------------------------------------------------- line by line -- */
@@ -407,7 +449,29 @@ export default function Master() {
         <Tile label="To count / awaiting review" value={`${count("scheduled") + count("returned")} / ${count("submitted")}`} />
       </div>
 
-      {isAdmin && picked.size > 0 && (
+      {choosing && (
+        <Card className="sticky top-2 z-30 flex flex-wrap items-center gap-3 border-orange/40 bg-orange/[0.04] px-4 py-2.5">
+          <b className="text-[13px] text-navy">Choose lines — {chooseSet.size.toLocaleString("en-IN")} ticked</b>
+          <span className="text-[12px] text-grey">Tick the items this Master should show for {companyName(company)}. Filters help; ticks are kept across them.</span>
+          <Button size="sm" variant="ghost" onClick={toggleAllChosen} disabled={!shown.length}>
+            {allShownChosen ? "Untick" : "Tick"} all {shown.length.toLocaleString("en-IN")} shown
+          </Button>
+          <Button size="sm" variant="ghost" onClick={() => setChooseSet(new Set())} disabled={!chooseSet.size}>Untick all</Button>
+          <Button size="sm" onClick={saveLines} disabled={busy}>{busy ? "Saving…" : "Save lines"}</Button>
+          <button className="ml-auto text-[12px] text-grey hover:text-navy" onClick={() => setChoosing(false)}>Cancel</button>
+        </Card>
+      )}
+      {!choosing && chosenLines?.size ? (
+        <div className="flex flex-wrap items-center gap-2 text-[12px] text-grey">
+          {showAll
+            ? <>Showing <b className="text-navy">every item</b>; {chosenLines.size.toLocaleString("en-IN")} are chosen lines.</>
+            : <>Showing the <b className="text-navy">{chosenLines.size.toLocaleString("en-IN")} chosen lines</b> for {companyName(company)}.</>}
+          <button className="font-semibold text-orange hover:underline" onClick={() => setShowAll((v) => !v)}>
+            {showAll ? "Show chosen lines only" : "Show every item"}
+          </button>
+        </div>
+      ) : null}
+      {isAdmin && !choosing && picked.size > 0 && (
         <Card className="sticky top-2 z-30 flex flex-wrap items-center gap-3 border-orange/40 bg-orange/[0.04] px-4 py-2.5">
           <b className="text-[13px] text-navy">{picked.size} selected</b>
           <label className="flex items-center gap-1.5 text-[12px] text-grey">
@@ -466,6 +530,11 @@ export default function Master() {
             <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search item or group"
               className={cn(inputCls, "w-60 pl-8")} />
           </div>
+          {isAdmin && !choosing && (
+            <Button size="sm" variant="ghost" onClick={startChoosing} disabled={!!pvQ.isError || !allRows.length}>
+              Choose lines{chosenLines?.size ? ` (${chosenLines.size.toLocaleString("en-IN")})` : ""}
+            </Button>
+          )}
           <TableTools cols={cols} ctl={ctl} />
         </div>
         <div className="flex flex-wrap items-center gap-2 border-b border-line px-3 py-2">
@@ -478,7 +547,7 @@ export default function Master() {
               </button>
             ))}
           </div>
-          {isAdmin && shown.length > 0 && (
+          {isAdmin && !choosing && shown.length > 0 && (
             <label className="ml-auto flex cursor-pointer items-center gap-2 text-[12px] font-semibold text-navy">
               <input type="checkbox" className="accent-orange" checked={allShownPicked} onChange={toggleAll} />
               Select all {shown.length.toLocaleString("en-IN")} shown

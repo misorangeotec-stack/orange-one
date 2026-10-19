@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { CornerDownLeft } from "lucide-react";
+import { CornerDownLeft, X } from "lucide-react";
 import Card from "@/shared/components/ui/Card";
 import Button from "@/shared/components/ui/Button";
 import { useSession } from "@/core/platform/session";
@@ -9,23 +9,26 @@ import { todayLocalIso } from "@/shared/lib/dueBuckets";
 import { exportRowsToXlsx } from "@/shared/lib/exportXlsx";
 import { cn } from "@/shared/lib/cn";
 import { companyName, fmtDate, fmtQty, fmtStamp, itemKey } from "../lib/stock";
-import { PV_QUERY, saveCounts, STATUS_LABEL, usePv, useStocks, type CountRow } from "../lib/pv";
-import { Diff, inputCls, PageHead, PvUnavailable, StatusPill, tdCls, thCls } from "../components/parts";
+import { lotTotal, PV_QUERY, saveCounts, STATUS_LABEL, usePv, useStocks, type CountRow, type LotLine } from "../lib/pv";
+import { fetchLots, useLots } from "../lib/lots";
+import { inputCls, PageHead, PvUnavailable, StatusPill, tdCls, thCls } from "../components/parts";
 
 /**
  * COUNT — the verifier's page.
  *
- * Shows ONLY the items the admin scheduled for this person whose verification date has come
- * (and anything sent back for a recount). The verifier types the physical stock; Difference =
- * Physical − Closing works itself out. Save keeps a draft; Submit sends the counted rows to
- * the admin. Each save freezes Tally's closing of that moment on the row.
+ * Shows ONLY the items scheduled for this person whose verification date has come (and anything
+ * sent back for a recount).
  *
- * Admins see every verifier's due items, with a picker to narrow to one.
+ * BLIND COUNT (asked 19-10-2026): Tally's closing and the difference are NOT shown here — the
+ * verifier enters what is on the shelf. The closing is still frozen on the row at each save, for
+ * the review.
  *
- * The rows can come from any of the four companies; each reads its own company's closing.
+ * LOT BY LOT: after the total, the verifier splits it by lot no. A new blank lot line keeps
+ * opening until the lots add up to the total; Submit takes only items whose lots match it.
  */
 
-interface Draft { qty: string; remarks: string }
+interface LotDraft { lot: string; qty: string }
+interface Draft { qty: string; remarks: string; lots: LotDraft[] }
 
 const parseQty = (s: string): number | null => {
   const t = s.replace(/,/g, "").trim();
@@ -33,6 +36,13 @@ const parseQty = (s: string): number | null => {
   const n = Number(t);
   return Number.isFinite(n) ? n : NaN;
 };
+const EMPTY: Draft = { qty: "", remarks: "", lots: [] };
+const near = (a: number, b: number) => Math.abs(a - b) < 0.0005;
+
+/** The lot lines worth saving: anything typed in. */
+const cleanLots = (lots: LotDraft[]): LotLine[] => lots
+  .filter((l) => l.lot.trim() || l.qty.trim())
+  .map((l) => ({ lot: l.lot.trim(), qty: parseQty(l.qty) }));
 
 export default function Count() {
   const { user, isAdmin, canEditModule } = useSession();
@@ -50,7 +60,7 @@ export default function Count() {
   const [note, setNote] = useState<{ ok: boolean; text: string } | null>(null);
 
   const counts = pvQ.data?.counts ?? [];
-  // Closing stock only for the companies that have rows still to count.
+  // Closing stock only for the companies that have rows still to count (frozen at save, never shown).
   const stock = useStocks(counts.filter((c) => c.status === "scheduled" || c.status === "returned").map((c) => c.companyGuid));
   const multiCompany = new Set(counts.map((c) => c.companyGuid)).size > 1;
   const mine = (c: CountRow) => (who ? c.assignedTo === who : isAdmin || c.assignedTo === user.id);
@@ -68,40 +78,68 @@ export default function Count() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   [counts, who, user.id, isAdmin]);
 
+  // Lot NAMES as suggestions only — the quantities stay hidden.
+  const lotsQ = useLots(due.map((c) => ({ companyGuid: c.companyGuid, item: c.item })));
+
   // Seed the boxes from what is already saved on each row.
   useEffect(() => {
     setDrafts((d) => {
       const n = { ...d };
       for (const c of due) {
-        if (!n[c.id]) n[c.id] = { qty: c.physicalQty === null ? "" : String(c.physicalQty), remarks: c.verifierRemarks ?? "" };
+        if (!n[c.id]) {
+          n[c.id] = {
+            qty: c.physicalQty === null ? "" : String(c.physicalQty),
+            remarks: c.verifierRemarks ?? "",
+            lots: c.lotCounts.map((l) => ({ lot: l.lot, qty: l.qty === null ? "" : String(l.qty) })),
+          };
+        }
       }
       return n;
     });
   }, [due]);
 
-  const draftOf = (c: CountRow): Draft => drafts[c.id] ?? { qty: "", remarks: "" };
+  const draftOf = (c: CountRow): Draft => drafts[c.id] ?? EMPTY;
   const setDraft = (id: string, patch: Partial<Draft>) =>
-    setDrafts((d) => ({ ...d, [id]: { ...(d[id] ?? { qty: "", remarks: "" }), ...patch } }));
+    setDrafts((d) => ({ ...d, [id]: { ...(d[id] ?? EMPTY), ...patch } }));
 
-  const liveClosing = (c: CountRow) => stock.by.get(itemKey(c.companyGuid, c.item))?.closingQty ?? (stock.loaded ? 0 : c.closingQty);
   const isDirty = (c: CountRow) => {
     const d = draftOf(c);
-    return parseQty(d.qty) !== c.physicalQty || (d.remarks.trim() || null) !== (c.verifierRemarks ?? null);
+    return parseQty(d.qty) !== c.physicalQty || (d.remarks.trim() || null) !== (c.verifierRemarks ?? null) ||
+      JSON.stringify(cleanLots(d.lots)) !== JSON.stringify(c.lotCounts);
   };
-  const bad = due.filter((c) => Number.isNaN(parseQty(draftOf(c).qty)) || (parseQty(draftOf(c).qty) ?? 0) < 0);
+  const qtyBad = (d: Draft) => Number.isNaN(parseQty(d.qty)) || (parseQty(d.qty) ?? 0) < 0;
+  const lotsBad = (d: Draft) => d.lots.some((l) => Number.isNaN(parseQty(l.qty)) || (parseQty(l.qty) ?? 0) < 0);
+  /** Ready to submit: a total, and (when it is above 0) complete lot lines adding up to it. */
+  const isReady = (d: Draft) => {
+    const q = parseQty(d.qty);
+    if (q === null || Number.isNaN(q) || q < 0 || lotsBad(d)) return false;
+    const lots = cleanLots(d.lots);
+    if (q === 0) return lots.every((l) => !l.qty);
+    return lots.length > 0 && lots.every((l) => l.lot && l.qty !== null && l.qty > 0) && near(lotTotal(lots), q);
+  };
+
+  const bad = due.filter((c) => qtyBad(draftOf(c)) || lotsBad(draftOf(c)));
   const dirty = due.filter(isDirty);
-  const ready = due.filter((c) => { const q = parseQty(draftOf(c).qty); return q !== null && !Number.isNaN(q) && q >= 0; });
+  const ready = due.filter((c) => isReady(draftOf(c)));
 
   const run = async (rows: CountRow[], submit: boolean) => {
-    if (bad.length) { setNote({ ok: false, text: `Fix the physical stock for ${bad[0].item} — numbers only.` }); return; }
+    if (bad.length) { setNote({ ok: false, text: `Fix the quantities for ${bad[0].item} — numbers only.` }); return; }
     if (!rows.length) return;
-    if (submit && !window.confirm(`Submit ${rows.length} item${rows.length === 1 ? "" : "s"} to the admin? You cannot change them after this.`)) return;
+    if (submit && !window.confirm(`Submit ${rows.length} item${rows.length === 1 ? "" : "s"} for review? You cannot change them after this.`)) return;
     setBusy(true); setNote(null);
     try {
-      // Fresh Tally closing at the moment of saving — that is the figure frozen on the row.
-      const by = await stock.refetch();
+      // Fresh Tally closing and lot balances at the moment of saving — frozen on the row.
+      const [by, lotsNow] = await Promise.all([
+        stock.refetch(),
+        fetchLots(rows.map((c) => ({ companyGuid: c.companyGuid, item: c.item }))).catch(() => null),
+      ]);
       const n = await saveCounts(rows.map((c) => ({
-        id: c.id, physicalQty: parseQty(draftOf(c).qty), remarks: draftOf(c).remarks, stock: by.get(itemKey(c.companyGuid, c.item)),
+        id: c.id,
+        physicalQty: parseQty(draftOf(c).qty),
+        remarks: draftOf(c).remarks,
+        lots: cleanLots(draftOf(c).lots),
+        stock: by.get(itemKey(c.companyGuid, c.item)),
+        lotClosing: lotsNow ? lotsNow.get(itemKey(c.companyGuid, c.item)) ?? [] : null,
       })), submit);
       await qc.invalidateQueries({ queryKey: PV_QUERY });
       if (submit) setDrafts((d) => { const x = { ...d }; rows.forEach((c) => delete x[c.id]); return x; });
@@ -123,7 +161,7 @@ export default function Count() {
     sheetName: "Count sheet",
     title: `Physical Verification — ${[...new Set(due.map((c) => companyName(c.companyGuid)))].join(", ")} count sheet`,
     rows: due,
-    notes: ["Write the physical stock in the blank column, then enter it on the Count page."],
+    notes: ["Write the physical total, then each lot no. with its quantity; the lots must add up to the total."],
     columns: [
       { header: "Verification date", width: 14, value: (c) => fmtDate(c.verifyDate) },
       { header: "Company", width: 18, value: (c) => companyName(c.companyGuid) },
@@ -131,8 +169,13 @@ export default function Count() {
       { header: "Sub group", width: 22, value: (c) => c.subGroup ?? "" },
       { header: "Stock group", width: 24, value: (c) => c.group ?? "" },
       { header: "Unit", width: 7, value: (c) => c.unit ?? "" },
-      { header: "Closing stock", width: 13, value: (c) => liveClosing(c) ?? "" },
-      { header: "Physical stock", width: 14, value: () => "" },
+      { header: "Physical stock (total)", width: 16, value: () => "" },
+      { header: "Lot no. 1", width: 14, value: () => "" },
+      { header: "Qty 1", width: 9, value: () => "" },
+      { header: "Lot no. 2", width: 14, value: () => "" },
+      { header: "Qty 2", width: 9, value: () => "" },
+      { header: "Lot no. 3", width: 14, value: () => "" },
+      { header: "Qty 3", width: 9, value: () => "" },
       { header: "Remarks", width: 30, value: () => "" },
     ],
   });
@@ -144,7 +187,7 @@ export default function Count() {
       <PageHead
         kicker="Physical Verification · Count"
         title="Physical stock count"
-        sub={<>Enter the physical stock you counted. Difference = Physical − Closing. <b>Save</b> keeps it, <b>Submit</b> sends it to the admin.</>}
+        sub={<>Enter the physical stock you counted, then split it by lot no. <b>Save</b> keeps it; <b>Submit</b> sends items whose lots add up to the total.</>}
         right={<>
           {isAdmin && (
             <select value={who} onChange={(e) => setWho(e.target.value)} className={inputCls}>
@@ -203,9 +246,8 @@ export default function Count() {
                   <th className={thCls}>Sub group</th>
                   <th className={thCls}>Stock group</th>
                   <th className={thCls}>Unit</th>
-                  <th className={cn(thCls, "text-right")}>Closing stock</th>
                   <th className={cn(thCls, "text-right")}>Physical stock</th>
-                  <th className={cn(thCls, "text-right")}>Difference</th>
+                  <th className={cn(thCls, "min-w-[300px]")}>Lot no. · Qty</th>
                   <th className={thCls}>Remarks</th>
                   {isAdmin && <th className={thCls}>Verifier</th>}
                 </tr>
@@ -214,10 +256,9 @@ export default function Count() {
                 {due.map((c) => {
                   const d = draftOf(c);
                   const q = parseQty(d.qty);
-                  const closing = liveClosing(c);
-                  const diff = q === null || Number.isNaN(q) || closing === null ? null : q - closing;
+                  const names = (lotsQ.data?.get(itemKey(c.companyGuid, c.item)) ?? []).map((l) => l.lot);
                   return (
-                    <tr key={c.id} className={cn(c.status === "returned" && "bg-ryg-red/[0.03]")}>
+                    <tr key={c.id} className={cn("align-top", c.status === "returned" && "bg-ryg-red/[0.03]")}>
                       <td className={cn(tdCls, "font-semibold")}>{fmtDate(c.verifyDate)}</td>
                       <td className={cn(tdCls, "whitespace-normal")}>
                         <div className="font-medium text-navy">{c.item}</div>
@@ -229,25 +270,27 @@ export default function Count() {
                       <td className={tdCls}>{c.subGroup}</td>
                       <td className={cn(tdCls, "text-grey")}>{c.group}</td>
                       <td className={tdCls}>{c.unit}</td>
-                      <td className={cn(tdCls, "text-right tabular-nums")}>{fmtQty(closing)}</td>
                       <td className={cn(tdCls, "text-right")}>
-                        <input value={d.qty} inputMode="decimal" disabled={!mayEdit}
+                        <input value={d.qty} inputMode="decimal" disabled={!mayEdit} placeholder="Total"
                           onChange={(e) => setDraft(c.id, { qty: e.target.value })}
                           className={cn(inputCls, "w-28 text-right tabular-nums",
-                            Number.isNaN(q) || (q ?? 0) < 0 ? "border-ryg-red" : isDirty(c) && "border-orange/60 bg-orange/[0.04]")} />
+                            qtyBad(d) ? "border-ryg-red" : isDirty(c) && "border-orange/60 bg-orange/[0.04]")} />
                       </td>
-                      <td className={cn(tdCls, "text-right")}><Diff value={diff} /></td>
+                      <td className={tdCls}>
+                        <LotEditor id={c.id} lots={d.lots} total={q} names={names} disabled={!mayEdit}
+                          onChange={(lots) => setDraft(c.id, { lots })} />
+                      </td>
                       <td className={tdCls}>
                         <input value={d.remarks} disabled={!mayEdit} placeholder="Optional"
                           onChange={(e) => setDraft(c.id, { remarks: e.target.value })}
-                          className={cn(inputCls, "w-56")} />
+                          className={cn(inputCls, "w-48")} />
                       </td>
                       {isAdmin && <td className={cn(tdCls, "text-grey")}>{nameOf(c.assignedTo)}</td>}
                     </tr>
                   );
                 })}
                 {due.length === 0 && (
-                  <tr><td colSpan={10} className="p-10 text-center text-[13px] text-grey">
+                  <tr><td colSpan={9} className="p-10 text-center text-[13px] text-grey">
                     {pvQ.isLoading ? "Loading…" : "Nothing to count today."}
                   </td></tr>
                 )}
@@ -260,9 +303,8 @@ export default function Count() {
                   <th className={thCls}>Date</th>
                   <th className={thCls}>Stock item</th>
                   <th className={thCls}>Unit</th>
-                  <th className={cn(thCls, "text-right")}>Closing (at count)</th>
                   <th className={cn(thCls, "text-right")}>Physical</th>
-                  <th className={cn(thCls, "text-right")}>Difference</th>
+                  <th className={thCls}>Lots</th>
                   <th className={thCls}>Remarks</th>
                   <th className={thCls}>Submitted</th>
                   <th className={thCls}>Status</th>
@@ -270,29 +312,79 @@ export default function Count() {
               </thead>
               <tbody>
                 {done.map((c) => (
-                  <tr key={c.id}>
+                  <tr key={c.id} className="align-top">
                     <td className={tdCls}>{fmtDate(c.verifyDate)}</td>
                     <td className={cn(tdCls, "whitespace-normal")}>
                       <div className="font-medium text-navy">{c.item}</div>
                       {multiCompany && <div className="text-[11px] text-grey">{companyName(c.companyGuid)}</div>}
                     </td>
                     <td className={tdCls}>{c.unit}</td>
-                    <td className={cn(tdCls, "text-right tabular-nums")}>{fmtQty(c.closingQty)}</td>
                     <td className={cn(tdCls, "text-right tabular-nums")}>{fmtQty(c.physicalQty)}</td>
-                    <td className={cn(tdCls, "text-right")}><Diff value={c.difference} /></td>
+                    <td className={cn(tdCls, "text-[12px]")}>
+                      {c.lotCounts.length ? c.lotCounts.map((l, i) => <div key={i}>{l.lot} · {fmtQty(l.qty)}</div>) : <span className="text-grey-2">—</span>}
+                    </td>
                     <td className={cn(tdCls, "text-grey")}>{c.verifierRemarks ?? ""}</td>
                     <td className={cn(tdCls, "text-grey")}>{fmtStamp(c.submittedAt)}</td>
                     <td className={tdCls} title={STATUS_LABEL[c.status]}><StatusPill status={c.status} /></td>
                   </tr>
                 ))}
                 {done.length === 0 && (
-                  <tr><td colSpan={9} className="p-10 text-center text-[13px] text-grey">Nothing submitted yet.</td></tr>
+                  <tr><td colSpan={8} className="p-10 text-center text-[13px] text-grey">Nothing submitted yet.</td></tr>
                 )}
               </tbody>
             </table>
           )}
         </div>
       </Card>
+    </div>
+  );
+}
+
+/**
+ * The lot lines of one item. Typed lines, plus ONE blank line while the lots are still short of
+ * the total (or no total yet) — so the next lot can always be added until the count is complete.
+ */
+function LotEditor({ id, lots, total, names, disabled, onChange }: {
+  id: string; lots: LotDraft[]; total: number | null; names: string[]; disabled: boolean; onChange: (l: LotDraft[]) => void;
+}) {
+  const typed = lots.filter((l) => l.lot.trim() || l.qty.trim());
+  const sum = typed.reduce((s, l) => s + (parseQty(l.qty) || 0), 0);
+  const t = total === null || Number.isNaN(total) ? null : total;
+  const complete = t !== null && t > 0 && near(sum, t);
+  const showBlank = !disabled && !complete && t !== 0;
+  const lines = showBlank ? [...typed, { lot: "", qty: "" }] : typed;
+  const set = (i: number, patch: Partial<LotDraft>) => {
+    const next = lines.map((l, j) => (j === i ? { ...l, ...patch } : l));
+    onChange(next.filter((l) => l.lot.trim() || l.qty.trim()));
+  };
+  const cell = cn(inputCls, "h-7 px-1.5 text-[12px]");
+  if (t === 0 && !typed.length) return <span className="text-[11.5px] text-grey">Nothing on the shelf — no lots needed.</span>;
+  return (
+    <div className="space-y-1">
+      <datalist id={`pv-lotnames-${id}`}>{names.map((n) => <option key={n} value={n} />)}</datalist>
+      {lines.map((l, i) => (
+        <div key={i} className="flex items-center gap-1">
+          <input value={l.lot} list={`pv-lotnames-${id}`} disabled={disabled} placeholder="Lot no."
+            onChange={(e) => set(i, { lot: e.target.value })} className={cn(cell, "w-36")} />
+          <input value={l.qty} inputMode="decimal" disabled={disabled} placeholder="Qty"
+            onChange={(e) => set(i, { qty: e.target.value })}
+            className={cn(cell, "w-24 text-right tabular-nums",
+              (Number.isNaN(parseQty(l.qty)) || (parseQty(l.qty) ?? 0) < 0) && "border-ryg-red")} />
+          {i < typed.length && !disabled && (
+            <button className="text-grey hover:text-ryg-red" title="Remove this lot"
+              onClick={() => onChange(typed.filter((_, j) => j !== i))}>
+              <X className="h-3.5 w-3.5" />
+            </button>
+          )}
+        </div>
+      ))}
+      <div className="text-[11px]">
+        {t === null ? <span className="text-grey">Enter the total first.</span>
+          : complete ? <span className="font-semibold text-ryg-green">Lots add up to {fmtQty(t)} ✓</span>
+          : <span className={sum > (t ?? 0) ? "text-ryg-red" : "text-[#B7791F]"}>
+            Lots {fmtQty(sum)} of {fmtQty(t)} — {sum > (t ?? 0) ? `over by ${fmtQty(sum - (t ?? 0))}` : `${fmtQty((t ?? 0) - sum)} left`}
+          </span>}
+      </div>
     </div>
   );
 }

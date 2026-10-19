@@ -14,7 +14,7 @@ import { PvUnavailable } from "../components/parts";
  *   Step 1 · Set dates   the Master (tick items, verification date, verifier)
  *   Step 2 · Count       the physical count — each sees only the items given to them
  *   Step 3 · Review      accept a submitted count or send it back for recount
- *   Step 4 · Tally       post accepted differences to Tally as a Stock Journal
+ *   Step 4 · Tally       adjust accepted differences in Tally; voucher no. + attachment closes them
  *
  * Everyone listed also needs an EDIT grant on Physical Verification in User Access. Admins can do every step.
  */
@@ -39,7 +39,7 @@ const STEPS: { key: Key; title: string; hint: string }[] = [
   {
     key: "tallyPeople",
     title: "Step 4 · Post to Tally (Stock Journal)",
-    hint: "Who enters the accepted differences in Tally: picks godown + batch, imports the Tally file, marks posted with the voucher no. Left empty, the step 3 people post.",
+    hint: "Who adjusts the accepted differences in Tally, then closes them with the Tally voucher no. and attachment. Left empty, the step 3 people do it.",
   },
 ];
 

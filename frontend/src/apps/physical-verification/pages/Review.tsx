@@ -9,13 +9,18 @@ import { matchesSearch } from "@/shared/lib/search";
 import { exportRowsToXlsx } from "@/shared/lib/exportXlsx";
 import { cn } from "@/shared/lib/cn";
 import { COMPANIES, companyName, fmtDate, fmtInr, fmtQty, fmtStamp } from "../lib/stock";
-import { canReview, diffValue, PV_QUERY, reviewCounts, STATUS_LABEL, usePv, type CountRow, type CountStatus } from "../lib/pv";
+import { canReview, diffValue, lotTotal, PV_QUERY, reviewRows, STATUS_LABEL, usePv, type CountRow, type CountStatus } from "../lib/pv";
+import { lotCompare } from "../lib/lots";
 import { Diff, inputCls, PageHead, PvUnavailable, StatusPill, tdCls, thCls, Tile } from "../components/parts";
 
 /**
  * REVIEW — the admin's side. Submitted counts arrive here with their difference against the
  * Tally closing frozen at count time. Accept closes the round; Recount sends it back to the
  * verifier with a reason. "History" is every round ever counted, for export.
+ *
+ * 19-10-2026: each item shows its lots — counted vs Tally's lot balance frozen at the count —
+ * and needs its OWN remark to accept or send back. Accepted with no difference is closed;
+ * accepted with a difference goes on to 4 · Post to Tally.
  */
 
 type Tab = "submitted" | "returned" | "accepted";
@@ -33,7 +38,7 @@ export default function Review() {
   const [search, setSearch] = useState("");
   const [company, setCompany] = useState("");
   const [picked, setPicked] = useState<Set<string>>(new Set());
-  const [reason, setReason] = useState("");
+  const [remarks, setRemarks] = useState<Record<string, string>>({});
   const [busy, setBusy] = useState(false);
   const [note, setNote] = useState<{ ok: boolean; text: string } | null>(null);
 
@@ -56,13 +61,18 @@ export default function Review() {
   const ids = rows.filter((c) => picked.has(c.id)).map((c) => c.id);
 
   const act = async (action: "accept" | "recount") => {
-    if (action === "recount" && !reason.trim()) { setNote({ ok: false, text: "Write why it needs a recount." }); return; }
+    const missing = rows.filter((c) => picked.has(c.id) && !(remarks[c.id] ?? "").trim());
+    if (missing.length) { setNote({ ok: false, text: `Write a remark for: ${missing.map((c) => c.item).join(", ")}` }); return; }
     setBusy(true); setNote(null);
     try {
-      const n = await reviewCounts(ids, action, reason);
+      const n = await reviewRows(ids.map((id) => ({ id, remarks: remarks[id] ?? "" })), action);
       await qc.invalidateQueries({ queryKey: PV_QUERY });
-      setPicked(new Set()); setReason("");
-      setNote({ ok: true, text: action === "accept" ? `${n} accepted.` : `${n} sent back for recount.` });
+      setPicked(new Set());
+      setRemarks((r) => { const x = { ...r }; ids.forEach((id) => delete x[id]); return x; });
+      const toTally = rows.filter((c) => ids.includes(c.id) && (c.difference ?? 0) !== 0).length;
+      setNote({ ok: true, text: action === "accept"
+        ? `${n} accepted${toTally ? ` — ${toTally} with a difference go to Post to Tally; the rest are closed` : " and closed"}.`
+        : `${n} sent back for recount.` });
     } catch (e) {
       setNote({ ok: false, text: (e as Error).message });
     } finally {
@@ -87,6 +97,8 @@ export default function Review() {
       { header: "Unit", width: 7, value: (c) => c.unit ?? "" },
       { header: "Closing stock", width: 13, value: (c) => c.closingQty ?? "" },
       { header: "Physical stock", width: 13, value: (c) => c.physicalQty ?? "" },
+      { header: "Lots counted", width: 30, value: (c) => c.lotCounts.map((l) => `${l.lot}: ${l.qty ?? ""}`).join("; ") },
+      { header: "Lots in Tally", width: 30, value: (c) => c.lotClosing.map((l) => `${l.lot}: ${l.qty}`).join("; ") },
       { header: "Difference", width: 12, value: (c) => c.difference ?? "" },
       { header: "Difference value", width: 14, value: (c) => Math.round(diffValue(c.difference, c.closingRate) ?? 0) },
       { header: "Verifier", width: 20, value: (c) => nameOf(c.countedBy ?? c.assignedTo) },
@@ -133,10 +145,9 @@ export default function Review() {
           {isAdmin && tab === "submitted" && ids.length > 0 && (
             <div className="flex flex-wrap items-center gap-2">
               <b className="text-[12.5px] text-navy">{ids.length} selected</b>
-              <Button size="sm" onClick={() => act("accept")} disabled={busy}>Accept</Button>
-              <input value={reason} onChange={(e) => setReason(e.target.value)} placeholder="Reason for recount"
-                className={cn(inputCls, "w-56")} />
+              <Button size="sm" onClick={() => act("accept")} disabled={busy}>Accept &amp; submit</Button>
               <Button size="sm" variant="ghost" onClick={() => act("recount")} disabled={busy}>Send for recount</Button>
+              <span className="text-[11.5px] text-grey">Each ticked item needs its remark.</span>
             </div>
           )}
           {note && <span className={cn("text-[12.5px]", note.ok ? "text-ryg-green" : "text-ryg-red")}>{note.text}</span>}
@@ -168,15 +179,17 @@ export default function Review() {
                 <th className={cn(thCls, "text-right")}>Physical</th>
                 <th className={cn(thCls, "text-right")}>Difference</th>
                 <th className={cn(thCls, "text-right")}>Value</th>
+                <th className={cn(thCls, "min-w-[280px]")}>Lot · Counted · Tally · Diff</th>
                 <th className={thCls}>Verifier</th>
                 <th className={thCls}>Remarks</th>
+                {isAdmin && tab === "submitted" && <th className={thCls}>Review remark *</th>}
                 <th className={thCls}>{tab === "submitted" ? "Submitted" : "Reviewed"}</th>
                 <th className={thCls}>Status</th>
               </tr>
             </thead>
             <tbody>
               {rows.map((c) => (
-                <tr key={c.id} className={cn(picked.has(c.id) ? "bg-orange/[0.06]" : "hover:bg-page/60")}>
+                <tr key={c.id} className={cn("align-top", picked.has(c.id) ? "bg-orange/[0.06]" : "hover:bg-page/60")}>
                   {isAdmin && tab === "submitted" && (
                     <td className={tdCls}><input type="checkbox" className="accent-orange" checked={picked.has(c.id)} onChange={() => toggle(c.id)} /></td>
                   )}
@@ -190,22 +203,68 @@ export default function Review() {
                   <td className={cn(tdCls, "text-right tabular-nums font-semibold")}>{fmtQty(c.physicalQty)}</td>
                   <td className={cn(tdCls, "text-right")}><Diff value={c.difference} /></td>
                   <td className={cn(tdCls, "text-right tabular-nums text-grey")}>{fmtInr(diffValue(c.difference, c.closingRate))}</td>
+                  <td className={tdCls}><LotTable c={c} /></td>
                   <td className={tdCls}>{nameOf(c.countedBy ?? c.assignedTo)}</td>
                   <td className={cn(tdCls, "max-w-[260px] whitespace-normal text-grey")}>
                     {c.verifierRemarks}
-                    {c.reviewRemarks && <div className="text-[11.5px] text-ryg-red">Admin: {c.reviewRemarks}</div>}
+                    {c.reviewRemarks && <div className="text-[11.5px] text-ryg-red">Review: {c.reviewRemarks}</div>}
                   </td>
+                  {isAdmin && tab === "submitted" && (
+                    <td className={tdCls}>
+                      <input value={remarks[c.id] ?? ""} placeholder="Required"
+                        onChange={(e) => {
+                          const v = e.target.value;
+                          setRemarks((r) => ({ ...r, [c.id]: v }));
+                          if (v.trim()) setPicked((p) => new Set(p).add(c.id));
+                        }}
+                        className={cn(inputCls, "h-7 w-52 px-1.5 text-[12px]", picked.has(c.id) && !(remarks[c.id] ?? "").trim() && "border-ryg-red")} />
+                    </td>
+                  )}
                   <td className={cn(tdCls, "text-grey")}>{fmtStamp(tab === "submitted" ? c.submittedAt : c.reviewedAt)}</td>
                   <td className={tdCls}><StatusPill status={c.status} /></td>
                 </tr>
               ))}
               {rows.length === 0 && (
-                <tr><td colSpan={12} className="p-10 text-center text-[13px] text-grey">Nothing here.</td></tr>
+                <tr><td colSpan={14} className="p-10 text-center text-[13px] text-grey">Nothing here.</td></tr>
               )}
             </tbody>
           </table>
         </div>
       </Card>
+    </div>
+  );
+}
+
+/** Lot by lot: what was counted against Tally's lot balance when it was counted. */
+function LotTable({ c }: { c: CountRow }) {
+  if (!c.lotCounts.length && !c.lotClosing.length) return <span className="text-[11.5px] text-grey-2">No lots</span>;
+  const rows = lotCompare(c.lotCounts, c.lotClosing);
+  const tallyLots = c.lotClosing.reduce((s, l) => s + l.qty, 0);
+  const off = c.closingQty !== null && c.lotClosing.length > 0 && Math.abs(tallyLots - c.closingQty) > 0.0005;
+  return (
+    <div className="text-[11.5px]">
+      <table className="w-full">
+        <tbody>
+          {rows.map((r) => (
+            <tr key={r.lot}>
+              <td className="pr-2 font-medium text-navy">{r.lot}</td>
+              <td className="pr-2 text-right tabular-nums">{fmtQty(r.counted)}</td>
+              <td className="pr-2 text-right tabular-nums text-grey">{fmtQty(r.closing)}</td>
+              <td className={cn("text-right font-semibold tabular-nums",
+                Math.abs(r.diff) < 0.0005 ? "text-ryg-green" : r.diff < 0 ? "text-ryg-red" : "text-[#B7791F]")}>
+                {r.diff > 0 ? "+" : ""}{fmtQty(Math.round(r.diff * 1000) / 1000)}
+              </td>
+            </tr>
+          ))}
+          <tr className="border-t border-line">
+            <td className="pr-2 text-grey">Total</td>
+            <td className="pr-2 text-right tabular-nums">{fmtQty(lotTotal(c.lotCounts))}</td>
+            <td className="pr-2 text-right tabular-nums text-grey">{fmtQty(tallyLots)}</td>
+            <td />
+          </tr>
+        </tbody>
+      </table>
+      {off && <div className="mt-0.5 text-[10.5px] text-[#B7791F]">Tally's lots add up to {fmtQty(tallyLots)}, not its closing {fmtQty(c.closingQty)}.</div>}
     </div>
   );
 }
