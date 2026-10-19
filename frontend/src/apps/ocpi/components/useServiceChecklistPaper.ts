@@ -11,10 +11,10 @@ const safe = (s: string) => s.replace(/[\\/:*?"<>|]+/g, "-");
  * paper for every PaperSet that issues the deal's documents — the issued
  * quotation, the approval, and the approved contract.
  *
- * ⚠ `attach: true` — it goes WITH every download. Whenever the Quote, PI or OC
- *   is downloaded (one paper or "Download all"), the checklist downloads too, so
- *   the customer always receives it before installation without anyone having
- *   to remember it.
+ * ⚠ `attach: true` — PaperSet appends it to the END of the Summary, PI and OC,
+ *   so Download and Print on any of them include the checklist in the same
+ *   file; "Download all" adds it once. The customer always receives it before
+ *   installation without anyone having to remember it.
  *
  * Fetched on its own: it is not part of the issued/approved set, so a missing
  * checklist never raises a "rebuilt" banner or delays the other papers.
@@ -42,6 +42,7 @@ export function useServiceChecklistPaper(deal: OcpiDeal, ref?: string | null): P
     label: "Service checklist",
     blob,
     attach: true,
+    loading: busy,
     fileName: `${safe(ref ?? deal.ocNo ?? deal.quotationNo ?? "OCPI")} - Service checklist - ${safe(machine?.name ?? "machine")}.pdf`,
     missingNote: busy
       ? "Loading the service checklist…"
