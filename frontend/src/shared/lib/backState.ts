@@ -28,6 +28,7 @@ const store = new Map<string, unknown>();
 
 export function clearAllBackState(): void {
   store.clear();
+  lastOpened.clear();
 }
 
 function save(id: string, value: unknown): void {
@@ -59,3 +60,25 @@ export function useBackState<T>(key: string, initial: T | (() => T)): [T, Dispat
 
   return [value, setValue];
 }
+
+/**
+ * The row you last opened in a list, per list. That row stays highlighted when
+ * you come back, so you can see where you were — until you open another one.
+ *
+ * Keyed by the LIST, not by the history entry: it is a "you were here" marker, so
+ * it stays even when you reach the list again from the menu. Same lifetime as the
+ * rest of this file — in memory, wiped on sign-out.
+ */
+const lastOpened = new Map<string, string>();
+
+export function useLastOpened(listKey: string): [string | null, (rowKey: string) => void] {
+  const [value, setValue] = useState<string | null>(() => lastOpened.get(listKey) ?? null);
+  const mark = (rowKey: string) => {
+    lastOpened.set(listKey, rowKey);
+    setValue(rowKey);
+  };
+  return [value, mark];
+}
+
+/** Classes for the highlighted row: a soft orange fill and an orange bar on its left edge. */
+export const LAST_OPENED_ROW = "!bg-orange-soft [&>td:first-child]:shadow-[inset_3px_0_0_0_#FF6A1F]";

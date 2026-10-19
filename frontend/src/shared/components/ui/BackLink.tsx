@@ -1,5 +1,5 @@
-import type { MouseEvent } from "react";
-import { Link, useNavigate } from "react-router-dom";
+import { useEffect, type MouseEvent } from "react";
+import { Link, useLocation, useNavigate } from "react-router-dom";
 
 /**
  * The "← Back" link at the top of a detail page.
@@ -11,33 +11,61 @@ import { Link, useNavigate } from "react-router-dom";
  *
  * Now it steps back one page in this tab's history, exactly like the browser's
  * Back, so it returns to wherever you actually were (and a searched list comes
- * back with its search — see shared/lib/backState). Only when there is nowhere to
- * go back to — the page was opened in a new tab or from a shared link — does it
- * fall back to `to`, the list, and then it says which list.
+ * back with its search — see shared/lib/backState). It goes to `to`, the list,
+ * instead when:
+ *   - there is nowhere to go back to (opened in a new tab or from a shared link) —
+ *     and then it says which list ("← Requests");
+ *   - the page before was a FORM (…/new, …/edit, a draft). Submitting a new request
+ *     lands on its page with the form one step behind; stepping back into a blank
+ *     form is never what "Back" means.
  *
  * `href` stays `to`, so ctrl-click / middle-click still open the list in a new tab.
  */
-export default function BackLink({
-  to,
-  label,
-  className,
-}: {
-  /** Where to go when this tab has no earlier page: the module's list. */
-  to: string;
-  /** That list's name, shown only in the fallback case ("← Requests"). */
-  label: string;
-  className?: string;
-}) {
+
+/** What was at each history step of this tab (React Router's `idx`), as path + query. */
+const trail = new Map<number, string>();
+const currentIdx = (): number => (window.history.state as { idx?: number } | null)?.idx ?? 0;
+
+/** Call once, at the app root, so BackLink knows what the previous page was. */
+export function useHistoryTrail(): void {
+  const { pathname, search } = useLocation();
+  useEffect(() => {
+    trail.set(currentIdx(), `${pathname}${search}`);
+  }, [pathname, search]);
+}
+
+const isForm = (href: string): boolean => {
+  const [path, query = ""] = href.split("?");
+  return /\/(new|edit)\/?$/.test(path) || /\/drafts\/[^/]+\/?$/.test(path) || /(^|&)edit=1(&|$)/.test(query);
+};
+
+export function useBack(to: string): { canGoBack: boolean; onClick: (e: MouseEvent<HTMLAnchorElement>) => void } {
   const navigate = useNavigate();
-  // React Router numbers this tab's history entries; 0 is the page the tab opened on.
-  const canGoBack = ((window.history.state as { idx?: number } | null)?.idx ?? 0) > 0;
+  const idx = currentIdx();
+  const prev = trail.get(idx - 1);
+  // Unknown (the tab was reloaded since) is still an in-app page: step back to it.
+  const canGoBack = idx > 0 && !(prev && isForm(prev));
 
   const onClick = (e: MouseEvent<HTMLAnchorElement>) => {
     if (!canGoBack || e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
     e.preventDefault();
     navigate(-1);
   };
+  return { canGoBack, onClick };
+}
 
+export default function BackLink({
+  to,
+  label,
+  className,
+}: {
+  /** Where to go when there is no page to step back to: the module's list. */
+  to: string;
+  /** That list's name, shown only in the fallback case ("← Requests"). */
+  label: string;
+  className?: string;
+}) {
+  const { canGoBack, onClick } = useBack(to);
   return (
     <Link to={to} onClick={onClick} className={className}>
       ← {canGoBack ? "Back" : label}

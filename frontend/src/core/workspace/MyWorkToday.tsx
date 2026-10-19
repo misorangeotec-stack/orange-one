@@ -44,7 +44,7 @@ import { ScrollableTable } from "@/core/shared/components/ScrollableTable";
 import Pagination from "@/shared/components/ui/Pagination";
 import { usePagination } from "@/shared/lib/usePagination";
 import { matchesSearch } from "@/shared/lib/search";
-import { useBackState } from "@/shared/lib/backState";
+import { useBackState, useLastOpened } from "@/shared/lib/backState";
 import { bucketOf, holdAwareBucketOf, todayLocalIso, type Bucket, type WorkBucket } from "@/shared/lib/dueBuckets";
 import { useSession } from "@/core/platform/session";
 import { cn } from "@/shared/lib/cn";
@@ -189,7 +189,13 @@ export function MyWorkView({ state }: { state: AggregateState }) {
   const [assignment, setAssignment] = useBackState<string[]>("assignment", []);
   const [q, setQ] = useBackState("q", "");
   // Rows open in the side panel (WorkPanel) — the FMS's own page, beside this one.
-  const setOpenItem = useOpenWorkItem();
+  const openInPanel = useOpenWorkItem();
+  // The row you last opened stays highlighted until you open another one.
+  const [lastOpenedId, markOpened] = useLastOpened("core.my-work-today");
+  const setOpenItem = (item: WorkItem) => {
+    markOpened(item.id);
+    openInPanel(item);
+  };
 
   // Admins receive the whole book (they own no workflow steps, so a strict
   // personal filter would otherwise leave them empty). This tab lets them widen
@@ -596,10 +602,11 @@ export function MyWorkView({ state }: { state: AggregateState }) {
                       pageIds={pageIds}
                       today={today}
                       onOpen={setOpenItem}
+                      lastOpenedId={lastOpenedId}
                     />
                   ))
                 ) : (
-                  pg.pageItems.map((item) => <WorkRow key={item.id} item={item} today={today} onOpen={setOpenItem} />)
+                  pg.pageItems.map((item) => <WorkRow key={item.id} item={item} today={today} onOpen={setOpenItem} lastOpened={item.id === lastOpenedId} />)
                 )
               ) : (
                 // Kept inside the table so the filter row stays on screen — an
@@ -899,6 +906,7 @@ function SourceGroup({
   pageIds,
   today,
   onOpen,
+  lastOpenedId,
 }: {
   group: { key: string; label: string; items: WorkItem[]; overdue: number };
   open: boolean;
@@ -906,6 +914,7 @@ function SourceGroup({
   pageIds: Set<string>;
   today: string;
   onOpen: (i: WorkItem) => void;
+  lastOpenedId: string | null;
 }) {
   // Only the slice of this group that landed on the current page renders.
   const visible = open ? group.items.filter((i) => pageIds.has(i.id)) : [];
@@ -940,7 +949,7 @@ function SourceGroup({
         </td>
       </tr>
       {visible.map((item) => (
-        <WorkRow key={item.id} item={item} today={today} grouped onOpen={onOpen} />
+        <WorkRow key={item.id} item={item} today={today} grouped onOpen={onOpen} lastOpened={item.id === lastOpenedId} />
       ))}
       {open && visible.length === 0 && (
         <tr className="border-b border-line">
@@ -953,7 +962,20 @@ function SourceGroup({
   );
 }
 
-function WorkRow({ item, today, grouped, onOpen }: { item: WorkItem; today: string; grouped?: boolean; onOpen: (i: WorkItem) => void }) {
+function WorkRow({
+  item,
+  today,
+  grouped,
+  onOpen,
+  lastOpened,
+}: {
+  item: WorkItem;
+  today: string;
+  grouped?: boolean;
+  onOpen: (i: WorkItem) => void;
+  /** The row this reader opened last — tinted so they can see where they were. */
+  lastOpened?: boolean;
+}) {
   /*
    * A HELD ROW IS NEVER RED. Its due date has usually long gone — that is normally
    * what puts a row on hold — so bucketing it by date alone would paint the red
@@ -980,7 +1002,8 @@ function WorkRow({ item, today, grouped, onOpen }: { item: WorkItem; today: stri
       className={cn(
         "group cursor-pointer border-b border-line last:border-0 transition-colors hover:bg-orange-soft/20",
         bucket === "delayed" && "bg-[#FDECEC]/35",
-        bucket === "hold" && "bg-page/60"
+        bucket === "hold" && "bg-page/60",
+        lastOpened && "!bg-orange-soft"
       )}
     >
       <td

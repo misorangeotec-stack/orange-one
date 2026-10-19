@@ -1,12 +1,13 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
+import { useLocation } from "react-router-dom";
 import Combobox from "@/shared/components/ui/Combobox";
 import EmptyState from "@/shared/components/ui/EmptyState";
 import MultiSelect from "@/shared/components/ui/MultiSelect";
 import Pagination from "@/shared/components/ui/Pagination";
 import { ScrollableTable } from "@/core/shared/components/ScrollableTable";
 import { usePagination } from "@/shared/lib/usePagination";
-import { useBackState } from "@/shared/lib/backState";
+import { LAST_OPENED_ROW, useBackState, useLastOpened } from "@/shared/lib/backState";
 import { exportRowsToXlsx, type ExportColumn } from "@/shared/lib/exportXlsx";
 import { filterOptionLabel, filterValueOf, sortFilterOptions } from "@/shared/lib/blankFilter";
 import { FIT } from "@/shared/lib/tableLook";
@@ -462,6 +463,11 @@ export default function QueueTable<T>({
   const [group, setGroup] = useBackState<string>(`${backKey}:group`, initialGroup ?? "all");
   const [sort, setSort] = useBackState<SortState>(`${backKey}:sort`, initialSort ?? null);
   const pageState = useBackState<number>(`${backKey}:page`, 1);
+  // The row last opened from this table stays highlighted until another is opened.
+  // Any click in a row counts (its link, its View button, the row itself) except the
+  // tick box, which only selects.
+  const { pathname } = useLocation();
+  const [lastOpenedKey, markOpened] = useLastOpened(`${pathname}|${backKey}`);
   const [selectedKeys, setSelectedKeys] = useState<Set<string>>(new Set());
 
   /**
@@ -991,7 +997,10 @@ export default function QueueTable<T>({
                           </tr>
                         )}
                         <tr
-                          className={`hover:bg-page/60 ${onRowClick ? "cursor-pointer" : ""} ${rowClassName?.(row) ?? ""}`}
+                          className={`hover:bg-page/60 ${onRowClick ? "cursor-pointer" : ""} ${rowClassName?.(row) ?? ""} ${lastOpenedKey === rowKey(row) ? LAST_OPENED_ROW : ""}`}
+                          onClickCapture={(e) => {
+                            if (!(e.target as HTMLElement).closest('input[type="checkbox"]')) markOpened(rowKey(row));
+                          }}
                           onClick={onRowClick ? () => onRowClick(row) : undefined}
                         >
                           {selectable && (

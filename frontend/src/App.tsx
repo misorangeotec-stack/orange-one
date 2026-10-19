@@ -1,3 +1,4 @@
+import { useHistoryTrail } from "@/shared/components/ui/BackLink";
 import { Routes, Route, Navigate, useLocation } from "react-router-dom";
 import { useEffect, type ReactNode } from "react";
 import { supabase } from "@/core/platform/supabase";
@@ -132,6 +133,8 @@ function OfficeSuppliesLegacyRedirect() {
 
 export default function App() {
   const location = useLocation();
+  // Lets a detail page's "← Back" know what the previous page was (BackLink).
+  useHistoryTrail();
   /*
    * My Control Center's work panel (core/workspace/WorkPanel.tsx). While it is
    * open the URL is the item's, but the main routes keep rendering WHERE THE PANEL
