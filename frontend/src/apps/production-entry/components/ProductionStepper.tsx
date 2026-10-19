@@ -61,10 +61,25 @@ export default function ProductionStepper({ request }: { request: ProductionRequ
 
   const nodes: PoStageRailNode[] = useMemo(() => {
     const deptName = (id: string) => s.orgDepartments.find((d) => d.id === id)?.name;
+    // Who actually did each step — the `*_by` stamp its RPC wrote. The rail shows
+    // it instead of the owners once the node is DONE. Quality and M/C testing
+    // re-stamp on every round, so they name whoever recorded the final verdict.
+    const doneById: Partial<Record<StepKey, string | null>> = {
+      material_handover: request.mhBy,
+      rm_transfer: request.rmtBy,
+      quality_check: request.qcBy,
+      transfer_slip: request.tsBy,
+      production_entry: request.peBy,
+      packing_entry: request.pkBy,
+      mc_testing: request.mcBy,
+      ready_to_dispatch: request.rtdBy,
+      fg_transfer: request.fgBy,
+    };
     return flow.map((st) => {
       // Generated has no step owner — caption it with who raised the card.
       if (st.key === "generated") {
-        return { key: st.key, label: st.label, departments: [], people: [request.requesterName].filter(Boolean), hasStep: true };
+        const raiser = [request.requesterName].filter(Boolean);
+        return { key: st.key, label: st.label, departments: [], people: raiser, doneBy: raiser, hasStep: true };
       }
       if (!st.step) {
         return { key: st.key, label: st.label, departments: [], people: [], hasStep: false };
@@ -77,10 +92,11 @@ export default function ProductionStepper({ request }: { request: ProductionRequ
         // personName, not profileById: the directory is RLS-scoped, so a cross-
         // department owner would render blank via profileById.
         people: (owner?.employeeIds ?? []).map((id) => s.personName(id)).filter((n) => n !== "—" && n !== "Unknown user"),
+        doneBy: [s.personName(doneById[st.step] ?? null)].filter((n) => n !== "—" && n !== "Unknown user"),
         hasStep: true,
       };
     });
-  }, [s, request.requesterName, flow]);
+  }, [s, request, flow]);
 
   return <PoStageRail nodes={nodes} activeIndex={activeIndex(request, flow)} finished={request.status === "closed"} />;
 }
