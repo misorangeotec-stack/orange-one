@@ -1,3 +1,4 @@
+import { useBackState } from "@/shared/lib/backState";
 import { useMemo, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Search } from "lucide-react";
@@ -30,7 +31,7 @@ export default function Review() {
   const nameOf = (id: string | null | undefined) => (id ? people.data?.find((p) => p.id === id)?.name ?? "—" : "—");
 
   const [tab, setTab] = useState<Tab>("submitted");
-  const [search, setSearch] = useState("");
+  const [search, setSearch] = useBackState("Review.search", "");
   const [picked, setPicked] = useState<Set<string>>(new Set());
   const [reason, setReason] = useState("");
   const [busy, setBusy] = useState(false);

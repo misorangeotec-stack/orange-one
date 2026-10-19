@@ -1,3 +1,4 @@
+import BackLink from "@/shared/components/ui/BackLink";
 import { useState } from "react";
 import { Link } from "react-router-dom";
 import Card from "@/shared/components/ui/Card";
@@ -211,9 +212,7 @@ export default function MyExit() {
               so every block is a readout. ---- */}
       {s.canReadSettlement(c) && <SettlementPanel case={c} />}
 
-      <Link to="/hr-exit" className="inline-block text-[12.5px] font-semibold text-grey-2 hover:text-navy">
-        ← Back
-      </Link>
+      <BackLink to="/hr-exit" label="Back" className="inline-block text-[12.5px] font-semibold text-grey-2 hover:text-navy" />
 
       {withdrawing && (
         <HoldWithdrawModal case={c} mode="withdraw" open={withdrawing} onClose={() => setWithdrawing(false)} />
