@@ -37,6 +37,12 @@ export interface Paper {
   fileName: string;
   /** Why this paper is absent, when `blob` is null and nothing is loading. */
   missingNote?: string;
+  /**
+   * Goes WITH every download: pressing Download on any other paper, or
+   * "Download all", saves this one too. Its tick is always on. Used for the
+   * machine's service checklist, which must reach the customer with the papers.
+   */
+  attach?: boolean;
 }
 
 export default function PaperSet({
@@ -142,7 +148,17 @@ export default function PaperSet({
       which it does, since the three fetches resolve independently.
   */
   const [unticked, setUnticked] = useState<Set<string>>(new Set());
-  const picked = available.filter((p) => !unticked.has(p.key));
+  // An attached paper cannot be unticked — it always goes with the others.
+  const picked = available.filter((p) => p.attach || !unticked.has(p.key));
+  const attached = available.filter((p) => p.attach);
+
+  /** Download one paper, plus every attached paper (staggered — see below). */
+  function downloadWithAttached(p: Paper) {
+    [p, ...attached.filter((a) => a.key !== p.key)].forEach((q, i) => {
+      if (i === 0) downloadOne(q);
+      else setTimeout(() => downloadOne(q), 400 * i);
+    });
+  }
 
   function toggle(key: string) {
     setUnticked((prev) => {
@@ -209,8 +225,10 @@ export default function PaperSet({
                 >
                   <input
                     type="checkbox"
-                    checked={!unticked.has(p.key)}
+                    checked={p.attach || !unticked.has(p.key)}
                     onChange={() => toggle(p.key)}
+                    disabled={p.attach}
+                    title={p.attach ? "Always downloaded with the other papers" : undefined}
                     className="h-3.5 w-3.5 accent-orange"
                   />
                   {p.label}
@@ -231,7 +249,7 @@ export default function PaperSet({
           </Button>
           <Button
             size="sm"
-            onClick={() => active && downloadOne(active)}
+            onClick={() => active && downloadWithAttached(active)}
             disabled={!activeUrl}
           >
             Download
