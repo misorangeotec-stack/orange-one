@@ -8,7 +8,7 @@ import { fetchOrgPeople } from "@/core/platform/orgPeople";
 import { matchesSearch } from "@/shared/lib/search";
 import { exportRowsToXlsx } from "@/shared/lib/exportXlsx";
 import { cn } from "@/shared/lib/cn";
-import { fmtDate, fmtInr, fmtQty, fmtStamp, OTEC_SURAT_NAME } from "../lib/stock";
+import { COMPANIES, companyName, fmtDate, fmtInr, fmtQty, fmtStamp } from "../lib/stock";
 import { canReview, diffValue, PV_QUERY, reviewCounts, STATUS_LABEL, usePv, type CountRow, type CountStatus } from "../lib/pv";
 import { Diff, inputCls, PageHead, PvUnavailable, StatusPill, tdCls, thCls, Tile } from "../components/parts";
 
@@ -31,12 +31,15 @@ export default function Review() {
 
   const [tab, setTab] = useState<Tab>("submitted");
   const [search, setSearch] = useState("");
+  const [company, setCompany] = useState("");
   const [picked, setPicked] = useState<Set<string>>(new Set());
   const [reason, setReason] = useState("");
   const [busy, setBusy] = useState(false);
   const [note, setNote] = useState<{ ok: boolean; text: string } | null>(null);
 
-  const counts = pvQ.data?.counts ?? [];
+  const allCounts = pvQ.data?.counts ?? [];
+  const counts = useMemo(() => (company ? allCounts.filter((c) => c.companyGuid === company) : allCounts), [allCounts, company]);
+  const multiCompany = new Set(allCounts.map((c) => c.companyGuid)).size > 1;
   const byTab = (t: Tab) => counts.filter((c) => c.status === t);
   const rows = useMemo(() => counts
     .filter((c) => c.status === tab && matchesSearch(search, `${c.item} ${c.subGroup ?? ""} ${c.group ?? ""}`))
@@ -70,12 +73,13 @@ export default function Review() {
   const exportList = () => exportRowsToXlsx({
     fileName: `Physical_Verification_${tab}`,
     sheetName: STATUS_LABEL[tab as CountStatus],
-    title: `Physical Verification — ${OTEC_SURAT_NAME} Printing Ink, ${STATUS_LABEL[tab as CountStatus]}`,
+    title: `Physical Verification — ${company ? companyName(company) : "all companies"}, ${STATUS_LABEL[tab as CountStatus]}`,
     rows,
     notes: ["Closing = Tally's closing stock at the moment the count was saved (frozen).",
       "Difference = Physical − Closing; negative = short, positive = extra. Value = difference × Tally closing rate."],
     columns: [
       { header: "Verification date", width: 14, value: (c) => fmtDate(c.verifyDate) },
+      { header: "Company", width: 18, value: (c) => companyName(c.companyGuid) },
       { header: "Stock item", width: 40, value: (c) => c.item },
       { header: "Primary group", width: 18, value: (c) => c.primaryGroup ?? "" },
       { header: "Sub group", width: 22, value: (c) => c.subGroup ?? "" },
@@ -136,7 +140,12 @@ export default function Review() {
             </div>
           )}
           {note && <span className={cn("text-[12.5px]", note.ok ? "text-ryg-green" : "text-ryg-red")}>{note.text}</span>}
-          <div className="relative ml-auto">
+          <select value={company} onChange={(e) => { setCompany(e.target.value); setPicked(new Set()); }}
+            className={cn(inputCls, "ml-auto h-8 py-0 text-[12px]")}>
+            <option value="">All companies</option>
+            {COMPANIES.map((co) => <option key={co.guid} value={co.guid}>{co.name}</option>)}
+          </select>
+          <div className="relative">
             <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-grey-2" />
             <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search item or group"
               className={cn(inputCls, "w-56 pl-8")} />
@@ -174,7 +183,7 @@ export default function Review() {
                   <td className={tdCls}>{fmtDate(c.verifyDate)}</td>
                   <td className={cn(tdCls, "whitespace-normal")}>
                     <div className="font-medium text-navy">{c.item}</div>
-                    <div className="text-[11px] text-grey">{[c.subGroup, c.group].filter((g, i, a) => g && a.indexOf(g) === i).join(" · ")}</div>
+                    <div className="text-[11px] text-grey">{[multiCompany ? companyName(c.companyGuid) : null, c.subGroup, c.group].filter((g, i, a) => g && a.indexOf(g) === i).join(" · ")}</div>
                   </td>
                   <td className={tdCls}>{c.unit}</td>
                   <td className={cn(tdCls, "text-right tabular-nums")} title={`Tally as at ${fmtStamp(c.tallyAsAt)}`}>{fmtQty(c.closingQty)}</td>

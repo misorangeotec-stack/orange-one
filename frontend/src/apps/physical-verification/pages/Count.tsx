@@ -8,8 +8,8 @@ import { fetchOrgPeople } from "@/core/platform/orgPeople";
 import { todayLocalIso } from "@/shared/lib/dueBuckets";
 import { exportRowsToXlsx } from "@/shared/lib/exportXlsx";
 import { cn } from "@/shared/lib/cn";
-import { fmtDate, fmtQty, fmtStamp, OTEC_SURAT_NAME } from "../lib/stock";
-import { PV_QUERY, saveCounts, STATUS_LABEL, usePv, useStock, type CountRow } from "../lib/pv";
+import { companyName, fmtDate, fmtQty, fmtStamp, itemKey } from "../lib/stock";
+import { PV_QUERY, saveCounts, STATUS_LABEL, usePv, useStocks, type CountRow } from "../lib/pv";
 import { Diff, inputCls, PageHead, PvUnavailable, StatusPill, tdCls, thCls } from "../components/parts";
 
 /**
@@ -21,6 +21,8 @@ import { Diff, inputCls, PageHead, PvUnavailable, StatusPill, tdCls, thCls } fro
  * the admin. Each save freezes Tally's closing of that moment on the row.
  *
  * Admins see every verifier's due items, with a picker to narrow to one.
+ *
+ * The rows can come from any of the four companies; each reads its own company's closing.
  */
 
 interface Draft { qty: string; remarks: string }
@@ -35,7 +37,6 @@ const parseQty = (s: string): number | null => {
 export default function Count() {
   const { user, isAdmin, canEditModule } = useSession();
   const qc = useQueryClient();
-  const stockQ = useStock();
   const pvQ = usePv();
   const people = useQuery({ queryKey: ["orgPeople"], queryFn: fetchOrgPeople, staleTime: 10 * 60_000 });
   const nameOf = (id: string | null | undefined) => (id ? people.data?.find((p) => p.id === id)?.name ?? "—" : "—");
@@ -48,14 +49,16 @@ export default function Count() {
   const [busy, setBusy] = useState(false);
   const [note, setNote] = useState<{ ok: boolean; text: string } | null>(null);
 
-  const stockBy = useMemo(() => new Map((stockQ.data ?? []).map((s) => [s.item, s])), [stockQ.data]);
   const counts = pvQ.data?.counts ?? [];
+  // Closing stock only for the companies that have rows still to count.
+  const stock = useStocks(counts.filter((c) => c.status === "scheduled" || c.status === "returned").map((c) => c.companyGuid));
+  const multiCompany = new Set(counts.map((c) => c.companyGuid)).size > 1;
   const mine = (c: CountRow) => (who ? c.assignedTo === who : isAdmin || c.assignedTo === user.id);
 
   const due = useMemo(() => counts
     .filter((c) => mine(c) && (c.status === "scheduled" || c.status === "returned") && c.verifyDate <= today)
     .sort((a, b) => (a.status === "returned" ? 0 : 1) - (b.status === "returned" ? 0 : 1) ||
-      a.verifyDate.localeCompare(b.verifyDate) || a.item.localeCompare(b.item)),
+      a.verifyDate.localeCompare(b.verifyDate) || a.companyGuid.localeCompare(b.companyGuid) || a.item.localeCompare(b.item)),
   // eslint-disable-next-line react-hooks/exhaustive-deps
   [counts, who, today, user.id, isAdmin]);
   const later = counts.filter((c) => mine(c) && c.status === "scheduled" && c.verifyDate > today);
@@ -80,7 +83,7 @@ export default function Count() {
   const setDraft = (id: string, patch: Partial<Draft>) =>
     setDrafts((d) => ({ ...d, [id]: { ...(d[id] ?? { qty: "", remarks: "" }), ...patch } }));
 
-  const liveClosing = (c: CountRow) => stockBy.get(c.item)?.closingQty ?? (stockQ.data ? 0 : c.closingQty);
+  const liveClosing = (c: CountRow) => stock.by.get(itemKey(c.companyGuid, c.item))?.closingQty ?? (stock.loaded ? 0 : c.closingQty);
   const isDirty = (c: CountRow) => {
     const d = draftOf(c);
     return parseQty(d.qty) !== c.physicalQty || (d.remarks.trim() || null) !== (c.verifierRemarks ?? null);
@@ -96,10 +99,9 @@ export default function Count() {
     setBusy(true); setNote(null);
     try {
       // Fresh Tally closing at the moment of saving — that is the figure frozen on the row.
-      const fresh = await stockQ.refetch();
-      const by = new Map((fresh.data ?? []).map((s) => [s.item, s]));
+      const by = await stock.refetch();
       const n = await saveCounts(rows.map((c) => ({
-        id: c.id, physicalQty: parseQty(draftOf(c).qty), remarks: draftOf(c).remarks, stock: by.get(c.item),
+        id: c.id, physicalQty: parseQty(draftOf(c).qty), remarks: draftOf(c).remarks, stock: by.get(itemKey(c.companyGuid, c.item)),
       })), submit);
       await qc.invalidateQueries({ queryKey: PV_QUERY });
       if (submit) setDrafts((d) => { const x = { ...d }; rows.forEach((c) => delete x[c.id]); return x; });
@@ -119,11 +121,12 @@ export default function Count() {
   const exportSheet = () => exportRowsToXlsx({
     fileName: "Physical_Verification_Count_Sheet",
     sheetName: "Count sheet",
-    title: `Physical Verification — ${OTEC_SURAT_NAME} count sheet`,
+    title: `Physical Verification — ${[...new Set(due.map((c) => companyName(c.companyGuid)))].join(", ")} count sheet`,
     rows: due,
     notes: ["Write the physical stock in the blank column, then enter it on the Count page."],
     columns: [
       { header: "Verification date", width: 14, value: (c) => fmtDate(c.verifyDate) },
+      { header: "Company", width: 18, value: (c) => companyName(c.companyGuid) },
       { header: "Stock item", width: 40, value: (c) => c.item },
       { header: "Sub group", width: 22, value: (c) => c.subGroup ?? "" },
       { header: "Stock group", width: 24, value: (c) => c.group ?? "" },
@@ -154,7 +157,7 @@ export default function Count() {
       />
 
       {pvQ.isError && <PvUnavailable error={pvQ.error} />}
-      {stockQ.isError && <Card className="p-4 text-[13px] text-ryg-red">Could not read Tally stock: {(stockQ.error as Error).message}</Card>}
+      {stock.error && <Card className="p-4 text-[13px] text-ryg-red">Could not read Tally stock: {stock.error.message}</Card>}
 
       {returned.length > 0 && (
         <div className="flex items-center gap-3 rounded-card border border-ryg-red/30 bg-ryg-red/5 px-4 py-2.5 text-[13px]">
@@ -218,6 +221,7 @@ export default function Count() {
                       <td className={cn(tdCls, "font-semibold")}>{fmtDate(c.verifyDate)}</td>
                       <td className={cn(tdCls, "whitespace-normal")}>
                         <div className="font-medium text-navy">{c.item}</div>
+                        {multiCompany && <div className="text-[11px] text-grey">{companyName(c.companyGuid)}</div>}
                         {c.status === "returned" && (
                           <div className="text-[11.5px] text-ryg-red">Recount: {c.reviewRemarks}</div>
                         )}
@@ -268,7 +272,10 @@ export default function Count() {
                 {done.map((c) => (
                   <tr key={c.id}>
                     <td className={tdCls}>{fmtDate(c.verifyDate)}</td>
-                    <td className={cn(tdCls, "font-medium text-navy")}>{c.item}</td>
+                    <td className={cn(tdCls, "whitespace-normal")}>
+                      <div className="font-medium text-navy">{c.item}</div>
+                      {multiCompany && <div className="text-[11px] text-grey">{companyName(c.companyGuid)}</div>}
+                    </td>
                     <td className={tdCls}>{c.unit}</td>
                     <td className={cn(tdCls, "text-right tabular-nums")}>{fmtQty(c.closingQty)}</td>
                     <td className={cn(tdCls, "text-right tabular-nums")}>{fmtQty(c.physicalQty)}</td>

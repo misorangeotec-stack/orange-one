@@ -25,6 +25,7 @@
  */
 import { appName, appBasePath } from "@/apps/appInfo";
 import type { CountRow, PvData } from "@/apps/physical-verification/lib/pv";
+import { companyName } from "@/apps/physical-verification/lib/stock";
 import type { WorkItem } from "../types";
 
 const SOURCE = "physical-verification";
@@ -50,7 +51,7 @@ export function physicalVerificationWorkItems(
     source: SOURCE,
     sourceLabel: appName(SOURCE),
     ref: c.item,
-    detail: [c.subGroup, c.group].filter((g, i, a) => g && a.indexOf(g) === i).join(" · ") || undefined,
+    detail: [companyName(c.companyGuid), c.subGroup, c.group].filter((g, i, a) => g && a.indexOf(g) === i).join(" · ") || undefined,
     stage:
       step === "review" ? "Awaiting review"
       : step === "tally" ? "Post to Tally"

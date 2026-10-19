@@ -13,14 +13,20 @@ import { cn } from "@/shared/lib/cn";
 import {
   ActiveFilters, QTY_BANDS, qtyBand, SortFilterBody, SortFilterHead, TableTools, useSortFilter, type Col,
 } from "@/apps/ink-expiry/components/SortFilterHead";
-import { DEFAULT_PRIMARY, fmtDate, fmtInr, fmtQty, fmtStamp, OTEC_SURAT_NAME, type StockItem } from "../lib/stock";
+import {
+  COMPANIES, companyName, DEFAULT_PRIMARY, fmtDate, fmtInr, fmtQty, fmtStamp, itemKey, OTEC_SURAT_GUID, type StockItem,
+} from "../lib/stock";
 import { canSchedule, PV_QUERY, scheduleItems, STATUS_LABEL, unscheduleItems, usePv, useStock, type CountRow } from "../lib/pv";
 import { centralLink, CENTRAL_QUERY, saveCentralField, useCentral } from "../lib/central";
 import type { ImsLink } from "@/apps/bushra-central-master/lib/imsLink";
 import { Diff, inputCls, PageHead, PvUnavailable, StatusPill, Tile } from "../components/parts";
 
 /**
- * MASTER — Otec Surat's items holding stock, with Tally's closing. Opens on PRINTING INK.
+ * MASTER — one company's items holding stock, with Tally's closing. Opens on PRINTING INK.
+ *
+ * COMPANY (asked 19-10-2026): a picker beside Sub group switches between Otec Surat, Otec
+ * Noida, Enterprises Surat and Enterprises Noida. One company at a time — each is its own
+ * Tally book — and the choice is remembered in this browser.
  *
  * Every column heading sorts and filters (Excel style); Primary group and Sub group also sit
  * above the table. The admin ticks items, picks a verification date and a verifier, and sets
@@ -28,7 +34,8 @@ import { Diff, inputCls, PageHead, PvUnavailable, StatusPill, Tile } from "../co
  *
  * LINE BY LINE TOO (asked 17-10-2026): the Verification date and Verifier cells are boxes, so
  * one item can be given its own date without ticking it. Ticking + "Set date" still works.
- * Central group / Central category come from Bushra Central Master and save back into it.
+ * Central group / Central category come from Bushra Central Master and save back into it;
+ * both are also filters in the bar, so a category can be picked and dated in one go.
  */
 
 type Filter = "all" | "none" | "scheduled" | "submitted" | "returned" | "accepted";
@@ -56,6 +63,15 @@ const F: { v: Filter; label: string }[] = [
 const STATUS_TEXT = (r: Row) => (r.open ? STATUS_LABEL[r.open.status] : r.last ? "Verified" : "Not scheduled");
 
 const barFilterCls = "h-8 rounded-lg px-2.5 py-0 text-[12px]";
+const barLabelCls = "text-[11px] font-semibold uppercase tracking-wide text-grey";
+
+const COMPANY_KEY = "physical-verification:company";
+const readCompany = () => {
+  try {
+    const v = localStorage.getItem(COMPANY_KEY);
+    return COMPANIES.some((c) => c.guid === v) ? v! : OTEC_SURAT_GUID;
+  } catch { return OTEC_SURAT_GUID; }
+};
 const cellInputCls = cn(inputCls, "h-7 px-1.5 text-[12px]");
 
 /** A line's date box: saves as soon as a whole date is picked; clearing it and leaving removes the date. */
@@ -96,7 +112,8 @@ function CentralCell({ saved, linked, canEdit, disabled, list, onSave }: {
 export default function Master() {
   const { user, isAdmin: admin, canEditModule } = useSession();
   const qc = useQueryClient();
-  const stockQ = useStock();
+  const [company, setCompany] = useState(readCompany);
+  const stockQ = useStock(company);
   const pvQ = usePv();
   const pv = pvQ.data;
   // Step 1 rights (Settings), not only admins. Named isAdmin below to keep the checks short.
@@ -115,8 +132,8 @@ export default function Master() {
   const [note, setNote] = useState<{ ok: boolean; text: string } | null>(null);
 
   const rows: Row[] = useMemo(() => (stockQ.data ?? []).map((s) => ({
-    s, open: pv?.open.get(s.item) ?? null, last: pv?.lastAccepted.get(s.item) ?? null,
-    link: centralLink(centralQ.data?.byKey, s.item),
+    s, open: pv?.open.get(itemKey(s.companyGuid, s.item)) ?? null, last: pv?.lastAccepted.get(itemKey(s.companyGuid, s.item)) ?? null,
+    link: centralLink(centralQ.data?.byKey, s.companyGuid, s.item),
   })), [stockQ.data, pv, centralQ.data]);
   const searched = useMemo(() => rows.filter((r) => matchesSearch(search,
     `${r.s.item} ${r.s.primaryGroup} ${r.s.subGroup} ${r.s.group} ${r.link?.values.groupName ?? ""} ${r.link?.values.category ?? ""}`)),
@@ -200,10 +217,22 @@ export default function Master() {
   // Open on Printing Ink — once the list has loaded, and only if the reader has not chosen.
   const [seeded, setSeeded] = useState(false);
   useEffect(() => {
-    if (seeded || !rows.length) return;
+    if (seeded || !rows.length || stockQ.isFetching) return;
     if (rows.some((r) => r.s.primaryGroup === DEFAULT_PRIMARY)) ctl.setFilters((f) => ({ ...f, primary: [DEFAULT_PRIMARY] }));
     setSeeded(true);
-  }, [rows, seeded, ctl]);
+  }, [rows, seeded, ctl, stockQ.isFetching]);
+
+  /** Another company is another list: ticks, line picks and filters start again (on Printing Ink). */
+  function switchCompany(guid: string) {
+    if (guid === company) return;
+    setCompany(guid);
+    try { localStorage.setItem(COMPANY_KEY, guid); } catch { /* this visit only */ }
+    setPicked(new Set());
+    setLineAssignee({});
+    setNote(null);
+    ctl.setFilters({});
+    setSeeded(false);
+  }
 
   // Column filters first, then the status tabs — so each tab's count is of what the filters leave.
   const shown = useMemo(() => ctl.view.filter((r) => inFilter(r, filter)), [ctl.view, filter]);
@@ -331,7 +360,7 @@ export default function Master() {
   const exportList = () => exportRowsToXlsx({
     fileName: "Physical_Verification_Master",
     sheetName: "Master",
-    title: `Physical Verification — ${OTEC_SURAT_NAME} master`,
+    title: `Physical Verification — ${companyName(company)} master`,
     rows: shown,
     filters: [
       ...Object.entries(ctl.filters).filter(([, v]) => v.length)
@@ -341,6 +370,7 @@ export default function Master() {
     ].filter(Boolean),
     notes: [`Closing stock is Tally's, as at ${fmtStamp(asAt)} (ConnectWave sync).`, "Provision Ink groups and items without stock are left out."],
     columns: [
+      { header: "Company", width: 18, value: () => companyName(company) },
       { header: "Stock item", width: 40, value: (r) => r.s.item },
       { header: "Central group", width: 22, value: (r) => r.link?.values.groupName ?? "" },
       { header: "Central category", width: 22, value: (r) => r.link?.values.category ?? "" },
@@ -362,7 +392,7 @@ export default function Master() {
     <div className="mx-auto max-w-[1600px] space-y-4 px-4 py-5">
       <PageHead
         kicker="Physical Verification · Master"
-        title={`${OTEC_SURAT_NAME} — stock master`}
+        title={`${companyName(company)} — stock master`}
         sub={<>Items holding closing stock in Tally, as at <b>{fmtStamp(asAt)}</b>. Pick a date on any line, or tick items and set one date for all of them.</>}
         right={<Button variant="ghost" size="sm" onClick={exportList} disabled={!shown.length}>Export Excel</Button>}
       />
@@ -411,12 +441,26 @@ export default function Master() {
       <Card className="overflow-hidden">
         {/* Filter bar: Primary / Sub group drive the SAME filters as their column headings. */}
         <div className="flex flex-wrap items-center gap-2 border-b border-line px-3 py-2.5">
-          <span className="text-[11px] font-semibold uppercase tracking-wide text-grey">Primary group</span>
+          <span className={barLabelCls}>Primary group</span>
           <MultiSelect values={ctl.filters.primary ?? []} onChange={(v) => setColFilter("primary", v)}
             options={optionsFor("primary")} placeholder="All" searchable className="w-52" triggerClassName={barFilterCls} />
-          <span className="ml-2 text-[11px] font-semibold uppercase tracking-wide text-grey">Sub group</span>
+          <span className={cn(barLabelCls, "ml-2")}>Sub group</span>
           <MultiSelect values={ctl.filters.sub ?? []} onChange={(v) => setColFilter("sub", v)}
             options={optionsFor("sub")} placeholder="All" searchable className="w-52" triggerClassName={barFilterCls} />
+          <span className={cn(barLabelCls, "ml-2")}>Company</span>
+          <select value={company} onChange={(e) => switchCompany(e.target.value)} disabled={busy}
+            className={cn(inputCls, "h-8 w-44 py-0 text-[12px] font-semibold text-navy")}>
+            {COMPANIES.map((c) => <option key={c.guid} value={c.guid}>{c.name}</option>)}
+          </select>
+        </div>
+        {/* Bushra Central Master's own group / category — the same filters as those column headings. */}
+        <div className="flex flex-wrap items-center gap-2 border-b border-line px-3 py-2.5">
+          <span className={barLabelCls}>Central group</span>
+          <MultiSelect values={ctl.filters.cgroup ?? []} onChange={(v) => setColFilter("cgroup", v)}
+            options={optionsFor("cgroup")} placeholder="All" searchable className="w-52" triggerClassName={barFilterCls} />
+          <span className={cn(barLabelCls, "ml-2")}>Central category</span>
+          <MultiSelect values={ctl.filters.ccat ?? []} onChange={(v) => setColFilter("ccat", v)}
+            options={optionsFor("ccat")} placeholder="All" searchable className="w-52" triggerClassName={barFilterCls} />
           <div className="relative ml-auto">
             <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-grey-2" />
             <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search item or group"

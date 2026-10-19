@@ -1,6 +1,6 @@
-import { useQuery } from "@tanstack/react-query";
+import { useQueries, useQuery, type UseQueryResult } from "@tanstack/react-query";
 import { supabase } from "@/core/platform/supabase";
-import { fetchSuratStock, OTEC_SURAT_GUID, type StockItem } from "./stock";
+import { COMPANY_GUIDS, fetchStock, itemKey, type StockItem } from "./stock";
 
 // The new tables are not in the generated Database type yet — same escape hatch every FMS uses.
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -32,6 +32,7 @@ export const STATUS_TONE: Record<CountStatus, string> = {
 
 export interface CountRow {
   id: string;
+  companyGuid: string;
   item: string;
   primaryGroup: string | null;
   subGroup: string | null;
@@ -66,9 +67,9 @@ export interface TallyAlloc { godown: string; batch: string; qty: number }
 
 export interface PvData {
   counts: CountRow[];
-  /** The one open round per item (anything not accepted), keyed by item name. */
+  /** The one open round per item (anything not accepted), keyed by itemKey(company, item). */
   open: Map<string, CountRow>;
-  /** The latest accepted round per item. */
+  /** The latest accepted round per item, keyed by itemKey(company, item). */
   lastAccepted: Map<string, CountRow>;
   /** Step 1 — who sets verification dates and reviews counts (admins always may). */
   schedulers: string[];
@@ -110,9 +111,10 @@ export async function fetchPv(): Promise<PvData> {
     readAll<Record<string, unknown>>("pv_settings", "id"),
   ]);
   const counts: CountRow[] = rows
-    .filter((r) => r.company_guid === OTEC_SURAT_GUID)
+    .filter((r) => COMPANY_GUIDS.includes(r.company_guid as string))
     .map((r) => ({
       id: r.id as string,
+      companyGuid: r.company_guid as string,
       item: r.stock_item as string,
       primaryGroup: r.primary_group as string | null,
       subGroup: r.sub_group as string | null,
@@ -146,10 +148,11 @@ export async function fetchPv(): Promise<PvData> {
   const open = new Map<string, CountRow>();
   const lastAccepted = new Map<string, CountRow>();
   for (const c of counts) {
-    if (c.status !== "accepted") open.set(c.item, c);
+    const k = itemKey(c.companyGuid, c.item);
+    if (c.status !== "accepted") open.set(k, c);
     else {
-      const prev = lastAccepted.get(c.item);
-      if (!prev || (c.reviewedAt ?? "") > (prev.reviewedAt ?? "")) lastAccepted.set(c.item, c);
+      const prev = lastAccepted.get(k);
+      if (!prev || (c.reviewedAt ?? "") > (prev.reviewedAt ?? "")) lastAccepted.set(k, c);
     }
   }
   return {
@@ -163,11 +166,39 @@ export async function fetchPv(): Promise<PvData> {
 
 /* ------------------------------------------------------------------ hooks -- */
 
-export const STOCK_QUERY = ["physical-verification", "stock"] as const;
+export const stockQuery = (companyGuid: string) => ["physical-verification", "stock", companyGuid] as const;
 export const PV_QUERY = ["physical-verification", "counts"] as const;
 
-export function useStock() {
-  return useQuery({ queryKey: STOCK_QUERY, queryFn: fetchSuratStock, staleTime: 5 * 60_000 });
+/** One company's closing stock (the Master). */
+export function useStock(companyGuid: string) {
+  return useQuery({ queryKey: stockQuery(companyGuid), queryFn: () => fetchStock(companyGuid), staleTime: 5 * 60_000 });
+}
+
+/**
+ * Closing stock of several companies at once (the Count page: a verifier's rows can come from
+ * any of the four). `by` is keyed by itemKey; `refetch` re-reads all of them and returns the
+ * fresh map — the figure a save freezes on the row.
+ */
+export function useStocks(companyGuids: string[]) {
+  const guids = [...new Set(companyGuids)].sort();
+  return useQueries({
+    queries: guids.map((g) => ({ queryKey: stockQuery(g), queryFn: () => fetchStock(g), staleTime: 5 * 60_000 })),
+    combine: combineStocks,
+  });
+}
+
+const toStockMap = (lists: (StockItem[] | undefined)[]) =>
+  new Map(lists.flatMap((l) => l ?? []).map((s) => [itemKey(s.companyGuid, s.item), s] as const));
+
+// Module-level so react-query only rebuilds the map when a company's stock actually changes.
+function combineStocks(qs: UseQueryResult<StockItem[]>[]) {
+  return {
+    by: toStockMap(qs.map((q) => q.data)),
+    /** Every company asked for has loaded — an item missing from `by` really has no stock now. */
+    loaded: qs.every((q) => q.isSuccess),
+    error: (qs.find((q) => q.isError)?.error as Error | undefined) ?? null,
+    refetch: async () => toStockMap((await Promise.all(qs.map((q) => q.refetch()))).map((r) => r.data)),
+  };
 }
 
 export function usePv() {
@@ -219,7 +250,7 @@ export const diffValue = (diff: number | null, rate: number | null) =>
 export async function scheduleItems(items: StockItem[], date: string, assignee: string): Promise<number> {
   const { data, error } = await db.rpc("pv_schedule", {
     p_items: items.map((s) => ({
-      company_guid: OTEC_SURAT_GUID, stock_item: s.item, primary_group: s.primaryGroup, sub_group: s.subGroup,
+      company_guid: s.companyGuid, stock_item: s.item, primary_group: s.primaryGroup, sub_group: s.subGroup,
       stock_group: s.group, unit: s.unit,
       closing_qty: s.closingQty, closing_rate: s.closingRate, tally_as_at: s.builtAt,
     })),

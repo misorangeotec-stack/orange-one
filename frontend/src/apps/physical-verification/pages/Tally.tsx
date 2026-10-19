@@ -9,7 +9,7 @@ import { matchesSearch } from "@/shared/lib/search";
 import { todayLocalIso } from "@/shared/lib/dueBuckets";
 import { exportRowsToXlsx } from "@/shared/lib/exportXlsx";
 import { cn } from "@/shared/lib/cn";
-import { fmtDate, fmtInr, fmtQty, fmtStamp, OTEC_SURAT_NAME } from "../lib/stock";
+import { COMPANIES, companyName, fmtDate, fmtInr, fmtQty, fmtStamp, OTEC_SURAT_GUID } from "../lib/stock";
 import {
   canPost, diffValue, markPosted, PV_QUERY, saveTallyAlloc, toPost, unpost, usePv, type CountRow, type TallyAlloc,
 } from "../lib/pv";
@@ -23,10 +23,13 @@ import { Diff, inputCls, PageHead, PvUnavailable, tdCls, thCls, Tile } from "../
  *
  *   1. Check the godown + batch on each line (suggested from the item's biggest lot; split a
  *      line with "+" when the difference sits in more than one batch). "Save lines" keeps them.
- *   2. Tick lines → "Download Tally file" → in Tally (Otec Surat open): Import → Transactions.
+ *   2. Tick lines → "Download Tally file" → in Tally (that company open): Import → Transactions.
  *   3. Type the voucher no. Tally gave it → "Mark posted". The lines move to "Posted".
  *
  * Short goes out of stock (source side), extra comes in (destination side). See lib/tally.ts.
+ *
+ * ONE COMPANY AT A TIME: the file goes into whichever company is open in Tally, so the page
+ * shows one company's lines (picker beside the tabs) and never mixes two in one voucher.
  */
 
 type Tab = "pending" | "posted";
@@ -42,6 +45,7 @@ export default function Tally() {
   const nameOf = (id: string | null | undefined) => (id ? people.data?.find((p) => p.id === id)?.name ?? "—" : "—");
 
   const [tab, setTab] = useState<Tab>("pending");
+  const [chosen, setChosen] = useState<string | null>(null);
   const [search, setSearch] = useState("");
   const [picked, setPicked] = useState<Set<string>>(new Set());
   const [drafts, setDrafts] = useState<Record<string, TallyAlloc[]>>({});
@@ -52,7 +56,12 @@ export default function Tally() {
   const [busy, setBusy] = useState(false);
   const [note, setNote] = useState<{ ok: boolean; text: string } | null>(null);
 
-  const counts = pvQ.data?.counts ?? [];
+  const allCounts = pvQ.data?.counts ?? [];
+  // Until someone picks, open on the first company with lines to post.
+  const company = chosen ?? COMPANIES.find((co) => allCounts.some((c) => c.companyGuid === co.guid && toPost(c)))?.guid ?? OTEC_SURAT_GUID;
+  const coName = companyName(company);
+  const toPostIn = (guid: string) => allCounts.filter((c) => c.companyGuid === guid && toPost(c)).length;
+  const counts = useMemo(() => allCounts.filter((c) => c.companyGuid === company), [allCounts, company]);
   const pending = useMemo(() => counts.filter(toPost), [counts]);
   const posted = useMemo(() => counts.filter((c) => !!c.tallyPostedAt), [counts]);
   const rows = useMemo(() => (tab === "pending" ? pending : posted)
@@ -62,7 +71,7 @@ export default function Tally() {
       : (b.tallyPostedAt ?? "").localeCompare(a.tallyPostedAt ?? ""))),
   [tab, pending, posted, search]);
 
-  const lotsQ = useLots(pending.map((c) => c.item));
+  const lotsQ = useLots(company, pending.map((c) => c.item));
   const lots = lotsQ.data;
 
   /** What a line shows: typed this session, else saved, else the suggestion. */
@@ -119,8 +128,8 @@ export default function Tally() {
         voucherType,
         narration: `Physical verification difference — ${pickedRows.length} item(s), counted ${[...new Set(pickedRows.map((c) => fmtDate(c.verifyDate)))].join(", ")}`,
       });
-      downloadText(`PV_Stock_Journal_${vchDate}.xml`, xml);
-      return "Tally file downloaded. Import it in Tally (Otec Surat open), then type the voucher no. and Mark posted.";
+      downloadText(`PV_Stock_Journal_${coName.replace(/\s+/g, "_")}_${vchDate}.xml`, xml);
+      return `Tally file downloaded. Import it in Tally with ${coName} open, then type the voucher no. and Mark posted.`;
     }, false);
   };
 
@@ -143,7 +152,7 @@ export default function Tally() {
   const exportList = () => exportRowsToXlsx({
     fileName: `Physical_Verification_Tally_${tab}`,
     sheetName: tab === "pending" ? "To post" : "Posted",
-    title: `Physical Verification — ${OTEC_SURAT_NAME}, Stock Journal ${tab === "pending" ? "to post" : "posted"}`,
+    title: `Physical Verification — ${coName}, Stock Journal ${tab === "pending" ? "to post" : "posted"}`,
     rows: rows.flatMap((c) => allocOf(c).map((a, i) => ({ c, a, first: i === 0 }))),
     notes: ["Short = goes OUT of stock (source side); Extra = comes IN (destination side).",
       "Rate = Tally's closing rate frozen when the count was saved."],
@@ -176,7 +185,7 @@ export default function Tally() {
         kicker="Physical Verification · Post to Tally"
         title="Post differences to Tally"
         sub={<>Accepted counts with a difference, as a <b>Stock Journal</b>: short goes out of stock, extra comes in.
-          Check godown + batch, download the Tally file, import it in Tally, then mark posted with Tally's voucher no.</>}
+          Check godown + batch, download the Tally file, import it in Tally with <b>{coName}</b> open, then mark posted with Tally's voucher no.</>}
         right={<Button variant="ghost" size="sm" onClick={exportList} disabled={!rows.length}>Export Excel</Button>}
       />
       {pvQ.isError && <PvUnavailable error={pvQ.error} />}
@@ -202,7 +211,9 @@ export default function Tally() {
                 Voucher type
                 <input value={voucherType} onChange={(e) => setVoucherType(e.target.value)} className={cn(inputCls, "w-36")} />
               </label>
-              <Button size="sm" variant="ghost" onClick={download} disabled={busy}>Download Tally file</Button>
+              <Button size="sm" variant="ghost" onClick={download} disabled={busy} title={`Import it with ${coName} open in Tally`}>
+                Download Tally file
+              </Button>
               <span className="h-5 w-px bg-line" />
               <label className="flex items-center gap-1.5 text-[12px] text-grey">
                 Tally voucher no.
@@ -234,6 +245,14 @@ export default function Tally() {
               </button>
             ))}
           </div>
+          <select value={company} disabled={busy} title="The company open in Tally when you import"
+            onChange={(e) => { setChosen(e.target.value); setPicked(new Set()); setDrafts({}); setNote(null); }}
+            className={cn(inputCls, "h-8 py-0 text-[12px] font-semibold text-navy")}>
+            {COMPANIES.map((co) => {
+              const n = toPostIn(co.guid);
+              return <option key={co.guid} value={co.guid}>{co.name}{n ? ` (${n} to post)` : ""}</option>;
+            })}
+          </select>
           {editable && dirty.length > 0 && (
             <Button size="sm" variant="ghost" onClick={saveLines} disabled={busy}>Save lines ({dirty.length})</Button>
           )}

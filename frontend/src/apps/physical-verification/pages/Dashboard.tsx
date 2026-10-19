@@ -5,7 +5,7 @@ import Button from "@/shared/components/ui/Button";
 import { fetchOrgPeople } from "@/core/platform/orgPeople";
 import { exportRowsToXlsx } from "@/shared/lib/exportXlsx";
 import { cn } from "@/shared/lib/cn";
-import { fmtDate, fmtInr, fmtQty, OTEC_SURAT_NAME } from "../lib/stock";
+import { COMPANIES, companyName, fmtDate, fmtInr, fmtQty } from "../lib/stock";
 import { diffValue, STATUS_LABEL, usePv, type CountRow, type CountStatus } from "../lib/pv";
 import { Diff, inputCls, PageHead, PvUnavailable, StatusPill } from "../components/parts";
 
@@ -134,9 +134,11 @@ export default function Dashboard() {
   const [to, setTo] = useState("");
   const [sub, setSub] = useState("");
   const [who, setWho] = useState("");
+  const [company, setCompany] = useState("");
   const [stage, setStage] = useState<CountStatus | "">("");
 
-  const all = pvQ.data?.counts ?? [];
+  const everything = pvQ.data?.counts ?? [];
+  const all = useMemo(() => (company ? everything.filter((c) => c.companyGuid === company) : everything), [everything, company]);
   const subs = useMemo(() => [...new Set(all.map((c) => c.subGroup ?? c.group ?? ""))].filter(Boolean).sort(), [all]);
   const verifiers = useMemo(() => [...new Set(all.map((c) => c.assignedTo).filter((id): id is string => !!id))], [all]);
 
@@ -176,13 +178,14 @@ export default function Dashboard() {
   const exportAll = () => exportRowsToXlsx({
     fileName: "Physical_Verification_Dashboard",
     sheetName: "Counts",
-    title: `Physical Verification — ${OTEC_SURAT_NAME} dashboard`,
+    title: `Physical Verification — ${company ? companyName(company) : "all companies"} dashboard`,
     rows: [...rows].sort((a, b) => val(a) - val(b)),
-    filters: [from ? `From ${fmtDate(from)}` : "", to ? `To ${fmtDate(to)}` : "", sub ? `Sub group: ${sub}` : "", who ? `Verifier: ${nameOf(who)}` : ""].filter(Boolean),
+    filters: [company ? `Company: ${companyName(company)}` : "", from ? `From ${fmtDate(from)}` : "", to ? `To ${fmtDate(to)}` : "", sub ? `Sub group: ${sub}` : "", who ? `Verifier: ${nameOf(who)}` : ""].filter(Boolean),
     notes: ["Difference = Physical − Tally closing at count time. Negative = SHORT (physical less), positive = EXTRA.",
       "Value = difference × Tally closing rate at count time."],
     columns: [
       { header: "Verification date", width: 14, value: (c) => fmtDate(c.verifyDate) },
+      { header: "Company", width: 18, value: (c) => companyName(c.companyGuid) },
       { header: "Stock item", width: 40, value: (c) => c.item },
       { header: "Sub group", width: 22, value: (c) => c.subGroup ?? "" },
       { header: "Stock group", width: 24, value: (c) => c.group ?? "" },
@@ -204,7 +207,7 @@ export default function Dashboard() {
       <PageHead
         kicker="Physical Verification · Dashboard"
         title="Verification dashboard"
-        sub={<>{OTEC_SURAT_NAME} — how many items are verified or pending, and where physical stock differs from Tally.</>}
+        sub={<>{company ? companyName(company) : "All four companies"} — how many items are verified or pending, and where physical stock differs from Tally.</>}
         right={<Button variant="ghost" size="sm" onClick={exportAll} disabled={!rows.length}>Export Excel</Button>}
       />
       {pvQ.isError && <PvUnavailable error={pvQ.error} />}
@@ -216,6 +219,10 @@ export default function Dashboard() {
           to
           <input type="date" value={to} onChange={(e) => setTo(e.target.value)} className={inputCls} />
         </label>
+        <select value={company} onChange={(e) => { setCompany(e.target.value); setSub(""); }} className={inputCls}>
+          <option value="">All companies</option>
+          {COMPANIES.map((co) => <option key={co.guid} value={co.guid}>{co.name}</option>)}
+        </select>
         <select value={sub} onChange={(e) => setSub(e.target.value)} className={inputCls}>
           <option value="">All sub groups</option>
           {subs.map((s) => <option key={s} value={s}>{s}</option>)}
@@ -224,8 +231,8 @@ export default function Dashboard() {
           <option value="">All verifiers</option>
           {verifiers.map((id) => <option key={id} value={id}>{nameOf(id)}</option>)}
         </select>
-        {(from || to || sub || who) && (
-          <button onClick={() => { setFrom(""); setTo(""); setSub(""); setWho(""); }}
+        {(from || to || sub || who || company) && (
+          <button onClick={() => { setFrom(""); setTo(""); setSub(""); setWho(""); setCompany(""); }}
             className="text-[12px] font-semibold text-orange hover:underline">Reset filters</button>
         )}
       </Card>

@@ -1,6 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
 import { getConnectwave, hasConnectwave } from "@/core/platform/connectwave";
-import { OTEC_SURAT_GUID } from "./stock";
 import type { CountRow, TallyAlloc } from "./pv";
 
 /**
@@ -15,12 +14,13 @@ import type { CountRow, TallyAlloc } from "./pv";
  * posting confirms or changes each line before the file is made.
  *
  * The file is Tally's own XML import (Gateway of Tally → Import → Transactions). It names no
- * company, so it goes into the company that is OPEN in Tally — Otec Surat must be the one open.
+ * company, so it goes into the company that is OPEN in Tally. The page therefore works one
+ * company at a time (picker on the page) and names the company to open.
  */
 
 export interface Lot { batch: string; balance: number; godown: string }
 
-/** Godowns seen in Otec Surat's stock lines — the suggestion list, beside the lots' own. */
+/** Godowns seen in Otec Surat's stock lines — the suggestion list, beside the lots' own (any company). */
 export const KNOWN_GODOWNS = [
   "HOZIWALA", "HOZIWALA-2", "Godown F1", "GODOWN G1", "Godown G2", "Godown G3",
   "Godown 42A,42B,43A,43B", "Main Location", "SACHIN GODOWN",
@@ -28,8 +28,8 @@ export const KNOWN_GODOWNS = [
 export const DEFAULT_GODOWN = "HOZIWALA";
 export const PRIMARY_BATCH = "Primary Batch";
 
-/** Lots holding stock, per item. Read-only from ConnectWave. */
-async function fetchLots(items: string[]): Promise<Map<string, Lot[]>> {
+/** Lots holding stock, per item, in one company. Read-only from ConnectWave. */
+async function fetchLots(companyGuid: string, items: string[]): Promise<Map<string, Lot[]>> {
   const out = new Map<string, Lot[]>();
   if (!items.length || !hasConnectwave()) return out;
   const cw = getConnectwave();
@@ -38,7 +38,7 @@ async function fetchLots(items: string[]): Promise<Map<string, Lot[]>> {
     const { data, error } = await cw
       .from("rpt_lot_balance")
       .select("stock_item,batch_name,balance,last_godown")
-      .eq("company_guid", OTEC_SURAT_GUID)
+      .eq("company_guid", companyGuid)
       .in("stock_item", items.slice(i, i + 40))
       .gt("balance", 0)
       .order("stock_item").order("batch_name")
@@ -54,11 +54,11 @@ async function fetchLots(items: string[]): Promise<Map<string, Lot[]>> {
   return out;
 }
 
-export function useLots(items: string[]) {
+export function useLots(companyGuid: string, items: string[]) {
   const key = [...new Set(items)].sort();
   return useQuery({
-    queryKey: ["physical-verification", "lots", key],
-    queryFn: () => fetchLots(key),
+    queryKey: ["physical-verification", "lots", companyGuid, key],
+    queryFn: () => fetchLots(companyGuid, key),
     enabled: key.length > 0,
     staleTime: 5 * 60_000,
   });
