@@ -53,7 +53,16 @@ export interface CountRow {
   reviewRemarks: string | null;
   reviewedBy: string | null;
   reviewedAt: string | null;
+  /** Step 4 — where the difference goes in Tally (20270203120000). */
+  tallyAlloc: TallyAlloc[] | null;
+  tallyVoucherNo: string | null;
+  tallyVoucherDate: string | null;
+  tallyPostedBy: string | null;
+  tallyPostedAt: string | null;
 }
+
+/** One godown / batch line of a difference posted to Tally. Qty is positive. */
+export interface TallyAlloc { godown: string; batch: string; qty: number }
 
 export interface PvData {
   counts: CountRow[];
@@ -67,6 +76,8 @@ export interface PvData {
   verifiers: string[];
   /** Step 3 — who reviews submitted counts (20270128120000). Empty = step 1 reviews. */
   reviewers: string[];
+  /** Step 4 — who posts accepted differences to Tally (20270203120000). Empty = step 3 posts. */
+  tallyPeople: string[];
 }
 
 const num = (v: unknown) => (v === null || v === undefined ? null : Number(v));
@@ -122,6 +133,15 @@ export async function fetchPv(): Promise<PvData> {
       reviewRemarks: r.review_remarks as string | null,
       reviewedBy: r.reviewed_by as string | null,
       reviewedAt: r.reviewed_at as string | null,
+      tallyAlloc: Array.isArray(r.tally_alloc)
+        ? (r.tally_alloc as Record<string, unknown>[]).map((a) => ({
+          godown: String(a.godown ?? ""), batch: String(a.batch ?? ""), qty: Number(a.qty) || 0,
+        }))
+        : null,
+      tallyVoucherNo: (r.tally_voucher_no as string | null) ?? null,
+      tallyVoucherDate: (r.tally_voucher_date as string | null) ?? null,
+      tallyPostedBy: (r.tally_posted_by as string | null) ?? null,
+      tallyPostedAt: (r.tally_posted_at as string | null) ?? null,
     }));
   const open = new Map<string, CountRow>();
   const lastAccepted = new Map<string, CountRow>();
@@ -137,6 +157,7 @@ export async function fetchPv(): Promise<PvData> {
     schedulers: (settings[0]?.scheduler_ids as string[]) ?? [],
     verifiers: (settings[0]?.verifier_ids as string[]) ?? [],
     reviewers: (settings[0]?.reviewer_ids as string[]) ?? [],
+    tallyPeople: (settings[0]?.tally_ids as string[]) ?? [],
   };
 }
 
@@ -174,6 +195,20 @@ export function canReview(userId: string, isAdmin: boolean, canEdit: boolean, pv
   if (!canEdit || !pv) return false;
   return pv.reviewers.length ? pv.reviewers.includes(userId) : pv.schedulers.includes(userId);
 }
+
+/**
+ * Step 4 rights — the SAME rule as public.pv_can_post: admin, or listed with an edit grant;
+ * while nobody is listed, the step 3 people post.
+ */
+export function canPost(userId: string, isAdmin: boolean, canEdit: boolean, pv: PvData | undefined): boolean {
+  if (isAdmin) return true;
+  if (!pv) return false;
+  if (pv.tallyPeople.length) return canEdit && pv.tallyPeople.includes(userId);
+  return canReview(userId, isAdmin, canEdit, pv);
+}
+
+/** An accepted count whose difference still has to go into Tally. */
+export const toPost = (c: CountRow) => c.status === "accepted" && (c.difference ?? 0) !== 0 && !c.tallyPostedAt;
 
 /** Difference value in ₹ — the difference at the rate Tally held when it was counted. */
 export const diffValue = (diff: number | null, rate: number | null) =>
@@ -232,12 +267,30 @@ export async function reviewCounts(ids: string[], action: "accept" | "recount", 
   return data as number;
 }
 
-export interface Rights { schedulers: string[]; verifiers: string[]; reviewers: string[] }
+export async function saveTallyAlloc(rows: { id: string; alloc: TallyAlloc[] }[]): Promise<number> {
+  const { data, error } = await db.rpc("pv_tally_save", { p_rows: rows });
+  if (error) throw new Error(error.message);
+  return data as number;
+}
+
+export async function markPosted(ids: string[], voucherNo: string, voucherDate: string): Promise<number> {
+  const { data, error } = await db.rpc("pv_tally_post", { p_ids: ids, p_voucher_no: voucherNo, p_voucher_date: voucherDate });
+  if (error) throw new Error(error.message);
+  return data as number;
+}
+
+export async function unpost(ids: string[], reason: string): Promise<number> {
+  const { data, error } = await db.rpc("pv_tally_unpost", { p_ids: ids, p_reason: reason });
+  if (error) throw new Error(error.message);
+  return data as number;
+}
+
+export interface Rights { schedulers: string[]; verifiers: string[]; reviewers: string[]; tallyPeople: string[] }
 
 export async function saveRights(r: Rights, userId: string): Promise<void> {
   const { error } = await db.from("pv_settings")
     .update({
-      scheduler_ids: r.schedulers, verifier_ids: r.verifiers, reviewer_ids: r.reviewers,
+      scheduler_ids: r.schedulers, verifier_ids: r.verifiers, reviewer_ids: r.reviewers, tally_ids: r.tallyPeople,
       updated_by: userId, updated_at: new Date().toISOString(),
     })
     .eq("id", 1);

@@ -8,6 +8,8 @@
  *     as the Count page's "To count" and "Later" lists together.
  *   - REVIEW — a submitted count waiting to be accepted or sent back. This one is
  *     the approval. It has no SLA of its own, so it carries no date.
+ *   - TALLY — an accepted count with a difference not yet posted to Tally as a
+ *     Stock Journal (step 4, 20270203120000). Rule mirrors canPost / pv_can_post.
  *
  * ⚠ A COUNT IS ONE NAMED PERSON'S WORK. The Count page lets an admin look at
  *   everybody's rounds, but putting every verifier's items on every admin's home
@@ -38,7 +40,12 @@ export function physicalVerificationWorkItems(
   const stepOne = isAdmin || isScheduler;
   const base = appBasePath(SOURCE);
 
-  const item = (c: CountRow, step: "count" | "assign" | "review"): WorkItem => ({
+  // Same rule as canPost / pv_can_post: step 4 list; empty = step 3 (whose empty = step 1).
+  const isPoster = pv.tallyPeople.includes(uid);
+  const stepFour = isAdmin || (pv.tallyPeople.length ? isPoster
+    : pv.reviewers.length ? pv.reviewers.includes(uid) : isScheduler);
+
+  const item = (c: CountRow, step: "count" | "assign" | "review" | "tally"): WorkItem => ({
     id: `${SOURCE}:${c.id}:${step}`,
     source: SOURCE,
     sourceLabel: appName(SOURCE),
@@ -46,11 +53,12 @@ export function physicalVerificationWorkItems(
     detail: [c.subGroup, c.group].filter((g, i, a) => g && a.indexOf(g) === i).join(" · ") || undefined,
     stage:
       step === "review" ? "Awaiting review"
+      : step === "tally" ? "Post to Tally"
       : step === "assign" ? "Needs a verifier"
       : c.status === "returned" ? "Recount" : "To count",
-    dueIso: step === "review" ? null : c.verifyDate,
-    to: step === "count" ? `${base}/count` : step === "review" ? `${base}/review` : `${base}/master`,
-    assignment: step === "count" || isScheduler ? "direct" : "team",
+    dueIso: step === "review" || step === "tally" ? null : c.verifyDate,
+    to: step === "count" ? `${base}/count` : step === "review" ? `${base}/review` : step === "tally" ? `${base}/tally` : `${base}/master`,
+    assignment: step === "count" || (step === "tally" ? isPoster : isScheduler) ? "direct" : "team",
     isApproval: step === "review",
   });
 
@@ -61,6 +69,8 @@ export function physicalVerificationWorkItems(
       else if (c.assignedTo === null && stepOne) out.push(item(c, "assign"));
     } else if (c.status === "submitted" && stepOne) {
       out.push(item(c, "review"));
+    } else if (c.status === "accepted" && (c.difference ?? 0) !== 0 && !c.tallyPostedAt && stepFour) {
+      out.push(item(c, "tally"));
     }
   }
   return out;

@@ -14,6 +14,7 @@ import { PvUnavailable } from "../components/parts";
  *   Step 1 · Set dates   the Master (tick items, verification date, verifier)
  *   Step 2 · Count       the physical count — each sees only the items given to them
  *   Step 3 · Review      accept a submitted count or send it back for recount
+ *   Step 4 · Tally       post accepted differences to Tally as a Stock Journal
  *
  * Everyone listed also needs an EDIT grant on Physical Verification in User Access. Admins can do every step.
  */
@@ -35,6 +36,11 @@ const STEPS: { key: Key; title: string; hint: string }[] = [
     title: "Step 3 · Review",
     hint: "Who checks the submitted counts and accepts them or sends them back for recount. Left empty, the step 1 people review.",
   },
+  {
+    key: "tallyPeople",
+    title: "Step 4 · Post to Tally (Stock Journal)",
+    hint: "Who enters the accepted differences in Tally: picks godown + batch, imports the Tally file, marks posted with the voucher no. Left empty, the step 3 people post.",
+  },
 ];
 
 export default function Settings() {
@@ -42,12 +48,12 @@ export default function Settings() {
   const qc = useQueryClient();
   const pvQ = usePv();
   const people = useQuery({ queryKey: ["orgPeople"], queryFn: fetchOrgPeople, staleTime: 10 * 60_000 });
-  const [draft, setDraft] = useState<Rights>({ schedulers: [], verifiers: [], reviewers: [] });
+  const [draft, setDraft] = useState<Rights>({ schedulers: [], verifiers: [], reviewers: [], tallyPeople: [] });
   const [busy, setBusy] = useState(false);
   const [note, setNote] = useState<string | null>(null);
 
   useEffect(() => {
-    if (pvQ.data) setDraft({ schedulers: pvQ.data.schedulers, verifiers: pvQ.data.verifiers, reviewers: pvQ.data.reviewers });
+    if (pvQ.data) setDraft({ schedulers: pvQ.data.schedulers, verifiers: pvQ.data.verifiers, reviewers: pvQ.data.reviewers, tallyPeople: pvQ.data.tallyPeople });
   }, [pvQ.data]);
 
   const options = useMemo(() => (people.data ?? [])
@@ -90,7 +96,7 @@ export default function Settings() {
             values={draft[s.key]}
             onChange={(v) => setDraft((d) => ({ ...d, [s.key]: v }))}
             options={options}
-            placeholder={s.key === "schedulers" ? "Admins only" : s.key === "reviewers" ? "Same as step 1" : "Pick people"}
+            placeholder={s.key === "schedulers" ? "Admins only" : s.key === "reviewers" ? "Same as step 1" : s.key === "tallyPeople" ? "Same as step 3" : "Pick people"}
             searchable
             chips
             disabled={locked}
