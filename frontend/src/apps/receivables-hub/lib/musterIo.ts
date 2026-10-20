@@ -19,7 +19,9 @@ import type { ExportColumn } from "@/shared/lib/exportXlsx";
 import { readBool } from "@/shared/lib/importXlsx";
 import {
   saveTag, saveGroup, saveOtherPayment, saveRedMark, clearRedMark, saveDispute, clearDispute, disputeKey,
+  insertLegalCustomer, saveLegalCustomer, clearLegalCustomer,
   type TagRow, type GroupRow, type SnapRow, type OtherPaymentRow, type RedMarkRow, type DisputeRow,
+  type LegalCustomerRow,
 } from "./musterApi";
 import { saveCompanyMap } from "./musterApi";
 import type { CompanyMapRow } from "./companyMap";
@@ -456,6 +458,175 @@ export function redMarkIo(snapByGuid: Map<string, SnapRow>, knownSalespersons: S
               await saveRedMark({ ledger_id: key, salesperson, reason, checked });
             }
             if (doClear) await clearRedMark(key, clearNote as string);
+          },
+        });
+      }
+      return plan;
+    },
+  };
+}
+
+// ── Legal Customer (ext_legal_customer, key = Ledger ID) ─────────────────────
+// Red Mark's contract — same columns, same clear rules (import can clear, never reopen or remove) —
+// with ONE difference: import may ADD a customer. The list starts empty, so an update-only import
+// would have nothing to update; adding by sheet is how a finance list gets onto it.
+//
+// A row is matched to a Tally customer by its Ledger ID, or — when that cell is blank, as it is on a
+// list typed by hand — by the exact customer name (case and spacing ignored), narrowed by Company
+// when the name is in more than one book. An ambiguous or unknown name is reported, never guessed.
+export function legalCustomerIo(
+  snapByGuid: Map<string, SnapRow>, knownSalespersons: Set<string>,
+): MasterIo<LegalCustomerRow> {
+  const name = (r: LegalCustomerRow) => snapByGuid.get(r.ledger_id)?.name ?? r.tally_name ?? "";
+  const company = (r: LegalCustomerRow) => snapByGuid.get(r.ledger_id)?.company ?? r.company ?? "";
+  const location = (r: LegalCustomerRow) => snapByGuid.get(r.ledger_id)?.location ?? r.location ?? "";
+  const norm = (v: string | null | undefined) => String(v ?? "").trim().replace(/\s+/g, " ").toUpperCase();
+  return {
+    fileName: "Master_Legal_Customer",
+    sheetName: "Legal Customer",
+    title: "Legal Customer master",
+    notes: [
+      "The first column is the identity key. Keep it as exported; on a NEW row it may be left blank.",
+      "Import ADDS a customer who is not on the list yet, and updates the ones who are. It never " +
+      "removes one — delete on screen instead.",
+      "A row with a blank Ledger ID is matched by Customer name exactly as it is in Tally. If the same " +
+      "name is in more than one company, fill Company too. An unknown or ambiguous name is skipped.",
+      "Editable columns: Salesperson, Reason, Checked, and Cleared (with Clear note). Checked left blank " +
+      "on a new row reads as Yes.",
+      "Import cannot REOPEN a cleared case — reopen it on screen. A sheet exported before somebody " +
+      "cleared a case still says \"No\" against it, and reopening from that would undo their work.",
+      "To clear a case: set Cleared to Yes and write a Clear note. A row set to Yes with no note is " +
+      "reported and skipped.",
+      "Cleared on / Cleared by are stamped by the app and ignored on import.",
+      MASTER_NOTE("Salesperson"),
+    ],
+    exportColumns: [
+      { header: K_LEDGER, width: 34, value: (r) => r.ledger_id },
+      { header: "Customer", width: 30, value: name },
+      { header: "Company", width: 16, value: company },
+      { header: "Location", width: 12, value: location },
+      { header: "Salesperson", width: 22, value: (r) => r.salesperson ?? "" },
+      { header: "Reason", width: 30, value: (r) => r.reason ?? "" },
+      { header: "Checked", width: 10, value: (r) => yesNo(r.checked) },
+      { header: "Cleared", width: 10, value: (r) => yesNo(r.cleared) },
+      { header: "Clear note", width: 40, value: (r) => r.clear_note ?? "" },
+      { header: "Cleared on", width: 14, value: (r) => (r.cleared_at ? formatDateDMY(r.cleared_at.slice(0, 10)) : "") },
+      { header: "Cleared by", width: 24, value: (r) => r.cleared_by ?? "" },
+    ],
+    buildPlan(records, existing) {
+      const byKey = new Map(existing.map((r) => [r.ledger_id, r]));
+      const byName = new Map<string, SnapRow[]>();
+      snapByGuid.forEach((s) => {
+        const k = norm(s.name);
+        if (!k) return;
+        const list = byName.get(k);
+        if (list) list.push(s); else byName.set(k, [s]);
+      });
+      const plan: ImportPlan = { changes: [], unchanged: 0, unmatched: [], invalid: [] };
+      // One sheet naming the same customer twice would add it twice; the second is reported instead.
+      const seen = new Set<string>();
+
+      for (const rec of records) {
+        const typedKey = cell(rec[K_LEDGER]);
+        const typedName = cell(rec["Customer"]);
+        const label = String(typedName ?? typedKey ?? "(unknown)");
+
+        // 1. Which Tally customer is this row about?
+        let key: string | null = null;
+        if (typedKey) {
+          if (byKey.has(typedKey) || snapByGuid.has(typedKey)) key = typedKey;
+        } else if (typedName) {
+          let hits = byName.get(norm(typedName)) ?? [];
+          const typedCompany = cell(rec["Company"]);
+          if (hits.length > 1 && typedCompany) hits = hits.filter((h) => norm(h.company) === norm(typedCompany));
+          if (hits.length > 1) {
+            plan.invalid.push({
+              label,
+              reason: `"${typedName}" is in ${hits.length} companies — fill Company or the Ledger ID.`,
+            });
+            continue;
+          }
+          key = hits[0]?.ledger_id ?? null;
+        }
+        if (!key) { plan.unmatched.push(label); continue; }
+        if (seen.has(key)) {
+          plan.invalid.push({ label, reason: "This customer is on the sheet more than once — only the first row is used." });
+          continue;
+        }
+        seen.add(key);
+
+        const salesperson = cell(rec["Salesperson"]);
+        const reason = cell(rec["Reason"]);
+        const badSp = offMaster(salesperson, knownSalespersons, "Salesperson");
+        if (badSp) { plan.invalid.push({ label, reason: badSp }); continue; }
+        const hasClearedCol = Object.prototype.hasOwnProperty.call(rec, "Cleared");
+        const clearNote = cell(rec["Clear note"]);
+        const ledger_id = key;
+
+        const cur = byKey.get(key);
+
+        // 2a. Not on the list yet → add.
+        if (!cur) {
+          if (hasClearedCol && readBool(rec["Cleared"])) {
+            plan.invalid.push({ label, reason: "A new legal customer cannot be added as already Cleared." });
+            continue;
+          }
+          const snapRow = snapByGuid.get(key);
+          const checkedCell = cell(rec["Checked"]);
+          const checked = checkedCell === null ? true : readBool(checkedCell);
+          plan.changes.push({
+            key,
+            label: snapRow?.name ?? label,
+            fields: "New legal customer",
+            save: async () => {
+              await insertLegalCustomer({
+                ledger_id,
+                tally_name: snapRow?.name ?? typedName,
+                company: snapRow?.company ?? null,
+                location: snapRow?.location ?? null,
+                salesperson, reason, checked,
+              });
+            },
+          });
+          continue;
+        }
+
+        // 2b. Already on the list → update, exactly as Red Mark does.
+        const checked = readBool(rec["Checked"]);
+        const wantCleared = hasClearedCol ? readBool(rec["Cleared"]) : cur.cleared;
+        let doClear = false;
+        if (wantCleared && !cur.cleared) {
+          if (!clearNote) {
+            plan.invalid.push({ label, reason: "Set to Cleared with no Clear note — say how the case ended." });
+            continue;
+          }
+          doClear = true;
+        } else if (!wantCleared && cur.cleared) {
+          plan.invalid.push({
+            label,
+            reason: "This case was cleared in the app since this sheet was exported. Import never " +
+                    "reopens a case — reopen it on screen if that is what you meant.",
+          });
+          continue;
+        } else if (wantCleared && cur.cleared && clearNote && clearNote !== (cur.clear_note ?? null)) {
+          plan.invalid.push({ label, reason: "The Clear note of an already-cleared case can only be changed on screen." });
+          continue;
+        }
+
+        const dSp = salesperson !== (cur.salesperson ?? null);
+        const dRs = reason !== (cur.reason ?? null);
+        const dChk = checked !== cur.checked;
+        if (!dSp && !dRs && !dChk && !doClear) { plan.unchanged++; continue; }
+        plan.changes.push({
+          key,
+          label: name(cur) || label,
+          fields: changedFields([
+            ["Salesperson", dSp], ["Reason", dRs], ["Checked", dChk], ["Cleared", doClear],
+          ]),
+          // Details first, then the clear — two doors, as on Red Mark.
+          save: async () => {
+            if (dSp || dRs || dChk) await saveLegalCustomer({ ledger_id, salesperson, reason, checked });
+            if (doClear) await clearLegalCustomer(ledger_id, clearNote as string);
           },
         });
       }

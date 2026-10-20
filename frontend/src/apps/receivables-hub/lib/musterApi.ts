@@ -355,6 +355,50 @@ export function reopenRedMark(ledger_id: string): Promise<{ row: RedMarkRow }> {
   return invokeMusterData<{ row: RedMarkRow }>({ action: "reopen_redmark", ledger_id });
 }
 
+// ── Legal Customer (ext_legal_customer) ──────────────────────────────────────
+// The same shape and rules as Red Mark, column for column — so the row types are Red Mark's and the
+// Masters tab is the same component. One row per ledger; presence is the flag.
+
+export type LegalCustomerRow = RedMarkRow;
+export type LegalCustomerInput = RedMarkInput;
+
+/** Every legal customer, ordered by the UNIQUE primary key for correct .range() paging. */
+export function fetchLegalCustomerRows(): Promise<LegalCustomerRow[]> {
+  return fetchAll<LegalCustomerRow>(
+    "ext_legal_customer",
+    "ledger_id,tally_name,company,location,salesperson,reason,checked,match_status,source,updated_at,updated_by,cleared,cleared_at,cleared_by,clear_note",
+    "ledger_id",
+  );
+}
+
+/** Add a legal customer. Upserts on ledger_id; re-adding a cleared case reopens it. */
+export function insertLegalCustomer(input: LegalCustomerInput): Promise<{ row: LegalCustomerRow }> {
+  return invokeMusterData<{ row: LegalCustomerRow }>({ action: "insert_legal", ...input });
+}
+
+export function saveLegalCustomer(input: {
+  ledger_id: string;
+  salesperson: string | null;
+  reason: string | null;
+  checked: boolean;
+}): Promise<void> {
+  return invokeMuster({ action: "update_legal", ...input });
+}
+
+/** Delete — only for a customer added by MISTAKE. A settled case is cleared instead. */
+export function deleteLegalCustomer(ledger_id: string): Promise<void> {
+  return invokeMuster({ action: "delete_legal", ledger_id });
+}
+
+/** Close a settled legal case. Same authorisation rule as clearRedMark. */
+export function clearLegalCustomer(ledger_id: string, clear_note: string): Promise<{ row: LegalCustomerRow }> {
+  return invokeMusterData<{ row: LegalCustomerRow }>({ action: "clear_legal", ledger_id, clear_note });
+}
+
+export function reopenLegalCustomer(ledger_id: string): Promise<{ row: LegalCustomerRow }> {
+  return invokeMusterData<{ row: LegalCustomerRow }>({ action: "reopen_legal", ledger_id });
+}
+
 // ── Disputed bills (RC-13) ───────────────────────────────────────────────────
 
 /**

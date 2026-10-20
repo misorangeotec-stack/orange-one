@@ -85,6 +85,8 @@ export interface RenameCounts {
   ledgers: number;
   /** ext_redmark rows. Salesperson only; always 0 for a collection team. */
   redmark: number;
+  /** ext_legal_customer rows. Salesperson only; absent from a function deployed before it existed. */
+  legal?: number;
   /**
    * The user tags this moved: `profiles.receivables_salespersons` for a salesperson,
    * `profiles.receivables_collection_teams` for a team. Both dimensions cascade (RC-11).
