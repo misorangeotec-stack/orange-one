@@ -20,6 +20,8 @@ import {
   startTask as startTaskWrite,
   completeTask as completeTaskWrite,
   reopenTask as reopenTaskWrite,
+  closePeerTask as closePeerTaskWrite,
+  reopenPeerTask as reopenPeerTaskWrite,
   setTaskNotApplicable as setTaskNotApplicableWrite,
   reviseTask as reviseTaskWrite,
   rescheduleTask as rescheduleTaskWrite,
@@ -98,6 +100,10 @@ interface TaskStoreValue {
   startTask: (id: string) => Promise<void>;
   completeTask: (id: string, note?: string, kraId?: string) => Promise<void>;
   reopenTask: (id: string) => Promise<void>;
+  /** Peer task review: the person who gave it closes the completed task (lib/peerReview.ts). */
+  closePeerTask: (id: string, note?: string) => Promise<void>;
+  /** Peer task review: the giver sends it back to the same assignee, with what to recheck. */
+  reopenPeerTask: (id: string, reason: string) => Promise<void>;
   /** Mark a "when" task instance Not Applicable for its day, or back to applicable. Reversible. */
   setTaskNotApplicable: (id: string, value: boolean) => Promise<void>;
   /** True when this task was generated from a "when" recurring template (so N/A is offered). */
@@ -615,6 +621,14 @@ export function TaskStoreProvider({ children }: { children: ReactNode }) {
       // status → in_progress, completed_at cleared, and a 'reopened' activity logged.
       reopenTask: async (id) => {
         await reopenTaskWrite(id, user.id);
+        await refreshTasks(id);
+      },
+      closePeerTask: async (id, note) => {
+        await closePeerTaskWrite(id, user.id, note);
+        await refreshTasks(id);
+      },
+      reopenPeerTask: async (id, reason) => {
+        await reopenPeerTaskWrite(id, user.id, reason);
         await refreshTasks(id);
       },
       reviewKraTask: async (id, rating, note, kraId) => {

@@ -13,9 +13,10 @@ import { pooledPct } from "../lib/exportWeeklyScorecard";
 import { rygCounts } from "../components/RygCells";
 import RygBar from "../components/RygBar";
 import TaskBrowser from "../components/TaskBrowser";
+import { awaitingPeerReview, isPeerReviewerOf } from "../lib/peerReview";
 import type { Task } from "../types";
 
-type View = "received" | "given" | "all";
+type View = "review" | "received" | "given" | "all";
 
 /**
  * Peer Tasks (TM-1) — the one-off work HODs and Sub-HODs hand SIDEWAYS to each
@@ -70,8 +71,14 @@ export default function PeerTasks() {
     [peerTasks, user.id],
   );
   const received = useMemo(() => peerTasks.filter((t) => t.assignedTo === user.id), [peerTasks, user.id]);
+  // Completed by the assignee and waiting for me — the giver — to close or reopen.
+  // An admin is not handed everyone's reviews here; they can still open any task.
+  const toReview = useMemo(
+    () => peerTasks.filter((t) => awaitingPeerReview(t) && isPeerReviewerOf(t, user.id, false)),
+    [peerTasks, user.id],
+  );
 
-  const slice: Task[] = view === "given" ? given : view === "received" ? received : peerTasks;
+  const slice: Task[] = view === "review" ? toReview : view === "given" ? given : view === "received" ? received : peerTasks;
 
   // The assignee filter offers exactly the people who appear in these rows,
   // resolved org-wide — a peer HOD is usually outside the viewer's RLS-scoped
@@ -101,13 +108,16 @@ export default function PeerTasks() {
 
   const count = (n: number) => (n ? " (" + n + ")" : "");
   const VIEWS: { value: View; label: string }[] = [
+    { value: "review", label: "To review" + count(toReview.length) },
     { value: "received", label: "Received" + count(received.length) },
     { value: "given", label: "Given" + count(given.length) },
     ...(isAdmin ? [{ value: "all" as View, label: "All peer tasks" + count(peerTasks.length) }] : []),
   ];
 
   const blurb =
-    view === "given"
+    view === "review"
+      ? "Peer tasks you gave that are completed. Open one to close it, or reopen it for rework."
+      : view === "given"
       ? "One-off tasks you have handed to another HOD or Sub-HOD."
       : view === "received"
         ? "One-off tasks another HOD or Sub-HOD has handed you. Scored here, not in your own weekly score."
@@ -151,14 +161,18 @@ export default function PeerTasks() {
       {slice.length === 0 ? (
         <EmptyState
           title={
-            view === "given"
+            view === "review"
+              ? "Nothing waiting for your review"
+              : view === "given"
               ? "You haven't assigned any peer tasks"
               : view === "received"
                 ? "No peer tasks assigned to you"
                 : "No peer tasks yet"
           }
           message={
-            view === "given"
+            view === "review"
+              ? "When someone completes a peer task you gave them, it comes here for you to close or reopen."
+              : view === "given"
               ? "Create a task and pick someone from the HODs & Sub-HODs group to assign work sideways."
               : "When another HOD or Sub-HOD assigns you a one-off task it appears here, and in My Tasks with a Peer badge."
           }
@@ -172,7 +186,7 @@ export default function PeerTasks() {
           hideWeekFilter
           initialFilters={initialFilters}
           enableExport
-          exportSubtitle={"Peer tasks · " + (view === "given" ? "Given" : view === "received" ? "Received" : "All")}
+          exportSubtitle={"Peer tasks · " + (view === "review" ? "To review" : view === "given" ? "Given" : view === "received" ? "Received" : "All")}
           stickyScope={sticky}
         />
       )}

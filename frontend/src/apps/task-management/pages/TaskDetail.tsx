@@ -21,6 +21,8 @@ import PersonalTaskModal from "../components/PersonalTaskModal";
 import EditTaskModal from "../components/EditTaskModal";
 import { useTaskDetailEmbed } from "../components/TaskDetailEmbed";
 import KraTaskCard, { KraBadge, useKraTaskAccess } from "../components/KraTaskCard";
+import PeerReviewCard from "../components/PeerReviewCard";
+import { awaitingPeerReview, isPeerReviewerOf } from "../lib/peerReview";
 
 type ModalKind = "revise" | "complete" | null;
 
@@ -36,7 +38,7 @@ export default function TaskDetail({ taskId }: { taskId?: string } = {}) {
   const embed = useTaskDetailEmbed();
   const leave = () => (embed ? embed.close() : navigate("/task-management/tasks"));
   const { getTask, getRecurring, activityFor, revisionInfo, startTask, reopenTask, rescheduleTask, profileById, actorById, departmentById, canWrite, canStatusActions, canReschedule, locationById, taskLocationsComplete, setTaskLocationDone, setTaskLocationNa, setTaskLocationsDone, isWhenTask, setTaskNotApplicable, deletePersonalTask, deleteTask, markTaskNotificationsRead, mentionablePeople } = useTaskStore();
-  const { user, role } = useSession();
+  const { user, role, isAdmin } = useSession();
   const [modal, setModal] = useState<ModalKind>(null);
   const [starting, setStarting] = useState(false);
   const [reopening, setReopening] = useState(false);
@@ -122,7 +124,13 @@ export default function TaskDetail({ taskId }: { taskId?: string } = {}) {
   const isCurrentWeek = task.weekStart === weekStartOf(todayIso());
   // Once the HOD has rated a KRA task only that HOD may reopen it — reopening wipes the
   // rating (guard_task_kra enforces the same on the server).
-  const canReopen = task.status === "completed" && isCurrentWeek && canStatusActions && (task.reviewRating == null || kraAccess.isReviewer);
+  // Peer task review: while it waits for review the giver reopens from the Peer review
+  // card (with a reason), and once they have closed it only they may reopen it
+  // (guard_task_peer_review enforces the same on the server).
+  const peerAwaiting = awaitingPeerReview(task);
+  const peerReviewer = isPeerReviewerOf(task, user.id, isAdmin);
+  const peerAllowsReopen = !task.isPeerAssignment || (peerAwaiting ? !peerReviewer : !task.peerClosedAt || peerReviewer);
+  const canReopen = task.status === "completed" && isCurrentWeek && canStatusActions && (task.reviewRating == null || kraAccess.isReviewer) && peerAllowsReopen;
 
   // "When" instances can be parked as Not Applicable for the day (reversible).
   // While N/A the normal status actions are hidden and the task is excluded from reports.
@@ -179,6 +187,14 @@ export default function TaskDetail({ taskId }: { taskId?: string } = {}) {
           <div className="flex items-center gap-2.5 flex-wrap">
             <h2 className="text-[22px] font-bold text-navy">{task.title}</h2>
             <StatusChip status={task.status} notApplicable={na} />
+            {peerAwaiting && (
+              <span
+                title="Completed — waiting for the person who gave this peer task to review it."
+                className="inline-flex items-center text-[11px] font-semibold uppercase tracking-wide text-[#9a6200] bg-[#FFF6E5] rounded-pill px-2 py-1"
+              >
+                Awaiting review
+              </span>
+            )}
             {personal && (
               <span
                 title="Other task — for your own tracking; excluded from all scores"
@@ -581,11 +597,12 @@ export default function TaskDetail({ taskId }: { taskId?: string } = {}) {
           </Card>
 
           <KraTaskCard task={task} />
+          <PeerReviewCard task={task} />
 
           {closed && (
             <Card className="p-4 text-center">
               <p className="text-[13px] text-grey">
-                This task is <b className="text-navy">{task.status === "completed" ? "completed" : "shifted to next week"}</b>.
+                This task is <b className="text-navy">{task.status === "completed" ? (peerAwaiting ? "completed — awaiting review" : "completed") : "shifted to next week"}</b>.
               </p>
             </Card>
           )}
