@@ -80,7 +80,8 @@ export default function CreditNotes() {
     );
   }, [all, tab, q]);
 
-  const tabs = TABS.map((t) => ({ ...t, count: all.filter(TAB_STATUS[t.key]).length }));
+  // No counts while loading — a "0" there reads as "nothing pending".
+  const tabs = TABS.map((t) => ({ ...t, count: s.loading ? undefined : all.filter(TAB_STATUS[t.key]).length }));
 
   /** What the row's button says, when this person can act on it. */
   const actionFor = (c: CreditNote): string | null => {
@@ -136,7 +137,13 @@ export default function CreditNotes() {
               </tr>
             </thead>
             <tbody>
-              {rows.length === 0 ? (
+              {s.loading ? (
+                <tr>
+                  <td colSpan={11} className="px-4 py-8 text-center text-grey-2">
+                    Loading…
+                  </td>
+                </tr>
+              ) : rows.length === 0 ? (
                 <tr>
                   <td colSpan={11} className="px-4 py-8 text-center text-grey-2">
                     Nothing here.
