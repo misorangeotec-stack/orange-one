@@ -4,12 +4,19 @@ import { ScrollableTable } from "@/core/shared/components/ScrollableTable";
 import StepQueue from "../../components/StepQueue";
 import CreditNoteModal from "../../components/CreditNoteModal";
 import { useComplaintStore } from "../../store";
+import { MANAGEMENT_STEPS } from "../../lib/steps";
 import { dmy } from "../../lib/format";
 import { cnProductText, formatCnAmount } from "../../types/creditNote";
 
 /**
- * Management Approval — the finished-good commercial-call queue, plus the
- * customer compensations waiting for the same management desk.
+ * MANAGEMENT APPROVAL — the ONE place management look. The user asked for it:
+ * every type that needs management (Finished Good, Raw Material, Other
+ * Supplier, Customer Compensation) lands here, and leaves once management act.
+ *
+ * It is the three complaint steps management own — `approval` (FG commercial
+ * call), `rm_management` (RM import / other supplier) and `management_review`
+ * (the final sign-off) — in one list with a Stage column, plus the customer
+ * compensations (`cn_approval`). Setup staffs them all with ONE row.
  *
  * ⚠ THE COMPENSATIONS ARE A CARD ON TOP, NOT ROWS IN THE QUEUE. They are their
  *   own table (fms_complaint_credit_notes) and step (`cn_approval`), so they
@@ -18,12 +25,7 @@ import { cnProductText, formatCnAmount } from "../../types/creditNote";
  *   Compensation page.
  */
 export default function ApprovalQueue() {
-  return (
-    <div className="space-y-5">
-      <CompensationApprovals />
-      <StepQueue step="approval" />
-    </div>
-  );
+  return <StepQueue steps={MANAGEMENT_STEPS} title="Management Approval" top={<CompensationApprovals />} />;
 }
 
 function CompensationApprovals() {
@@ -44,7 +46,7 @@ function CompensationApprovals() {
     <Card className="overflow-hidden">
       <div className="px-4 pt-4 pb-2">
         <h2 className="text-[15px] font-bold text-navy">
-          Customer Compensation — awaiting approval{" "}
+          Customer Compensation{" "}
           <span className="ml-1 rounded-full bg-orange-soft px-2 py-0.5 text-[12px] font-semibold text-orange">
             {pending.length}
           </span>

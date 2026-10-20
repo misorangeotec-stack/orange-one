@@ -2,7 +2,7 @@ import type { ReactNode } from "react";
 import { Routes, Route, Navigate } from "react-router-dom";
 import { useSession } from "@/core/platform/session";
 import { ComplaintStoreProvider, useComplaintStore } from "./store";
-import type { StepKey } from "./lib/steps";
+import { MANAGEMENT_STEPS, type StepKey } from "./lib/steps";
 import { B } from "./lib/routes";
 import ComplaintLayout from "./ComplaintLayout";
 import Dashboard from "./pages/Dashboard";
@@ -13,9 +13,7 @@ import PlantQueue from "./pages/queues/PlantQueue";
 import ServiceQueue from "./pages/queues/ServiceQueue";
 import ApprovalQueue from "./pages/queues/ApprovalQueue";
 import PurchaseQueue from "./pages/queues/PurchaseQueue";
-import RmManagementQueue from "./pages/queues/RmManagementQueue";
 import AssigneeQueue from "./pages/queues/AssigneeQueue";
-import ManagementReviewQueue from "./pages/queues/ManagementReviewQueue";
 import Masters from "./pages/masters/Masters";
 import MasterRequests from "./pages/MasterRequests";
 import ControlCenter from "./pages/monitoring/ControlCenter";
@@ -83,7 +81,7 @@ function RequireQueue({ step, children }: { step: StepKey; children: ReactNode }
  */
 function RequireApprovalDesk({ children }: { children: ReactNode }) {
   const { canSeeQueue, isStepOwner } = useComplaintStore();
-  if (!canSeeQueue("approval") && !isStepOwner("cn_approval")) return <AccessDenied />;
+  if (!MANAGEMENT_STEPS.some((st) => canSeeQueue(st)) && !isStepOwner("cn_approval")) return <AccessDenied />;
   return <>{children}</>;
 }
 
@@ -116,8 +114,9 @@ export default function ComplaintApp() {
           <Route path="queues/purchase" element={<RequireQueue step="purchase"><PurchaseQueue /></RequireQueue>} />
           {/* Management's two jobs are two queues: reading an imported-material
               complaint, and signing off a settled one. See lib/steps.ts. */}
-          <Route path="queues/rm-management" element={<RequireQueue step="rm_management"><RmManagementQueue /></RequireQueue>} />
-          <Route path="queues/management-review" element={<RequireQueue step="management_review"><ManagementReviewQueue /></RequireQueue>} />
+          {/* Folded into Management Approval — old links and emails land there. */}
+          <Route path="queues/rm-management" element={<Navigate to={`${B}/queues/approval`} replace />} />
+          <Route path="queues/management-review" element={<Navigate to={`${B}/queues/approval`} replace />} />
           <Route path="queues/assignee" element={<RequireQueue step="assignee"><AssigneeQueue /></RequireQueue>} />
           <Route path="credit-notes" element={<RequireCreditNotes><CreditNotes /></RequireCreditNotes>} />
           <Route path="master-requests" element={<RequireMasterAccess><MasterRequests /></RequireMasterAccess>} />

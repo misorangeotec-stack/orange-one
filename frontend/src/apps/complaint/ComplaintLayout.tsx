@@ -4,6 +4,7 @@ import type { NotificationItem } from "@/shared/components/layout/types";
 import { roleLabel, useSession } from "@/core/platform/session";
 import { useOrgPersonById } from "@/core/platform/orgPeople";
 import { buildComplaintNav } from "./nav";
+import { MANAGEMENT_STEPS } from "./lib/steps";
 import { useComplaintStore } from "./store";
 import { B, creditNotesHref, requestHref } from "./lib/routes";
 import type { ComplaintNotification } from "./types";
@@ -34,7 +35,10 @@ export default function ComplaintLayout() {
   const canPlant = s.canSeeQueue("plant");
   const canService = s.canSeeQueue("service");
   // The compensation approvers sit on the same desk — see pages/queues/ApprovalQueue.
-  const canApprove = s.canSeeQueue("approval") || s.isStepOwner("cn_approval");
+  // ONE management desk: FG approval, RM / other-supplier review, final review
+  // and customer compensation all live on the Management Approval page.
+  const canApprove =
+    MANAGEMENT_STEPS.some((st) => s.canSeeQueue(st)) || s.isStepOwner("cn_approval");
   const canPurchase = s.canSeeQueue("purchase");
   const canRmManagement = s.canSeeQueue("rm_management");
   const canReview = s.canSeeQueue("management_review");

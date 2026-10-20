@@ -127,6 +127,15 @@ export const CN_STEPS: StepDef[] = [
   { key: "cn_tally", index: 10, title: "Compensation — Tally Entry", short: "Tally", scope: "request" },
 ];
 
+/**
+ * MANAGEMENT IS ONE DESK. These complaint steps all land on the single
+ * "Management Approval" page, and Setup staffs them — with `cn_approval` — as
+ * ONE row (StepOwnersSection writes the same people to every key). The keys
+ * stay separate underneath because the live RPCs and the SLA config key on them.
+ */
+export const MANAGEMENT_STEPS: StepKey[] = ["approval", "rm_management", "management_review"];
+export const MANAGEMENT_OWNER_KEYS: StepKey[] = [...MANAGEMENT_STEPS, "cn_approval"];
+
 export const stepByKey = (key: string): StepDef | undefined =>
   STEPS.find((s) => s.key === key) ?? CN_STEPS.find((s) => s.key === key);
 

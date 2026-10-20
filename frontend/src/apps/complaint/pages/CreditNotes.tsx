@@ -34,7 +34,7 @@ const TAB_STATUS: Record<CreditNoteTab, (c: CreditNote) => boolean> = {
 };
 
 const TABS: { key: CreditNoteTab; label: string }[] = [
-  { key: "approval", label: "Management Approval" },
+  { key: "approval", label: "Awaiting Approval" },
   { key: "tally", label: "Tally Entry" },
   { key: "closed", label: "Closed" },
   { key: "rejected", label: "Rejected" },

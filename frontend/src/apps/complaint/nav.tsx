@@ -151,9 +151,7 @@ export function buildComplaintNav(opts: {
   if (opts.canPurchase) queue("Purchase Department", queueHref("purchase"), ic.purchase);
   // TWO MANAGEMENT ENTRIES, NOT ONE. Reading an imported-material complaint is
   // work; signing off a settled one is not. See lib/steps.ts.
-  if (opts.canRmManagement) queue("RM-Complaint View (MGT)", queueHref("rm-management"), ic.investigation);
   if (opts.canAssignee) queue("Assigned to Me", queueHref("assignee"), ic.assignee);
-  if (opts.canReview) queue("Management Review", queueHref("management-review"), ic.close);
   // One page for the whole credit-note chain: approval → Tally → closed.
   if (opts.canSeeCreditNotes) queue("Customer Compensation", creditNotesHref(), ic.creditNote);
 

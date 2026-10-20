@@ -21,7 +21,7 @@
 import { appName } from "@/apps/appInfo";
 import type { ComplaintData } from "@/apps/complaint/data/complaintFetch";
 import { buildQueueEntries, complaintDueIso, complaintSnapshotFrom, openStep } from "@/apps/complaint/lib/queues";
-import { stepByKey } from "@/apps/complaint/lib/steps";
+import { MANAGEMENT_STEPS, stepByKey } from "@/apps/complaint/lib/steps";
 import { creditNotesHref, queueHref, type QueueSlug } from "@/apps/complaint/lib/routes";
 import type { ComplaintRequest } from "@/apps/complaint/types";
 import { isMineByStepOwners, type StepOwnerRow } from "@/shared/lib/fmsOwners";
@@ -68,7 +68,8 @@ export function complaintWorkItems(data: ComplaintData, uid: string, isAdmin: bo
       detail: c.partyName,
       stage: step === "cn_approval" ? "Compensation approval" : "Compensation — Tally entry",
       dueIso: null,
-      to: creditNotesHref({ tab: step === "cn_approval" ? "approval" : "tally", open: c.id }),
+      // Approvals sit on the Management Approval page with every other one.
+      to: step === "cn_approval" ? queueHref("approval") : creditNotesHref({ tab: "tally", open: c.id }),
       assignment: isMine ? ("direct" as const) : ("team" as const),
       isApproval: step === "cn_approval",
     }];
@@ -88,7 +89,10 @@ export function complaintWorkItems(data: ComplaintData, uid: string, isAdmin: bo
         // Two steps are both "Review" in short form — the title tells them apart.
         stage: e.stepKey === "rm_management" || e.stepKey === "management_review" ? step?.title : step?.short,
         dueIso: e.dueIso,
-        to: queueHref(e.stepKey.replace(/_/g, "-") as QueueSlug),
+        // Management's three steps share ONE page — Management Approval.
+        to: queueHref(
+          (MANAGEMENT_STEPS.includes(e.stepKey) ? "approval" : e.stepKey.replace(/_/g, "-")) as QueueSlug,
+        ),
         assignment: mine(e.stepKey, r) ? ("direct" as const) : ("team" as const),
         isApproval: e.stepKey === "approval",
         ...(isHeld ? { isHeld: true, holdReason: r?.holdReason ?? null } : {}),
