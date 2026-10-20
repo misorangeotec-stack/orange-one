@@ -14,7 +14,7 @@ import {
   ActiveFilters, QTY_BANDS, qtyBand, SortFilterBody, SortFilterHead, TableTools, useSortFilter, type Col,
 } from "@/apps/ink-expiry/components/SortFilterHead";
 import {
-  COMPANIES, companyName, DEFAULT_PRIMARY, fmtDate, fmtInr, fmtQty, fmtStamp, itemKey, OTEC_SURAT_GUID, type StockItem,
+  COMPANIES, companyName, DEFAULT_PRIMARY, fmtDate, fmtInr, fmtQty, fmtStamp, isSetAside, itemKey, OTEC_SURAT_GUID, type StockItem,
 } from "../lib/stock";
 import {
   canSchedule, PV_QUERY, scheduleItems, setMasterLines, STATUS_LABEL, unscheduleItems, usePv, useStock, type CountRow,
@@ -67,8 +67,7 @@ const F: { v: Filter; label: string }[] = [
 
 const STATUS_TEXT = (r: Row) => (r.open ? STATUS_LABEL[r.open.status] : r.last ? "Verified" : "Not scheduled");
 
-const barFilterCls = "h-8 rounded-lg px-2.5 py-0 text-[12px]";
-const barLabelCls = "text-[11px] font-semibold uppercase tracking-wide text-grey";
+const barFilterCls = "h-7 rounded-lg px-2 py-0 text-[11.5px]";
 
 const COMPANY_KEY = "physical-verification:company";
 const readCompany = () => {
@@ -234,13 +233,22 @@ export default function Master() {
 
   const ctl = useSortFilter(searched, cols, "pv-master");
 
-  // Open on Printing Ink — once the list has loaded, and only if the reader has not chosen.
+  // Open on Printing Ink, with Dead / Diff stock unticked in Stock group (asked 20-10-2026) — on
+  // every visit, so the figures are the real stock. Ticking them back in shows them.
   const [seeded, setSeeded] = useState(false);
+  const setAside = useMemo(() => [...new Set(allRows.map((r) => r.s.group))].filter(isSetAside).sort(), [allRows]);
   useEffect(() => {
     if (seeded || !rows.length || stockQ.isFetching) return;
-    if (rows.some((r) => r.s.primaryGroup === DEFAULT_PRIMARY)) ctl.setFilters((f) => ({ ...f, primary: [DEFAULT_PRIMARY] }));
+    const groups = [...new Set(allRows.map((r) => r.s.group))];
+    ctl.setFilters((f) => ({
+      ...f,
+      ...(rows.some((r) => r.s.primaryGroup === DEFAULT_PRIMARY) ? { primary: [DEFAULT_PRIMARY] } : {}),
+      ...(groups.some(isSetAside) ? { group: groups.filter((g) => !isSetAside(g)) } : {}),
+    }));
     setSeeded(true);
-  }, [rows, seeded, ctl, stockQ.isFetching]);
+  }, [rows, allRows, seeded, ctl, stockQ.isFetching]);
+  const setAsideHidden = setAside.length > 0 && !!ctl.filters.group?.length && setAside.every((g) => !ctl.filters.group!.includes(g));
+  const showSetAside = () => ctl.setFilters((f) => ({ ...f, group: [] }));
 
   /** Another company is another list: ticks, line picks and filters start again (on Printing Ink). */
   function switchCompany(guid: string) {
@@ -503,37 +511,34 @@ export default function Master() {
       {note && <div className={cn("text-[12.5px]", note.ok ? "text-ryg-green" : "text-ryg-red")}>{note.text}</div>}
 
       <Card className="overflow-hidden">
-        {/* Filter bar: Primary / Sub group drive the SAME filters as their column headings. */}
-        <div className="flex flex-wrap items-center gap-2 border-b border-line px-3 py-2.5">
-          <span className={barLabelCls}>Primary group</span>
-          <MultiSelect values={ctl.filters.primary ?? []} onChange={(v) => setColFilter("primary", v)}
-            options={optionsFor("primary")} placeholder="All" searchable className="w-52" triggerClassName={barFilterCls} />
-          <span className={cn(barLabelCls, "ml-2")}>Sub group</span>
-          <MultiSelect values={ctl.filters.sub ?? []} onChange={(v) => setColFilter("sub", v)}
-            options={optionsFor("sub")} placeholder="All" searchable className="w-52" triggerClassName={barFilterCls} />
-          <span className={cn(barLabelCls, "ml-2")}>Company</span>
-          <select value={company} onChange={(e) => switchCompany(e.target.value)} disabled={busy}
-            className={cn(inputCls, "h-8 w-44 py-0 text-[12px] font-semibold text-navy")}>
+        {/* ONE compact bar (asked 20-10-2026): each filter is a small box whose placeholder is its
+            name; they drive the SAME filters as the column headings. Wraps to a second line only
+            on a narrow screen. */}
+        <div className="flex flex-wrap items-center gap-1.5 border-b border-line px-3 py-2">
+          <select value={company} onChange={(e) => switchCompany(e.target.value)} disabled={busy} title="Company"
+            className={cn(inputCls, "h-7 w-36 px-1.5 py-0 text-[11.5px] font-semibold text-navy")}>
             {COMPANIES.map((c) => <option key={c.guid} value={c.guid}>{c.name}</option>)}
           </select>
-        </div>
-        {/* Bushra Central Master's own group / category — the same filters as those column headings. */}
-        <div className="flex flex-wrap items-center gap-2 border-b border-line px-3 py-2.5">
-          <span className={barLabelCls}>Central group</span>
+          <MultiSelect values={ctl.filters.primary ?? []} onChange={(v) => setColFilter("primary", v)}
+            options={optionsFor("primary")} placeholder="Primary group" searchable className="w-36" triggerClassName={barFilterCls} />
+          <MultiSelect values={ctl.filters.sub ?? []} onChange={(v) => setColFilter("sub", v)}
+            options={optionsFor("sub")} placeholder="Sub group" searchable className="w-32" triggerClassName={barFilterCls} />
+          <MultiSelect values={ctl.filters.group ?? []} onChange={(v) => setColFilter("group", v)}
+            options={optionsFor("group")} placeholder="Stock group" searchable className="w-32" triggerClassName={barFilterCls} />
           <MultiSelect values={ctl.filters.cgroup ?? []} onChange={(v) => setColFilter("cgroup", v)}
-            options={optionsFor("cgroup")} placeholder="All" searchable className="w-52" triggerClassName={barFilterCls} />
-          <span className={cn(barLabelCls, "ml-2")}>Central category</span>
+            options={optionsFor("cgroup")} placeholder="Central group" searchable className="w-32" triggerClassName={barFilterCls} />
           <MultiSelect values={ctl.filters.ccat ?? []} onChange={(v) => setColFilter("ccat", v)}
-            options={optionsFor("ccat")} placeholder="All" searchable className="w-52" triggerClassName={barFilterCls} />
+            options={optionsFor("ccat")} placeholder="Central category" searchable className="w-36" triggerClassName={barFilterCls} />
           <div className="relative ml-auto">
-            <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-grey-2" />
-            <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search item or group"
-              className={cn(inputCls, "w-60 pl-8")} />
+            <Search className="pointer-events-none absolute left-2 top-1/2 h-3 w-3 -translate-y-1/2 text-grey-2" />
+            <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search"
+              className={cn(inputCls, "h-7 w-36 pl-6 text-[11.5px]")} />
           </div>
           {isAdmin && !choosing && (
-            <Button size="sm" variant="ghost" onClick={startChoosing} disabled={!!pvQ.isError || !allRows.length}>
+            <button onClick={startChoosing} disabled={!!pvQ.isError || !allRows.length}
+              className="h-7 rounded-lg border border-line px-2 text-[11.5px] font-semibold text-navy hover:border-orange hover:text-orange disabled:opacity-50">
               Choose lines{chosenLines?.size ? ` (${chosenLines.size.toLocaleString("en-IN")})` : ""}
-            </Button>
+            </button>
           )}
           <TableTools cols={cols} ctl={ctl} />
         </div>
@@ -547,6 +552,12 @@ export default function Master() {
               </button>
             ))}
           </div>
+          {setAsideHidden && (
+            <span className="text-[11.5px] text-grey">
+              Dead / Diff stock hidden —{" "}
+              <button className="font-semibold text-orange hover:underline" onClick={showSetAside}>show them</button>
+            </span>
+          )}
           {isAdmin && !choosing && shown.length > 0 && (
             <label className="ml-auto flex cursor-pointer items-center gap-2 text-[12px] font-semibold text-navy">
               <input type="checkbox" className="accent-orange" checked={allShownPicked} onChange={toggleAll} />

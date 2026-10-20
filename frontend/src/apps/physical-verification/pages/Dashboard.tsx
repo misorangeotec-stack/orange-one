@@ -5,7 +5,7 @@ import Button from "@/shared/components/ui/Button";
 import { fetchOrgPeople } from "@/core/platform/orgPeople";
 import { exportRowsToXlsx } from "@/shared/lib/exportXlsx";
 import { cn } from "@/shared/lib/cn";
-import { COMPANIES, companyName, fmtDate, fmtInr, fmtQty } from "../lib/stock";
+import { COMPANIES, companyName, fmtDate, fmtInr, fmtQty, isSetAside } from "../lib/stock";
 import { diffValue, STATUS_LABEL, usePv, type CountRow, type CountStatus } from "../lib/pv";
 import { Diff, inputCls, PageHead, PvUnavailable, StatusPill } from "../components/parts";
 
@@ -136,9 +136,12 @@ export default function Dashboard() {
   const [who, setWho] = useState("");
   const [company, setCompany] = useState("");
   const [stage, setStage] = useState<CountStatus | "">("");
+  // Dead / Diff stock out of the figures on every open (asked 20-10-2026); one tick brings them in.
+  const [withSetAside, setWithSetAside] = useState(false);
 
   const everything = pvQ.data?.counts ?? [];
-  const all = useMemo(() => (company ? everything.filter((c) => c.companyGuid === company) : everything), [everything, company]);
+  const all = useMemo(() => everything.filter((c) => (!company || c.companyGuid === company) && (withSetAside || !isSetAside(c.group))),
+    [everything, company, withSetAside]);
   const subs = useMemo(() => [...new Set(all.map((c) => c.subGroup ?? c.group ?? ""))].filter(Boolean).sort(), [all]);
   const verifiers = useMemo(() => [...new Set(all.map((c) => c.assignedTo).filter((id): id is string => !!id))], [all]);
 
@@ -231,6 +234,10 @@ export default function Dashboard() {
           <option value="">All verifiers</option>
           {verifiers.map((id) => <option key={id} value={id}>{nameOf(id)}</option>)}
         </select>
+        <label className="flex cursor-pointer items-center gap-1.5 text-[12px] text-grey" title="Dead stock and Diff stock ink are left out unless ticked">
+          <input type="checkbox" className="accent-orange" checked={withSetAside} onChange={(e) => setWithSetAside(e.target.checked)} />
+          Include Dead / Diff stock
+        </label>
         {(from || to || sub || who || company) && (
           <button onClick={() => { setFrom(""); setTo(""); setSub(""); setWho(""); setCompany(""); }}
             className="text-[12px] font-semibold text-orange hover:underline">Reset filters</button>

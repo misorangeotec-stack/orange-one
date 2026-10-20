@@ -79,6 +79,13 @@ const PAGE = 1000;
 
 export const isProvision = (groupPath: string | null | undefined) => /PROVISION/i.test(groupPath ?? "");
 
+/**
+ * DEAD STOCK and DIFF STOCK INK are left OUT of the figures by default (asked 20-10-2026): the
+ * Master and the Dashboard open with them unticked on every visit, so the totals are the real
+ * stock. Anyone can tick them back in the Stock group filter to look at them.
+ */
+export const isSetAside = (group: string | null | undefined) => /DEAD\s*STOCK|DIFF\s*STOCK/i.test(group ?? "");
+
 export async function fetchStock(companyGuid: string): Promise<StockItem[]> {
   if (!hasConnectwave()) {
     throw new Error("The live Tally mirror is not configured for this site, so closing stock cannot be read.");
