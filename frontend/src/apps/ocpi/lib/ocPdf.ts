@@ -5,6 +5,7 @@ import {
 } from "@/shared/lib/pdfBrand";
 import { BODY_TOP, bodyBottom, drawLetterhead, loadLetterhead, type LetterheadAssets } from "./letterhead";
 import { tokensFor } from "./tokens";
+import { inclusionLines, inkIncludedSentence } from "./inclusions";
 import { conditionsFor, render, type Conditions } from "./conditions";
 import { isUsdDealRow, type DealFacts } from "./fieldSpec";
 import { docHeading, paperDate, paperFileBase, paperNo } from "./format";
@@ -256,18 +257,22 @@ export function optionalExtras(d: OcpiDeal): string[] {
  *      it. The default can therefore never overwrite an agreed term; it can only
  *      finish a sentence that would otherwise have no unit in it.
  */
-const DEFAULT_INK_UNIT = "Kgs";
-
 export function includedInkNote(d: OcpiDeal): string | null {
-  if (d.inclInk !== true) return null;
-  const typed = d.inkQtyIncluded?.trim();
-  if (!typed) return null;
-  if (/\bincluded\b/i.test(typed)) return `Note: ${typed}`;
-  // No letters at all ⇒ a bare quantity, so the unit is missing rather than
-  // different. Anything carrying a letter has named its own unit and is left be.
-  const withUnit = /[A-Za-z]/.test(typed) ? typed : `${typed} ${DEFAULT_INK_UNIT}`;
-  const withInk = /\bink\b/i.test(withUnit) ? withUnit : `${withUnit} ink`;
-  return `Note: ${withInk} included in above value.`;
+  // The sentence itself lives in inclusions.ts, shared with the PI.
+  const sentence = inkIncludedSentence(d);
+  return sentence ? `Note: ${sentence}` : null;
+}
+
+/**
+ * Every "Yes" deal inclusion as a line under the price — ink, spare parts,
+ * print heads (client, 20-Oct-2026: what the deal includes must be on the OC
+ * and the PI too, and a "No" must appear nowhere). The centering device is
+ * left out here because it already prints in the composition bullets.
+ */
+export function inclusionNotes(d: OcpiDeal): string[] {
+  return inclusionLines(d)
+    .filter((l) => l.label !== "Centering Device")
+    .map((l) => l.text);
 }
 
 /**
@@ -504,6 +509,7 @@ export function resolvedOcDocument(input: OcDocInput): Record<string, unknown> {
         promised, which is the one thing a dispute about it would turn on.
     */
     included_ink_note: includedInkNote(deal),
+    inclusion_notes: inclusionNotes(deal),
     /*
       ⚠ FROZEN FOR THE SAME REASON, and only when it prints. The GSTIN on a
         signed contract is the number the buyer's accounts team reconciles the
@@ -800,13 +806,23 @@ export async function buildOcPdf(input: OcDocInput): Promise<jsPDF> {
       description and above "Machine Value". Below the totals it would read as a
       footnote to the arithmetic instead of a term of the supply.
   */
-  const inkNote = includedInkNote(deal);
-  if (inkNote) {
-    const lines = wrapText(pdf, inkNote, cw, 8.5);
-    y = room(y, lines.length * 11 + 6);
-    for (const l of lines) {
-      text(pdf, l, left, y, { size: 8.5 });
-      y += 11;
+  /*
+    One note per included item: "Note: 50 Kgs ink included in above value." —
+    or, with more than one, "Note:" then "1) …", "2) …", the way the real
+    contracts number them. Only "Yes" inclusions appear (inclusions.ts).
+  */
+  const notes = inclusionNotes(deal);
+  if (notes.length > 0) {
+    const paras = notes.length === 1
+      ? [`Note: ${notes[0]}`]
+      : ["Note:", ...notes.map((n, i) => `${i + 1}) ${n}`)];
+    for (const para of paras) {
+      const lines = wrapText(pdf, para, cw, 8.5);
+      y = room(y, lines.length * 11 + 2);
+      for (const l of lines) {
+        text(pdf, l, left, y, { size: 8.5 });
+        y += 11;
+      }
     }
     y += 6;
   }
