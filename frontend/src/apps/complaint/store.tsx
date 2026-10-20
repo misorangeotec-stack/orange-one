@@ -172,6 +172,7 @@ interface ComplaintStoreValue {
   ) => Promise<void>;
   setMasterManagers: (mt: ComplaintMasterType, userIds: string[]) => Promise<void>;
   saveStepOwner: (input: W.StepOwnerInput) => Promise<void>;
+  saveStepOwners: (inputs: W.StepOwnerInput[]) => Promise<void>;
   saveProcessCoordinators: (userIds: string[]) => Promise<void>;
   saveStepSla: (map: Record<string, unknown>) => Promise<void>;
   saveApprovalThreshold: (threshold: number) => Promise<void>;
@@ -516,6 +517,7 @@ export function ComplaintStoreProvider({ children }: { children: ReactNode }) {
       setMasterActive: w(W.setMasterActive),
       setMasterManagers: w(W.setMasterManagers),
       saveStepOwner: w(W.saveStepOwner),
+      saveStepOwners: w(W.saveStepOwners),
       saveProcessCoordinators: w(W.saveProcessCoordinators),
       saveStepSla: w(W.saveStepSla),
       saveApprovalThreshold: w(W.saveApprovalThreshold),

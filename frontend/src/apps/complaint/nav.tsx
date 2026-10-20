@@ -99,11 +99,12 @@ export function buildComplaintNav(opts: {
   canSeeMasters: boolean;
   canPlant: boolean;
   canService: boolean;
+  /**
+   * The ONE management desk — FG approval, RM / other-supplier review, final
+   * review and customer compensation approval (pages/queues/ApprovalQueue).
+   */
   canApprove: boolean;
   canPurchase: boolean;
-  /** Management's RM bucket — where imported-material complaints land. */
-  canRmManagement: boolean;
-  canReview: boolean;
   /**
    * Not a Setup role — true only while a complaint management assigned to this
    * person is (or has been) theirs. See store.canSeeQueue.
@@ -115,7 +116,7 @@ export function buildComplaintNav(opts: {
   /** False on a view-only grant — every write link is hidden behind it. */
   canEdit: boolean;
   hasRequests: boolean;
-  /** The Customer Credit Notes page — raisers, its two step owners, coordinators, viewers. */
+  /** The Tally Entry page — the Tally desk (cn_tally owners), coordinators, viewers, admins. */
   canSeeCreditNotes: boolean;
 }): NavItem[] {
   const nav: NavItem[] = [
@@ -143,16 +144,13 @@ export function buildComplaintNav(opts: {
     queueUsed = true;
   };
 
-  // Workflow order, both chains interleaved: the finished-good desks, then the
-  // raw-material ones, then the review every chain ends on.
+  // Workflow order: the finished-good desks, the single management desk, the
+  // raw-material ones, then customer compensation's Tally desk.
   if (opts.canPlant) queue("Plant Action", queueHref("plant"), ic.capa);
   if (opts.canService) queue("Service Team", queueHref("service"), ic.resolution);
   if (opts.canApprove) queue("Management Approval", queueHref("approval"), ic.approval);
   if (opts.canPurchase) queue("Purchase Department", queueHref("purchase"), ic.purchase);
-  // TWO MANAGEMENT ENTRIES, NOT ONE. Reading an imported-material complaint is
-  // work; signing off a settled one is not. See lib/steps.ts.
   if (opts.canAssignee) queue("Assigned to Me", queueHref("assignee"), ic.assignee);
-  // One page for the whole credit-note chain: approval → Tally → closed.
   // Customer Compensation's Tally desk. Its approvals are on Management Approval.
   if (opts.canSeeCreditNotes) queue("Tally Entry", creditNotesHref(), ic.creditNote);
 

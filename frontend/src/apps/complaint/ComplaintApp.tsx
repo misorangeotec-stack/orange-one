@@ -85,7 +85,7 @@ function RequireApprovalDesk({ children }: { children: ReactNode }) {
   return <>{children}</>;
 }
 
-/** Gate to the Customer Credit Notes page — the same rule as its nav link. */
+/** Gate to the Tally Entry page (customer compensations) — the same rule as its nav link. */
 function RequireCreditNotes({ children }: { children: ReactNode }) {
   const { canSeeCreditNotes } = useComplaintStore();
   if (!canSeeCreditNotes) return <AccessDenied />;
@@ -112,8 +112,6 @@ export default function ComplaintApp() {
           <Route path="queues/service" element={<RequireQueue step="service"><ServiceQueue /></RequireQueue>} />
           <Route path="queues/approval" element={<RequireApprovalDesk><ApprovalQueue /></RequireApprovalDesk>} />
           <Route path="queues/purchase" element={<RequireQueue step="purchase"><PurchaseQueue /></RequireQueue>} />
-          {/* Management's two jobs are two queues: reading an imported-material
-              complaint, and signing off a settled one. See lib/steps.ts. */}
           {/* Folded into Management Approval — old links and emails land there. */}
           <Route path="queues/rm-management" element={<Navigate to={`${B}/queues/approval`} replace />} />
           <Route path="queues/management-review" element={<Navigate to={`${B}/queues/approval`} replace />} />

@@ -9,7 +9,7 @@ import CreditNoteModal from "../../components/CreditNoteModal";
 import { useComplaintStore } from "../../store";
 import { requestHref } from "../../lib/routes";
 import { MANAGEMENT_STEPS, type StepKey } from "../../lib/steps";
-import { dmy, formatDateTime } from "../../lib/format";
+import { RM_ORIGIN_TONE, dmy, formatDateTime, rmOriginLabelOf } from "../../lib/format";
 import { formatCnAmount } from "../../types/creditNote";
 import {
   cnRow,
@@ -61,7 +61,10 @@ export default function ApprovalQueue() {
   const [tab, setTab] = useState("pending");
   const [acting, setActing] = useState<AnyRow | null>(null);
 
-  const seesCn = s.canActOnCn("cn_approval") || s.isModuleViewer;
+  // Pending follows the complaint rule (`myQueue` = can act); Completed is
+  // also open to view-only readers, as the complaint history is.
+  const actsOnCn = s.canActOnCn("cn_approval");
+  const seesCn = actsOnCn || s.isModuleViewer;
 
   const pending = useMemo<AnyRow[]>(() => {
     const complaints = MANAGEMENT_STEPS.flatMap((st) =>
@@ -71,21 +74,23 @@ export default function ApprovalQueue() {
         .filter((r): r is NonNullable<typeof r> => !!r)
         .map((r) => complaintRow(r, st)),
     );
-    const cns = seesCn ? s.creditNotes.filter((c) => c.status === "awaiting_cn_approval").map(cnRow) : [];
+    const cns = actsOnCn ? s.creditNotes.filter((c) => c.status === "awaiting_cn_approval").map(cnRow) : [];
     return [...complaints, ...cns];
-  }, [s, seesCn]);
+  }, [s, actsOnCn]);
 
   /** Completed rows, each with WHEN management acted — for the sort and the footer. */
   const completed = useMemo(() => {
     const complaints = MANAGEMENT_STEPS.flatMap((st) =>
-      s.completedFor(st).map((e) => ({ row: complaintRow(e.row, st), atIso: e.atIso })),
+      s.completedFor(st).map((e) => ({ row: complaintRow(e.row, st), atIso: e.atIso, lockReason: e.lockReason ?? null })),
     );
     const cns = seesCn
-      ? s.creditNotes.filter((c) => c.aprAt).map((c) => ({ row: cnRow(c), atIso: c.aprAt as string }))
+      ? s.creditNotes.filter((c) => c.aprAt).map((c) => ({ row: cnRow(c), atIso: c.aprAt as string, lockReason: null }))
       : [];
     return [...complaints, ...cns].sort((a, b) => b.atIso.localeCompare(a.atIso));
   }, [s, seesCn]);
   const doneAt = useMemo(() => new Map(completed.map((e) => [e.row.key, e.atIso])), [completed]);
+  const lockOf = useMemo(() => new Map(completed.map((e) => [e.row.key, e.lockReason])), [completed]);
+  const originOf = (x: AnyRow) => (x.kind === "complaint" ? rmOriginLabelOf(x.r.rmOrigin) : "—");
 
   const dueOf = (x: AnyRow) => (x.kind === "complaint" ? s.dueIsoFor(x.r, stepOf(x)) : null);
 
@@ -123,6 +128,21 @@ export default function ApprovalQueue() {
       ),
       sortValue: rowTypeLabel,
       filter: { kind: "select", get: rowTypeLabel },
+    },
+    {
+      // Domestic / Import — raw material only; it says whose desk an RM row was.
+      key: "rmOrigin",
+      header: "Domestic / Import",
+      cell: (x) =>
+        x.kind === "complaint" && x.r.rmOrigin ? (
+          <span className={`inline-flex rounded-full px-2 py-0.5 text-[11.5px] font-medium whitespace-nowrap ${RM_ORIGIN_TONE[x.r.rmOrigin]}`}>
+            {originOf(x)}
+          </span>
+        ) : (
+          "—"
+        ),
+      sortValue: originOf,
+      filter: { kind: "select", get: originOf },
     },
     {
       key: "company",
@@ -260,6 +280,9 @@ export default function ApprovalQueue() {
               <Button size="sm" variant="ghost" onClick={() => setActing(x)}>
                 View
               </Button>
+            ) : lockOf.get(x.key) ? (
+              // A locked entry says WHY — the server is the gate, this is the explanation.
+              <span className="text-[11.5px] text-grey-2" title={lockOf.get(x.key) ?? ""}>Locked</span>
             ) : (
               <span className="text-[11.5px] text-grey-2">Done</span>
             )

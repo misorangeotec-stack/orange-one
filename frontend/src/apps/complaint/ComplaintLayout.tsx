@@ -35,14 +35,11 @@ export default function ComplaintLayout() {
 
   const canPlant = s.canSeeQueue("plant");
   const canService = s.canSeeQueue("service");
-  // The compensation approvers sit on the same desk — see pages/queues/ApprovalQueue.
   // ONE management desk: FG approval, RM / other-supplier review, final review
   // and customer compensation all live on the Management Approval page.
   const canApprove =
     MANAGEMENT_STEPS.some((st) => s.canSeeQueue(st)) || s.isStepOwner("cn_approval");
   const canPurchase = s.canSeeQueue("purchase");
-  const canRmManagement = s.canSeeQueue("rm_management");
-  const canReview = s.canSeeQueue("management_review");
   // No Setup owners: this one appears only for the person management handed a
   // complaint to. See store.canSeeQueue.
   const canAssignee = s.canSeeQueue("assignee");
@@ -57,8 +54,6 @@ export default function ComplaintLayout() {
     canService ||
     canApprove ||
     canPurchase ||
-    canRmManagement ||
-    canReview ||
     canAssignee;
 
   const nav = useMemo(
@@ -70,8 +65,6 @@ export default function ComplaintLayout() {
         canService,
         canApprove,
         canPurchase,
-        canRmManagement,
-        canReview,
         canAssignee,
         canMonitor,
         canRaise: s.canRaise,
@@ -86,8 +79,6 @@ export default function ComplaintLayout() {
       canService,
       canApprove,
       canPurchase,
-      canRmManagement,
-      canReview,
       canAssignee,
       canMonitor,
       s.canRaise,

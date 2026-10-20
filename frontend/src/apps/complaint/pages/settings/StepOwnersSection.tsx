@@ -107,6 +107,16 @@ export default function StepOwnersSection() {
     setEmpIds((prev) => prev.filter((id) => allowed.has(id)));
   };
 
+  /**
+   * Do the row's steps hold DIFFERENT people today? Only possible on the
+   * management row (four keys). Saving gives everyone shown ALL of them, so
+   * the row says so rather than widening anyone's rights silently.
+   */
+  const differs = (row: OwnerRow) => {
+    const sets = row.keys.map((k) => [...(s.ownerFor(k)?.employeeIds ?? [])].sort().join(","));
+    return new Set(sets).size > 1;
+  };
+
   /** Everyone on any of the row's keys — for the management row, the union. */
   const idsOf = (row: OwnerRow, pick: "departmentIds" | "employeeIds") =>
     [...new Set(row.keys.flatMap((k) => s.ownerFor(k)?.[pick] ?? []))];
@@ -123,14 +133,9 @@ export default function StepOwnersSection() {
     setBusy(true);
     setErr(null);
     try {
-      for (const stepKey of editing.keys) {
-        await s.saveStepOwner({
-          stepKey,
-          departmentIds: deptIds,
-          designationId: null,
-          employeeIds: empIds,
-        });
-      }
+      await s.saveStepOwners(
+        editing.keys.map((stepKey) => ({ stepKey, departmentIds: deptIds, designationId: null, employeeIds: empIds })),
+      );
       setEditing(null);
     } catch (e) {
       setErr((e as Error).message);
@@ -169,6 +174,11 @@ export default function StepOwnersSection() {
                   <td className="px-4 py-3">
                     <div className="font-medium text-navy">{row.title}</div>
                     {note && <div className="text-[11px] text-grey-2">{note}</div>}
+                    {differs(row) && (
+                      <div className="text-[11px] text-amber-700">
+                        Different people own these approvals today — saving gives everyone listed all of them.
+                      </div>
+                    )}
                   </td>
                   <td className="px-4 py-3">
                     {ids.length ? (
