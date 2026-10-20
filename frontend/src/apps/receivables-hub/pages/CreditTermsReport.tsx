@@ -1,3 +1,4 @@
+import { useBackState } from "@/shared/lib/backState";
 import { useCallback, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
@@ -309,7 +310,7 @@ export default function CreditTermsReport() {
   const { label: fyLabel } = useFY();
   const source = useReceivablesSource();
 
-  const [search, setSearch] = useState("");
+  const [search, setSearch] = useBackState("CreditTermsReport.search", "");
   const [books, setBooks] = useState<string[]>([]);
   const [statuses, setStatuses] = useState<TermStatus[]>(INCOMPLETE);
   const [salesPersons, setSalesPersons] = useState<string[]>([]);

@@ -2,6 +2,7 @@ import { supabase } from "@/core/platform/supabase";
 import type { TaskLocation, WorkspaceSettings } from "../types";
 import type { Database } from "@/core/platform/database.types";
 import { mapTaskLocation } from "./fetchTaskData";
+import { formatDate, weekStartOf } from "@/shared/lib/time";
 import { clearReviewLocally, kraInsertColumns, rememberKraLocally } from "../lib/kraTasks";
 
 type WorkspaceSettingsUpdate = Database["public"]["Tables"]["workspace_settings"]["Update"];
@@ -391,41 +392,50 @@ export async function reviseTask(
 }
 
 /**
- * Reschedule a task by its due date.
- *  - Same week or earlier  → just move the due date (returns null).
- *  - A future week         → create a *continuation* task in that week and mark
- *                            the original `shifted`, linked both ways. Returns the
- *                            new task's id so the caller can navigate to it.
+ * Reschedule a task by its due date. Always the SAME task — no continuation copy,
+ * so the creator ("Created by" / "Assigned by") never changes hands.
+ *  - Same week or earlier  → just move the due date.
+ *  - A later week          → move the due date AND week_start, so the task shows in
+ *                            the new week (the old week stops counting it).
+ * Either way a `shifted` activity with the old → new date is logged on the task,
+ * so the move sits in its own history.
  *
- * The trigger auto-logs `shifted` (on the original's status update) and `created`
- * (on the continuation insert), so we don't log either here. The future-week shift
- * runs in the `shift_task_to_week` RPC so the insert + update are one transaction
- * (no half-applied shift); RLS still applies inside it.
+ * A recurring instance moved FORWARD is unlinked from its template (and flagged
+ * from_recurring so it still counts as recurring): generate_recurring_tasks skips a
+ * date when a task with that recurring_task_id is already due on it, so leaving the
+ * link would silently swallow the template's own instance on the new date. Returns null (kept so callers that used
+ * to navigate to a continuation still compile).
  */
 export async function rescheduleTask(
   task: {
     id: string;
     weekStart: string | null;
+    dueDate: string | null;
+    recurringTaskId: string | null;
   },
-  newDueDate: string
+  newDueDate: string,
+  actorId: string
 ): Promise<string | null> {
-  const targetWeek = mondayOf(newDueDate);
-  const currentWeek = task.weekStart ?? mondayOf(new Date().toISOString());
-  if (targetWeek <= currentWeek) {
-    const { error } = await supabase.from("tasks").update({ due_date: newDueDate }).eq("id", task.id);
-    if (error) throw new Error(error.message);
-    return null;
+  if (task.dueDate === newDueDate) return null;
+  const targetWeek = weekStartOf(newDueDate);
+  const currentWeek = task.weekStart ?? weekStartOf(new Date().toISOString());
+  const patch: Database["public"]["Tables"]["tasks"]["Update"] = { due_date: newDueDate };
+  if (targetWeek > currentWeek) patch.week_start = targetWeek;
+  if (task.recurringTaskId && (!task.dueDate || newDueDate > task.dueDate)) {
+    patch.recurring_task_id = null;
+    patch.from_recurring = true;
   }
-
-  // Future week → atomic shift via RPC (single transaction; the function sets
-  // created_by = auth.uid() inside, satisfying the insert RLS, and marks the
-  // original 'shifted' in the same transaction).
-  const { data, error } = await supabase.rpc("shift_task_to_week", {
-    p_task_id: task.id,
-    p_new_due_date: newDueDate,
-  });
+  const { error } = await supabase.from("tasks").update(patch).eq("id", task.id);
   if (error) throw new Error(error.message);
-  return data as string;
+
+  const { error: actErr } = await supabase.from("task_activity").insert({
+    task_id: task.id,
+    type: "shifted",
+    actor_id: actorId,
+    note: `${formatDate(task.dueDate)} → ${formatDate(newDueDate)}`,
+  });
+  if (actErr) throw new Error(actErr.message);
+  return null;
 }
 
 /**

@@ -513,6 +513,8 @@ export interface Candidate {
 
   /** One authoritative timestamp per stage, stamped inside the RPC that moved the card. */
   uploadedAt: string;
+  /** Who uploaded the CV (`created_by`) — the actor of "Collect Resumes". */
+  createdBy: string | null;
   hrShortlistedAt: string | null;
   hrShortlistedBy: string | null;
   // No sharedToHodAt / sharedToHodBy. The columns still exist in Postgres and keep

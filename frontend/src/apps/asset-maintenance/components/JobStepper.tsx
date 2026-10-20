@@ -45,6 +45,14 @@ export default function JobStepper({ job, fit }: { job: ServiceJob; fit?: boolea
     const deptName = (id: string) => s.departments.find((d) => d.id === id)?.name;
     const custodianId = s.assetById(job.assetId)?.custodianUserId ?? null;
 
+    // Who actually did each step, for the rail to show once it is done. "Due" is
+    // whoever raised the job — none for one the schedule opened on its own.
+    const actorOf: Partial<Record<StepKey, string | null>> = {
+      service_due: job.raisedBy,
+      schedule: job.scBy,
+      service_done: job.sdBy,
+      verify_close: job.vcBy,
+    };
     return STAGES.map((st) => {
       if (!st.step) {
         return { key: st.key, label: st.label, departments: [], people: [], hasStep: false };
@@ -72,9 +80,10 @@ export default function JobStepper({ job, fit }: { job: ServiceJob; fit?: boolea
         departments: (owner?.departmentIds ?? []).map(deptName).filter((n): n is string => !!n),
         people,
         hasStep: true,
+        doneBy: [s.personName(actorOf[st.step] ?? null)].filter((n) => n !== "—" && n !== "Unknown user"),
       };
     });
-  }, [s, job.assetId]);
+  }, [s, job]);
 
   return <PoStageRail nodes={nodes} activeIndex={activeIndex(job)} finished={job.status === "closed"} fit={fit} />;
 }

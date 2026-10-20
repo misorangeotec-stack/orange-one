@@ -1,23 +1,19 @@
 import { useEffect, useState } from "react";
-import { useNavigate } from "react-router-dom";
 import Modal from "@/shared/components/ui/Modal";
 import Button from "@/shared/components/ui/Button";
 import { FieldLabel, TextInput, TextArea } from "@/shared/components/ui/Form";
 import { weekStartOf, todayIso } from "@/shared/lib/time";
 import { useTaskStore } from "../mock/store";
 import type { Task } from "../types";
-import { useTaskDetailEmbed } from "./TaskDetailEmbed";
 
 /**
  * Revise a task with a follow-up date. If the follow-up lands in a LATER week the
- * action becomes a shift (the task is marked Shifted and a fresh copy opens in
- * that week) — allowed even once the weekly revision limit is hit. A same-week
+ * action becomes a shift (the SAME task's due date moves to that week — no
+ * copy) — allowed even once the weekly revision limit is hit. A same-week
  * follow-up is a true in-week revision and is blocked at the limit.
  */
 export default function ReviseModal({ task, open, onClose }: { task: Task; open: boolean; onClose: () => void }) {
   const { reviseTask, revisionInfo } = useTaskStore();
-  const navigate = useNavigate();
-  const embed = useTaskDetailEmbed();
   const info = revisionInfo(task);
   const [followUpDate, setFollowUpDate] = useState("");
   const [note, setNote] = useState("");
@@ -47,14 +43,8 @@ export default function ReviseModal({ task, open, onClose }: { task: Task; open:
     setBusy(true);
     setError("");
     try {
-      const shiftedToId = await reviseTask(task.id, { followUpDate, note: note.trim() || undefined });
+      await reviseTask(task.id, { followUpDate, note: note.trim() || undefined });
       onClose();
-      // Shifted to a later week → jump to the continuation task that opened there.
-      // Embedded (scorecard slide-over) it opens in the same panel instead.
-      if (shiftedToId) {
-        if (embed) embed.openTask(shiftedToId);
-        else navigate(`/task-management/tasks/${shiftedToId}`);
-      }
     } catch (e) {
       setError((e as Error).message);
     } finally {

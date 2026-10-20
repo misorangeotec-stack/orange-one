@@ -1,3 +1,4 @@
+import { useBackState } from "@/shared/lib/backState";
 import { useEffect, useMemo, useState, Fragment, type ReactNode } from "react";
 import { Link } from "react-router-dom";
 import * as XLSX from "xlsx-js-style";
@@ -117,7 +118,7 @@ export default function TopExposureReport() {
   const [categories, setCategories] = useState<string[]>([]);
   const [companies, setCompanies] = useState<string[]>([]);
   const [locations, setLocations] = useState<string[]>([]);
-  const [search, setSearch] = useState("");
+  const [search, setSearch] = useBackState("TopExposureReport.search", "");
 
   // Ranking / size
   const [rankBy, setRankBy] = useState<RankBy>("outstanding");

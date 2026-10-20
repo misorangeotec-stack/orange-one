@@ -1,3 +1,4 @@
+import { useBackState } from "@/shared/lib/backState";
 import { useMemo, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import { CornerDownLeft, Search } from "lucide-react";
@@ -57,7 +58,7 @@ export default function PlantTesting() {
   const [cat, setCat] = useState<CatTab>(params.get("cat") ?? "all");
   const [testNo, setTestNo] = useState<TestTab>(
     (["1", "2", "3"].includes(params.get("test") ?? "") ? Number(params.get("test")) : "all") as TestTab);
-  const [search, setSearch] = useState("");
+  const [search, setSearch] = useBackState("PlantTesting.search", "");
   const [open, setOpen] = useState<FlowTest | null>(null);
 
   const all = useMemo(() => joinTests(lotsQ.data ?? [], flow), [lotsQ.data, flow]);

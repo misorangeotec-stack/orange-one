@@ -1,3 +1,4 @@
+import { useBackState } from "@/shared/lib/backState";
 import {
   useState, useMemo, useEffect, useRef, useLayoutEffect, useCallback, Fragment,
   type ReactNode, type CSSProperties,
@@ -173,7 +174,7 @@ function CustomerCategoryInner() {
     : `${PERIOD_LABELS[preset]}${windowMonths.length ? ` (${windowMonths[0]} → ${windowMonths[windowMonths.length - 1]})` : ""}`;
 
   // ── Filters ───────────────────────────────────────────────────────────────────────
-  const [search, setSearch] = useState("");
+  const [search, setSearch] = useBackState("CustomerCategoryReport.search", "");
   const [customerNames, setCustomerNames] = useState<string[]>([]);
   const [groupNamesSel, setGroupNamesSel] = useState<string[]>([]);
   const [salespersons, setSalespersons] = useState<string[]>([]);

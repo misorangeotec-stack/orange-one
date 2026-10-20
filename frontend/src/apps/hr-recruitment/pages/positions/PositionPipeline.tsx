@@ -1,3 +1,4 @@
+import BackLink from "@/shared/components/ui/BackLink";
 import { useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import Avatar from "@/shared/components/ui/Avatar";
@@ -58,9 +59,7 @@ export default function PositionPipeline() {
   return (
     <div className="space-y-4">
       <div>
-        <Link to="/hr-recruitment/positions" className="text-[12.5px] font-semibold text-grey-2 hover:text-orange">
-          ← Positions
-        </Link>
+        <BackLink to="/hr-recruitment/positions" label="Positions" className="text-[12.5px] font-semibold text-grey-2 hover:text-orange" />
       </div>
 
       <div className="flex flex-wrap items-start justify-between gap-4">

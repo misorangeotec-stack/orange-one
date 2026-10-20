@@ -10,7 +10,7 @@ import { fetchKras, KRAS_QUERY_KEY } from "@/core/admin/kras";
 import { useTaskStore } from "../mock/store";
 import { useSession } from "../mock/session";
 import Combobox from "@/shared/components/ui/Combobox";
-import { awaitingKraReview, hodMayChangeKra, isKraReviewerOf, isKraTask, kraScore, kraToPick, pctLabel } from "../lib/kraTasks";
+import { awaitingKraReview, hodMayChangeKra, isKraReviewerOf, isKraTask, kraScore, kraToPick, pctLabel, seesKraWeights } from "../lib/kraTasks";
 import type { Task } from "../types";
 
 /**
@@ -53,6 +53,8 @@ export function KraBadge({ task }: { task: Task }) {
  */
 export default function KraTaskCard({ task }: { task: Task }) {
   const { visible, isReviewer } = useKraTaskAccess(task);
+  const { role } = useSession();
+  const showWt = seesKraWeights(role);
   const { reviewKraTask, actorById } = useTaskStore();
   const krasQ = useQuery({ queryKey: KRAS_QUERY_KEY, queryFn: fetchKras, enabled: visible });
   const [rating, setRating] = useState<number | null>(null);
@@ -130,11 +132,11 @@ export default function KraTaskCard({ task }: { task: Task }) {
           {task.kraOpen && !changedKra && (
             <p className="text-[11.5px] text-grey-2">Picked by {assigneeName ?? "the assignee"}</p>
           )}
-          {score && <p className="text-[12px] text-grey mt-0.5">Worth {pctLabel(score.max)} of the employee's KRA score</p>}
+          {score && showWt && <p className="text-[12px] text-grey mt-0.5">Worth {pctLabel(score.max)} of the employee's KRA score</p>}
         </>
       )}
 
-      {score && (
+      {score && showWt && (
         <dl className="mt-3.5 space-y-2 text-[12.5px]">
           <ScoreRow
             label="On completion"
@@ -183,11 +185,12 @@ export default function KraTaskCard({ task }: { task: Task }) {
                 value={reviewKraId}
                 onChange={(v) => { setPickKraId(v); setErr(""); }}
                 placeholder={krasQ.isLoading ? "Loading…" : assigneeKras.length ? "Pick the KRA" : "No KRAs set for this person yet"}
-                options={assigneeKras.map((k) => ({ value: k.id, label: k.name, sublabel: `KRA · Wt ${pctLabel(k.weight)}` }))}
+                options={assigneeKras.map((k) => ({ value: k.id, label: k.name, sublabel: showWt ? `KRA · Wt ${pctLabel(k.weight)}` : "KRA" }))}
               />
             </div>
           )}
-          {score && <p className="text-[11.5px] text-grey mb-2">How much of the review's {pctLabel(score.reviewMax)} has this earned?</p>}
+          {score && showWt && <p className="text-[11.5px] text-grey mb-2">How much of the review's {pctLabel(score.reviewMax)} has this earned?</p>}
+          {!showWt && <p className="text-[11.5px] text-grey mb-2">Rate this task from 1 to 10.</p>}
           <div className="grid grid-cols-5 gap-1.5">
             {Array.from({ length: 10 }, (_, i) => i + 1).map((n) => (
               <button
@@ -203,7 +206,7 @@ export default function KraTaskCard({ task }: { task: Task }) {
               </button>
             ))}
           </div>
-          {preview != null && score && (
+          {preview != null && score && showWt && (
             <p className="mt-2 text-[12px] text-grey">
               {pctLabel(score.completionMax)} + {rating}/10 × {pctLabel(score.reviewMax)} = <b className="text-navy">{pctLabel(preview)}</b> of {pctLabel(score.max)}
             </p>
@@ -236,7 +239,8 @@ function ScoreRow({ label, value }: { label: string; value: string }) {
  * the queue is empty, so a HOD who never gives KRA tasks never sees it.
  */
 export function KraReviewQueue() {
-  const { user } = useSession();
+  const { user, role } = useSession();
+  const showWt = seesKraWeights(role);
   const { tasks, profileById, actorById } = useTaskStore();
   const queue = tasks
     .filter((t) => awaitingKraReview(t) && isKraReviewerOf(t, user.id, (id) => profileById(id)?.hodIds))
@@ -259,7 +263,7 @@ export function KraReviewQueue() {
                 <span className="min-w-0">
                   <span className="block truncate text-[13px] font-medium text-navy">{t.title}</span>
                   <span className="text-[11.5px] text-grey">
-                    {who?.name ?? "—"} · {t.kraId ? `worth ${pctLabel(t.kraWeight ?? 0)}` : "KRA to be picked"}
+                    {who?.name ?? "—"} · {t.kraId ? (showWt ? `worth ${pctLabel(t.kraWeight ?? 0)}` : "KRA task") : "KRA to be picked"}
                     {t.completedAt && <> · completed <span title={formatDateTime(t.completedAt)}>{timeAgo(t.completedAt)}</span></>}
                   </span>
                 </span>
