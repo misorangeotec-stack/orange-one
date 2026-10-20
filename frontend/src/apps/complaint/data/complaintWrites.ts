@@ -357,6 +357,23 @@ export interface StepOwnerInput {
  *   `fms_complaint_is_step_owner` reads `employee_ids` and nothing else. Saving a
  *   department with no employees grants nobody, deliberately.
  */
+/**
+ * Several steps, ONE upsert — the Setup "Management Approval" row writes the
+ * same people to every management step, and must not leave them half-saved.
+ */
+export async function saveStepOwners(inputs: StepOwnerInput[]): Promise<void> {
+  const { error } = await db.from("fms_complaint_step_owners").upsert(
+    inputs.map((input) => ({
+      step_key: input.stepKey,
+      department_ids: input.departmentIds,
+      designation_id: input.designationId,
+      employee_ids: input.employeeIds,
+    })),
+    { onConflict: "step_key" },
+  );
+  if (error) throw new Error(error.message);
+}
+
 export async function saveStepOwner(input: StepOwnerInput): Promise<void> {
   const { error } = await db.from("fms_complaint_step_owners").upsert(
     {
