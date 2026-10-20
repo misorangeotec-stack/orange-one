@@ -3,6 +3,7 @@ import { Link } from "react-router-dom";
 import Card from "@/shared/components/ui/Card";
 import MasterCrud, { type MasterColumn, type MasterFieldDef } from "@/shared/components/ui/MasterCrud";
 import { useOcpiStore } from "../../store";
+import ServiceChecklistsTab from "./ServiceChecklistsTab";
 import {
   insertNamedMaster, updateNamedMaster,
   insertMachineCategory, updateMachineCategory,
@@ -23,7 +24,7 @@ import type { OcpiDryer, OcpiMasterType, OcpiNamedMaster, OcpiServiceCheckpoint 
  *   `OWNED_BY` below is the single place that says which — it must agree with
  *   the RLS policies in migration 20261021130000.
  */
-type Tab = Exclude<OcpiMasterType, "machine"> | "machine_category" | "dryer" | "service_check";
+type Tab = Exclude<OcpiMasterType, "machine"> | "machine_category" | "dryer" | "service_check" | "service_checklist";
 
 const TABS: { key: Tab; label: string }[] = [
   { key: "machine_category", label: "Machine categories" },
@@ -31,7 +32,9 @@ const TABS: { key: Tab; label: string }[] = [
   { key: "ink_type", label: "Ink types" },
   { key: "dryer_type", label: "Dryer categories" },
   { key: "dryer", label: "Dryers" },
-  { key: "service_check", label: "Service check points" },
+  // "Service check points" (service_check) is retired from the menu: the check points now
+  // come from each machine's checklist PDF (Service checklists tab, migration 20270131120000).
+  { key: "service_checklist", label: "Service checklists (PDF)" },
 ];
 
 /** Which master's owner may edit each tab. Mirrors the RLS in 20261021130000. */
@@ -43,6 +46,8 @@ const OWNED_BY: Record<Tab, OcpiMasterType> = {
   dryer: "dryer_type",
   // The Service Check's Yes/No list. Mirrors the RLS in 20270119120000.
   service_check: "machine",
+  // One checklist PDF per machine. Mirrors the RLS in 20270131120000.
+  service_checklist: "machine",
 };
 
 /**
@@ -231,7 +236,9 @@ export default function Masters() {
         </Card>
       )}
 
-      {tab === "service_check" ? (
+      {tab === "service_checklist" ? (
+        <ServiceChecklistsTab canManage={canManage} />
+      ) : tab === "service_check" ? (
         /*
           Every ACTIVE row here is a box to tick on every deal's Service Check.
           A finished check stores the NAME with its answer, so editing or
