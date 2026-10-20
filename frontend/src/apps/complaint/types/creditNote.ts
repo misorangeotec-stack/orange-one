@@ -1,5 +1,5 @@
 /**
- * Customer Credit Note — the fourth option on "Raise a complaint".
+ * Customer Compensation (built as "Customer Credit Note") — the fourth option on "Raise a complaint".
  *
  *   raise → MANAGEMENT APPROVAL (cn_approval)  approve → TALLY (cn_tally) → closed
  *                                               reject  → rejected
@@ -42,8 +42,10 @@ export interface CreditNote {
   /** Who agreed to it — one of APPROVED_BY_NAMES, or typed. */
   approvedByName: string;
   reason: string;
-  amount: number;
-  details: string;
+  /** Optional — "amount, if any". */
+  amount: number | null;
+  /** Retired from the form (the reason carries it); kept for any old row. */
+  details: string | null;
   submittedAt: string;
 
   aprDecision: "approve" | "reject" | null;
@@ -81,5 +83,5 @@ export interface CreditNoteDoc {
 export const APPROVED_BY_NAMES = ["Karan sir", "Ayush sir", "Manmohan sir", "Nakul sir"];
 
 /** ₹ with Indian grouping — 1,25,000.00. */
-export const formatCnAmount = (n: number): string =>
-  `₹${n.toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+export const formatCnAmount = (n: number | null): string =>
+  n == null ? "—" : `₹${n.toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;

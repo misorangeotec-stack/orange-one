@@ -155,7 +155,7 @@ export function buildComplaintNav(opts: {
   if (opts.canAssignee) queue("Assigned to Me", queueHref("assignee"), ic.assignee);
   if (opts.canReview) queue("Management Review", queueHref("management-review"), ic.close);
   // One page for the whole credit-note chain: approval → Tally → closed.
-  if (opts.canSeeCreditNotes) queue("Customer Credit Notes", creditNotesHref(), ic.creditNote);
+  if (opts.canSeeCreditNotes) queue("Customer Compensation", creditNotesHref(), ic.creditNote);
 
   let adminUsed = false;
   const admin = (label: string, to: string, icon: JSX.Element) => {

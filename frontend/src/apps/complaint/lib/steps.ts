@@ -123,8 +123,8 @@ export const STEPS: StepDef[] = [
  *   fms_complaint_step_owners table, keyed `cn_approval` / `cn_tally`.
  */
 export const CN_STEPS: StepDef[] = [
-  { key: "cn_approval", index: 9, title: "Credit Note — Management Approval", short: "CN approval", scope: "request" },
-  { key: "cn_tally", index: 10, title: "Credit Note — Tally Entry", short: "CN Tally", scope: "request" },
+  { key: "cn_approval", index: 9, title: "Compensation — Management Approval", short: "Approval", scope: "request" },
+  { key: "cn_tally", index: 10, title: "Compensation — Tally Entry", short: "Tally", scope: "request" },
 ];
 
 export const stepByKey = (key: string): StepDef | undefined =>

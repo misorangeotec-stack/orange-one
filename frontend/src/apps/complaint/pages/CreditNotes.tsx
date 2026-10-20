@@ -16,12 +16,12 @@ import {
 } from "../types/creditNote";
 
 /**
- * Customer Credit Notes — the ONE page for the whole chain.
+ * Customer Compensation (built as Customer Credit Notes) — the ONE page for the whole chain.
  *
  *   Management Approval → Tally Entry → Closed   (or Rejected)
  *
  * Each tab is a bucket. Opening a row shows everything on it; whoever owns the
- * bucket it is in (Setup: "Credit Note — Management Approval" / "… Tally Entry")
+ * bucket it is in (Setup: "Compensation — Management Approval" / "… Tally Entry")
  * gets the form to move it on. Raising is the fourth option on Raise a complaint.
  */
 const TAB_STATUS: Record<CreditNoteTab, (c: CreditNote) => boolean> = {
@@ -94,17 +94,14 @@ export default function CreditNotes() {
     <div className="space-y-5">
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div>
-          <h1 className="text-[22px] font-bold text-navy">Customer Credit Notes</h1>
-          <p className="text-[12.5px] text-grey-2 mt-0.5">
-            Raised → management approval → Tally entry → closed.
-          </p>
+          <h1 className="text-[22px] font-bold text-navy">Customer Compensation</h1>
         </div>
         {s.canRaise && (
           <Link
             to={`${newRequestHref()}?type=credit_note`}
             className="rounded-lg bg-orange px-4 py-2 text-[13px] font-semibold text-white hover:opacity-90"
           >
-            Raise a credit note
+            Raise a compensation
           </Link>
         )}
       </div>
@@ -117,7 +114,7 @@ export default function CreditNotes() {
           <TextInput
             value={q}
             onChange={(e) => setQ(e.target.value)}
-            placeholder="Search CN no., customer, reason, Tally no.…"
+            placeholder="Search no., customer, salesperson, reason, Tally no.…"
             className="max-w-sm"
           />
         </div>
@@ -125,7 +122,7 @@ export default function CreditNotes() {
           <table className="w-full text-[13px]">
             <thead>
               <tr className="text-left text-grey-2 border-y border-line">
-                <th className="px-4 py-2.5 font-medium">CN No.</th>
+                <th className="px-4 py-2.5 font-medium">No.</th>
                 <th className="px-4 py-2.5 font-medium">Date</th>
                 <th className="px-4 py-2.5 font-medium">Customer</th>
                 <th className="px-4 py-2.5 font-medium">Salesperson</th>
@@ -142,7 +139,7 @@ export default function CreditNotes() {
               {rows.length === 0 ? (
                 <tr>
                   <td colSpan={11} className="px-4 py-8 text-center text-grey-2">
-                    No credit notes here.
+                    Nothing here.
                   </td>
                 </tr>
               ) : (

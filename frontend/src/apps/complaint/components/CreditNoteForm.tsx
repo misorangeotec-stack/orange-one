@@ -35,26 +35,28 @@ const withTyped = (names: string[], value: string) =>
   [...(value && !names.includes(value) ? [value] : []), ...names].map((n) => ({ value: n, label: n }));
 
 /**
- * Raise a Customer Credit Note — the fourth option on "Raise a complaint".
+ * Raise a Customer Compensation — the fourth option on "Raise a complaint".
  *
- *   Customer name · Reason for credit note · Amount · Full details
+ *   Customer name · Amount (if any) · Salesperson · Approved by ·
+ *   Reason for compensation · Attachments
+ *
+ * (Built as "Customer Credit Note", renamed by the user; the tables, RPCs and
+ * code names keep the credit-note wording.)
  *
  * Submit sends it to MANAGEMENT APPROVAL (Setup step `cn_approval`); once
  * approved it waits in the TALLY bucket (`cn_tally`), which records the Tally
  * no., an attachment and a remark and closes it.
  */
 interface CnForm {
-  companyId: string;
   partyId: string;
   partyName: string;
   salespersonName: string;
   approvedByName: string;
   reason: string;
   amount: string;
-  details: string;
 }
 
-const EMPTY: CnForm = { companyId: "", partyId: "", partyName: "", salespersonName: "", approvedByName: "", reason: "", amount: "", details: "" };
+const EMPTY: CnForm = { partyId: "", partyName: "", salespersonName: "", approvedByName: "", reason: "", amount: "" };
 
 function ErrorText({ children }: { children: string }) {
   if (!children) return null;
@@ -94,16 +96,20 @@ export default function CreditNoteForm() {
   if (!form.partyName.trim()) errors.partyName = "Customer name is required.";
   if (!form.salespersonName.trim()) errors.salespersonName = "Salesperson is required.";
   if (!form.approvedByName.trim()) errors.approvedByName = "Approved by is required.";
-  if (!form.reason.trim()) errors.reason = "Reason for credit note is required.";
-  if (!form.amount.trim()) errors.amount = "Amount of the credit note is required.";
-  else if (!Number.isFinite(amount) || amount <= 0) errors.amount = "Enter an amount more than zero.";
-  if (!form.details.trim()) errors.details = "Full details are required.";
+  if (!form.reason.trim()) errors.reason = "Reason for compensation is required.";
+  // Amount is optional ("if any") — but a typed one must be a real amount.
+  if (form.amount.trim() && (!Number.isFinite(amount) || amount <= 0)) errors.amount = "Enter an amount more than zero, or leave it blank.";
   const isValid = Object.keys(errors).length === 0;
   const err = (k: keyof CnForm) => (touched ? (errors[k] ?? "") : "");
 
-  const companyOpts = s.companies.map((c) => ({ value: c.id, label: c.name }));
-  const customers = s.partiesFor(form.companyId || null, "finished_good", form.partyId || null);
-  const partyOpts = customers.map((p) => ({ value: p.id, label: p.name }));
+  // Every customer, all companies — the company shows under the name so two
+  // ledgers of the same firm in different books can be told apart.
+  const customers = s.partiesFor(null, "finished_good", form.partyId || null);
+  const partyOpts = customers.map((p) => ({
+    value: p.id,
+    label: p.name,
+    sublabel: p.companyId ? s.companyName(p.companyId) : undefined,
+  }));
 
   const saveDraft = () => {
     const typed = (Object.keys(form) as (keyof CnForm)[]).some((k) => form[k].trim() !== "");
@@ -122,14 +128,15 @@ export default function CreditNoteForm() {
     setSubmitError("");
     try {
       const id = await s.submitCreditNote({
-        companyId: form.companyId || null,
+        // The customer's own book, when one was picked from the list.
+        companyId: customers.find((x) => x.id === form.partyId)?.companyId ?? null,
         partyId: form.partyId || null,
         partyName: form.partyName.trim(),
         salespersonName: form.salespersonName.trim(),
         approvedByName: form.approvedByName.trim(),
         reason: form.reason.trim(),
-        amount: Math.round(amount * 100) / 100,
-        details: form.details.trim(),
+        amount: form.amount.trim() ? Math.round(amount * 100) / 100 : null,
+        details: null,
         requesterName: user.name,
       });
       // After the credit note exists — the storage path starts with its id.
@@ -139,7 +146,7 @@ export default function CreditNoteForm() {
           await s.uploadCreditNoteDoc(id, "raise", "raise", file);
         } catch (e) {
           setSubmitError(
-            `The credit note was saved, but "${file.name}" did not upload: ${e instanceof Error ? e.message : String(e)}`,
+            `The compensation was saved, but "${file.name}" did not upload: ${e instanceof Error ? e.message : String(e)}`,
           );
         }
       }
@@ -161,26 +168,13 @@ export default function CreditNoteForm() {
           setFiles(f);
           setTouched(false);
         }}
-        noun="credit note"
+        noun="compensation"
       />
 
       <Card className="p-5">
-        <h2 className="text-[15px] font-bold text-navy">Customer credit note</h2>
+        <h2 className="text-[15px] font-bold text-navy">Customer compensation</h2>
 
         <div className="mt-4 grid gap-4 sm:grid-cols-2">
-          <div>
-            <FieldLabel label="Company">
-              <Combobox
-                value={form.companyId}
-                onChange={(v) => setForm((f) => ({ ...f, companyId: v }))}
-                options={companyOpts}
-                placeholder="Any company"
-                searchable
-                clearable
-              />
-            </FieldLabel>
-          </div>
-
           <div>
             <FieldLabel strong label="Customer Name" required>
               <Combobox
@@ -205,6 +199,18 @@ export default function CreditNoteForm() {
               />
             )}
             <ErrorText>{err("partyName")}</ErrorText>
+          </div>
+
+          <div>
+            <FieldLabel strong label="Amount (₹)">
+              <TextInput
+                inputMode="decimal"
+                value={form.amount}
+                onChange={(e) => set("amount", e.target.value.replace(/[^\d.,]/g, ""))}
+                placeholder="if any"
+              />
+            </FieldLabel>
+            <ErrorText>{err("amount")}</ErrorText>
           </div>
 
           <div>
@@ -239,39 +245,16 @@ export default function CreditNoteForm() {
             <ErrorText>{err("approvedByName")}</ErrorText>
           </div>
 
-          <div>
-            <FieldLabel strong label="Reason for credit note" required>
-              <TextInput
+          <div className="sm:col-span-2">
+            <FieldLabel strong label="Reason for compensation" required>
+              <TextArea
+                rows={4}
                 value={form.reason}
                 onChange={(e) => set("reason", e.target.value)}
-                placeholder="e.g. rate difference, quality claim, short supply"
+                placeholder="e.g. rate difference, quality claim, short supply — and what was agreed with the customer"
               />
             </FieldLabel>
             <ErrorText>{err("reason")}</ErrorText>
-          </div>
-
-          <div>
-            <FieldLabel strong label="Amount of the credit note (₹)" required>
-              <TextInput
-                inputMode="decimal"
-                value={form.amount}
-                onChange={(e) => set("amount", e.target.value.replace(/[^\d.,]/g, ""))}
-                placeholder="0.00"
-              />
-            </FieldLabel>
-            <ErrorText>{err("amount")}</ErrorText>
-          </div>
-
-          <div className="sm:col-span-2">
-            <FieldLabel strong label="Full details — why we are giving this credit note" required>
-              <TextArea
-                rows={5}
-                value={form.details}
-                onChange={(e) => set("details", e.target.value)}
-                placeholder="What happened, which invoice(s) it relates to, how the amount was worked out, and what was agreed with the customer."
-              />
-            </FieldLabel>
-            <ErrorText>{err("details")}</ErrorText>
           </div>
 
           <div className="sm:col-span-2">

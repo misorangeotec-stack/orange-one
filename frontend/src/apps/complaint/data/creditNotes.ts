@@ -21,8 +21,8 @@ export const mapCreditNote = (r: any): CreditNote => ({
   salespersonName: r.salesperson_name ?? "",
   approvedByName: r.approved_by_name ?? "",
   reason: r.reason ?? "",
-  amount: Number(r.amount ?? 0),
-  details: r.details ?? "",
+  amount: r.amount == null ? null : Number(r.amount),
+  details: r.details ?? null,
   submittedAt: r.submitted_at,
   aprDecision: r.apr_decision ?? null,
   aprNote: r.apr_note ?? null,
@@ -58,8 +58,8 @@ export interface CreditNoteInput {
   salespersonName: string;
   approvedByName: string;
   reason: string;
-  amount: number;
-  details: string;
+  amount: number | null;
+  details: string | null;
   requesterName: string;
 }
 
@@ -72,8 +72,8 @@ export async function submitCreditNote(input: CreditNoteInput): Promise<string> 
       salesperson_name: input.salespersonName,
       approved_by_name: input.approvedByName,
       reason: input.reason,
-      amount: input.amount,
-      details: input.details,
+      amount: input.amount ?? "",
+      details: input.details ?? "",
       requester_name: input.requesterName,
     },
   });

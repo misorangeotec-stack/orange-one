@@ -140,12 +140,12 @@ export default function StepOwnersSection() {
                     )}
                     {st.key === "cn_approval" && (
                       <div className="text-[11px] text-grey-2">
-                        Customer credit notes are approved here
+                        Customer compensations are approved here
                       </div>
                     )}
                     {st.key === "cn_tally" && (
                       <div className="text-[11px] text-grey-2">
-                        Posts the approved credit note in Tally and closes it
+                        Posts the approved compensation in Tally and closes it
                       </div>
                     )}
                     {st.key === "purchase" && (

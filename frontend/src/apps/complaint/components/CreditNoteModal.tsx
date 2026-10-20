@@ -61,7 +61,6 @@ export default function CreditNoteModal({ cn, onClose }: { cn: CreditNote; onClo
     }
   };
 
-  const companyName = cn.companyId ? s.companyName(cn.companyId) : "—";
 
   return (
     <Modal
@@ -69,7 +68,7 @@ export default function CreditNoteModal({ cn, onClose }: { cn: CreditNote; onClo
       onClose={onClose}
       size="2xl"
       title={`${cn.cnNo} · ${cn.partyName}`}
-      subtitle="Customer credit note"
+      subtitle="Customer compensation"
     >
       <div className="space-y-5">
         <div className="flex items-center gap-2">
@@ -83,18 +82,22 @@ export default function CreditNoteModal({ cn, onClose }: { cn: CreditNote; onClo
           <h3 className="text-[13px] font-bold text-navy mb-2">Raised</h3>
           <dl className="grid gap-x-6 gap-y-2 sm:grid-cols-2 text-[13px]">
             <Row label="Customer name" value={cn.partyName} />
-            <Row label="Company" value={companyName} />
+            <Row label="Amount" value={formatCnAmount(cn.amount)} strong />
             <Row label="Salesperson" value={cn.salespersonName} />
             <Row label="Approved by" value={cn.approvedByName} />
-            <Row label="Reason for credit note" value={cn.reason} />
-            <Row label="Amount" value={formatCnAmount(cn.amount)} strong />
             <Row label="Raised by" value={cn.requesterName || s.personName(cn.raisedBy)} />
             <Row label="Raised on" value={formatDateTime(cn.submittedAt)} />
           </dl>
           <div className="mt-3">
-            <div className="text-[11.5px] text-grey-2">Full details</div>
-            <p className="mt-0.5 whitespace-pre-wrap text-[13px] text-ink">{cn.details}</p>
+            <div className="text-[11.5px] text-grey-2">Reason for compensation</div>
+            <p className="mt-0.5 whitespace-pre-wrap text-[13px] text-ink">{cn.reason}</p>
           </div>
+          {cn.details && (
+            <div className="mt-3">
+              <div className="text-[11.5px] text-grey-2">Details</div>
+              <p className="mt-0.5 whitespace-pre-wrap text-[13px] text-ink">{cn.details}</p>
+            </div>
+          )}
           <div className="mt-3">
             <CnDocs cnId={cn.id} slot="raise" label="Attachments" canAttach={false} />
           </div>
@@ -146,7 +149,7 @@ export default function CreditNoteModal({ cn, onClose }: { cn: CreditNote; onClo
               <TextArea rows={3} value={note} onChange={(e) => setNote(e.target.value)} />
             </FieldLabel>
             <Button onClick={submitApproval} disabled={busy}>
-              {busy ? "Saving…" : decision === "reject" ? "Reject credit note" : "Approve — send to Tally"}
+              {busy ? "Saving…" : decision === "reject" ? "Reject compensation" : "Approve — send to Tally"}
             </Button>
           </section>
         )}
@@ -164,7 +167,7 @@ export default function CreditNoteModal({ cn, onClose }: { cn: CreditNote; onClo
               <TextArea rows={3} value={remarks} onChange={(e) => setRemarks(e.target.value)} />
             </FieldLabel>
             <Button onClick={submitTally} disabled={busy}>
-              {busy ? "Saving…" : "Submit — close credit note"}
+              {busy ? "Saving…" : "Submit — close compensation"}
             </Button>
           </section>
         )}

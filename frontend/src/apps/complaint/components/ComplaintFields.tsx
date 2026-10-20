@@ -56,7 +56,7 @@ export function ComplaintTypeCard({
   withCreditNote?: boolean;
 }) {
   const options = COMPLAINT_TYPES.map((v) => ({ value: v as string, label: COMPLAINT_TYPE_LABEL[v] }));
-  if (withCreditNote) options.push({ value: CREDIT_NOTE_CHOICE, label: "Customer Credit Note" });
+  if (withCreditNote) options.push({ value: CREDIT_NOTE_CHOICE, label: "Customer Compensation" });
   return (
     <Card className="p-5">
       <h2 className="text-[15px] font-bold text-navy">Type of complaint</h2>
@@ -77,7 +77,7 @@ export default function ComplaintFields({
   onPickCreditNote,
 }: {
   f: ComplaintFormApi;
-  /** Shows the fourth "Customer Credit Note" choice; called when it is picked. */
+  /** Shows the fourth "Customer Compensation" choice; called when it is picked. */
   onPickCreditNote?: () => void;
 }) {
   const s = useComplaintStore();

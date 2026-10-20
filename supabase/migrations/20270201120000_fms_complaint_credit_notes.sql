@@ -1,5 +1,11 @@
 -- ===========================================================================
--- COMPLAINT FMS — CUSTOMER CREDIT NOTE (the fourth option on "Raise a complaint").
+-- COMPLAINT FMS — CUSTOMER COMPENSATION (the fourth option on "Raise a complaint").
+--
+-- Built as "Customer Credit Note" and renamed by the user to "Customer
+-- Compensation" before go-live. Table, RPC and column names keep the
+-- credit-note wording; every user-facing text says compensation. The form asks
+-- only: customer · reason · amount (if any) · salesperson · approved by ·
+-- attachments — so amount and details are nullable.
 --
 -- WHAT THE USER ASKED FOR
 --   A fourth choice after Finished Good / Raw Material / Other Supplier
@@ -30,7 +36,7 @@
 --   for p_entity_type = 'request'; 'credit_note' rows notify in the bell and
 --   are skipped by the mailer. Nothing about the live complaint email changes.
 --
--- ⚠ NUMBERING: CCN-<fy>-0001, its own scope 'credit_note:<fy>', so complaint
+-- ⚠ NUMBERING: CC-<fy>-0001, its own scope 'credit_note:<fy>', so complaint
 --   numbers (CMP-) are untouched.
 --
 -- ⚠ DOCUMENTS live in the existing fms-complaint-docs bucket under
@@ -65,8 +71,10 @@ create table if not exists public.fms_complaint_credit_notes (
   -- offers four names but accepts any.
   approved_by_name text not null check (btrim(approved_by_name) <> ''),
   reason          text not null check (btrim(reason) <> ''),
-  amount          numeric(14, 2) not null check (amount > 0),
-  details         text not null check (btrim(details) <> ''),
+  -- "Amount, if any" — null when there is none, never zero.
+  amount          numeric(14, 2) check (amount is null or amount > 0),
+  -- Retired from the form before go-live (the reason carries it). Kept nullable.
+  details         text,
   submitted_at    timestamptz not null default now(),
 
   -- management approval
@@ -87,7 +95,7 @@ create table if not exists public.fms_complaint_credit_notes (
 );
 
 comment on table public.fms_complaint_credit_notes is
-  'Customer credit notes raised from the Complaint module: raise -> management approval (cn_approval) -> Tally entry (cn_tally) -> closed. Every write is a security-definer RPC.';
+  'Customer compensations (built as credit notes) raised from the Complaint module: raise -> management approval (cn_approval) -> Tally entry (cn_tally) -> closed. Every write is a security-definer RPC.';
 
 create index if not exists fms_complaint_credit_notes_status_idx on public.fms_complaint_credit_notes (status);
 create index if not exists fms_complaint_credit_notes_raised_idx on public.fms_complaint_credit_notes (raised_by);
@@ -216,23 +224,25 @@ declare
   v_me     text := coalesce((select name from public.profiles where id = auth.uid()), 'Someone');
 begin
   if not public.fms_complaint_can_raise(auth.uid()) then
-    raise exception 'Not authorized to raise a credit note';
+    raise exception 'Not authorized to raise a compensation';
   end if;
   if v_party is null then raise exception 'Customer name is required.'; end if;
   if v_sales is null then raise exception 'Salesperson is required.'; end if;
   if v_apprby is null then raise exception 'Approved by is required.'; end if;
-  if v_reason is null then raise exception 'Reason for credit note is required.'; end if;
-  if v_det is null then raise exception 'Full details are required.'; end if;
-  begin
-    v_amt := round((p->>'amount')::numeric, 2);
-  exception when others then
-    raise exception 'Amount of the credit note must be a number.';
-  end;
-  if v_amt is null or v_amt <= 0 then
-    raise exception 'Amount of the credit note must be more than zero.';
+  if v_reason is null then raise exception 'Reason for compensation is required.'; end if;
+  -- Optional: blank means "no amount".
+  if nullif(btrim(coalesce(p->>'amount', '')), '') is not null then
+    begin
+      v_amt := round((p->>'amount')::numeric, 2);
+    exception when others then
+      raise exception 'Amount must be a number.';
+    end;
+    if v_amt <= 0 then
+      raise exception 'Amount must be more than zero, or left blank.';
+    end if;
   end if;
 
-  v_no := 'CCN-' || v_fy || '-'
+  v_no := 'CC-' || v_fy || '-'
           || lpad(public.fms_complaint_next_seq('credit_note:' || v_fy)::text, 4, '0');
 
   insert into public.fms_complaint_credit_notes (
@@ -249,8 +259,9 @@ begin
 
   perform public.fms_complaint_announce(
     'credit_note', v_id, 'cn_raised',
-    format('%s raised customer credit note %s for %s (Rs %s) — awaiting management approval',
-           v_me, v_no, v_party, to_char(v_amt, 'FM99,99,99,99,990.00')),
+    format('%s raised customer compensation %s for %s%s — awaiting management approval',
+           v_me, v_no, v_party,
+           case when v_amt is null then '' else ' (Rs ' || to_char(v_amt, 'FM99,99,99,99,990.00') || ')' end),
     public.fms_complaint_step_owner_ids('cn_approval'),
     jsonb_build_object('cn_no', v_no, 'amount', v_amt)
   );
@@ -274,12 +285,12 @@ declare
   v_me   text := coalesce((select name from public.profiles where id = auth.uid()), 'Someone');
 begin
   select * into v_row from public.fms_complaint_credit_notes where id = p_cn for update;
-  if not found then raise exception 'Credit note not found'; end if;
+  if not found then raise exception 'Compensation not found'; end if;
   if not public.fms_complaint_cn_can_act('cn_approval', auth.uid()) then
-    raise exception 'Not authorized to approve credit notes';
+    raise exception 'Not authorized to approve compensations';
   end if;
   if v_row.status <> 'awaiting_cn_approval' then
-    raise exception 'Credit note % is not awaiting approval (it is %)', v_row.cn_no, v_row.status;
+    raise exception 'Compensation % is not awaiting approval (it is %)', v_row.cn_no, v_row.status;
   end if;
   if v_dec is null or v_dec not in ('approve', 'reject') then
     raise exception 'Choose Approve or Reject.';
@@ -301,14 +312,14 @@ begin
   if v_dec = 'approve' then
     perform public.fms_complaint_announce(
       'credit_note', p_cn, 'cn_approved',
-      format('%s approved credit note %s for %s — post it in Tally', v_me, v_row.cn_no, v_row.party_name),
+      format('%s approved compensation %s for %s — post it in Tally', v_me, v_row.cn_no, v_row.party_name),
       public.fms_complaint_step_owner_ids('cn_tally') || coalesce(array[v_row.raised_by], '{}'::uuid[]),
       jsonb_build_object('cn_no', v_row.cn_no, 'note', v_note)
     );
   else
     perform public.fms_complaint_announce(
       'credit_note', p_cn, 'cn_rejected',
-      format('%s rejected credit note %s for %s: %s', v_me, v_row.cn_no, v_row.party_name, v_note),
+      format('%s rejected compensation %s for %s: %s', v_me, v_row.cn_no, v_row.party_name, v_note),
       coalesce(array[v_row.raised_by], '{}'::uuid[]),
       jsonb_build_object('cn_no', v_row.cn_no, 'note', v_note)
     );
@@ -333,12 +344,12 @@ declare
   v_me  text := coalesce((select name from public.profiles where id = auth.uid()), 'Someone');
 begin
   select * into v_row from public.fms_complaint_credit_notes where id = p_cn for update;
-  if not found then raise exception 'Credit note not found'; end if;
+  if not found then raise exception 'Compensation not found'; end if;
   if not public.fms_complaint_cn_can_act('cn_tally', auth.uid()) then
-    raise exception 'Not authorized to post credit notes in Tally';
+    raise exception 'Not authorized to post compensations in Tally';
   end if;
   if v_row.status <> 'awaiting_cn_tally' then
-    raise exception 'Credit note % is not waiting for Tally (it is %)', v_row.cn_no, v_row.status;
+    raise exception 'Compensation % is not waiting for Tally (it is %)', v_row.cn_no, v_row.status;
   end if;
   if v_no is null then raise exception 'Tally number is required.'; end if;
 
@@ -354,7 +365,7 @@ begin
 
   perform public.fms_complaint_announce(
     'credit_note', p_cn, 'cn_closed',
-    format('%s posted credit note %s for %s in Tally (%s) — closed', v_me, v_row.cn_no, v_row.party_name, v_no),
+    format('%s posted compensation %s for %s in Tally (%s) — closed', v_me, v_row.cn_no, v_row.party_name, v_no),
     coalesce(array[v_row.raised_by], '{}'::uuid[]),
     jsonb_build_object('cn_no', v_row.cn_no, 'tally_no', v_no)
   );
@@ -377,18 +388,18 @@ declare
   v_row  public.fms_complaint_credit_notes%rowtype;
 begin
   select * into v_row from public.fms_complaint_credit_notes where id = p_cn;
-  if not found then raise exception 'Credit note not found'; end if;
+  if not found then raise exception 'Compensation not found'; end if;
   if not public.module_can_edit(auth.uid(), 'complaint')
      or not public.fms_complaint_can_see_cn(p_cn, auth.uid()) then
-    raise exception 'Not authorized to attach to this credit note';
+    raise exception 'Not authorized to attach to this compensation';
   end if;
   if v_path is null or split_part(v_path, '/', 1) <> 'cn' or split_part(v_path, '/', 2) <> p_cn::text then
-    raise exception 'Attachment path does not belong to this credit note';
+    raise exception 'Attachment path does not belong to this compensation';
   end if;
   if v_slot = 'tally' and not (
        v_row.status = 'awaiting_cn_tally' and public.fms_complaint_cn_can_act('cn_tally', auth.uid())
      ) then
-    raise exception 'Only the Tally desk can attach the Tally document, while the credit note waits for Tally';
+    raise exception 'Only the Tally desk can attach the Tally document, while the compensation waits for Tally';
   end if;
 
   insert into public.fms_complaint_credit_note_docs
@@ -421,7 +432,7 @@ begin
     raise exception 'Only the person who attached it can remove it';
   end if;
   if v_status in ('closed', 'rejected') and not public.is_admin(auth.uid()) then
-    raise exception 'This credit note is finished; its attachments are kept';
+    raise exception 'This compensation is finished; its attachments are kept';
   end if;
   -- The row only, like fms_complaint_delete_doc: Supabase refuses direct
   -- deletes from storage.objects, and the app removes the object itself.

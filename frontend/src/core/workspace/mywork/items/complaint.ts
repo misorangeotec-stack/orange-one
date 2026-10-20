@@ -66,7 +66,7 @@ export function complaintWorkItems(data: ComplaintData, uid: string, isAdmin: bo
       sourceLabel: appName(SOURCE),
       ref: c.cnNo,
       detail: c.partyName,
-      stage: step === "cn_approval" ? "Credit note approval" : "Credit note — Tally entry",
+      stage: step === "cn_approval" ? "Compensation approval" : "Compensation — Tally entry",
       dueIso: null,
       to: creditNotesHref({ tab: step === "cn_approval" ? "approval" : "tally", open: c.id }),
       assignment: isMine ? ("direct" as const) : ("team" as const),
