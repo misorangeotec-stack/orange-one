@@ -1,5 +1,5 @@
 import { supabase } from "@/core/platform/supabase";
-import type { CreditNote, CreditNoteDoc, CreditNoteDocSlot, CreditNoteStatus } from "../types/creditNote";
+import type { CnProduct, CreditNote, CreditNoteDoc, CreditNoteDocSlot, CreditNoteStatus } from "../types/creditNote";
 
 // Not in the generated Database types — same untyped alias as complaintFetch.ts.
 const db = supabase as any;
@@ -18,6 +18,8 @@ export const mapCreditNote = (r: any): CreditNote => ({
   companyId: r.company_id ?? null,
   partyId: r.party_id ?? null,
   partyName: r.party_name ?? "",
+  productType: (r.product_type ?? "other") as CnProduct,
+  productOther: r.product_other ?? null,
   salespersonName: r.salesperson_name ?? "",
   approvedByName: r.approved_by_name ?? "",
   reason: r.reason ?? "",
@@ -55,6 +57,8 @@ export interface CreditNoteInput {
   companyId: string | null;
   partyId: string | null;
   partyName: string;
+  productType: CnProduct;
+  productOther: string | null;
   salespersonName: string;
   approvedByName: string;
   reason: string;
@@ -69,6 +73,8 @@ export async function submitCreditNote(input: CreditNoteInput): Promise<string> 
       company_id: input.companyId ?? "",
       party_id: input.partyId ?? "",
       party_name: input.partyName,
+      product_type: input.productType,
+      product_other: input.productOther ?? "",
       salesperson_name: input.salespersonName,
       approved_by_name: input.approvedByName,
       reason: input.reason,

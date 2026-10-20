@@ -4,8 +4,9 @@
 -- Built as "Customer Credit Note" and renamed by the user to "Customer
 -- Compensation" before go-live. Table, RPC and column names keep the
 -- credit-note wording; every user-facing text says compensation. The form asks
--- only: customer · reason · amount (if any) · salesperson · approved by ·
--- attachments — so amount and details are nullable.
+-- only: company · customer · product · reason · amount (if any) ·
+-- salesperson · approved by · attachments — so amount and details are nullable.
+-- Product is Machine / Ink / Spare Parts / Head / Other; "Other" must say what.
 --
 -- WHAT THE USER ASKED FOR
 --   A fourth choice after Finished Good / Raw Material / Other Supplier
@@ -61,7 +62,15 @@ create table if not exists public.fms_complaint_credit_notes (
   current_step    text,
   raised_by       uuid references auth.users on delete set null,
   requester_name  text not null,
+  -- Required at submit (the RPC checks it); nullable only so a deleted
+  -- company does not delete the row.
   company_id      uuid references public.mst_companies on delete set null,
+  product_type    text not null check (product_type in ('machine', 'ink', 'spare_parts', 'head', 'other')),
+  -- What "Other" is. Required when product_type = 'other', empty otherwise.
+  product_other   text,
+  constraint fms_complaint_credit_notes_other_specified check (
+    (product_type = 'other') = (nullif(btrim(coalesce(product_other, '')), '') is not null)
+  ),
   -- Nullable FK with the name FROZEN alongside, exactly like the complaint row:
   -- a customer missing from the central master must not block a credit note.
   party_id        uuid references public.mst_parties on delete set null,
@@ -218,6 +227,9 @@ declare
   v_party  text := nullif(btrim(p->>'party_name'), '');
   v_reason text := nullif(btrim(p->>'reason'), '');
   v_sales  text := nullif(btrim(p->>'salesperson_name'), '');
+  v_comp   uuid := nullif(p->>'company_id', '')::uuid;
+  v_prod   text := nullif(btrim(p->>'product_type'), '');
+  v_prodo  text := nullif(btrim(p->>'product_other'), '');
   v_apprby text := nullif(btrim(p->>'approved_by_name'), '');
   v_det    text := nullif(btrim(p->>'details'), '');
   v_amt    numeric;
@@ -227,6 +239,15 @@ begin
     raise exception 'Not authorized to raise a compensation';
   end if;
   if v_party is null then raise exception 'Customer name is required.'; end if;
+  if v_comp is null then raise exception 'Company is required.'; end if;
+  if v_prod is null then raise exception 'Product is required.'; end if;
+  if v_prod not in ('machine', 'ink', 'spare_parts', 'head', 'other') then
+    raise exception 'Unknown product: %', v_prod;
+  end if;
+  if v_prod = 'other' and v_prodo is null then
+    raise exception 'Specify the product.';
+  end if;
+  if v_prod <> 'other' then v_prodo := null; end if;
   if v_sales is null then raise exception 'Salesperson is required.'; end if;
   if v_apprby is null then raise exception 'Approved by is required.'; end if;
   if v_reason is null then raise exception 'Reason for compensation is required.'; end if;
@@ -247,11 +268,11 @@ begin
 
   insert into public.fms_complaint_credit_notes (
     cn_no, status, current_step, raised_by, requester_name, company_id,
-    party_id, party_name, salesperson_name, approved_by_name, reason, amount, details, submitted_at
+    product_type, product_other, party_id, party_name, salesperson_name, approved_by_name, reason, amount, details, submitted_at
   ) values (
     v_no, 'awaiting_cn_approval', 'cn_approval', auth.uid(),
     coalesce(nullif(btrim(p->>'requester_name'), ''), v_me),
-    nullif(p->>'company_id', '')::uuid,
+    v_comp, v_prod, v_prodo,
     nullif(p->>'party_id', '')::uuid,
     v_party, v_sales, v_apprby, v_reason, v_amt, v_det, now()
   )

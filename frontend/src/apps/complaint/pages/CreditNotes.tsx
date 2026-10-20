@@ -11,6 +11,7 @@ import CreditNoteModal from "../components/CreditNoteModal";
 import {
   CREDIT_NOTE_STATUS_LABEL,
   CREDIT_NOTE_STATUS_TONE,
+  cnProductText,
   formatCnAmount,
   type CreditNote,
 } from "../types/creditNote";
@@ -74,7 +75,7 @@ export default function CreditNotes() {
     return all.filter(TAB_STATUS[tab]).filter(
       (c) =>
         !needle ||
-        [c.cnNo, c.partyName, c.salespersonName, c.approvedByName, c.reason, c.requesterName, c.tallyNo ?? ""].some((x) =>
+        [c.cnNo, c.partyName, cnProductText(c), c.companyId ? s.companyName(c.companyId) : "", c.salespersonName, c.approvedByName, c.reason, c.requesterName, c.tallyNo ?? ""].some((x) =>
           x.toLowerCase().includes(needle),
         ),
     );
@@ -125,7 +126,9 @@ export default function CreditNotes() {
               <tr className="text-left text-grey-2 border-y border-line">
                 <th className="px-4 py-2.5 font-medium">No.</th>
                 <th className="px-4 py-2.5 font-medium">Date</th>
+                <th className="px-4 py-2.5 font-medium">Company</th>
                 <th className="px-4 py-2.5 font-medium">Customer</th>
+                <th className="px-4 py-2.5 font-medium">Product</th>
                 <th className="px-4 py-2.5 font-medium">Salesperson</th>
                 <th className="px-4 py-2.5 font-medium">Approved by</th>
                 <th className="px-4 py-2.5 font-medium">Reason</th>
@@ -139,13 +142,13 @@ export default function CreditNotes() {
             <tbody>
               {s.loading ? (
                 <tr>
-                  <td colSpan={11} className="px-4 py-8 text-center text-grey-2">
+                  <td colSpan={13} className="px-4 py-8 text-center text-grey-2">
                     Loading…
                   </td>
                 </tr>
               ) : rows.length === 0 ? (
                 <tr>
-                  <td colSpan={11} className="px-4 py-8 text-center text-grey-2">
+                  <td colSpan={13} className="px-4 py-8 text-center text-grey-2">
                     Nothing here.
                   </td>
                 </tr>
@@ -160,7 +163,9 @@ export default function CreditNotes() {
                     >
                       <td className="px-4 py-2.5 font-semibold text-navy whitespace-nowrap">{c.cnNo}</td>
                       <td className="px-4 py-2.5 whitespace-nowrap">{dmy(c.submittedAt)}</td>
+                      <td className="px-4 py-2.5 whitespace-nowrap">{c.companyId ? s.companyName(c.companyId) : "—"}</td>
                       <td className="px-4 py-2.5">{c.partyName}</td>
+                      <td className="px-4 py-2.5 whitespace-nowrap">{cnProductText(c)}</td>
                       <td className="px-4 py-2.5 whitespace-nowrap">{c.salespersonName || "—"}</td>
                       <td className="px-4 py-2.5 whitespace-nowrap">{c.approvedByName || "—"}</td>
                       <td className="px-4 py-2.5 max-w-[260px] truncate" title={c.reason}>{c.reason}</td>

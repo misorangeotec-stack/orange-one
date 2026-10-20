@@ -8,6 +8,7 @@ import { dmy, formatDateTime } from "../lib/format";
 import {
   CREDIT_NOTE_STATUS_LABEL,
   CREDIT_NOTE_STATUS_TONE,
+  cnProductText,
   formatCnAmount,
   type CreditNote,
   type CreditNoteDocSlot,
@@ -81,7 +82,9 @@ export default function CreditNoteModal({ cn, onClose }: { cn: CreditNote; onClo
         <section>
           <h3 className="text-[13px] font-bold text-navy mb-2">Raised</h3>
           <dl className="grid gap-x-6 gap-y-2 sm:grid-cols-2 text-[13px]">
+            <Row label="Company" value={cn.companyId ? s.companyName(cn.companyId) : "—"} />
             <Row label="Customer name" value={cn.partyName} />
+            <Row label="Product" value={cnProductText(cn)} />
             <Row label="Amount" value={formatCnAmount(cn.amount)} strong />
             <Row label="Salesperson" value={cn.salespersonName} />
             <Row label="Approved by" value={cn.approvedByName} />

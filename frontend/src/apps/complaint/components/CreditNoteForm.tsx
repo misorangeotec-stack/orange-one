@@ -3,6 +3,7 @@ import { useQuery } from "@tanstack/react-query";
 import { useNavigate } from "react-router-dom";
 import Button from "@/shared/components/ui/Button";
 import Card from "@/shared/components/ui/Card";
+import ChoiceButtons from "@/shared/components/ui/ChoiceButtons";
 import Combobox from "@/shared/components/ui/Combobox";
 import { FieldLabel, TextArea, TextInput } from "@/shared/components/ui/Form";
 import SavedDraftsPanel, { SaveDraftButton } from "@/shared/components/ui/SavedDraftsPanel";
@@ -10,7 +11,7 @@ import { useSavedDrafts } from "@/shared/lib/useSavedDrafts";
 import { useSession } from "@/core/platform/session";
 import { useComplaintStore } from "../store";
 import { creditNotesHref } from "../lib/routes";
-import { APPROVED_BY_NAMES } from "../types/creditNote";
+import { APPROVED_BY_NAMES, CN_PRODUCT_LABEL, CN_PRODUCTS, type CnProduct } from "../types/creditNote";
 
 /**
  * The Tally salesperson list — ext_ledger_tags.salesperson on ConnectWave, the
@@ -37,8 +38,8 @@ const withTyped = (names: string[], value: string) =>
 /**
  * Raise a Customer Compensation — the fourth option on "Raise a complaint".
  *
- *   Customer name · Amount (if any) · Salesperson · Approved by ·
- *   Reason for compensation · Attachments
+ *   Company · Customer name · Product (Other → specify) · Amount (if any) ·
+ *   Salesperson · Approved by · Reason for compensation · Attachments
  *
  * (Built as "Customer Credit Note", renamed by the user; the tables, RPCs and
  * code names keep the credit-note wording.)
@@ -48,6 +49,9 @@ const withTyped = (names: string[], value: string) =>
  * no., an attachment and a remark and closes it.
  */
 interface CnForm {
+  companyId: string;
+  productType: "" | CnProduct;
+  productOther: string;
   partyId: string;
   partyName: string;
   salespersonName: string;
@@ -56,7 +60,7 @@ interface CnForm {
   amount: string;
 }
 
-const EMPTY: CnForm = { partyId: "", partyName: "", salespersonName: "", approvedByName: "", reason: "", amount: "" };
+const EMPTY: CnForm = { companyId: "", productType: "", productOther: "", partyId: "", partyName: "", salespersonName: "", approvedByName: "", reason: "", amount: "" };
 
 function ErrorText({ children }: { children: string }) {
   if (!children) return null;
@@ -93,6 +97,9 @@ export default function CreditNoteForm() {
 
   const amount = Number(form.amount.replace(/,/g, ""));
   const errors: Partial<Record<keyof CnForm, string>> = {};
+  if (!form.companyId) errors.companyId = "Company is required.";
+  if (!form.productType) errors.productType = "Product is required.";
+  else if (form.productType === "other" && !form.productOther.trim()) errors.productOther = "Specify the product.";
   if (!form.partyName.trim()) errors.partyName = "Customer name is required.";
   if (!form.salespersonName.trim()) errors.salespersonName = "Salesperson is required.";
   if (!form.approvedByName.trim()) errors.approvedByName = "Approved by is required.";
@@ -102,9 +109,10 @@ export default function CreditNoteForm() {
   const isValid = Object.keys(errors).length === 0;
   const err = (k: keyof CnForm) => (touched ? (errors[k] ?? "") : "");
 
-  // Every customer, all companies — the company shows under the name so two
-  // ledgers of the same firm in different books can be told apart.
-  const customers = s.partiesFor(null, "finished_good", form.partyId || null);
+  const companyOpts = s.companies.map((c) => ({ value: c.id, label: c.name }));
+  // The chosen company's customers (all companies until one is picked); the
+  // company shows under each name so same-named ledgers can be told apart.
+  const customers = s.partiesFor(form.companyId || null, "finished_good", form.partyId || null);
   const partyOpts = customers.map((p) => ({
     value: p.id,
     label: p.name,
@@ -128,8 +136,9 @@ export default function CreditNoteForm() {
     setSubmitError("");
     try {
       const id = await s.submitCreditNote({
-        // The customer's own book, when one was picked from the list.
-        companyId: customers.find((x) => x.id === form.partyId)?.companyId ?? null,
+        companyId: form.companyId || null,
+        productType: form.productType as CnProduct,
+        productOther: form.productType === "other" ? form.productOther.trim() : null,
         partyId: form.partyId || null,
         partyName: form.partyName.trim(),
         salespersonName: form.salespersonName.trim(),
@@ -176,6 +185,26 @@ export default function CreditNoteForm() {
 
         <div className="mt-4 grid gap-4 sm:grid-cols-2">
           <div>
+            <FieldLabel strong label="Company" required>
+              <Combobox
+                value={form.companyId}
+                onChange={(v) =>
+                  setForm((f) => {
+                    // A customer from another company's book no longer fits.
+                    const p = customers.find((x) => x.id === f.partyId);
+                    const keep = !p || !v || !p.companyId || p.companyId === v;
+                    return keep ? { ...f, companyId: v } : { ...f, companyId: v, partyId: "", partyName: "" };
+                  })
+                }
+                options={companyOpts}
+                placeholder="Select a company"
+                clearable
+              />
+            </FieldLabel>
+            <ErrorText>{err("companyId")}</ErrorText>
+          </div>
+
+          <div>
             <FieldLabel strong label="Customer Name" required>
               <Combobox
                 value={form.partyId}
@@ -199,6 +228,27 @@ export default function CreditNoteForm() {
               />
             )}
             <ErrorText>{err("partyName")}</ErrorText>
+          </div>
+
+          <div>
+            <FieldLabel strong label="Product" required>
+              <ChoiceButtons
+                ariaLabel="Product"
+                options={CN_PRODUCTS.map((v) => ({ value: v, label: CN_PRODUCT_LABEL[v] }))}
+                value={form.productType}
+                onChange={(v) => set("productType", v as CnProduct)}
+              />
+            </FieldLabel>
+            {form.productType === "other" && (
+              <TextInput
+                className="mt-2"
+                autoFocus
+                value={form.productOther}
+                onChange={(e) => set("productOther", e.target.value)}
+                placeholder="Specify the product"
+              />
+            )}
+            <ErrorText>{err("productType") || err("productOther")}</ErrorText>
           </div>
 
           <div>

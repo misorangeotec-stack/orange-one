@@ -37,6 +37,9 @@ export interface CreditNote {
   partyId: string | null;
   /** FROZEN AT SUBMIT, like a complaint's partyName. */
   partyName: string;
+  productType: CnProduct;
+  /** What "Other" is — set only when productType is "other". */
+  productOther: string | null;
   /** From the Tally salesperson list, or typed. */
   salespersonName: string;
   /** Who agreed to it — one of APPROVED_BY_NAMES, or typed. */
@@ -78,6 +81,22 @@ export interface CreditNoteDoc {
   uploadedBy: string | null;
   createdAt: string;
 }
+
+export type CnProduct = "machine" | "ink" | "spare_parts" | "head" | "other";
+
+export const CN_PRODUCTS: CnProduct[] = ["machine", "ink", "spare_parts", "head", "other"];
+
+export const CN_PRODUCT_LABEL: Record<CnProduct, string> = {
+  machine: "Machine",
+  ink: "Ink",
+  spare_parts: "Spare Parts",
+  head: "Head",
+  other: "Other",
+};
+
+/** "Ink", or "Other — <what was typed>". */
+export const cnProductText = (c: { productType: CnProduct; productOther: string | null }): string =>
+  c.productType === "other" ? `Other — ${c.productOther ?? ""}` : CN_PRODUCT_LABEL[c.productType] ?? "—";
 
 /** The names "Approved by" offers. Not a restriction — any typed name is accepted. */
 export const APPROVED_BY_NAMES = ["Karan sir", "Ayush sir", "Manmohan sir", "Nakul sir"];
