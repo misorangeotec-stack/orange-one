@@ -195,7 +195,7 @@ interface ComplaintStoreValue {
    *   module_can_edit, which is `canEdit` — AND it in at the button).
    */
   canActOnCn: (step: "cn_approval" | "cn_tally") => boolean;
-  /** The Customer Credit Notes page — nav link and route. */
+  /** The Tally Entry page (customer compensations) — nav link and route. */
   canSeeCreditNotes: boolean;
   submitCreditNote: (input: CN.CreditNoteInput) => Promise<string>;
   approveCreditNote: (id: string, input: CN.CreditNoteApprovalInput) => Promise<void>;
@@ -415,13 +415,9 @@ export function ComplaintStoreProvider({ children }: { children: ReactNode }) {
     }
     const canActOnCn = (step: "cn_approval" | "cn_tally"): boolean =>
       isAdmin || isProcessCoordinator || isStepOwner(step);
-    const canSeeCreditNotes =
-      isModuleViewer ||
-      isProcessCoordinator ||
-      canRaise ||
-      isStepOwner("cn_approval") ||
-      isStepOwner("cn_tally") ||
-      creditNotes.length > 0;
+    // The Tally Entry page — the Tally desk (isStepOwner includes admins),
+    // coordinators and view-only readers. Raisers follow theirs in My Complaints.
+    const canSeeCreditNotes = isModuleViewer || isProcessCoordinator || isStepOwner("cn_tally");
 
     const partiesFor = (
       companyId: string | null,

@@ -69,7 +69,7 @@ export function complaintWorkItems(data: ComplaintData, uid: string, isAdmin: bo
       stage: step === "cn_approval" ? "Compensation approval" : "Compensation — Tally entry",
       dueIso: null,
       // Approvals sit on the Management Approval page with every other one.
-      to: step === "cn_approval" ? queueHref("approval") : creditNotesHref({ tab: "tally", open: c.id }),
+      to: step === "cn_approval" ? queueHref("approval") : creditNotesHref({ open: c.id }),
       assignment: isMine ? ("direct" as const) : ("team" as const),
       isApproval: step === "cn_approval",
     }];

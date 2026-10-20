@@ -153,7 +153,8 @@ export function buildComplaintNav(opts: {
   // work; signing off a settled one is not. See lib/steps.ts.
   if (opts.canAssignee) queue("Assigned to Me", queueHref("assignee"), ic.assignee);
   // One page for the whole credit-note chain: approval → Tally → closed.
-  if (opts.canSeeCreditNotes) queue("Customer Compensation", creditNotesHref(), ic.creditNote);
+  // Customer Compensation's Tally desk. Its approvals are on Management Approval.
+  if (opts.canSeeCreditNotes) queue("Tally Entry", creditNotesHref(), ic.creditNote);
 
   let adminUsed = false;
   const admin = (label: string, to: string, icon: JSX.Element) => {

@@ -6,14 +6,15 @@ import { useOrgPersonById } from "@/core/platform/orgPeople";
 import { buildComplaintNav } from "./nav";
 import { MANAGEMENT_STEPS } from "./lib/steps";
 import { useComplaintStore } from "./store";
-import { B, creditNotesHref, requestHref } from "./lib/routes";
+import { B, requestHref, requestsHref } from "./lib/routes";
 import type { ComplaintNotification } from "./types";
 
 const linkFor = (n: ComplaintNotification): string =>
   n.entityType === "request"
     ? requestHref(n.entityId)
     : n.entityType === "credit_note"
-      ? creditNotesHref({ tab: "all", open: n.entityId })
+      // All Complaints opens a compensation's popup — every recipient can see it.
+      ? `${requestsHref()}?open=${n.entityId}`
       : B;
 
 /**
@@ -51,6 +52,7 @@ export default function ComplaintLayout() {
     s.isModuleViewer ||
     s.isProcessCoordinator ||
     s.requests.length > 0 ||
+    s.creditNotes.length > 0 ||
     canPlant ||
     canService ||
     canApprove ||

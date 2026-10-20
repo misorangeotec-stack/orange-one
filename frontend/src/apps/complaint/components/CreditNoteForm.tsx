@@ -10,7 +10,7 @@ import SavedDraftsPanel, { SaveDraftButton } from "@/shared/components/ui/SavedD
 import { useSavedDrafts } from "@/shared/lib/useSavedDrafts";
 import { useSession } from "@/core/platform/session";
 import { useComplaintStore } from "../store";
-import { creditNotesHref } from "../lib/routes";
+import { myRequestsHref } from "../lib/routes";
 import { APPROVED_BY_NAMES, CN_PRODUCT_LABEL, CN_PRODUCTS, type CnProduct } from "../types/creditNote";
 
 /**
@@ -160,7 +160,8 @@ export default function CreditNoteForm() {
         }
       }
       await drafts.finish();
-      navigate(creditNotesHref({ tab: "approval", open: id }));
+      // My Complaints, with the new compensation's popup open.
+      navigate(`${myRequestsHref()}?open=${id}`);
     } catch (e) {
       setSubmitError(e instanceof Error ? e.message : String(e));
     } finally {

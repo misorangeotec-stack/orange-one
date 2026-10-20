@@ -1,62 +1,32 @@
 import { useMemo, useState } from "react";
-import { Link, useSearchParams } from "react-router-dom";
-import Card from "@/shared/components/ui/Card";
+import { useSearchParams } from "react-router-dom";
+import QueueTable, { type QueueColumn } from "@/shared/components/ui/QueueTable";
 import Tabs from "@/shared/components/ui/Tabs";
-import { TextInput } from "@/shared/components/ui/Form";
-import { ScrollableTable } from "@/core/shared/components/ScrollableTable";
+import Button from "@/shared/components/ui/Button";
 import { useComplaintStore } from "../store";
-import { dmy } from "../lib/format";
-import { newRequestHref, type CreditNoteTab } from "../lib/routes";
+import { dmy, formatDateTime } from "../lib/format";
 import CreditNoteModal from "../components/CreditNoteModal";
-import {
-  CREDIT_NOTE_STATUS_LABEL,
-  CREDIT_NOTE_STATUS_TONE,
-  cnProductText,
-  formatCnAmount,
-  type CreditNote,
-} from "../types/creditNote";
+import { cnProductText, formatCnAmount, type CreditNote } from "../types/creditNote";
 
 /**
- * Customer Compensation (built as Customer Credit Notes) — the ONE page for the whole chain.
+ * TALLY ENTRY — the Tally desk's page for customer compensations.
  *
- *   Management Approval → Tally Entry → Closed   (or Rejected)
+ * The user cut it down to this: management approve compensations on the
+ * Management Approval page; this page is only "post it in Tally". Pending is
+ * what management approved and Tally has not yet got; entering the Tally no.
+ * closes it and it moves to Completed. Every compensation, at any stage, is
+ * also in All Complaints.
  *
- * Each tab is a bucket. Opening a row shows everything on it; whoever owns the
- * bucket it is in (Setup: "Compensation — Management Approval" / "… Tally Entry")
- * gets the form to move it on. Raising is the fourth option on Raise a complaint.
+ * `?open=<id>` opens any compensation's popup (the bell and My Control Center
+ * link here), whichever tab it would sit on.
  */
-const TAB_STATUS: Record<CreditNoteTab, (c: CreditNote) => boolean> = {
-  approval: (c) => c.status === "awaiting_cn_approval",
-  tally: (c) => c.status === "awaiting_cn_tally",
-  closed: (c) => c.status === "closed",
-  rejected: (c) => c.status === "rejected",
-  all: () => true,
-};
-
-const TABS: { key: CreditNoteTab; label: string }[] = [
-  { key: "approval", label: "Awaiting Approval" },
-  { key: "tally", label: "Tally Entry" },
-  { key: "closed", label: "Closed" },
-  { key: "rejected", label: "Rejected" },
-  { key: "all", label: "All" },
-];
-
 export default function CreditNotes() {
   const s = useComplaintStore();
   const [params, setParams] = useSearchParams();
-  const [q, setQ] = useState("");
+  const [tab, setTab] = useState(params.get("tab") === "done" ? "done" : "pending");
 
-  const tabParam = params.get("tab") as CreditNoteTab | null;
-  const tab: CreditNoteTab = tabParam && tabParam in TAB_STATUS ? tabParam : "approval";
   const openId = params.get("open");
   const opened = openId ? s.creditNoteById(openId) : undefined;
-
-  const setTab = (t: string) => {
-    const next = new URLSearchParams(params);
-    next.set("tab", t);
-    next.delete("open");
-    setParams(next, { replace: true });
-  };
   const openCn = (id: string | null) => {
     const next = new URLSearchParams(params);
     if (id) next.set("open", id);
@@ -64,130 +34,165 @@ export default function CreditNotes() {
     setParams(next, { replace: true });
   };
 
-  // Newest first.
-  const all = useMemo(
-    () => [...s.creditNotes].sort((a, b) => b.submittedAt.localeCompare(a.submittedAt)),
+  const pending = useMemo(() => s.creditNotes.filter((c) => c.status === "awaiting_cn_tally"), [s.creditNotes]);
+  const completed = useMemo(
+    () =>
+      s.creditNotes
+        .filter((c) => c.status === "closed")
+        .sort((a, b) => (b.tallyAt ?? "").localeCompare(a.tallyAt ?? "")),
     [s.creditNotes],
   );
 
-  const rows = useMemo(() => {
-    const needle = q.trim().toLowerCase();
-    return all.filter(TAB_STATUS[tab]).filter(
-      (c) =>
-        !needle ||
-        [c.cnNo, c.partyName, cnProductText(c), c.companyId ? s.companyName(c.companyId) : "", c.salespersonName, c.approvedByName, c.reason, c.requesterName, c.tallyNo ?? ""].some((x) =>
-          x.toLowerCase().includes(needle),
-        ),
-    );
-  }, [all, tab, q]);
+  const mayEnter = s.canEdit && s.canActOnCn("cn_tally");
+  const company = (c: CreditNote) => s.companyName(c.companyId);
 
-  // No counts while loading — a "0" there reads as "nothing pending".
-  const tabs = TABS.map((t) => ({ ...t, count: s.loading ? undefined : all.filter(TAB_STATUS[t.key]).length }));
+  const base: QueueColumn<CreditNote>[] = [
+    {
+      key: "no",
+      header: "No.",
+      cell: (c) => (
+        <button type="button" onClick={() => openCn(c.id)} className="font-semibold text-orange hover:underline">
+          {c.cnNo}
+        </button>
+      ),
+      sortValue: (c) => c.cnNo,
+      tdClassName: "whitespace-nowrap",
+    },
+    {
+      key: "raised",
+      header: "Raised",
+      cell: (c) => dmy(c.submittedAt),
+      sortValue: (c) => c.submittedAt,
+      tdClassName: "whitespace-nowrap",
+    },
+    {
+      key: "company",
+      header: "Company",
+      cell: company,
+      sortValue: company,
+      filter: { kind: "select", get: company },
+      tdClassName: "whitespace-nowrap",
+    },
+    {
+      key: "customer",
+      header: "Customer",
+      cell: (c) => c.partyName,
+      sortValue: (c) => c.partyName,
+      filter: { kind: "select", get: (c) => c.partyName },
+    },
+    {
+      key: "product",
+      header: "Product",
+      cell: cnProductText,
+      sortValue: cnProductText,
+      filter: { kind: "select", get: cnProductText },
+    },
+    {
+      key: "salesperson",
+      header: "Salesperson",
+      cell: (c) => c.salespersonName || "—",
+      sortValue: (c) => c.salespersonName,
+      filter: { kind: "select", get: (c) => c.salespersonName || "—" },
+    },
+    {
+      key: "approvedBy",
+      header: "Approved by",
+      cell: (c) => c.approvedByName || "—",
+      sortValue: (c) => c.approvedByName,
+      filter: { kind: "select", get: (c) => c.approvedByName || "—" },
+    },
+    {
+      key: "amount",
+      header: "Amount",
+      cell: (c) => formatCnAmount(c.amount),
+      sortValue: (c) => c.amount ?? 0,
+      tdClassName: "whitespace-nowrap text-right",
+    },
+    {
+      key: "approvedOn",
+      header: "Mgmt approved",
+      cell: (c) => dmy(c.aprAt),
+      sortValue: (c) => c.aprAt ?? "",
+      tdClassName: "whitespace-nowrap",
+    },
+  ];
 
-  /** What the row's button says, when this person can act on it. */
-  const actionFor = (c: CreditNote): string | null => {
-    if (!s.canEdit) return null;
-    if (c.status === "awaiting_cn_approval" && s.canActOnCn("cn_approval")) return "Approve";
-    if (c.status === "awaiting_cn_tally" && s.canActOnCn("cn_tally")) return "Enter Tally";
-    return null;
-  };
+  const completedColumns: QueueColumn<CreditNote>[] = [
+    ...base,
+    {
+      key: "tallyNo",
+      header: "Tally no.",
+      cell: (c) => c.tallyNo ?? "—",
+      sortValue: (c) => c.tallyNo ?? "",
+      tdClassName: "whitespace-nowrap",
+    },
+    {
+      key: "tallyOn",
+      header: "Entered",
+      cell: (c) => dmy(c.tallyAt),
+      sortValue: (c) => c.tallyAt ?? "",
+      tdClassName: "whitespace-nowrap",
+    },
+  ];
 
   return (
     <div className="space-y-5">
-      <div className="flex flex-wrap items-end justify-between gap-3">
-        <div>
-          <h1 className="text-[22px] font-bold text-navy">Customer Compensation</h1>
-        </div>
-        {s.canRaise && (
-          <Link
-            to={`${newRequestHref()}?type=credit_note`}
-            className="rounded-lg bg-orange px-4 py-2 text-[13px] font-semibold text-white hover:opacity-90"
-          >
-            Raise a compensation
-          </Link>
-        )}
-      </div>
+      <h1 className="text-[22px] font-bold text-navy">Tally Entry</h1>
 
-      <Card className="overflow-hidden">
-        <div className="px-4 pt-2">
-          <Tabs tabs={tabs} active={tab} onChange={setTab} />
-        </div>
-        <div className="px-4 py-3">
-          <TextInput
-            value={q}
-            onChange={(e) => setQ(e.target.value)}
-            placeholder="Search no., customer, salesperson, reason, Tally no.…"
-            className="max-w-sm"
-          />
-        </div>
-        <ScrollableTable>
-          <table className="w-full text-[13px]">
-            <thead>
-              <tr className="text-left text-grey-2 border-y border-line">
-                <th className="px-4 py-2.5 font-medium">No.</th>
-                <th className="px-4 py-2.5 font-medium">Date</th>
-                <th className="px-4 py-2.5 font-medium">Company</th>
-                <th className="px-4 py-2.5 font-medium">Customer</th>
-                <th className="px-4 py-2.5 font-medium">Product</th>
-                <th className="px-4 py-2.5 font-medium">Salesperson</th>
-                <th className="px-4 py-2.5 font-medium">Approved by</th>
-                <th className="px-4 py-2.5 font-medium">Reason</th>
-                <th className="px-4 py-2.5 font-medium text-right">Amount</th>
-                <th className="px-4 py-2.5 font-medium">Raised by</th>
-                <th className="px-4 py-2.5 font-medium">Status</th>
-                <th className="px-4 py-2.5 font-medium">Tally no.</th>
-                <th className="px-4 py-2.5 font-medium w-28"></th>
-              </tr>
-            </thead>
-            <tbody>
-              {s.loading ? (
-                <tr>
-                  <td colSpan={13} className="px-4 py-8 text-center text-grey-2">
-                    Loading…
-                  </td>
-                </tr>
-              ) : rows.length === 0 ? (
-                <tr>
-                  <td colSpan={13} className="px-4 py-8 text-center text-grey-2">
-                    Nothing here.
-                  </td>
-                </tr>
-              ) : (
-                rows.map((c) => {
-                  const action = actionFor(c);
-                  return (
-                    <tr
-                      key={c.id}
-                      onClick={() => openCn(c.id)}
-                      className="border-b border-line last:border-0 cursor-pointer hover:bg-page"
-                    >
-                      <td className="px-4 py-2.5 font-semibold text-navy whitespace-nowrap">{c.cnNo}</td>
-                      <td className="px-4 py-2.5 whitespace-nowrap">{dmy(c.submittedAt)}</td>
-                      <td className="px-4 py-2.5 whitespace-nowrap">{c.companyId ? s.companyName(c.companyId) : "—"}</td>
-                      <td className="px-4 py-2.5">{c.partyName}</td>
-                      <td className="px-4 py-2.5 whitespace-nowrap">{cnProductText(c)}</td>
-                      <td className="px-4 py-2.5 whitespace-nowrap">{c.salespersonName || "—"}</td>
-                      <td className="px-4 py-2.5 whitespace-nowrap">{c.approvedByName || "—"}</td>
-                      <td className="px-4 py-2.5 max-w-[260px] truncate" title={c.reason}>{c.reason}</td>
-                      <td className="px-4 py-2.5 text-right whitespace-nowrap font-medium">{formatCnAmount(c.amount)}</td>
-                      <td className="px-4 py-2.5 whitespace-nowrap">{c.requesterName}</td>
-                      <td className="px-4 py-2.5 whitespace-nowrap">
-                        <span className={`rounded-full px-2 py-0.5 text-[11.5px] font-semibold ${CREDIT_NOTE_STATUS_TONE[c.status]}`}>
-                          {CREDIT_NOTE_STATUS_LABEL[c.status]}
-                        </span>
-                      </td>
-                      <td className="px-4 py-2.5 whitespace-nowrap">{c.tallyNo ?? "—"}</td>
-                      <td className="px-4 py-2.5 text-right">
-                        <span className={action ? "text-orange font-semibold" : "text-grey-2"}>{action ?? "View"}</span>
-                      </td>
-                    </tr>
-                  );
-                })
-              )}
-            </tbody>
-          </table>
-        </ScrollableTable>
-      </Card>
+      <Tabs
+        tabs={[
+          { key: "pending", label: `Pending (${pending.length})` },
+          { key: "done", label: `Completed (${completed.length})` },
+        ]}
+        active={tab}
+        onChange={setTab}
+      />
+
+      {tab === "pending" ? (
+        <QueueTable<CreditNote>
+          rows={pending}
+          rowKey={(c) => c.id}
+          columns={base}
+          rowsLabel="compensations"
+          initialSort={{ key: "approvedOn", dir: "asc" }}
+          exportName="tally-entry"
+          exportTitle="Tally Entry"
+          emptyTitle="Nothing to enter in Tally"
+          emptyMessage="Compensations approved by management will appear here."
+          loading={s.loading}
+          readOnly={!s.canEdit}
+          actions={(c) => (
+            <Button size="sm" onClick={() => openCn(c.id)}>
+              {mayEnter ? "Enter Tally" : "View"}
+            </Button>
+          )}
+        />
+      ) : (
+        <QueueTable<CreditNote>
+          rows={completed}
+          rowKey={(c) => c.id}
+          columns={completedColumns}
+          rowsLabel="compensations"
+          initialSort={{ key: "tallyOn", dir: "desc" }}
+          exportName="tally-entry-done"
+          exportTitle="Tally Entry — completed"
+          emptyTitle="Nothing entered yet"
+          emptyMessage="Compensations posted in Tally will appear here."
+          loading={s.loading}
+          readOnly={!s.canEdit}
+          actions={(c) => (
+            <Button size="sm" variant="ghost" onClick={() => openCn(c.id)}>
+              View
+            </Button>
+          )}
+        />
+      )}
+
+      {tab === "done" && completed[0]?.tallyAt && (
+        <p className="text-[11.5px] text-grey-2">
+          Last entered {formatDateTime(completed[0].tallyAt)}
+        </p>
+      )}
 
       {opened && <CreditNoteModal cn={opened} onClose={() => openCn(null)} />}
     </div>

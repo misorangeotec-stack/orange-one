@@ -24,8 +24,8 @@ export const mastersHref = () => `${B}/masters`;
 export const monitoringHref = () => `${B}/monitoring`;
 export const settingsHref = () => `${B}/settings`;
 
-/** The Customer Credit Notes page. `tab` picks the bucket; `open` opens one credit note. */
-export type CreditNoteTab = "approval" | "tally" | "closed" | "rejected" | "all";
+/** The Tally Entry page (customer compensations). `tab` = pending | done; `open` opens one. */
+export type CreditNoteTab = "pending" | "done";
 export const creditNotesHref = (opts: { tab?: CreditNoteTab; open?: string } = {}) => {
   const q = new URLSearchParams();
   if (opts.tab) q.set("tab", opts.tab);
