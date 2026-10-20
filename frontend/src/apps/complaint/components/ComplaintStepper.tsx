@@ -183,10 +183,13 @@ export default function ComplaintStepper({ r }: { r: ComplaintRequest }) {
     closed: r.closedAt,
   };
 
-  /** Whoever actually did the step, once they have — better than its owners. */
+  /**
+   * Whoever actually did the step, once they have. Goes to the rail as `doneBy`,
+   * which it shows only on a DONE node — a pending node keeps its owners.
+   */
   const actorOf = (key: string): string | null => {
     if (key === "raise") return r.requesterName;
-    if (key === "assignee") return r.rmAssigneeName ?? (r.asgBy ? s.personName(r.asgBy) : null);
+    if (key === "assignee") return r.asgBy ? s.personName(r.asgBy) : r.rmAssigneeName;
     const by =
       key === "plant" ? r.plantBy
       : key === "service" ? (r.svcCloseBy ?? r.svcBy)
@@ -216,9 +219,14 @@ export default function ComplaintStepper({ r }: { r: ComplaintRequest }) {
 
         const owner = n.ownerKey ? s.stepOwners.find((o) => o.stepKey === n.ownerKey) : undefined;
         const actor = actorOf(n.key);
-        const people = actor
-          ? [actor]
-          : (owner?.employeeIds ?? []).map((id) => s.personName(id)).filter((nm) => nm !== "—");
+        // The assignee node is owned by the ONE person management handed it to,
+        // not by the step's Setup owners.
+        const people =
+          n.key === "assignee" && r.rmAssigneeName
+            ? [r.rmAssigneeName]
+            : n.key === "raise"
+              ? [r.requesterName].filter(Boolean)
+              : (owner?.employeeIds ?? []).map((id) => s.personName(id)).filter((nm) => nm !== "—");
 
         return {
           key: n.key,
@@ -227,6 +235,7 @@ export default function ComplaintStepper({ r }: { r: ComplaintRequest }) {
             .map((id) => s.orgDepartments.find((d) => d.id === id)?.name)
             .filter((nm): nm is string => !!nm),
           people,
+          doneBy: actor && actor !== "—" && actor !== "Unknown user" ? [actor] : undefined,
           hasStep: true,
           note: doneAt[n.key] ? dmy(doneAt[n.key]!) : undefined,
         };

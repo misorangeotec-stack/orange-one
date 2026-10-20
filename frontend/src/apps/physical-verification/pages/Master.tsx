@@ -1,3 +1,4 @@
+import { useBackState } from "@/shared/lib/backState";
 import { useEffect, useMemo, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Search } from "lucide-react";
@@ -57,7 +58,7 @@ export default function Master() {
   const people = useQuery({ queryKey: ["orgPeople"], queryFn: fetchOrgPeople, staleTime: 10 * 60_000 });
   const nameOf = (id: string | null | undefined) => (id ? people.data?.find((p) => p.id === id)?.name ?? "—" : "—");
 
-  const [search, setSearch] = useState("");
+  const [search, setSearch] = useBackState("Master.search", "");
   const [filter, setFilter] = useState<Filter>("all");
   const [picked, setPicked] = useState<Set<string>>(new Set());
   const [date, setDate] = useState(todayLocalIso());

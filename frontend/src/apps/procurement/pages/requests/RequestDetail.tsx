@@ -1,3 +1,4 @@
+import BackLink from "@/shared/components/ui/BackLink";
 import { useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import Card from "@/shared/components/ui/Card";
@@ -90,7 +91,7 @@ export default function RequestDetail() {
 
   return (
     <div className="space-y-5">
-      <Link to="/procurement/requests" className="text-[12.5px] text-grey hover:text-navy">← Requests</Link>
+      <BackLink to="/procurement/requests" label="Requests" className="text-[12.5px] text-grey hover:text-navy" />
 
       <div className="flex items-start justify-between gap-3 flex-wrap">
         <div>

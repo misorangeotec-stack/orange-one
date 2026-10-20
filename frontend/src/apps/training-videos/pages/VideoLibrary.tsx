@@ -1,3 +1,4 @@
+import { useBackState } from "@/shared/lib/backState";
 import { useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import Card from "@/shared/components/ui/Card";
@@ -56,7 +57,7 @@ export default function VideoLibrary() {
   const qc = useQueryClient();
   const q = useQuery({ queryKey: KEY, queryFn: fetchVideos });
 
-  const [search, setSearch] = useState("");
+  const [search, setSearch] = useBackState("VideoLibrary.search", "");
   const [editing, setEditing] = useState<{ id: string | null; draft: VideoDraft } | null>(null);
   const [removing, setRemoving] = useState<TrainingVideo | null>(null);
   const [err, setErr] = useState<string | null>(null);

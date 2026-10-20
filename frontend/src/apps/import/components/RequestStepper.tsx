@@ -1,7 +1,7 @@
 import { useMemo } from "react";
 import PoStageRail, { type PoStageRailNode } from "@/shared/components/ui/PoStageRail";
 import { useImportStore } from "../store";
-import { buildFlowNodes, flowIndex, poFlowIndex } from "./flowNodes";
+import { buildFlowNodes, flowDoneBy, flowIndex, poFlowIndex } from "./flowNodes";
 import type { PurchaseRequest } from "../types";
 
 /**
@@ -29,7 +29,21 @@ export default function RequestStepper({ request }: { request: PurchaseRequest }
     return s.qcInspections.some((q) => poIds.has(q.poId) && q.result === "rejected");
   }, [s, request]);
 
-  const nodes: PoStageRailNode[] = useMemo(() => buildFlowNodes(s, showReturnBranch), [s, showReturnBranch]);
+  // Who did each stage: every line of the requisition (the approver of each
+  // decision) and the POs its live lines landed on.
+  const doneBy = useMemo(() => {
+    const lines = s.itemsForRequest(request.id);
+    const poIds = lines
+      .filter((l) => l.status !== "rejected" && l.status !== "cancelled")
+      .map((l) => s.poItemForLine(l.id)?.poId)
+      .filter((id): id is string => !!id);
+    return flowDoneBy(s, lines, [...new Set(poIds)]);
+  }, [s, request]);
+
+  const nodes: PoStageRailNode[] = useMemo(
+    () => buildFlowNodes(s, showReturnBranch, doneBy),
+    [s, showReturnBranch, doneBy],
+  );
 
   const { activeIndex, finished } = useMemo(() => {
     const lines = s.itemsForRequest(request.id);

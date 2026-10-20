@@ -1,3 +1,4 @@
+import { useBackState } from "@/shared/lib/backState";
 import { useMemo, useState } from "react";
 import Card from "@/shared/components/ui/Card";
 import Button from "@/shared/components/ui/Button";
@@ -60,7 +61,7 @@ export default function ExpiryStatus() {
   const { q, today, progress, asOf, refreshing } = useExpiryStatus();
 
   const [tab, setTab] = useState<Tab>("todo");
-  const [search, setSearch] = useState("");
+  const [search, setSearch] = useBackState("ExpiryStatus.search", "");
   const [companies, setCompanies] = useState<string[]>([]);
   const [categories, setCategories] = useState<string[]>([]);
 

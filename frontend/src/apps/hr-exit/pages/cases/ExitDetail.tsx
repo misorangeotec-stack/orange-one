@@ -1,3 +1,4 @@
+import BackLink from "@/shared/components/ui/BackLink";
 import { useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import Card from "@/shared/components/ui/Card";
@@ -500,9 +501,7 @@ export default function ExitDetail() {
         </ul>
       </Card>
 
-      <Link to="/hr-exit/exits" className="inline-block text-[12.5px] font-semibold text-grey-2 hover:text-navy">
-        ← All exit cases
-      </Link>
+      <BackLink to="/hr-exit/exits" label="All exit cases" className="inline-block text-[12.5px] font-semibold text-grey-2 hover:text-navy" />
 
       {reviewing && <ManagerReviewModal case={c} open={reviewing} onClose={() => setReviewing(false)} />}
       {verifying && <HrVerifyModal case={c} open={verifying} onClose={() => setVerifying(false)} />}

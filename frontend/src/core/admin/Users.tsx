@@ -1,3 +1,4 @@
+import { useBackState } from "@/shared/lib/backState";
 import { useMemo, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import Card from "@/shared/components/ui/Card";
@@ -29,7 +30,7 @@ const ROLE_LABEL: Record<AppRole, string> = { admin: "Admin", hod: "HOD", sub_ho
 export default function Users() {
   const { profiles, departments, subDepartments, designations, bands, departmentById, subDepartmentById, designationById, bandById, profileById, deleteUser, canAddUser, canDeleteUser } = useDirectory();
   const navigate = useNavigate();
-  const [q, setQ] = useState("");
+  const [q, setQ] = useBackState("Users.q", "");
   const [role, setRole] = useState<AppRole | "all">("all");
   const [dept, setDept] = useState("all");
   const [subDept, setSubDept] = useState("all");

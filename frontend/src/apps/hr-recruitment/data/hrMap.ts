@@ -189,6 +189,7 @@ export const mapCandidate = (r: any): Candidate => ({
   duplicateAck: r.duplicate_ack ?? null,
   stage: toStage(r.stage),
   uploadedAt: r.uploaded_at,
+  createdBy: r.created_by ?? null,
   hrShortlistedAt: r.hr_shortlisted_at ?? null,
   hrShortlistedBy: r.hr_shortlisted_by ?? null,
   hodDecidedAt: r.hod_decided_at ?? null,
