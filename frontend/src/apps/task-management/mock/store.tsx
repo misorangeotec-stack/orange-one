@@ -104,9 +104,9 @@ interface TaskStoreValue {
   isWhenTask: (task: Task) => boolean;
   /**
    * Revise with a follow-up date. A follow-up in a LATER week is treated as a
-   * shift (original → 'shifted', a continuation task opens in that week) and
-   * returns the new task's id; a same/earlier-week follow-up is a true in-week
-   * revision (capped 2/week) and returns null.
+   * shift: the SAME task's due date (and week) move there — no copy. A
+   * same/earlier-week follow-up is a true in-week revision (capped 2/week).
+   * Always returns null.
    */
   reviseTask: (id: string, args: { followUpDate: string; note?: string }) => Promise<string | null>;
   rescheduleTask: (id: string, newDueDate: string) => Promise<string | null>;
@@ -635,38 +635,32 @@ export function TaskStoreProvider({ children }: { children: ReactNode }) {
       reviseTask: async (id, args) => {
         const task = tasks.find((t) => t.id === id);
         if (!task) return null;
-        // A follow-up date in a LATER week is a shift, not a revision: route it
-        // through the continuation mechanism (original → 'shifted', a fresh task
-        // opens in the new week) so the move is visible as a shift, and it's
-        // allowed even when the weekly revision limit is reached. Same-week (or
-        // earlier) follow-ups are true in-week revisions, capped at 2/week.
+        // A follow-up date in a LATER week is a shift, not a revision: the SAME
+        // task's due date moves there (logged as a shift in its own history), and
+        // it's allowed even when the weekly revision limit is reached. Same-week
+        // (or earlier) follow-ups are true in-week revisions, capped at 2/week.
         const targetWeek = weekStartOf(args.followUpDate);
         const currentWeek = task.weekStart ?? weekStartOf(todayIso());
         if (targetWeek > currentWeek) {
-          const newId = await rescheduleTaskWrite(task, args.followUpDate);
-          if (args.note && newId) await addRemarkWrite(newId, args.note, []);
-          // BOTH tasks changed: the original is marked 'shifted' (and gets its
-          // shifted_to link), the continuation is brand new.
-          await refreshTasks(id, newId);
-          return newId;
+          await rescheduleTaskWrite(task, args.followUpDate, user.id);
+          if (args.note) await addRemarkWrite(id, args.note, []);
+          await refreshTasks(id);
+          return null;
         }
         if (!revisionInfo(task).allowed) return null; // weekly revision limit / closed guard
         await reviseTaskWrite(id, user.id, { ...args, currentRevisionCount: task.revisionCount });
         await refreshTasks(id);
         return null;
       },
-      // rescheduleTask: LIVE (B4). Same/earlier week → move due date; future week →
-      // create a linked continuation task + mark the original shifted. Trigger logs
-      // the shifted/created activity; refetch and return the new id (if any).
+      // rescheduleTask: moves the SAME task's due date (and week, if later) and
+      // logs the old → new date in its history. No continuation copy, so the
+      // creator never changes. Always returns null.
       rescheduleTask: async (id, newDueDate) => {
         const task = tasks.find((t) => t.id === id);
         if (!task || !newDueDate) return null;
-        const newId = await rescheduleTaskWrite(task, newDueDate);
-        // A future-week reschedule shifts: original + continuation both change.
-        // Same/earlier week just moves the due date, so newId is null and this
-        // collapses to the single-task refresh.
-        await refreshTasks(id, newId);
-        return newId;
+        await rescheduleTaskWrite(task, newDueDate, user.id);
+        await refreshTasks(id);
+        return null;
       },
       // addRemark: LIVE (B4). Posts a remark + fans out @mention notifications via
       // the add_task_remark RPC (notifications has no client INSERT policy), then refetches.

@@ -60,10 +60,10 @@ export default function PeerTasks() {
 
   const peerTasks = useMemo(() => tasks.filter(isPeerTask), [tasks]);
 
-  // Given excludes anything assigned to me. That is not paranoia: a forward
-  // reschedule re-creates the task with created_by = whoever shifted it (RLS
-  // forces it — see shift_task_to_week), so a receiver who pushes a peer task to
-  // next week becomes its creator. Without this guard their own continuation
+  // Given excludes anything assigned to me. That is not paranoia: older forward
+  // reschedules re-created the task with created_by = whoever shifted it (see
+  // shift_task_to_week, no longer called), so a receiver who pushed a peer task
+  // to next week became its creator — those rows still exist. Without this guard their own continuation
   // would appear on their Given board as work they had handed out.
   const given = useMemo(
     () => peerTasks.filter((t) => t.createdBy === user.id && t.assignedTo !== user.id),

@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import Card from "@/shared/components/ui/Card";
 import Button from "@/shared/components/ui/Button";
@@ -34,7 +34,6 @@ export default function TaskDetail({ taskId }: { taskId?: string } = {}) {
   const id = taskId ?? params.id ?? "";
   const navigate = useNavigate();
   const embed = useTaskDetailEmbed();
-  const goToTask = (to: string) => (embed ? embed.openTask(to) : navigate(`/task-management/tasks/${to}`));
   const leave = () => (embed ? embed.close() : navigate("/task-management/tasks"));
   const { getTask, getRecurring, activityFor, revisionInfo, startTask, reopenTask, rescheduleTask, profileById, actorById, departmentById, canWrite, canStatusActions, canReschedule, locationById, taskLocationsComplete, setTaskLocationDone, setTaskLocationNa, setTaskLocationsDone, isWhenTask, setTaskNotApplicable, deletePersonalTask, deleteTask, markTaskNotificationsRead, mentionablePeople } = useTaskStore();
   const { user, role } = useSession();
@@ -99,8 +98,7 @@ export default function TaskDetail({ taskId }: { taskId?: string } = {}) {
 
   const onReschedule = async (date: string) => {
     if (!date) return;
-    const newId = await rescheduleTask(task.id, date);
-    if (newId) goToTask(newId); // shifted to a future week
+    await rescheduleTask(task.id, date);
   };
 
   // actorById, not profileById: since TM-1 the ASSIGNEE can be a HOD in another
@@ -530,7 +528,7 @@ export default function TaskDetail({ taskId }: { taskId?: string } = {}) {
                     ) : (
                       <div className="py-0.5">
                         <p className="text-[13px] text-grey leading-snug">
-                          <b className="text-navy font-semibold">{actor?.name ?? "Someone"}</b> {actVerb(a.type)}
+                          <b className="text-navy font-semibold">{actor?.name ?? "Someone"}</b> {actVerb(a.type, a.note)}
                           {a.note ? <span className="text-grey-2"> — {a.note}</span> : ""}
                         </p>
                         <span className="text-[11px] text-grey-2" title={formatDateTime(a.createdAt)}>{timeAgo(a.createdAt)}</span>
@@ -635,31 +633,59 @@ export default function TaskDetail({ taskId }: { taskId?: string } = {}) {
   );
 }
 
-/** Inline-editable due date. Picking a future-week date auto-shifts the task. */
+/** Inline-editable due date. Any new date moves the SAME task (see rescheduleTask). */
 function DueDateEditor({ value, closed, onChange }: { value: string | null; closed: boolean; onChange: (d: string) => void }) {
   const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState("");
+  const done = useRef(false);
   if (closed) return <>{dateLabel(value)}</>;
+  // Save only on Enter / ✓ / clicking away — never on each change: typing "20" into a
+  // date box passes through a valid "02" first, which used to save (and log) 02-10 too.
+  // `done` stops Enter + the blur that follows it from saving twice.
+  const commit = () => {
+    if (done.current) return;
+    done.current = true;
+    setEditing(false);
+    if (draft && draft !== value) onChange(draft);
+  };
   if (editing) {
     return (
-      <input
-        type="date"
-        autoFocus
-        defaultValue={value ?? ""}
-        onChange={(e) => {
-          if (e.target.value) {
-            onChange(e.target.value);
-            setEditing(false);
-          }
-        }}
-        onBlur={() => setEditing(false)}
-        className="rounded-lg border border-orange bg-white px-2 py-1 text-[12.5px] text-navy outline-none ring-4 ring-orange/10"
-      />
+      <span className="inline-flex items-center gap-1">
+        <input
+          type="date"
+          autoFocus
+          value={draft}
+          onChange={(e) => setDraft(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") commit();
+            if (e.key === "Escape") {
+              done.current = true;
+              setEditing(false);
+            }
+          }}
+          onBlur={commit}
+          className="rounded-lg border border-orange bg-white px-2 py-1 text-[12.5px] text-navy outline-none ring-4 ring-orange/10"
+        />
+        <button
+          type="button"
+          title="Save due date"
+          onMouseDown={(e) => e.preventDefault()}
+          onClick={commit}
+          className="rounded-md px-1.5 py-1 text-orange hover:bg-orange/10"
+        >
+          ✓
+        </button>
+      </span>
     );
   }
   return (
     <button
-      onClick={() => setEditing(true)}
-      title="Change due date — pick a date in a future week to shift the task to that week"
+      onClick={() => {
+        setDraft(value ?? "");
+        done.current = false;
+        setEditing(true);
+      }}
+      title="Change due date — the same task moves to the new date"
       className="inline-flex items-center gap-1.5 text-navy hover:text-orange transition group"
     >
       {dateLabel(value)}
@@ -726,7 +752,10 @@ function actIcon(t: ActivityType) {
   if (t === "remark") return ICONS.chat;
   return ICONS.dot;
 }
-function actVerb(t: ActivityType) {
+function actVerb(t: ActivityType, note?: string | null) {
+  // A `shifted` entry WITH a note is a due-date move on the same task ("old → new");
+  // without one it's a legacy shift that opened a continuation task.
+  if (t === "shifted" && note) return "changed the due date";
   return {
     created: "created this task",
     assigned: "assigned this task",
