@@ -33,7 +33,8 @@ export default function ComplaintLayout() {
 
   const canPlant = s.canSeeQueue("plant");
   const canService = s.canSeeQueue("service");
-  const canApprove = s.canSeeQueue("approval");
+  // The compensation approvers sit on the same desk — see pages/queues/ApprovalQueue.
+  const canApprove = s.canSeeQueue("approval") || s.isStepOwner("cn_approval");
   const canPurchase = s.canSeeQueue("purchase");
   const canRmManagement = s.canSeeQueue("rm_management");
   const canReview = s.canSeeQueue("management_review");

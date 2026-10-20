@@ -77,6 +77,16 @@ function RequireQueue({ step, children }: { step: StepKey; children: ReactNode }
   return <>{children}</>;
 }
 
+/**
+ * Gate to Management Approval: the complaint approval queue's own rule, OR an
+ * owner of the compensation approval step — the page carries both.
+ */
+function RequireApprovalDesk({ children }: { children: ReactNode }) {
+  const { canSeeQueue, isStepOwner } = useComplaintStore();
+  if (!canSeeQueue("approval") && !isStepOwner("cn_approval")) return <AccessDenied />;
+  return <>{children}</>;
+}
+
 /** Gate to the Customer Credit Notes page — the same rule as its nav link. */
 function RequireCreditNotes({ children }: { children: ReactNode }) {
   const { canSeeCreditNotes } = useComplaintStore();
@@ -102,7 +112,7 @@ export default function ComplaintApp() {
           <Route path="my-requests" element={<RequestsList mine />} />
           <Route path="queues/plant" element={<RequireQueue step="plant"><PlantQueue /></RequireQueue>} />
           <Route path="queues/service" element={<RequireQueue step="service"><ServiceQueue /></RequireQueue>} />
-          <Route path="queues/approval" element={<RequireQueue step="approval"><ApprovalQueue /></RequireQueue>} />
+          <Route path="queues/approval" element={<RequireApprovalDesk><ApprovalQueue /></RequireApprovalDesk>} />
           <Route path="queues/purchase" element={<RequireQueue step="purchase"><PurchaseQueue /></RequireQueue>} />
           {/* Management's two jobs are two queues: reading an imported-material
               complaint, and signing off a settled one. See lib/steps.ts. */}
