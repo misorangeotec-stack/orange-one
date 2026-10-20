@@ -181,3 +181,11 @@ export const TASK_CATEGORY_FILTER_OPTIONS = [
   { value: "others", label: "Others" },
 ] as const;
 export type TaskCategoryFilter = (typeof TASK_CATEGORY_FILTER_OPTIONS)[number]["value"];
+
+/**
+ * Who may see KRA figures — the Wt%, its completion / review split, and the score earned.
+ * Client (16-10-2026): HODs (and admins / Directors) yes; employees and Sub-HODs never,
+ * not even on their own KRA, not even when a Sub-HOD picks or reviews one. They see the
+ * KRA's name only. Display-only: the figures still ride on the task row.
+ */
+export const seesKraWeights = (role: string): boolean => role === "admin" || role === "hod";

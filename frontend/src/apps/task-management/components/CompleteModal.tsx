@@ -7,13 +7,13 @@ import { FieldLabel, TextArea } from "@/shared/components/ui/Form";
 import { fetchKras, KRAS_QUERY_KEY } from "@/core/admin/kras";
 import { useTaskStore } from "../mock/store";
 import { useSession } from "../mock/session";
-import { kraToPick, pctLabel } from "../lib/kraTasks";
+import { kraToPick, pctLabel, seesKraWeights } from "../lib/kraTasks";
 import type { Task } from "../types";
 
 /** Confirm completion of a task, with an optional closing note. */
 export default function CompleteModal({ task, open, onClose, onCompleted }: { task: Task; open: boolean; onClose: () => void; onCompleted?: () => void }) {
   const { completeTask, taskLocationsComplete, actorById } = useTaskStore();
-  const { user } = useSession();
+  const { user, role } = useSession();
   const [note, setNote] = useState("");
   // A Director's KRA task: whoever does it says which of their own KRAs it belongs to
   // before it can be completed (guard_task_kra refuses it otherwise).
@@ -93,7 +93,7 @@ export default function CompleteModal({ task, open, onClose, onCompleted }: { ta
                 value={kraId}
                 onChange={(v) => { setKraId(v); setError(""); }}
                 placeholder="Pick your KRA"
-                options={myKras.map((k) => ({ value: k.id, label: k.name, sublabel: `KRA · Wt ${pctLabel(k.weight)}` }))}
+                options={myKras.map((k) => ({ value: k.id, label: k.name, sublabel: seesKraWeights(role) ? `KRA · Wt ${pctLabel(k.weight)}` : "KRA" }))}
               />
               <p className="mt-1.5 text-[12px] text-grey">
                 Given as a KRA task by {actorById(task.createdBy)?.name ?? "a Director"}.{" "}

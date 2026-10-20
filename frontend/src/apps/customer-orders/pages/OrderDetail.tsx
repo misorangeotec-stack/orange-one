@@ -1,3 +1,4 @@
+import BackLink from "@/shared/components/ui/BackLink";
 import { useState } from "react";
 import { Link, useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
@@ -121,9 +122,7 @@ export default function OrderDetail() {
   };
 
   const subtitle = (
-    <Link to={deskPaths.orders} className="text-grey hover:text-orange font-medium">
-      ← My orders
-    </Link>
+    <BackLink to={deskPaths.orders} label="My orders" className="text-grey hover:text-orange font-medium" />
   );
 
   if (editing && order.canChange) {

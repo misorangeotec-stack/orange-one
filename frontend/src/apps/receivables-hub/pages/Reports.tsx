@@ -1,3 +1,4 @@
+import { useBackState } from "@/shared/lib/backState";
 import { useMemo, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import { ChevronRight, FileText, Search } from "lucide-react";
@@ -103,7 +104,7 @@ function SectionHeading({ children }: { children: React.ReactNode }) {
 
 export default function Reports() {
   const [params, setParams] = useSearchParams();
-  const [query, setQuery] = useState("");
+  const [query, setQuery] = useBackState("Reports.query", "");
   // Which reports this viewer holds (profiles.receivables_allowed_reports; admins hold all).
   // The SAME set the route guard uses, so a row that is listed is a row that will open — and,
   // just as importantly, a report that is not granted cannot be reached from the search box

@@ -1,3 +1,4 @@
+import { useBackState } from "@/shared/lib/backState";
 import { useCallback, useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import * as XLSX from "xlsx-js-style";
@@ -157,7 +158,7 @@ function RedMarkCustomersInner() {
     refetchOnWindowFocus: false,
   });
 
-  const [search, setSearch] = useState("");
+  const [search, setSearch] = useBackState("RedMarkCustomersReport.search", "");
   const [clearView, setClearView] = useState<ClearView>(CLEAR_VIEW_DEFAULT);
   const [billedOnly, setBilledOnly] = useState(false);
   const [currentPage, setCurrentPage] = useState(1);
