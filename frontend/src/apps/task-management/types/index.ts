@@ -61,7 +61,10 @@ export const matchesStatusFilter = (
   statuses: StatusFilter[],
 ): boolean => statuses.length === 0 || statuses.includes(effectiveStatus(t));
 
-export type RecurrenceType = "daily" | "weekly" | "monthly" | "when" | "quarterly";
+export type RecurrenceType = "daily" | "weekly" | "monthly" | "when" | "quarterly" | "half_yearly" | "yearly";
+
+/** Frequencies that pick a day inside a month the Monthly way (Nth weekday or specific dates). */
+export const MONTH_DAY_TYPES: RecurrenceType[] = ["monthly", "half_yearly", "yearly"];
 
 /** Short, badge-friendly label for a recurrence type (e.g. "Weekly", "As & When"). */
 export const RECURRENCE_LABEL: Record<RecurrenceType, string> = {
@@ -69,6 +72,8 @@ export const RECURRENCE_LABEL: Record<RecurrenceType, string> = {
   weekly: "Weekly",
   monthly: "Monthly",
   quarterly: "Quarterly",
+  half_yearly: "Half-yearly",
+  yearly: "Yearly",
   when: "As and When",
 };
 
@@ -179,13 +184,14 @@ export interface RecurringTask {
   monthlyDays: number[]; // 1..31 (used when monthly, day-of-month mode); MONTH_LAST_DAY = last day of month
   monthlyNth: number | null; // monthly Nth-weekday mode: 1..5 (e.g. 1 = 1st); null = day-of-month mode
   monthlyWeekday: number | null; // monthly Nth-weekday mode: 0=Sun..6=Sat (e.g. 6 = Saturday); null = day-of-month mode
+  yearlyMonth: number | null; // yearly: its month (1..12); half-yearly: the first of its two months (+6); else null
   assignedTo: string | null;
   createdBy: string;
   departmentId: string | null;
   active: boolean;
   createdAt: string; // when this recurring template was set up (recurring_tasks.created_at)
   locationIds: string[]; // locations each generated task is tagged with
-  notifyRequired: boolean; // remind the assignee before each fire date (weekly/monthly/quarterly only)
+  notifyRequired: boolean; // remind the assignee before each fire date (weekly/monthly/quarterly/half-yearly/yearly only)
   notifyDaysBefore: number | null; // how many days before (1..30); null when no reminder
   kraId: string | null; // Task Category: the assignee's KRA every generated task carries; null = Others
 }

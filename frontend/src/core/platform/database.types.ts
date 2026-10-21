@@ -8395,6 +8395,7 @@ export type Database = {
           title: string
           updated_at: string
           weekly_days: number[] | null
+          yearly_month: number | null
         }
         Insert: {
           active?: boolean
@@ -8415,6 +8416,7 @@ export type Database = {
           title: string
           updated_at?: string
           weekly_days?: number[] | null
+          yearly_month?: number | null
         }
         Update: {
           active?: boolean
@@ -8435,6 +8437,7 @@ export type Database = {
           title?: string
           updated_at?: string
           weekly_days?: number[] | null
+          yearly_month?: number | null
         }
         Relationships: [
           {
@@ -12802,7 +12805,7 @@ export type Database = {
         | "reopened"
       app_role: "admin" | "hod" | "employee" | "sub_hod"
       notification_type: "mention"
-      recurrence_type: "daily" | "weekly" | "monthly" | "when" | "quarterly"
+      recurrence_type: "daily" | "weekly" | "monthly" | "when" | "quarterly" | "half_yearly" | "yearly"
       task_status:
         | "pending"
         | "completed"
@@ -12953,7 +12956,7 @@ export const Constants = {
       ],
       app_role: ["admin", "hod", "employee", "sub_hod"],
       notification_type: ["mention"],
-      recurrence_type: ["daily", "weekly", "monthly", "when", "quarterly"],
+      recurrence_type: ["daily", "weekly", "monthly", "when", "quarterly", "half_yearly", "yearly"],
       task_status: [
         "pending",
         "completed",
