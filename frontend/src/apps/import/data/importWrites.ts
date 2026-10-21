@@ -239,6 +239,32 @@ export async function updateVendorItemPrice(id: string, input: VendorItemPriceIn
   if (error) throw new Error(error.message);
 }
 
+/**
+ * What `fms_import_map_vendor_items` did with each picked item. Three numbers,
+ * not one: a REACTIVATED pair was switched off by somebody on purpose, so the
+ * screen has to say it was turned back on.
+ */
+export interface MapVendorItemsResult {
+  created: number;
+  reactivated: number;
+  skipped: number;
+}
+
+/**
+ * Map a vendor to items directly — no master request, no approval. Goes through
+ * a SECURITY DEFINER RPC because the table's write policy admits only admins and
+ * the master's owner; the RPC's gate is "may raise an Import requisition".
+ */
+export async function mapVendorItems(vendorId: string, itemIds: string[]): Promise<MapVendorItemsResult> {
+  const { data, error } = await db.rpc("fms_import_map_vendor_items", {
+    p_vendor: vendorId,
+    p_items: itemIds,
+  });
+  if (error) throw new Error(error.message);
+  const r = (data ?? {}) as Partial<MapVendorItemsResult>;
+  return { created: r.created ?? 0, reactivated: r.reactivated ?? 0, skipped: r.skipped ?? 0 };
+}
+
 /* ------------------------------ live FX rate ------------------------------ */
 // Moved to shared/lib/fx.ts when OCPI needed the same fetcher — two copies of a
 // rate fetcher is two answers to "what is a dollar worth". Re-exported from here
