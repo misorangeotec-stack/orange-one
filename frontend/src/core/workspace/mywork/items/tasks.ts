@@ -68,9 +68,8 @@ export function taskWorkItems(data: TaskData, uid: string): WorkItem[] {
  *   `public.user_snapshot()` count (`tasks_sql`); folding reviews into it would make the
  *   two disagree. Putting reviews in the mail needs both changed together.
  *
- * No due date, deliberately: the peer tasks completed before the review existed all
- * land here at go-live (74 on live, 21-10-2026), and dating them by completion would
- * count every one as an overdue approval overnight.
+ * No due date: a review has no deadline of its own, and a completion date would make
+ * every review look overdue the next day.
  */
 export function peerReviewWorkItems(data: TaskData, uid: string): WorkItem[] {
   return data.tasks

@@ -5,7 +5,7 @@ import { TextArea } from "@/shared/components/ui/Form";
 import { formatDateTime, timeAgo } from "@/shared/lib/time";
 import { useTaskStore } from "../mock/store";
 import { useSession } from "../mock/session";
-import { awaitingPeerReview, isPeerReviewerOf } from "../lib/peerReview";
+import { awaitingPeerReview, completedBeforeReview, isPeerReviewerOf } from "../lib/peerReview";
 import type { Task } from "../types";
 
 /**
@@ -23,6 +23,8 @@ export default function PeerReviewCard({ task }: { task: Task }) {
   if (!task.isPeerAssignment) return null;
 
   const awaiting = awaitingPeerReview(task);
+  // Completed before the review existed: the giver may only Re-open it.
+  const old = completedBeforeReview(task);
   const isReviewer = isPeerReviewerOf(task, user.id, isAdmin) && canStatusActions;
   const giver = actorById(task.createdBy)?.name ?? "the person who gave it";
   const assignee = actorById(task.assignedTo)?.name ?? "the assignee";
@@ -63,9 +65,28 @@ export default function PeerReviewCard({ task }: { task: Task }) {
 
       {task.status === "completed" && task.peerClosedAt && (
         <p className="text-[12px] text-grey">
-          {closer ? `Reviewed and marked as completed by ${closer.name}` : "Completed"}
+          {closer ? `Reviewed and marked as completed by ${closer.name}` : "Completed before peer review started"}
           <span title={formatDateTime(task.peerClosedAt)}> · {timeAgo(task.peerClosedAt)}</span>
         </p>
+      )}
+
+      {old && isReviewer && (
+        <div className="mt-2.5">
+          <p className="text-[12px] text-grey">If something still needs changing, re-open it and it goes back to {assignee}.</p>
+          <TextArea
+            className="mt-2"
+            rows={2}
+            value={note}
+            onChange={(e) => { setNote(e.target.value); setErr(""); }}
+            placeholder="What needs to change (required to re-open)"
+          />
+          {err && <p className="mt-1.5 text-[12px] text-[#d4493f]">{err}</p>}
+          <div className="mt-2.5 flex justify-end">
+            <Button variant="ghost" size="sm" onClick={() => run("reopen")} disabled={!!busy}>
+              {busy === "reopen" ? "Re-opening…" : "Re-open"}
+            </Button>
+          </div>
+        </div>
       )}
 
       {awaiting && isReviewer && (

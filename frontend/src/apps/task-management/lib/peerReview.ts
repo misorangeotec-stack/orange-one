@@ -20,6 +20,13 @@ import type { Task } from "../types";
 export const awaitingPeerReview = (t: Pick<Task, "isPeerAssignment" | "status" | "peerClosedAt">): boolean =>
   t.isPeerAssignment && t.status === "completed" && !t.peerClosedAt;
 
+/**
+ * Completed BEFORE the review existed: kept Completed at go-live (closed, nobody as
+ * reviewer). The giver can still Re-open it; it then follows the review flow.
+ */
+export const completedBeforeReview = (t: Pick<Task, "isPeerAssignment" | "status" | "peerClosedAt" | "peerClosedBy">): boolean =>
+  t.isPeerAssignment && t.status === "completed" && !!t.peerClosedAt && !t.peerClosedBy;
+
 /** Sent back by the giver and not yet completed again — the "Re-opened" label. */
 export const peerReopened = (t: Pick<Task, "isPeerAssignment" | "status" | "peerReopenCount">): boolean =>
   t.isPeerAssignment && t.peerReopenCount > 0 && t.status !== "completed" && t.status !== "shifted";
