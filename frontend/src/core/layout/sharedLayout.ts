@@ -45,6 +45,7 @@ const EXACT = new Set([
   "rm-mis:chart-panel-height", "rm-mis:chart-label-width", "rm-mis:row-pad", "rm-mis:head-pad",
   "rm-mis:freeze", "rm-mis:hidden-lines",
   "riskRegister.visibleColumns.v2",
+  "orangeone.nav.width",            // the left menu's width (which groups are open stays personal)
 ]);
 /** A localStorage key that is part of a screen's layout. */
 export const isLayoutKey = (k: string) => EXACT.has(k) || PREFIXES.some((p) => k.startsWith(p));
@@ -82,12 +83,13 @@ function myLayoutKeys(): string[] {
  * refresh; a viewer's is written on every page load. Returns true when something was written.
  */
 export function applySharedLayout(layout: SharedLayout, isAdmin: boolean): boolean {
-  if (!layout.ready) return false;
+  // Nothing saved yet: everyone keeps their own sizes until an admin's first Save.
+  if (!layout.ready || !layout.updatedAt) return false;
   try {
-    if (isAdmin && (!layout.updatedAt || localStorage.getItem(STAMP) === layout.updatedAt)) return false;
+    if (isAdmin && localStorage.getItem(STAMP) === layout.updatedAt) return false;
     for (const k of myLayoutKeys()) localStorage.removeItem(k);
     for (const [k, v] of Object.entries(layout.entries)) if (isLayoutKey(k) && typeof v === "string") localStorage.setItem(k, v);
-    if (layout.updatedAt) localStorage.setItem(STAMP, layout.updatedAt);
+    localStorage.setItem(STAMP, layout.updatedAt);
   } catch {
     return false; // private window / blocked storage — the default sizes still work
   }
