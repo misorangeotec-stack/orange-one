@@ -20,7 +20,7 @@ import { outstandingContribution, sumOutstanding, countByRisk, utilizationPct } 
 export { consolidateByName, categorizeRisk } from "./appDataCore";
 import { consolidateByName, categorizeRisk } from "./appDataCore";
 import { markTypesOf } from "./markType";
-import { customerCategoryTokens } from "./customerCategory";
+import { matchesCategory } from "./customerCategory";
 
 /**
  * Roll consolidated customers up to group rows using the mapping sheet.
@@ -631,8 +631,9 @@ export function useAppData(filters: Filters = {}): AppData {
     }
     if (filters.category && filters.category !== "all") {
       const catSet = new Set(filters.category.split(",").map((s) => s.trim()).filter(Boolean));
-      // The shared tokens: the tier, plus "Red Mark" / "Legal" for a customer on that master.
-      result = result.filter((c) => customerCategoryTokens(c).some((t) => catSet.has(t)));
+      // The shared rule: tiers, plus "Red Mark" / "Legal" (unticking one hides those customers).
+      const selected = [...catSet];
+      result = result.filter((c) => matchesCategory(c, selected));
     }
     return result;
   }, [projectedConsolidatedCustomers, filters.customerSegment, filters.balanceFilter, filters.blockedFilter, filters.salesPerson, filters.category]);
@@ -787,8 +788,9 @@ export function useAppData(filters: Filters = {}): AppData {
     }
     if (filters.category && filters.category !== "all") {
       const catSet = new Set(filters.category.split(",").map((s) => s.trim()).filter(Boolean));
-      // The shared tokens: the tier, plus "Red Mark" / "Legal" for a customer on that master.
-      result = result.filter((c) => customerCategoryTokens(c).some((t) => catSet.has(t)));
+      // The shared rule: tiers, plus "Red Mark" / "Legal" (unticking one hides those customers).
+      const selected = [...catSet];
+      result = result.filter((c) => matchesCategory(c, selected));
     }
 
     return result;

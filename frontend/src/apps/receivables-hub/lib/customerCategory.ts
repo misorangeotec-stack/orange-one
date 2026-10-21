@@ -107,32 +107,42 @@ import type { ConsolidatedCustomer, Customer, SaleType } from "./types";
  */
 const UNCATEGORIZED = "Uncategorized";
 
-/**
- * The category tokens a customer matches against (handles groups + blanks).
- *
- * The tier ("A", "B", … or "Uncategorized") ALWAYS comes first, and "Red Mark" / "Legal" are ADDED
- * for a customer on that master. They sit in the same Category dropdown, and the dropdown is a
- * union: tick "Legal" alone and you see just the legal customers; tick everything ("All
- * Categories") and you see everybody, exactly as before.
- */
+/** The TIER tokens a customer matches against (handles groups + blanks). Never Red Mark / Legal. */
 export function customerCategoryTokens(
-  c: { category?: string; categories?: string[]; markType?: MarkType; markTypes?: MarkType[] },
+  c: { category?: string; categories?: string[] },
 ): string[] {
-  const tiers = c.categories && c.categories.length ? c.categories
-    : c.category && c.category !== "Multiple" ? [c.category]
-    : [UNCATEGORIZED];
-  const marks = markTypesOf(c).map((m) => MARK_LABEL[m]);
-  return marks.length ? [...tiers, ...marks] : tiers;
+  if (c.categories && c.categories.length) return c.categories;
+  if (c.category && c.category !== "Multiple") return [c.category];
+  return [UNCATEGORIZED];
 }
 
-/** True when the customer matches the selected categories ([] = no filter). */
+const MARK_TOKENS = new Set(Object.values(MARK_LABEL));
+
+/**
+ * True when the customer matches the selected categories ([] = no filter).
+ *
+ * The dropdown holds two kinds of option — the tiers (A … E, AA, Uncategorized) and the Red Mark +
+ * Legal master ("Red Mark", "Legal") — and they combine like this (user, 21-10-2026):
+ *
+ *   • Only Red Mark / Legal ticked → just those customers, whatever their tier.
+ *   • Any tier ticked → the customer's tier must be ticked, AND a marked customer's mark must be
+ *     ticked too. So "everything except Legal" HIDES the legal customers, and "Select all" (every
+ *     tier + both marks) is everybody.
+ *
+ * ⚠ A list of tiers with NO mark ticked therefore hides every Red Mark and Legal customer. A preset
+ *   list that should show everybody must carry both marks — see DEFAULT_CATEGORIES.
+ */
 export function matchesCategory(
   c: { category?: string; categories?: string[]; markType?: MarkType; markTypes?: MarkType[] },
   selected: string[],
 ): boolean {
   if (!selected.length) return true;
-  const set = new Set(selected);
-  return customerCategoryTokens(c).some((t) => set.has(t));
+  const tiers = new Set(selected.filter((v) => !MARK_TOKENS.has(v)));
+  const marks = new Set(selected.filter((v) => MARK_TOKENS.has(v)));
+  const own = markTypesOf(c).map((m) => MARK_LABEL[m]);
+  if (tiers.size === 0) return own.some((m) => marks.has(m));
+  if (!customerCategoryTokens(c).some((t) => tiers.has(t))) return false;
+  return own.length === 0 || own.some((m) => marks.has(m));
 }
 
 export const EPS = 0.5;
