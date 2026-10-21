@@ -12,6 +12,7 @@ import StepDocLink from "./StepDocLink";
 import RequestMasterModal from "./RequestMasterModal";
 import CoaModal from "./CoaModal";
 import PackLinesGrid from "./PackLinesGrid";
+import LotAllocField, { rowsFrom, type LotRow } from "@/apps/order-to-dispatch/components/LotAllocField";
 import { useProductionStore } from "../store";
 import { uploadQualityDocument, uploadStepDocument } from "../data/productionWrites";
 import { dmy, numOrDash, packFinalQty } from "../lib/format";
@@ -20,6 +21,7 @@ import type { MasterValues } from "../lib/masterFields";
 import { STATUS_OPTIONS, STEP_CONFIG } from "../lib/stepConfig";
 import { isAisLoopBlocked, type QueueStep } from "../lib/queues";
 import { currentCoaRound } from "../lib/coaRound";
+import { flatLotNo, lotsPayload, rmBookOf, useRmLots } from "../lib/rmLots";
 import type { ProductionMasterType, ProductionRequest } from "../types";
 
 /** Today as yyyy-mm-dd in the browser's LOCAL timezone. Deliberately not the
@@ -39,14 +41,15 @@ export interface StepModalProps {
   readOnly?: boolean;
 }
 
-/** A material-handover BOM row being edited: the actual handover qty + issue lot
- *  number per raw material, with the requested qty carried for reference. */
+/** A material-handover BOM row being edited: the actual handover qty + issue lot(s)
+ *  per raw material, with the requested qty carried for reference. */
 interface HandoverRow {
   rawMaterialId: string | null;
   unitId: string | null;
   requestedQty: number | null;
   qty: string;
-  lotNo: string;
+  /** Picked from Tally's stock (or typed), as in Order to Dispatch — see lib/rmLots. */
+  lots: LotRow[];
   /** Raised on the issue slip's Additional Raw Materials grid. Shown as a badge in
    *  the same table rather than split into a second one. */
   isAdditional: boolean;
@@ -101,7 +104,7 @@ function seedHandoverRows(request: ProductionRequest): HandoverRow[] {
       requestedQty: b.requiredQty,
       // pre-fill the handover qty from the recorded value, else the requested qty
       qty: done ? (done.qty != null ? String(done.qty) : "") : b.requiredQty != null ? String(b.requiredQty) : "",
-      lotNo: done?.lotNo ?? "",
+      lots: rowsFrom(done?.lots, done?.lotNo ?? null),
       isAdditional: !!b.isAdditional,
     };
   });
@@ -293,7 +296,7 @@ export default function StepModal({
         unitId: b.unitId,
         requestedQty: b.qty,
         qty: done ? (done.qty != null ? String(done.qty) : "") : b.qty != null ? String(b.qty) : "",
-        lotNo: done?.lotNo ?? "",
+        lots: rowsFrom(done?.lots, done?.lotNo ?? null),
         // An Additional Issue Slip top-up is its own thing, not an intake extra.
         isAdditional: false,
       };
@@ -378,8 +381,12 @@ export default function StepModal({
     pkPacked.trim() !== "" && Number.isFinite(pkPackedNum) && pkPackedNum >= 0 && (packNet == null || pkPackedNum <= packNet);
 
   const setField = (key: string, v: string) => setValues((prev) => ({ ...prev, [key]: v }));
-  const setHoField = (idx: number, key: "qty" | "lotNo", v: string) =>
-    setHoRows((prev) => prev.map((r, i) => (i === idx ? { ...r, [key]: v } : r)));
+  const setHoQty = (idx: number, v: string) =>
+    setHoRows((prev) => prev.map((r, i) => (i === idx ? { ...r, qty: v } : r)));
+  const setHoLots = (idx: number, lots: LotRow[]) =>
+    setHoRows((prev) => prev.map((r, i) => (i === idx ? { ...r, lots } : r)));
+  // Tally's lots for each raw material on the handover grid (Enterprises Surat book).
+  const hoLots = useRmLots(isHandover && open ? hoRows.map((r) => s.rawMaterialById(r.rawMaterialId)?.name ?? "") : []);
 
   // Per-new-row raw-material options: active materials + a synthetic entry for a
   // free-text name already typed, so the Combobox can display it.
@@ -438,7 +445,8 @@ export default function StepModal({
             raw_material_id: r.rawMaterialId,
             unit_id: r.unitId,
             qty: r.qty ?? "",
-            lot_no: r.lotNo ?? "",
+            lot_no: flatLotNo(r.lots),
+            lots: lotsPayload(r.lots, r.qty ?? ""),
             // Written in the same order as bom_lines, so index i matches index i.
             // The flag is stored too, so a reader never has to re-derive it.
             is_additional: r.isAdditional,
@@ -828,12 +836,12 @@ export default function StepModal({
                         <th className="font-medium px-2 py-2 text-right w-24 whitespace-nowrap">Requested</th>
                         <th className="font-medium px-2 py-2 text-right w-32 whitespace-nowrap">Handover Qty</th>
                         <th className="font-medium px-2 py-2 w-20">Unit</th>
-                        <th className="font-medium px-2 py-2 w-48 whitespace-nowrap">Issue Lot No.</th>
+                        <th className="font-medium px-2 py-2 min-w-[240px] whitespace-nowrap">Issue Lot No.</th>
                       </tr>
                     </thead>
                     <tbody>
                       {hoRows.map((row, i) => (
-                        <tr key={i} className="border-b border-line/70 last:border-0">
+                        <tr key={i} className="border-b border-line/70 last:border-0 align-top">
                           {/* ONE table, not two: an intake extra is flagged in place
                               rather than split into its own grid, so the person
                               handing material over reads a single list. */}
@@ -852,17 +860,20 @@ export default function StepModal({
                               disabled={readOnly}
                               className="w-full px-2 py-1.5 text-[13px] text-right tabular-nums"
                               value={row.qty}
-                              onChange={(e) => setHoField(i, "qty", e.target.value)}
+                              onChange={(e) => setHoQty(i, e.target.value)}
                             />
                           </td>
                           <td className="px-2 py-2 text-grey">{s.unitById(row.unitId)?.name ?? "—"}</td>
                           <td className="px-1.5 py-1.5">
-                            <TextInput
+                            <LotAllocField
+                              rows={row.lots}
+                              onChange={(lots) => setHoLots(i, lots)}
+                              quantity={row.qty}
+                              unit={s.unitById(row.unitId)?.name ?? ""}
+                              options={hoLots[s.rawMaterialById(row.rawMaterialId)?.name ?? ""] ?? []}
+                              bookOf={rmBookOf}
                               disabled={readOnly}
-                              className="w-full px-2 py-1.5 text-[13px]"
-                              placeholder="Lot no."
-                              value={row.lotNo}
-                              onChange={(e) => setHoField(i, "lotNo", e.target.value)}
+                              autoFill
                             />
                           </td>
                         </tr>
