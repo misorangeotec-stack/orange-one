@@ -67,7 +67,8 @@ export default function PeerTasks() {
   // to next week became its creator — those rows still exist. Without this guard their own continuation
   // would appear on their Given board as work they had handed out.
   const given = useMemo(
-    () => peerTasks.filter((t) => t.createdBy === user.id && t.assignedTo !== user.id),
+    // A task waiting for my review sits in Review only; a re-open moves it back here.
+    () => peerTasks.filter((t) => t.createdBy === user.id && t.assignedTo !== user.id && !awaitingPeerReview(t)),
     [peerTasks, user.id],
   );
   const received = useMemo(() => peerTasks.filter((t) => t.assignedTo === user.id), [peerTasks, user.id]);
@@ -108,15 +109,15 @@ export default function PeerTasks() {
 
   const count = (n: number) => (n ? " (" + n + ")" : "");
   const VIEWS: { value: View; label: string }[] = [
-    { value: "review", label: "To review" + count(toReview.length) },
     { value: "received", label: "Received" + count(received.length) },
     { value: "given", label: "Given" + count(given.length) },
+    { value: "review", label: "Review" + count(toReview.length) },
     ...(isAdmin ? [{ value: "all" as View, label: "All peer tasks" + count(peerTasks.length) }] : []),
   ];
 
   const blurb =
     view === "review"
-      ? "Peer tasks you gave that are completed. Open one to close it, or reopen it for rework."
+      ? "Completed by the other person — open one to mark it as completed, or re-open it for changes."
       : view === "given"
       ? "One-off tasks you have handed to another HOD or Sub-HOD."
       : view === "received"
@@ -171,7 +172,7 @@ export default function PeerTasks() {
           }
           message={
             view === "review"
-              ? "When someone completes a peer task you gave them, it comes here for you to close or reopen."
+              ? "When someone completes a peer task you gave them, it comes here for you to mark as completed or re-open."
               : view === "given"
               ? "Create a task and pick someone from the HODs & Sub-HODs group to assign work sideways."
               : "When another HOD or Sub-HOD assigns you a one-off task it appears here, and in My Tasks with a Peer badge."
@@ -186,7 +187,7 @@ export default function PeerTasks() {
           hideWeekFilter
           initialFilters={initialFilters}
           enableExport
-          exportSubtitle={"Peer tasks · " + (view === "review" ? "To review" : view === "given" ? "Given" : view === "received" ? "Received" : "All")}
+          exportSubtitle={"Peer tasks · " + (view === "review" ? "Review" : view === "given" ? "Given" : view === "received" ? "Received" : "All")}
           stickyScope={sticky}
         />
       )}

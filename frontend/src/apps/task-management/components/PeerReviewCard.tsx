@@ -30,7 +30,7 @@ export default function PeerReviewCard({ task }: { task: Task }) {
 
   const run = async (kind: "close" | "reopen") => {
     if (kind === "reopen" && !note.trim()) {
-      setErr("Write what needs to be rechecked before reopening.");
+      setErr("Write what needs to change before re-opening.");
       return;
     }
     setBusy(kind);
@@ -52,17 +52,18 @@ export default function PeerReviewCard({ task }: { task: Task }) {
 
       {task.status !== "completed" && (
         <p className="text-[12px] text-grey">
-          When {task.assignedTo === user.id ? "you mark" : `${assignee} marks`} it complete, it goes to {task.createdBy === user.id ? "you" : giver} to review — close it, or reopen it for rework.
+          {task.peerReopenCount > 0 && <b className="text-[#c0392b]">Re-opened{task.peerReopenCount > 1 ? ` ${task.peerReopenCount} times` : ""}. </b>}
+          When {task.assignedTo === user.id ? "you mark" : `${assignee} marks`} it complete, it goes to {task.createdBy === user.id ? "you" : giver} for review. It is completed only when {task.createdBy === user.id ? "you mark" : `${giver} marks`} it as completed.
         </p>
       )}
 
       {awaiting && !isReviewer && (
-        <p className="rounded-lg bg-[#FFF6E5] px-3 py-2 text-[12px] text-[#9a6200]">Completed — waiting for {giver}'s review.</p>
+        <p className="rounded-lg bg-[#FFF6E5] px-3 py-2 text-[12px] text-[#9a6200]">In review — waiting for {giver} to mark it as completed or re-open it.</p>
       )}
 
       {task.status === "completed" && task.peerClosedAt && (
         <p className="text-[12px] text-grey">
-          {closer ? `Reviewed and closed by ${closer.name}` : "Closed"}
+          {closer ? `Reviewed and marked as completed by ${closer.name}` : "Completed"}
           <span title={formatDateTime(task.peerClosedAt)}> · {timeAgo(task.peerClosedAt)}</span>
         </p>
       )}
@@ -70,22 +71,22 @@ export default function PeerReviewCard({ task }: { task: Task }) {
       {awaiting && isReviewer && (
         <div>
           <p className="rounded-lg bg-[#FFF6E5] px-3 py-2 text-[12px] text-[#9a6200]">
-            {assignee} has completed this. Check the work, then close it — or reopen it and it goes back to {assignee}.
+            {assignee} has finished this. Check the work: mark it as completed, or re-open it and it goes back to {assignee}.
           </p>
           <TextArea
             className="mt-2.5"
             rows={2}
             value={note}
             onChange={(e) => { setNote(e.target.value); setErr(""); }}
-            placeholder="Note — optional to close, required to reopen (what to recheck)"
+            placeholder="Note — optional to complete, required to re-open (what to change)"
           />
           {err && <p className="mt-1.5 text-[12px] text-[#d4493f]">{err}</p>}
           <div className="mt-2.5 flex justify-end gap-2">
             <Button variant="ghost" size="sm" onClick={() => run("reopen")} disabled={!!busy}>
-              {busy === "reopen" ? "Reopening…" : "Reopen"}
+              {busy === "reopen" ? "Re-opening…" : "Re-open"}
             </Button>
             <Button size="sm" onClick={() => run("close")} disabled={!!busy}>
-              {busy === "close" ? "Closing…" : "Close task"}
+              {busy === "close" ? "Saving…" : "Mark as completed"}
             </Button>
           </div>
         </div>

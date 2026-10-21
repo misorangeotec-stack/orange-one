@@ -350,7 +350,7 @@ export async function closePeerTask(taskId: string, actorId: string, note?: stri
     .update({ peer_closed_at: new Date().toISOString() } as never)
     .eq("id", taskId);
   if (error) throw new Error(error.message);
-  const text = `Reviewed and closed${note?.trim() ? ` — ${note.trim()}` : ""}`;
+  const text = `Reviewed — marked as completed${note?.trim() ? ` — ${note.trim()}` : ""}`;
   const { error: actErr } = await supabase
     .from("task_activity")
     .insert({ task_id: taskId, type: "remark", actor_id: actorId, note: text });
@@ -363,11 +363,11 @@ export async function closePeerTask(taskId: string, actorId: string, note?: stri
  * the assignee knows what to recheck.
  */
 export async function reopenPeerTask(taskId: string, actorId: string, reason: string): Promise<void> {
-  if (!reason.trim()) throw new Error("Say what needs to be rechecked.");
+  if (!reason.trim()) throw new Error("Write what needs to change before re-opening.");
   await reopenTask(taskId, actorId);
   const { error } = await supabase
     .from("task_activity")
-    .insert({ task_id: taskId, type: "remark", actor_id: actorId, note: `Sent back for rework — ${reason.trim()}` });
+    .insert({ task_id: taskId, type: "remark", actor_id: actorId, note: `Re-opened — ${reason.trim()}` });
   if (error) throw new Error(error.message);
 }
 

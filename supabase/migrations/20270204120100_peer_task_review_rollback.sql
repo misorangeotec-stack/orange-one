@@ -18,6 +18,7 @@ drop function if exists public.guard_task_peer_review();
 
 drop index if exists public.tasks_peer_awaiting_review_idx;
 alter table public.tasks
+  drop column if exists peer_reopen_count,
   drop column if exists peer_closed_by,
   drop column if exists peer_closed_at;
 

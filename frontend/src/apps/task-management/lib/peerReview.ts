@@ -20,6 +20,10 @@ import type { Task } from "../types";
 export const awaitingPeerReview = (t: Pick<Task, "isPeerAssignment" | "status" | "peerClosedAt">): boolean =>
   t.isPeerAssignment && t.status === "completed" && !t.peerClosedAt;
 
+/** Sent back by the giver and not yet completed again — the "Re-opened" label. */
+export const peerReopened = (t: Pick<Task, "isPeerAssignment" | "status" | "peerReopenCount">): boolean =>
+  t.isPeerAssignment && t.peerReopenCount > 0 && t.status !== "completed" && t.status !== "shifted";
+
 /**
  * Who reviews a peer task: the person who gave it — never the assignee. An admin may
  * stand in (also for the old shift copies whose creator became the assignee).

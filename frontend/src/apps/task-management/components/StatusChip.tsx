@@ -1,5 +1,6 @@
-import type { TaskStatus } from "../types";
+import type { Task, TaskStatus } from "../types";
 import { cn } from "@/shared/lib/cn";
+import { awaitingPeerReview, peerReopened } from "../lib/peerReview";
 
 /** Status pill mapping task_status → label + on-theme colors. */
 const STYLES: Record<TaskStatus, { label: string; cls: string; dot: string }> = {
@@ -10,12 +11,22 @@ const STYLES: Record<TaskStatus, { label: string; cls: string; dot: string }> = 
   shifted: { label: "Shifted", cls: "bg-orange-soft text-orange", dot: "#FF6A1F" },
 };
 
+/**
+ * Peer task review (lib/peerReview.ts): a completed peer task is not done until the giver
+ * marks it completed, and one they sent back says so until it is completed again.
+ */
+const IN_REVIEW = { label: "In review", cls: "bg-[#FFF6E5] text-[#9a6200]", dot: "#F8B62B" };
+const REOPENED = { label: "Re-opened", cls: "bg-[#FDECEC] text-[#c0392b]", dot: "#E5484D" };
+
 export default function StatusChip({
   status,
   notApplicable,
+  peer,
   className,
 }: {
   status: TaskStatus;
+  /** Pass the task to show the peer review states (In review / Re-opened). */
+  peer?: Pick<Task, "isPeerAssignment" | "status" | "peerClosedAt" | "peerReopenCount">;
   /** When true, render a greyed "Not Applicable" pill instead of the status (for "when" instances). */
   notApplicable?: boolean;
   className?: string;
@@ -33,7 +44,7 @@ export default function StatusChip({
       </span>
     );
   }
-  const s = STYLES[status];
+  const s = peer && awaitingPeerReview(peer) ? IN_REVIEW : peer && peerReopened(peer) ? REOPENED : STYLES[status];
   return (
     <span
       className={cn(

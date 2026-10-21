@@ -155,6 +155,7 @@ export interface Task {
   // review; a reopen clears it. Always null on a non-peer task. See lib/peerReview.ts.
   peerClosedAt: string | null;
   peerClosedBy: string | null;
+  peerReopenCount: number; // times the giver sent it back; drives the "Re-opened" label
   // KRA task (Task Category ≠ Others) — see lib/kraTasks.ts. kraWeight is the KRA's Wt%
   // and kraCompletionWeight the part of it earned on completion, both snapshotted when
   // the task was given; reviewRating is the direct HOD's 1-10, null while awaiting

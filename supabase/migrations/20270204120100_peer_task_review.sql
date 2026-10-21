@@ -10,7 +10,8 @@
 --                           and round the same loop again.
 --
 -- WHAT CHANGES
---   1. tasks gains peer_closed_at / peer_closed_by. "Awaiting review" is not a status:
+--   1. tasks gains peer_closed_at / peer_closed_by, and peer_reopen_count (how many times
+--      the giver sent it back — the "Re-opened" label on Given / Received). "Awaiting review" is not a status:
 --      it is is_peer_assignment + completed + peer_closed_at null — the same shape the
 --      KRA review already uses (completed + kra + no rating), so every scorecard keeps
 --      reading a completed peer task exactly as it does today.
@@ -56,10 +57,14 @@ begin;
 -- ---------------------------------------------------------------------------
 alter table public.tasks
   add column if not exists peer_closed_at timestamptz,
-  add column if not exists peer_closed_by uuid references auth.users on delete set null;
+  add column if not exists peer_closed_by uuid references auth.users on delete set null,
+  add column if not exists peer_reopen_count integer not null default 0;
 
 comment on column public.tasks.peer_closed_at is
   'Peer task review (20270204120100): when the person who gave this peer task reviewed and closed it. Null on a completed peer task = awaiting their review. Cleared on reopen. Always null on a non-peer task.';
+
+comment on column public.tasks.peer_reopen_count is
+  'Peer task review (20270204120100): how many times this peer task was reopened after being completed. Kept by the trigger only.';
 
 -- The giver's review queue.
 create index if not exists tasks_peer_awaiting_review_idx
@@ -88,8 +93,12 @@ begin
   if tg_op = 'INSERT' then
     new.peer_closed_at := null;
     new.peer_closed_by := null;
+    new.peer_reopen_count := 0;
     return new;
   end if;
+
+  -- The count is the trigger's alone.
+  new.peer_reopen_count := old.peer_reopen_count;
 
   if not old.is_peer_assignment then
     if new.peer_closed_at is distinct from old.peer_closed_at
@@ -104,7 +113,10 @@ begin
   if new.status <> 'completed' then
     if old.status = 'completed' and old.peer_closed_at is not null and v_uid is not null
        and v_uid is distinct from old.created_by and not public.is_admin(v_uid) then
-      raise exception 'This peer task has been reviewed and closed; only the person who gave it can reopen it.';
+      raise exception 'This peer task has been reviewed and marked as completed; only the person who gave it can re-open it.';
+    end if;
+    if old.status = 'completed' then
+      new.peer_reopen_count := old.peer_reopen_count + 1;
     end if;
     new.peer_closed_at := null;
     new.peer_closed_by := null;
@@ -121,14 +133,14 @@ begin
   -- Completed → completed: the only legal change is closing it, once.
   if new.peer_closed_at is distinct from old.peer_closed_at then
     if old.peer_closed_at is not null or new.peer_closed_at is null then
-      raise exception 'A closed peer task is reopened, not un-closed.';
+      raise exception 'A completed peer task can be re-opened, not un-completed.';
     end if;
     if v_uid is not null then
       if v_uid = old.assigned_to then
-        raise exception 'You cannot review your own work; the person who gave this task closes it.';
+        raise exception 'You cannot review your own work; the person who gave this task marks it as completed.';
       end if;
       if v_uid is distinct from old.created_by and not public.is_admin(v_uid) then
-        raise exception 'Only the person who gave this peer task can close it.';
+        raise exception 'Only the person who gave this peer task can mark it as completed.';
       end if;
     end if;
     new.peer_closed_at := now();

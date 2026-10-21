@@ -71,6 +71,7 @@ const mapTask = (r: any): Task => ({
   isPeerAssignment: r.is_peer_assignment ?? false,
   peerClosedAt: r.peer_closed_at ?? null,
   peerClosedBy: r.peer_closed_by ?? null,
+  peerReopenCount: r.peer_reopen_count ?? 0,
   ...kraFieldsFromRow(r),
   createdAt: r.created_at,
   updatedAt: r.updated_at,
