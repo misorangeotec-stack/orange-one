@@ -115,6 +115,14 @@ export function useRequestForm(opts: { mode: "new" | "edit"; init?: RequestFormI
   const [err, setErr] = useState<string | null>(null);
   const [requested, setRequested] = useState<string | null>(null);
   const [raise, setRaise] = useState<{ mt: MasterType; prefill: MasterValues } | null>(null);
+  /**
+   * The "Map items to this vendor" modal: open when non-null. `lineUid` is the
+   * row it was opened from (null from the buttons), so a single mapped item can
+   * drop straight into that row.
+   */
+  const [mapping, setMapping] = useState<{ search: string; categoryId: string; lineUid: string | null } | null>(null);
+  /** "Mapped 2 items …", once something has been mapped from this form. */
+  const [mapped, setMapped] = useState<string | null>(null);
 
   /**
    * Seed the form from a saved request exactly ONCE. The store rebuilds
@@ -199,6 +207,7 @@ export function useRequestForm(opts: { mode: "new" | "edit"; init?: RequestFormI
   const onPickVendor = (vid: string) => {
     setVendorId(vid);
     setLines([makeEmptyLine()]);
+    setMapped(null);
     const v = s.vendorById(vid);
     setCurrency(v?.defaultCurrency || "");
   };
@@ -211,12 +220,61 @@ export function useRequestForm(opts: { mode: "new" | "edit"; init?: RequestFormI
     patch({ itemId, unit: it.unit, qty: line.qty || "1" });
   };
 
-  const raiseItem = (line: RequestLine) => (name: string) => {
-    if (!line.categoryId) {
-      setErr("Pick a category first.");
+  /**
+   * A typed item that is not in the row's list. Almost always the item EXISTS in
+   * the master and is only not mapped to this vendor yet — so this opens the
+   * mapping modal (saved straight away, no approval), not a master request. A
+   * truly new item is still requested, from inside that modal.
+   */
+  const mapItem = (line: RequestLine) => (name: string) => {
+    if (!vendorId) {
+      setErr("Pick the vendor first.");
       return;
     }
-    setRaise({ mt: "item", prefill: { name, category_id: line.categoryId } });
+    setErr(null);
+    setMapping({ search: name, categoryId: line.categoryId, lineUid: line.uid });
+  };
+
+  /** "Map items" from a button, not from a row. */
+  const openMapping = () => {
+    if (!vendorId) {
+      setErr("Pick the vendor first.");
+      return;
+    }
+    setErr(null);
+    setMapping({ search: "", categoryId: "", lineUid: null });
+  };
+
+  /** Still a REQUEST: an item that is not in the Import item master at all. */
+  const raiseNewItem = (name: string, categoryId: string) => {
+    setRaise({ mt: "item", prefill: { name, ...(categoryId ? { category_id: categoryId } : {}) } });
+  };
+
+  /**
+   * After a mapping lands. When exactly one item was mapped from a row that has
+   * no item yet, put it in that row — that is what the person was doing.
+   */
+  const onMapped = (result: { created: number; reactivated: number; skipped: number }, itemIds: string[]) => {
+    const added = result.created + result.reactivated;
+    setMapped(
+      added === 0
+        ? "Those items were already mapped to this vendor."
+        : result.reactivated > 0
+          ? `Mapped ${added} item${added === 1 ? "" : "s"} to this vendor — ${result.reactivated} of them switched back on. Orderable now.`
+          : `Mapped ${added} item${added === 1 ? "" : "s"} to this vendor — orderable now.`
+    );
+    const uid = mapping?.lineUid;
+    if (!uid || itemIds.length !== 1) return;
+    const it = s.itemById(itemIds[0]);
+    if (!it) return;
+    setLines((ls) => {
+      const row = ls.find((l) => l.uid === uid);
+      if (!row || row.itemId) return ls;
+      if (ls.some((l) => l.uid !== uid && l.itemId === it.id)) return ls;
+      return ls.map((l) =>
+        l.uid === uid ? { ...l, categoryId: it.categoryId, itemId: it.id, unit: it.unit, qty: l.qty || "1" } : l
+      );
+    });
   };
 
   const filled = lines.filter((l) => !isLineBlank(l));
@@ -245,10 +303,12 @@ export function useRequestForm(opts: { mode: "new" | "edit"; init?: RequestFormI
     err, setErr,
     requested, setRequested,
     raise, setRaise,
+    mapping, setMapping,
+    mapped,
     // options
     companyOptions, vendorOptions, categoryOptions, shipmentOptions, hasVendorItems,
     // behaviour
-    itemOptionsFor, onPickVendor, onPickItem, raiseItem,
+    itemOptionsFor, onPickVendor, onPickItem, mapItem, openMapping, raiseNewItem, onMapped,
     filled, validate,
     /** The fields as a JSON-safe snapshot — what "Save as draft" stores. */
     snapshot: (): RequestDraft => ({ companyId, vendorId, shipmentType, currency, note, lines }),

@@ -1,10 +1,12 @@
 import type { ReactNode } from "react";
 import Card from "@/shared/components/ui/Card";
+import Button from "@/shared/components/ui/Button";
 import Combobox, { type ComboboxHandle } from "@/shared/components/ui/Combobox";
 import LineGrid, { type LineGridColumn } from "@/shared/components/ui/LineGrid";
 import { FieldLabel, TextInput, TextArea } from "@/shared/components/ui/Form";
 import { cn } from "@/shared/lib/cn";
 import RequestMasterModal from "./RequestMasterModal";
+import MapVendorItemModal from "./MapVendorItemModal";
 import QtyTotal from "./QtyTotal";
 import { masterTypeLabel } from "../lib/masterFields";
 import { isLineBlank, makeInheritedLine, type RequestFormApi, type RequestLine } from "../pages/requests/useRequestForm";
@@ -29,7 +31,8 @@ export default function RequestForm({ form, children }: { form: RequestFormApi; 
     mode, companyId, setCompanyId, vendorId, note, setNote, err, requested, setRequested,
     raise, setRaise, companyOptions, vendorOptions, categoryOptions,
     shipmentType, setShipmentType, shipmentOptions, hasVendorItems,
-    lines, setLines, itemOptionsFor, onPickVendor, onPickItem, raiseItem, filled,
+    lines, setLines, itemOptionsFor, onPickVendor, onPickItem, filled,
+    mapping, setMapping, mapped, mapItem, openMapping, raiseNewItem, onMapped,
   } = form;
 
   const locked = mode === "edit";
@@ -90,15 +93,15 @@ export default function RequestForm({ form, children }: { form: RequestFormApi; 
               !row.categoryId
                 ? "Pick a category first"
                 : opts.length === 0
-                  ? "No items mapped for this category"
+                  ? "Nothing mapped here — type to map one"
                   : "Search & select an item…"
             }
             disabled={!row.categoryId}
             searchable
             triggerClassName="px-2.5 py-1.5 text-[13.5px]"
             onTriggerKeyDown={api.keyHandler}
-            onCreate={raiseItem(row)}
-            createLabel={(q) => `Request new item “${q}”`}
+            onCreate={mapItem(row)}
+            createLabel={(q) => `Map “${q}” to this vendor`}
           />
         );
       },
@@ -190,9 +193,10 @@ export default function RequestForm({ form, children }: { form: RequestFormApi; 
           <div className="rounded-xl border border-line bg-page px-4 py-3.5">
             <p className="text-[13.5px] font-medium text-navy">No items are mapped to this vendor yet.</p>
             <p className="text-[12.5px] text-grey-2 mt-1">
-              A requisition can only name items this vendor supplies. Add them in Masters → Vendor-Item Mappings,
-              or ask that master's owner to.
+              A requisition can only name items this vendor supplies. Map them yourself — it is saved straight
+              away, no approval needed.
             </p>
+            <Button size="sm" className="mt-2.5" onClick={openMapping}>Map items to this vendor</Button>
           </div>
         )}
 
@@ -225,17 +229,22 @@ export default function RequestForm({ form, children }: { form: RequestFormApi; 
             <p className="text-[12px] text-grey-2">
               Only items mapped to this vendor can be ordered, so both lists are already narrowed to what it
               supplies. Each row has its own category. Press Tab or Enter at the end of a row to start the next
-              one. Missing an item or category? Type its name to request it.
+              one. Missing an item? Type its name in the Item box to map it to this vendor, or{" "}
+              <button type="button" className="font-semibold text-orange hover:underline" onClick={openMapping}>
+                map items to this vendor
+              </button>
+              {" "}— no approval needed.
             </p>
           </div>
         )}
 
         {/* Outside the grid: the Company and Vendor pickers can raise a master too,
             and this must not disappear with an unmapped vendor. */}
+        {mapped && <p className="text-[12px] text-teal">{mapped}</p>}
         {requested && (
           <p className="text-[12px] text-teal">
-            Requested {requested} — selectable once the master's owner approves it. A new item also needs mapping to
-            this vendor before it can be ordered.
+            Requested {requested} — selectable once the master's owner approves it. Once a new item is approved,
+            map it to this vendor here.
           </p>
         )}
 
@@ -255,6 +264,19 @@ export default function RequestForm({ form, children }: { form: RequestFormApi; 
         lockType
         prefill={raise?.prefill}
         onRequested={(_id, mt, name) => setRequested(`${masterTypeLabel(mt).toLowerCase()} “${name}”`)}
+      />
+
+      {/* Mapping is NOT a request: no approval, so it does not share the modal
+          above. The vendor arrives fixed — mapping to another vendor would not
+          make the item orderable on this requisition. */}
+      <MapVendorItemModal
+        open={mapping !== null}
+        onClose={() => setMapping(null)}
+        vendorId={vendorId}
+        categoryId={mapping?.categoryId ?? null}
+        initialSearch={mapping?.search ?? null}
+        onMapped={(result, itemIds) => onMapped(result, itemIds)}
+        onRequestNewItem={raiseNewItem}
       />
     </>
   );
