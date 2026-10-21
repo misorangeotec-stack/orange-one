@@ -55,15 +55,6 @@
 //      and stores only what a human types; the money is joined live by the report. Add / edit /
 //      delete sit behind the admin gate like every muster write. Clear / reopen take the same
 //      per-ledger door as Red Mark: the row names the ledger, and the ledger decides.)
-//   POST body { action: "insert_legal", ledger_id, tally_name, company, location, salesperson,
-//               reason, checked }                                -> { ok: true, row }
-//   POST body { action: "update_legal", ledger_id, salesperson, reason, checked } -> { ok: true }
-//   POST body { action: "delete_legal", ledger_id }              -> { ok: true }
-//   POST body { action: "clear_legal",  ledger_id, clear_note }  -> { ok: true, row }
-//   POST body { action: "reopen_legal", ledger_id }              -> { ok: true, row }
-//     (Legal Customer — ext_legal_customer, the same shape and rules as Red Mark: one row per ledger,
-//      presence is the flag. Add / edit / delete sit behind the admin gate; clear / reopen take the
-//      same per-ledger door as Red Mark.)
 //   POST body { action: "add_list_value",        list, name, note }        -> { ok: true }
 //   POST body { action: "set_list_value_active", list, name, is_active }   -> { ok: true }
 //   POST body { action: "rename_list_value",     list, from, to }          -> { ok: true, counts }
@@ -77,7 +68,7 @@
 //   here and on user tags in the identity project. Renaming the master alone would leave 319
 //   customers reading "NAKUL JI" against a master that no longer contains it: the exact bug the
 //   feature exists to remove, re-created by the tool meant to fix it. So rename_list_value moves
-//   ext_ledger_tags, ext_redmark, ext_legal_customer, profiles.receivables_salespersons and
+//   ext_ledger_tags, ext_redmark, profiles.receivables_salespersons and
 //   report_email_recipients.salesperson too, and returns a per-target count. A collection-team
 //   rename moves ext_ledger_group and profiles.receivables_collection_teams (RC-11).
 //   It is NOT atomic — five statements over two projects with no shared transaction — so a partial
@@ -282,7 +273,7 @@ function parseRedmark(body: Record<string, unknown>): { row: Record<string, unkn
 //    on that customer at once. So a clearable master now says how its row is addressed (`rowKey`) and
 //    whether that key already IS the ledger (`keyIsLedger`); a dispute is found by its id, and the
 //    authorisation is decided on the ledger_id read off that row.
-type ClearableKind = "redmark" | "legal" | "dispute";
+type ClearableKind = "redmark" | "dispute";
 
 interface Clearable {
   table: string;
@@ -302,10 +293,6 @@ const CLEARABLE: Record<ClearableKind, Clearable> = {
     table: "ext_redmark", rowKey: "ledger_id", keyField: "ledger_id",
     keyOf: (b) => clean(b.ledger_id), keyIsLedger: true, label: "red mark",
   },
-  legal: {
-    table: "ext_legal_customer", rowKey: "ledger_id", keyField: "ledger_id",
-    keyOf: (b) => clean(b.ledger_id), keyIsLedger: true, label: "legal customer",
-  },
   dispute: {
     table: "ext_dispute", rowKey: "id", keyField: "id",
     keyOf: (b) => rowId(b.id), keyIsLedger: false, label: "dispute",
@@ -316,8 +303,6 @@ const CLEARABLE: Record<ClearableKind, Clearable> = {
 const CLEAR_ACTIONS: Record<string, { kind: ClearableKind; mode: "clear" | "reopen" }> = {
   clear_redmark: { kind: "redmark", mode: "clear" },
   reopen_redmark: { kind: "redmark", mode: "reopen" },
-  clear_legal: { kind: "legal", mode: "clear" },
-  reopen_legal: { kind: "legal", mode: "reopen" },
   clear_dispute: { kind: "dispute", mode: "clear" },
   reopen_dispute: { kind: "dispute", mode: "reopen" },
 };
@@ -746,62 +731,6 @@ Deno.serve(async (req) => {
     return json(200, { ok: true });
   }
 
-  // ---- ext_legal_customer (per-ledger flag, keyed by the Tally GUID) ----
-  // Legal Customer — the same contract as Red Mark above, write for write. parseRedmark validates it
-  // because the row shape is identical; the upsert's `cleared: false` reopens a re-added cleared case.
-
-  if (body.action === "insert_legal") {
-    const parsed = parseRedmark(body);
-    if ("err" in parsed) return json(400, { error: parsed.err });
-    const badSp = await checkListValue(cw, "salesperson", clean(body.salesperson), null);
-    if (badSp) return json(400, { error: badSp });
-    const { data, error } = await cw
-      .from("ext_legal_customer")
-      .upsert({ ...parsed.row, cleared: false, updated_by }, { onConflict: "ledger_id" })
-      .select()
-      .single();
-    if (error) return json(400, { error: error.message });
-    return json(200, { ok: true, row: data });
-  }
-
-  if (body.action === "update_legal") {
-    const ledger_id = clean(body.ledger_id);
-    if (!ledger_id) return json(400, { error: "ledger_id required" });
-    const { data: curLg, error: curLgErr } = await cw
-      .from("ext_legal_customer").select("salesperson").eq("ledger_id", ledger_id).maybeSingle();
-    if (curLgErr) return json(400, { error: curLgErr.message });
-    if (!curLg) return json(404, { error: `legal customer ${ledger_id} not found` });
-    const badLgSp = await checkListValue(
-      cw, "salesperson", clean(body.salesperson), curLg.salesperson);
-    if (badLgSp) return json(400, { error: badLgSp });
-    const { data, error } = await cw
-      .from("ext_legal_customer")
-      .update({
-        salesperson: clean(body.salesperson),
-        reason: clean(body.reason),
-        checked: body.checked !== false,
-        updated_by,
-      })
-      .eq("ledger_id", ledger_id)
-      .select("ledger_id");
-    if (error) return json(400, { error: error.message });
-    if (!data?.length) return json(404, { error: `legal customer ${ledger_id} not found` });
-    return json(200, { ok: true });
-  }
-
-  if (body.action === "delete_legal") {
-    const ledger_id = clean(body.ledger_id);
-    if (!ledger_id) return json(400, { error: "ledger_id required" });
-    const { data, error } = await cw
-      .from("ext_legal_customer")
-      .delete()
-      .eq("ledger_id", ledger_id)
-      .select("ledger_id");
-    if (error) return json(400, { error: error.message });
-    if (!data?.length) return json(404, { error: `legal customer ${ledger_id} not found` });
-    return json(200, { ok: true });
-  }
-
   // ---- ext_dispute (RC-13: per-BILL, addressed by the bigint id PK) ----
   // A customer bill under dispute. The row holds only what a human types — remark, item description,
   // the clear status — and names its bill by (ledger_id, bill_ref); the report joins the money live.
@@ -1027,10 +956,10 @@ Deno.serve(async (req) => {
       });
     }
 
-    const counts = { master: 0, ledgers: 0, redmark: 0, legal: 0, userTags: 0, recipients: 0 };
+    const counts = { master: 0, ledgers: 0, redmark: 0, userTags: 0, recipients: 0 };
     const moved = () =>
       `Moved so far — list ${counts.master}, customers ${counts.ledgers}, red marks ` +
-      `${counts.redmark}, legal customers ${counts.legal}, user tags ${counts.userTags}, report recipients ${counts.recipients}.`;
+      `${counts.redmark}, user tags ${counts.userTags}, report recipients ${counts.recipients}.`;
     const stop = (where: string, msg: string) =>
       json(500, {
         error: `Renamed part-way and stopped at ${where}: ${msg}. ${moved()} The Masters screen ` +
@@ -1088,13 +1017,6 @@ Deno.serve(async (req) => {
         .eq("salesperson", from).select("ledger_id");
       if (rmErr) return stop("the red mark master", rmErr.message);
       counts.redmark = rm?.length ?? 0;
-
-      // 3b. Legal Customer keeps its own copy too, exactly like Red Mark.
-      const { data: lg, error: lgErr } = await cw
-        .from("ext_legal_customer").update({ salesperson: to, updated_by })
-        .eq("salesperson", from).select("ledger_id");
-      if (lgErr) return stop("the legal customer master", lgErr.message);
-      counts.legal = lg?.length ?? 0;
 
       // 4. The user tags, in the IDENTITY project. text[], and PostgREST cannot express
       //    array_replace — so read, rewrite, write back, one row at a time. Every update carries

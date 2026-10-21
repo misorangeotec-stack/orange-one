@@ -1,5 +1,5 @@
 import { useBackState } from "@/shared/lib/backState";
-import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   ClipboardCheck, Save, RefreshCw, Search, ChevronDown,
@@ -32,11 +32,9 @@ import {
   saveTag, saveGroup, saveCompanyMap,
   insertOtherPayment, saveOtherPayment, deleteOtherPayment,
   insertRedMark, saveRedMark, deleteRedMark, clearRedMark, reopenRedMark,
-  fetchLegalCustomerRows, insertLegalCustomer, saveLegalCustomer, deleteLegalCustomer,
-  clearLegalCustomer, reopenLegalCustomer,
   fetchDisputeRows, fetchOpenBills, saveDispute, deleteDispute, clearDispute, reopenDispute, disputeKey,
   type TagRow, type GroupRow, type SnapRow, type OtherPaymentRow, type OtherPaymentInput,
-  type RedMarkRow, type RedMarkInput, type DisputeRow, type OpenBillRow,
+  type RedMarkRow, type DisputeRow, type OpenBillRow,
 } from "@hub/lib/musterApi";
 import { fetchCompanyMap, makeCompanyResolver, companyGuidOf, type CompanyMapRow } from "@hub/lib/companyMap";
 import {
@@ -47,16 +45,14 @@ import MasterValueCell from "@hub/components/MasterValueCell";
 import NameMasterTab, { type NameMasterUsage } from "./NameMasterTab";
 import { formatDateDMY } from "@hub/lib/utils";
 import { MasterIoBar } from "@hub/pages/MusterIoBar";
-import {
-  tagIo, groupIo, companyIo, otherPaymentIo, redMarkIo, legalCustomerIo, disputeIo, type MasterIo,
-} from "@hub/lib/musterIo";
+import { tagIo, groupIo, companyIo, otherPaymentIo, redMarkIo, disputeIo } from "@hub/lib/musterIo";
 import { ClearStatusToggle } from "@hub/components/ClearStatusToggle";
 import { ClearStatusBadge } from "@hub/components/ClearStatusBadge";
 import { ClearNoteDialog } from "@hub/components/ClearNoteDialog";
 import { AddDisputeDialog, type DisputeBill, type DisputeCustomer } from "@hub/components/AddDisputeDialog";
 import {
-  CLEAR_VIEW_DEFAULT, DISPUTE_COPY, LEGAL_COPY, RED_MARK_COPY, countByClearView, describeClear, matchesClearView, useCanClear,
-  type ClearCopy, type ClearView,
+  CLEAR_VIEW_DEFAULT, DISPUTE_COPY, countByClearView, describeClear, matchesClearView, useCanClear,
+  type ClearView,
 } from "@hub/lib/clearStatus";
 import { useColumnGrid } from "@hub/lib/useColumnGrid";
 import { GridTable, describeColumnFilters, type TableColumn } from "@hub/components/GridTable";
@@ -1308,83 +1304,17 @@ function OtherPaymentMuster({ rows, snap, snapByGuid, onReload }: {
   );
 }
 
-// ── Red Mark & Legal Customer masters ─────────────────────────────────────────────────────────
-// Two per-ledger flags (presence = flagged), keyed by the Tally GUID, with the same columns, buttons,
-// clear rule and import/export. One component draws both; `FlagMasterConfig` carries what differs.
-// Red Mark also drives the "Red Mark" badge/KPI/filter on the Live (Tally) screens; Legal Customer is
-// a list of its own.
-
-interface FlagMasterConfig {
-  /** "Red Mark" / "Legal Customer" — buttons, toasts, dialog titles. */
-  noun: string;
-  /** "Red Mark customer(s)" / "Legal Customer(s)" — counts and empty states. */
-  one: string;
-  many: string;
-  /** The back-state key for this tab's search box. */
-  searchKey: string;
-  copy: ClearCopy;
-  io: (snapByGuid: Map<string, SnapRow>, knownSalespersons: Set<string>) => MasterIo<RedMarkRow>;
-  insert: (input: RedMarkInput) => Promise<{ row: RedMarkRow }>;
-  save: (input: { ledger_id: string; salesperson: string | null; reason: string | null; checked: boolean }) => Promise<void>;
-  remove: (ledger_id: string) => Promise<void>;
-  clear: (ledger_id: string, note: string) => Promise<{ row: RedMarkRow }>;
-  reopen: (ledger_id: string) => Promise<{ row: RedMarkRow }>;
-  addDescription: string;
-  reasonPlaceholder: string;
-  /** The footer under the table. */
-  about: ReactNode;
-  /** What Delete stops happening, in the delete dialog. */
-  deleteEffect: string;
-}
-
-const RED_MARK_MASTER: FlagMasterConfig = {
-  noun: "Red Mark", one: "Red Mark customer", many: "Red Mark customers",
-  searchKey: "MusterEditor.search.6",
-  copy: RED_MARK_COPY,
-  io: redMarkIo,
-  insert: insertRedMark, save: saveRedMark, remove: deleteRedMark, clear: clearRedMark, reopen: reopenRedMark,
-  addDescription:
-    "Flags the customer as Red Mark across the Live (Tally) screens (KPI, badge, filter, and the Red " +
-    "Mark report). Keyed by the Tally GUID, so a rename never loses the flag.",
-  reasonPlaceholder: "e.g. long overdue, disputed…",
-  about: (
-    <>
-      Hand-picked customers flagged <span className="font-medium">Red Mark</span>. The flag shows as a
-      red badge, a Dashboard KPI, a filter, and the Red Mark report on the Live (Tally) screens.
-      Keyed by the Tally GUID, so a rename never loses the flag.{" "}
-    </>
-  ),
-  deleteEffect: "will no longer be flagged as Red Mark on the Live (Tally) screens,",
-};
-
-const LEGAL_MASTER: FlagMasterConfig = {
-  noun: "Legal Customer", one: "Legal Customer", many: "Legal Customers",
-  searchKey: "MusterEditor.search.legal",
-  copy: LEGAL_COPY,
-  io: legalCustomerIo,
-  insert: insertLegalCustomer, save: saveLegalCustomer, remove: deleteLegalCustomer,
-  clear: clearLegalCustomer, reopen: reopenLegalCustomer,
-  addDescription:
-    "Puts the customer on the Legal Customer list. Keyed by the Tally GUID, so a rename never loses them.",
-  reasonPlaceholder: "e.g. legal notice sent, case filed, cheque bounce…",
-  about: (
-    <>
-      Customers under <span className="font-medium">legal action</span>, added one at a time or by
-      Import (a sheet can add new customers by Ledger ID or by exact Tally name). Keyed by the Tally
-      GUID, so a rename never loses them.{" "}
-    </>
-  ),
-  deleteEffect: "will be taken off the Legal Customer list,",
-};
+// ── Red Mark master ────────────────────────────────────────────────────────────────────────────
+// A per-ledger flag (presence = flagged), keyed by the Tally GUID. Drives the "Red Mark" badge/KPI/
+// filter on the Live (Tally) screens. Add = pick a customer; Delete = un-flag.
 
 type RmDraft = { salesperson: string; reason: string; checked: boolean };
 const rmDraftOf = (r: RedMarkRow): RmDraft => ({
   salesperson: r.salesperson ?? "", reason: r.reason ?? "", checked: r.checked,
 });
 
-/** Add dialog: pick a customer + optional reason, then flag them. */
-function AddFlagDialog({ cfg, open, onOpenChange, snap, rows, onAdded }: {
-  cfg: FlagMasterConfig;
+/** Add-red-mark dialog: pick a customer + optional reason, then flag them. */
+function AddRedMarkDialog({ open, onOpenChange, snap, rows, onAdded }: {
   open: boolean; onOpenChange: (v: boolean) => void; snap: SnapRow[];
   /** The master as it stands, so the dialog can say when this add REOPENS a cleared case. */
   rows: RedMarkRow[]; onAdded: () => void;
@@ -1406,7 +1336,7 @@ function AddFlagDialog({ cfg, open, onOpenChange, snap, rows, onAdded }: {
     try {
       // The server also sets cleared:false — re-flagging a settled customer starts a new case
       // rather than leaving a row every screen ignores.
-      await cfg.insert({
+      await insertRedMark({
         ledger_id: ledger.ledger_id,
         tally_name: ledger.name,
         company: ledger.company,
@@ -1418,7 +1348,7 @@ function AddFlagDialog({ cfg, open, onOpenChange, snap, rows, onAdded }: {
       onAdded();
       onOpenChange(false);
       toast({
-        title: existing?.cleared ? `${cfg.noun} reopened` : `${cfg.noun} added`,
+        title: existing?.cleared ? "Red Mark reopened" : "Red Mark added",
         description: `${ledger.name}`,
       });
     } catch (e) {
@@ -1432,8 +1362,11 @@ function AddFlagDialog({ cfg, open, onOpenChange, snap, rows, onAdded }: {
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-lg">
         <DialogHeader>
-          <DialogTitle>Add a {cfg.one}</DialogTitle>
-          <DialogDescription>{cfg.addDescription}</DialogDescription>
+          <DialogTitle>Add a Red Mark customer</DialogTitle>
+          <DialogDescription>
+            Flags the customer as Red Mark across the Live (Tally) screens (KPI, badge, filter, and
+            the Red Mark report). Keyed by the Tally GUID, so a rename never loses the flag.
+          </DialogDescription>
         </DialogHeader>
         <div className="grid gap-3">
           <div className="grid gap-1.5">
@@ -1442,7 +1375,7 @@ function AddFlagDialog({ cfg, open, onOpenChange, snap, rows, onAdded }: {
           </div>
           <div className="grid gap-1.5">
             <span className="text-xs font-medium text-muted-foreground">Reason (optional)</span>
-            <Input value={reason} onChange={(e) => setReason(e.target.value)} placeholder={cfg.reasonPlaceholder} />
+            <Input value={reason} onChange={(e) => setReason(e.target.value)} placeholder="e.g. long overdue, disputed…" />
           </div>
           {existing && (
             <p className="text-[11px] text-muted-foreground">
@@ -1455,7 +1388,7 @@ function AddFlagDialog({ cfg, open, onOpenChange, snap, rows, onAdded }: {
         <DialogFooter>
           <Button variant="outline" onClick={() => onOpenChange(false)}>Cancel</Button>
           <Button onClick={submit} disabled={!ledger || saving} className="gap-1.5">
-            <Plus className="h-4 w-4" />{saving ? "Adding…" : `Add ${cfg.noun}`}
+            <Plus className="h-4 w-4" />{saving ? "Adding…" : "Add Red Mark"}
           </Button>
         </DialogFooter>
       </DialogContent>
@@ -1463,8 +1396,7 @@ function AddFlagDialog({ cfg, open, onOpenChange, snap, rows, onAdded }: {
   );
 }
 
-function FlagMuster({ cfg, rows, snap, snapByGuid, teamByGuid, master, knownNames, onReload }: {
-  cfg: FlagMasterConfig;
+function RedMarkMuster({ rows, snap, snapByGuid, teamByGuid, master, knownNames, onReload }: {
   rows: RedMarkRow[]; snap: SnapRow[]; snapByGuid: Map<string, SnapRow>;
   /** ledger_id → collection team, from the group muster: the who-may-clear test reads it (RC-12). */
   teamByGuid: Map<string, string>;
@@ -1484,7 +1416,7 @@ function FlagMuster({ cfg, rows, snap, snapByGuid, teamByGuid, master, knownName
   const [clearView, setClearView] = useState<ClearView>(CLEAR_VIEW_DEFAULT);
   const canClear = useCanClear();
 
-  const [search, setSearch] = useBackState(cfg.searchKey, "");
+  const [search, setSearch] = useBackState("MusterEditor.search.6", "");
   const [page, setPage] = useState(1);
 
   const cur = (r: RedMarkRow): RmDraft => draft[r.ledger_id] ?? rmDraftOf(r);
@@ -1516,7 +1448,7 @@ function FlagMuster({ cfg, rows, snap, snapByGuid, teamByGuid, master, knownName
     const d = cur(r);
     setSavingId(r.ledger_id);
     try {
-      await cfg.save({
+      await saveRedMark({
         ledger_id: r.ledger_id,
         salesperson: d.salesperson.trim() || null,
         reason: d.reason.trim() || null,
@@ -1536,7 +1468,7 @@ function FlagMuster({ cfg, rows, snap, snapByGuid, teamByGuid, master, knownName
 
   const doDelete = async (r: RedMarkRow) => {
     try {
-      await cfg.remove(r.ledger_id);
+      await deleteRedMark(r.ledger_id);
       setConfirmDelete(null);
       toast({ title: "Removed", description: nameOf(r) });
       onReload();
@@ -1555,8 +1487,8 @@ function FlagMuster({ cfg, rows, snap, snapByGuid, teamByGuid, master, knownName
     setClearBusy(true);
     try {
       const { row: saved } = mode === "clear"
-        ? await cfg.clear(row.ledger_id, note)
-        : await cfg.reopen(row.ledger_id);
+        ? await clearRedMark(row.ledger_id, note)
+        : await reopenRedMark(row.ledger_id);
       Object.assign(row, saved);
       setClearing(null);
       toast({ title: mode === "clear" ? "Cleared" : "Reopened", description: nameOf(row) });
@@ -1628,8 +1560,8 @@ function FlagMuster({ cfg, rows, snap, snapByGuid, teamByGuid, master, knownName
       // "Clear status", never just "Status": the column beside it answers a different question —
       // has a steward verified this row?
       key: "clear", label: "Clear status", head: "w-32",
-      value: (r) => (r.cleared ? "Cleared" : cfg.copy.openLabel),
-      cell: (r) => <ClearStatusBadge row={r} copy={cfg.copy} />,
+      value: (r) => (r.cleared ? "Cleared" : "Red Mark"),
+      cell: (r) => <ClearStatusBadge row={r} />,
     },
     {
       key: "clearedBy", label: "Cleared by", head: "w-36",
@@ -1680,7 +1612,7 @@ function FlagMuster({ cfg, rows, snap, snapByGuid, teamByGuid, master, knownName
       },
     },
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  ], [cfg, snapByGuid, master, teamByGuid, draft, savingId, canClear]);
+  ], [snapByGuid, master, teamByGuid, draft, savingId, canClear]);
 
   const grid = useColumnGrid(rows, columns, prefilter);
   const view = grid.rows;
@@ -1707,16 +1639,16 @@ function FlagMuster({ cfg, rows, snap, snapByGuid, teamByGuid, master, knownName
                 has one too — two controls over the same thing would disagree the moment one of them
                 cascades. */}
             <ClearStatusToggle value={clearView} onChange={setClearView} counts={counts} />
-            <MasterIoBar io={cfg.io(snapByGuid, knownNames)} exportRows={view} existingRows={rows}
+            <MasterIoBar io={redMarkIo(snapByGuid, knownNames)} exportRows={view} existingRows={rows}
               activeFilters={describeFilters({ search, clearView, columns: describeColumnFilters(columns, grid) })}
               onReload={onReload} />
             <Button size="sm" onClick={() => setAddOpen(true)} className="gap-1.5">
-              <Plus className="h-4 w-4" />Add {cfg.noun}
+              <Plus className="h-4 w-4" />Add Red Mark
             </Button>
           </div>
         </div>
         <p className="text-xs text-muted-foreground">
-          <span className="font-medium text-foreground">{total}</span> {total === 1 ? cfg.one : cfg.many} shown
+          <span className="font-medium text-foreground">{total}</span> Red Mark customer{total === 1 ? "" : "s"} shown
         </p>
       </div>
 
@@ -1724,8 +1656,8 @@ function FlagMuster({ cfg, rows, snap, snapByGuid, teamByGuid, master, knownName
         columns={columns} grid={grid} pageRows={pageRows} rowKey={(r) => r.ledger_id}
         rowClass={(r) => (r.cleared ? "opacity-70" : undefined)}
         sourceCount={rows.length}
-        emptyMessage={`No ${cfg.many} yet.`}
-        emptyFilteredMessage={`No ${cfg.many} match the current filters${clearView !== "all" ? ` in the ${clearView} view` : ""}.`}
+        emptyMessage="No Red Mark customers yet."
+        emptyFilteredMessage={`No Red Mark customers match the current filters${clearView !== "all" ? ` in the ${clearView} view` : ""}.`}
         onClearFilters={clearAll}
       />
 
@@ -1736,18 +1668,19 @@ function FlagMuster({ cfg, rows, snap, snapByGuid, teamByGuid, master, knownName
       />
 
       <p className="text-xs text-muted-foreground pt-2">
-        {cfg.about}
+        Hand-picked customers flagged <span className="font-medium">Red Mark</span>. The flag shows as a
+        red badge, a Dashboard KPI, a filter, and the Red Mark report on the Live (Tally) screens.
+        Keyed by the Tally GUID, so a rename never loses the flag.{" "}
         <span className="font-medium">Clear</span> closes a settled case and keeps the record;{" "}
         <span className="font-medium">Delete</span> is only for a customer marked by mistake.
       </p>
 
-      <AddFlagDialog cfg={cfg} open={addOpen} onOpenChange={setAddOpen} snap={snap} rows={rows} onAdded={onReload} />
+      <AddRedMarkDialog open={addOpen} onOpenChange={setAddOpen} snap={snap} rows={rows} onAdded={onReload} />
 
       <ClearNoteDialog
         mode={clearing?.mode ?? null}
         subject={clearing ? `${nameOf(clearing.row)}${companyOf(clearing.row) ? ` · ${companyOf(clearing.row)}` : ""}` : ""}
         row={clearing?.row ?? null}
-        copy={cfg.copy}
         busy={clearBusy}
         onCancel={() => setClearing(null)}
         onConfirm={(note) => void doClear(note)}
@@ -1756,14 +1689,15 @@ function FlagMuster({ cfg, rows, snap, snapByGuid, teamByGuid, master, knownName
       <AlertDialog open={!!confirmDelete} onOpenChange={(v) => !v && setConfirmDelete(null)}>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>Delete this {cfg.noun}?</AlertDialogTitle>
+            <AlertDialogTitle>Delete this Red Mark?</AlertDialogTitle>
             <AlertDialogDescription>
               {confirmDelete && (
                 <>
-                  {nameOf(confirmDelete)} {cfg.deleteEffect} and the record is thrown away.
+                  {nameOf(confirmDelete)} will no longer be flagged as Red Mark on the Live (Tally) screens,
+                  and the record is thrown away.
                   <br /><br />
                   <span className="font-medium">If the case was settled, use Clear instead</span> — that
-                  closes the case but keeps who was marked, why, and how it ended. Delete is
+                  removes the flag everywhere but keeps who was marked, why, and how it ended. Delete is
                   for a customer who should never have been marked.
                 </>
               )}
@@ -2214,9 +2148,6 @@ export function MusterPanel() {
   const [companyMap, setCompanyMap] = useState<CompanyMapRow[] | null>(null);
   const [otherPayments, setOtherPayments] = useState<OtherPaymentRow[] | null>(null);
   const [redMarks, setRedMarks] = useState<RedMarkRow[] | null>(null);
-  const [legalCustomers, setLegalCustomers] = useState<RedMarkRow[] | null>(null);
-  // Its own error: a missing ext_legal_customer table must fail this one tab, not the whole panel.
-  const [legalError, setLegalError] = useState<string | null>(null);
   // The two managed vocabularies (RC-15). They gate what the pickers on the tabs below may offer,
   // so they are loaded with everything else rather than per-tab: the io descriptors that validate
   // an Excel import are built from them at render time.
@@ -2229,7 +2160,6 @@ export function MusterPanel() {
   const load = () => {
     setLoading(true);
     setError(null);
-    setLegalError(null);
     // The Disputed Bills tab loads its own data through react-query; Reload has to mean that too.
     void queryClient.invalidateQueries({ queryKey: ["disputeRows"] });
     void queryClient.invalidateQueries({ queryKey: ["openBills"] });
@@ -2237,9 +2167,8 @@ export function MusterPanel() {
       fetchTagRows(), fetchGroupRows(), fetchSnapshot(), fetchCompanyMap(),
       fetchOtherPaymentRows(), fetchRedMarkRows(),
       fetchSalespersonMaster(), fetchCollectionTeamMaster(),
-      fetchLegalCustomerRows().catch((e) => { setLegalError((e as Error).message); return [] as RedMarkRow[]; }),
     ])
-      .then(([t, g, s, cm, op, rm, spm, ctm, lg]) => {
+      .then(([t, g, s, cm, op, rm, spm, ctm]) => {
         // Resolve each snapshot row's company/location from the master ONCE, here, so every
         // consumer below (filters, search, columns) sees the same finance-facing pair the reports
         // show — the snapshot itself only carries the raw Tally book name and a blank location.
@@ -2249,7 +2178,6 @@ export function MusterPanel() {
         setCompanyMap(cm);
         setOtherPayments(op);
         setRedMarks(rm);
-        setLegalCustomers(lg);
         setSalespersonMaster(spm);
         setTeamMaster(ctm);
         setSnap(s.map((row) => ({ ...row, ...resolve(row.tenant_id, row.company) })));
@@ -2298,9 +2226,8 @@ export function MusterPanel() {
       anywhere.add(n);
     });
     (redMarks ?? []).forEach((r) => { if (!isUnset(r.salesperson)) anywhere.add(r.salesperson as string); });
-    (legalCustomers ?? []).forEach((r) => { if (!isUnset(r.salesperson)) anywhere.add(r.salesperson as string); });
     return { counts, inUseAnywhere: anywhere };
-  }, [tags, redMarks, legalCustomers]);
+  }, [tags, redMarks]);
 
   /**
    * ledger_id → collection team, for the Red Mark tab's who-may-clear test (RC-12).
@@ -2369,7 +2296,6 @@ export function MusterPanel() {
               <TabsTrigger value="companies">Companies &amp; Locations</TabsTrigger>
               <TabsTrigger value="other-payments">Other Payments</TabsTrigger>
               <TabsTrigger value="redmark">Red Mark</TabsTrigger>
-              <TabsTrigger value="legal">Legal Customer</TabsTrigger>
               <TabsTrigger value="disputes">Disputed Bills</TabsTrigger>
               <TabsTrigger value="salesperson-list">Salespersons</TabsTrigger>
               <TabsTrigger value="team-list">Collection Teams</TabsTrigger>
@@ -2395,23 +2321,8 @@ export function MusterPanel() {
               />
             </TabsContent>
             <TabsContent value="redmark" className="mt-4">
-              <FlagMuster
-                cfg={RED_MARK_MASTER}
+              <RedMarkMuster
                 rows={redMarks ?? []} snap={snap ?? []} snapByGuid={snapByGuid}
-                teamByGuid={teamByGuid}
-                master={salespersonMaster ?? []} knownNames={knownSalespersons} onReload={load}
-              />
-            </TabsContent>
-            <TabsContent value="legal" className="mt-4">
-              {legalError && (
-                <div className="text-sm text-destructive bg-destructive/10 border border-destructive/30 rounded-md p-3 mb-3">
-                  Could not load the Legal Customer list: {legalError}
-                </div>
-              )}
-              <FlagMuster
-                key="legal"
-                cfg={LEGAL_MASTER}
-                rows={legalCustomers ?? []} snap={snap ?? []} snapByGuid={snapByGuid}
                 teamByGuid={teamByGuid}
                 master={salespersonMaster ?? []} knownNames={knownSalespersons} onReload={load}
               />

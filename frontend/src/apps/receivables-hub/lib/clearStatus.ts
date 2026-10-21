@@ -1,5 +1,5 @@
 import { useMemo } from "react";
-import { AlertTriangle, Scale, ShieldAlert, type LucideIcon } from "lucide-react";
+import { AlertTriangle, ShieldAlert, type LucideIcon } from "lucide-react";
 import { useSession } from "@/core/platform/session";
 import { useHubMenuAccess } from "@hub/lib/menus";
 
@@ -45,18 +45,6 @@ export const RED_MARK_COPY: ClearCopy = {
   reopenEffect: " will count as Red Mark again across the dashboard, the risk register and the reports.",
   notePlaceholder: "Paid in full on 12-09 / settled at ₹9L, balance written off / legal settlement",
   noteRequired: "A note is required — say how the case was settled (paid in full, settled at ₹9L, written off…).",
-};
-
-/** Legal Customer. Like a dispute it drives no flag outside its own tab, so no "everywhere" wording. */
-export const LEGAL_COPY: ClearCopy = {
-  noun: "Legal Customer",
-  openLabel: "Legal",
-  openIcon: Scale,
-  clearEffect:
-    " leaves the open legal cases. The record stays on the master, marked cleared — this is not a delete.",
-  reopenEffect: " goes back on the open legal cases.",
-  notePlaceholder: "Settled in court on 12-09 / paid in full after notice / case withdrawn",
-  noteRequired: "A note is required — say how the legal case ended (settled, paid after notice, withdrawn…).",
 };
 
 /**

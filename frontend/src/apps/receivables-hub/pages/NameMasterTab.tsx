@@ -136,7 +136,6 @@ export default function NameMasterTab({ kind, title, rows, usage, onReload }: {
       const parts = [
         `${counts.ledgers} customer${counts.ledgers === 1 ? "" : "s"}`,
         counts.redmark ? `${counts.redmark} red mark${counts.redmark === 1 ? "" : "s"}` : "",
-        counts.legal ? `${counts.legal} legal customer${counts.legal === 1 ? "" : "s"}` : "",
         counts.userTags ? `${counts.userTags} user tag${counts.userTags === 1 ? "" : "s"}` : "",
         counts.recipients ? `${counts.recipients} report recipient${counts.recipients === 1 ? "" : "s"}` : "",
       ].filter(Boolean);
