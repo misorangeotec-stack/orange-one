@@ -12,10 +12,12 @@ import LocationPicker from "../components/LocationPicker";
 import MentionTextArea from "../components/MentionTextArea";
 import { useReportsToSuffix } from "../components/ReportsToTag";
 import { fetchKras, KRAS_QUERY_KEY, reviewWeightOf } from "@/core/admin/kras";
-import { pctLabel } from "../lib/kraTasks";
+import { pctLabel, seesKraWeights } from "../lib/kraTasks";
 
 /** Task Category value for the ordinary task — no KRA, no review, scored as today. */
 const OTHERS = "others";
+/** A Director's Task Category "KRA": the KRA itself is picked later (20270130120000). */
+const KRA_OPEN = "kra-open";
 
 /** Create a one-time task. Assignee options depend on the current user's role. */
 export default function CreateTask() {
@@ -89,6 +91,17 @@ export default function CreateTask() {
   );
   const pickedKra = assigneeKras.find((k) => k.id === category) ?? null;
 
+  // A Director (admin + designation Director — is_director() on the server) gets just
+  // Others / KRA, for anyone they assign to. A HOD / Sub-HOD then picks their own KRA
+  // before completing and the Director reviews it; anyone else's direct HOD picks the
+  // KRA and reviews it. The server decides the path again from the assignee's role.
+  const isDirector = role === "admin" && user.designation?.trim().toLowerCase() === "director";
+  const showDirectorCategory = isDirector && !!picked && assignedTo !== user.id;
+  const assigneeIsHod = picked?.role === "hod" || picked?.role === "sub_hod";
+  // Directors have no peer list, so the pick is always a team profile (it has hodIds).
+  const assigneeHodIds = canAssign.find((p) => p.id === assignedTo)?.hodIds ?? [];
+  const kraOpen = showDirectorCategory && category === KRA_OPEN;
+
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!title.trim()) {
@@ -97,6 +110,10 @@ export default function CreateTask() {
     }
     if (!assignedTo) {
       setError("Please choose who to assign this task to.");
+      return;
+    }
+    if (kraOpen && !assigneeIsHod && !assigneeHodIds.length) {
+      setError("This person has no HOD set, so nobody could review a KRA task. Choose Others, or set their HOD first.");
       return;
     }
     setBusy(true);
@@ -110,7 +127,8 @@ export default function CreateTask() {
         dueDate: dueDate || null,
         locationIds,
         isPeerAssignment,
-        kraId: pickedKra?.id ?? null,
+        kraId: showDirectorCategory ? null : pickedKra?.id ?? null,
+        kraOpen,
         kraWeight: pickedKra?.weight ?? null,
         kraCompletionWeight: pickedKra?.completionWeight ?? null,
       });
@@ -215,7 +233,39 @@ export default function CreateTask() {
             </FieldLabel>
           </div>
 
-          {isDirectHod && (
+          {showDirectorCategory && (
+            <FieldLabel label="Task category">
+              <Combobox
+                value={category === KRA_OPEN ? KRA_OPEN : OTHERS}
+                onChange={(v) => setCategory(v || OTHERS)}
+                options={[
+                  { value: OTHERS, label: "Others", sublabel: "Ordinary task — no KRA, no review" },
+                  {
+                    value: KRA_OPEN,
+                    label: "KRA",
+                    sublabel: assigneeIsHod ? "They pick their KRA before completing; you review it 1–10" : "They pick their KRA before completing; their HOD reviews it 1–10",
+                  },
+                ]}
+              />
+              {kraOpen && (
+                <p className="mt-1.5 text-[12px] text-grey">
+                  {assigneeIsHod ? (
+                    <>
+                      <b className="text-navy">{picked?.name}</b> picks which of their KRAs this belongs to before marking it complete. It then comes to you for a 1–10 review.
+                    </>
+                  ) : assigneeHodIds.length ? (
+                    <>
+                      <b className="text-navy">{picked?.name}</b> picks which of their KRAs this belongs to before marking it complete. Their HOD then checks the KRA (and may change it) and gives the 1–10 review.
+                    </>
+                  ) : (
+                    <span className="text-[#d4493f]">{picked?.name} has no HOD set, so nobody could review this KRA task.</span>
+                  )}
+                </p>
+              )}
+            </FieldLabel>
+          )}
+
+          {isDirectHod && !showDirectorCategory && (
             <FieldLabel
               label="Task category"
               hint={assigneeKras.length === 0 && !krasQ.isLoading ? "No KRAs set for this person yet" : undefined}
@@ -225,10 +275,10 @@ export default function CreateTask() {
                 onChange={(v) => setCategory(v || OTHERS)}
                 options={[
                   { value: OTHERS, label: "Others", sublabel: "Ordinary task — no KRA, no review" },
-                  ...assigneeKras.map((k) => ({ value: k.id, label: k.name, sublabel: `KRA · Wt ${pctLabel(k.weight)}`, group: "KRAs" })),
+                  ...assigneeKras.map((k) => ({ value: k.id, label: k.name, sublabel: seesKraWeights(role) ? `KRA · Wt ${pctLabel(k.weight)}` : "KRA", group: "KRAs" })),
                 ]}
               />
-              {pickedKra && (
+              {pickedKra && seesKraWeights(role) && (
                 <p className="mt-1.5 text-[12px] text-grey">
                   Worth <b className="text-navy">{pctLabel(pickedKra.weight)}</b>:{" "}
                   {pctLabel(pickedKra.completionWeight)} when it is completed, and up to{" "}

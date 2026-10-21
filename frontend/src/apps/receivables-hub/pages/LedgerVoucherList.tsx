@@ -7,6 +7,7 @@
  * default pipeline this shows a "Not applicable" panel (same pattern as TopExposureReport). Mirrors
  * Ledger Outstandings' list scaffolding (filter bar + FilterChips + hand-rolled 25/page pagination).
  */
+import { useBackState } from "@/shared/lib/backState";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
@@ -88,7 +89,7 @@ export default function LedgerVoucherList() {
     return (guid: string) => m.get(guid) ?? guid;
   }, [companies]);
 
-  const [search, setSearch] = useState("");
+  const [search, setSearch] = useBackState("LedgerVoucherList.search", "");
   const [companyFilters, setCompanyFilters] = useState<string[]>([]);
   const [groupFilters, setGroupFilters] = useState<string[]>([]);
   const [page, setPage] = useState(1);

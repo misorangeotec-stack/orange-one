@@ -28,9 +28,17 @@ interface SourceCell {
   held: number;
   overdue: number;
   stages: StageCell[];
+  /** Open (not parked) rows per WorkItem.category, e.g. KRA 3 · Other 32. */
+  categories: [string, number][];
 }
 
 const NO_STAGE = "—";
+
+/**
+ * Categories a source always shows, in this order, even at 0 — so "KRA - 0" reads as
+ * "none", not as a missing line. Anything else a provider tags follows, largest first.
+ */
+const FIXED_CATEGORIES: Record<string, string[]> = { tasks: ["KRA", "Other"] };
 
 export default function BucketBoard({
   items,
@@ -49,11 +57,12 @@ export default function BucketBoard({
   onPick: (source: string, stage: string | null, held: boolean) => void;
 }) {
   const board = useMemo<SourceCell[]>(() => {
-    const bySource = new Map<string, SourceCell & { stageMap: Map<string, StageCell> }>();
+    const bySource = new Map<string, Omit<SourceCell, "categories"> & { stageMap: Map<string, StageCell>; catMap: Map<string, number> }>();
     for (const i of items) {
       let s = bySource.get(i.source);
       if (!s) {
-        s = { source: i.source, label: i.sourceLabel, live: 0, held: 0, overdue: 0, stages: [], stageMap: new Map() };
+        s = { source: i.source, label: i.sourceLabel, live: 0, held: 0, overdue: 0, stages: [], stageMap: new Map(), catMap: new Map() };
+        for (const c of FIXED_CATEGORIES[i.source] ?? []) s.catMap.set(c, 0);
         bySource.set(i.source, s);
       }
       const key = i.stage ?? NO_STAGE;
@@ -68,6 +77,7 @@ export default function BucketBoard({
       } else {
         s.live++;
         st.live++;
+        if (i.category) s.catMap.set(i.category, (s.catMap.get(i.category) ?? 0) + 1);
         if (bucketOf(i.dueIso, today) === "delayed") {
           s.overdue++;
           st.overdue++;
@@ -75,8 +85,15 @@ export default function BucketBoard({
       }
     }
     return [...bySource.values()]
-      .map(({ stageMap, ...s }) => ({
+      .map(({ stageMap, catMap, ...s }) => ({
         ...s,
+        // The fixed categories first, in their order; the rest largest first.
+        categories: [...catMap.entries()].sort((a, b) => {
+          const fixed = FIXED_CATEGORIES[s.source] ?? [];
+          const fa = fixed.indexOf(a[0]), fb = fixed.indexOf(b[0]);
+          if (fa >= 0 || fb >= 0) return (fa < 0 ? Infinity : fa) - (fb < 0 ? Infinity : fb);
+          return b[1] - a[1] || a[0].localeCompare(b[0]);
+        }),
         stages: [...stageMap.values()].sort((a, b) => b.overdue - a.overdue || b.live + b.held - (a.live + a.held) || a.stage.localeCompare(b.stage)),
       }))
       .sort((a, b) => b.overdue - a.overdue || b.live - a.live || a.label.localeCompare(b.label));
@@ -148,6 +165,16 @@ export default function BucketBoard({
                     {late ? `${s.overdue} overdue` : s.live > 0 ? "Open items" : "Parked — not due"}
                     {s.live > 0 && s.held > 0 && <span className="text-teal"> · {s.held} parked</span>}
                   </div>
+                  {s.categories.length > 0 && (
+                    <div className="mt-0.5 text-[10.5px] text-grey-2 truncate" title="Open items by Task Category">
+                      {s.categories.map(([c, n], k) => (
+                        <span key={c}>
+                          {k > 0 && " · "}
+                          {c} - <b className="font-semibold text-navy tabular-nums">{n}</b>
+                        </span>
+                      ))}
+                    </div>
+                  )}
                 </div>
                 <span
                   className={cn(

@@ -16,6 +16,7 @@ import { formatDate, isToday } from "@/shared/lib/time";
 import { matchesSearch } from "@/shared/lib/search";
 import { useSession } from "../mock/session";
 import { useTaskStore } from "../mock/store";
+import { taskCategoryFor, TASK_CATEGORY_FILTER_OPTIONS, type TaskCategoryFilter } from "../lib/kraTasks";
 import { countsTowardMetrics, countsTowardPeerMetrics, isRecurringTask, isPeerTask } from "../mock/selectors";
 import { parseTaskFilters, taskLinkSignature, type TaskKind } from "../lib/taskLink";
 
@@ -42,7 +43,7 @@ const RELATION_OPTIONS: { value: Relation; label: string }[] = [
 /** "My Tasks" — every task assigned to or created by the current user, with tabs. */
 export default function TasksList() {
   const { user, role } = useSession();
-  const { tasks, canCreateTask, actorById, assignableUsers, peerAssignableUsers } = useTaskStore();
+  const { tasks, canCreateTask, actorById, assignableUsers, peerAssignableUsers, profileById } = useTaskStore();
   // ...or to a peer HOD/Sub-HOD. Four HODs have no downline at all, so without
   // the peer arm the New Task button stays hidden from exactly the people TM-1
   // is for.
@@ -75,6 +76,8 @@ export default function TasksList() {
   const [dueRange, setDueRange] = useStickyState<DateRange>(sticky, "dueRange", EMPTY_RANGE);
   // A condition, not a status — ANDs with the status filter rather than joining it.
   const [overdueOnly, setOverdueOnly] = useStickyState(sticky, "overdueOnly", false);
+  // Task Category: KRA / Others.
+  const [taskCategory, setTaskCategory] = useStickyState<TaskCategoryFilter>(sticky, "taskCategory", "all");
   const [sort, setSort] = useStickyState<TaskSort>(sticky, "sort", DEFAULT_TASK_SORT);
   const onSort = (key: TaskSortKey) => setSort((s) => nextSort(s, key));
   // The tab. Was read from ?view= and written back with a setParams that wholesale-
@@ -115,10 +118,11 @@ export default function TasksList() {
     else if (kind === "oneoff") list = list.filter((t) => !isRecurringTask(t) && !t.isPersonal && !isPeerTask(t));
     if (personalOnly) list = list.filter((t) => t.isPersonal);
     if (overdueOnly) list = list.filter(isOverdueTask);
+    if (taskCategory !== "all") list = list.filter((t) => taskCategoryFor(t, user.id, (id) => profileById(id)?.hodIds) === taskCategory);
     list = list.filter((t) => dateInRange(t.createdAt, assignedRange) && dateInRange(t.dueDate, dueRange));
     if (q.trim()) list = list.filter((t) => matchesSearch(q, t.title, t.description));
     return list;
-  }, [mine, scope, exactWeek, metricOnly, relation, statuses, kind, personalOnly, overdueOnly, assignedRange, dueRange, q, user.id]);
+  }, [mine, scope, exactWeek, metricOnly, relation, statuses, kind, personalOnly, overdueOnly, taskCategory, profileById, assignedRange, dueRange, q, user.id]);
 
   const counts = useMemo(
     () => ({
@@ -160,7 +164,7 @@ export default function TasksList() {
   const pg = usePagination(sorted, {
     // The ranges go through rangeKey — they're fresh objects on every change, so
     // interpolating them directly would collapse to a constant "[object Object]".
-    resetKey: `${view}|${statuses.join(",")}|${kind}|${q}|${relation}|${scope}|${exactWeek ?? ""}|${metricOnly}|${personalOnly}|${overdueOnly}|${rangeKey(assignedRange)}|${rangeKey(dueRange)}|${sort.key}|${sort.dir}`,
+    resetKey: `${view}|${statuses.join(",")}|${kind}|${q}|${relation}|${scope}|${exactWeek ?? ""}|${metricOnly}|${personalOnly}|${overdueOnly}|${taskCategory}|${rangeKey(assignedRange)}|${rangeKey(dueRange)}|${sort.key}|${sort.dir}`,
     pageState,
   });
 
@@ -219,6 +223,12 @@ export default function TasksList() {
       label: `Due: ${rangeLabel(dueRange)}`,
       onClear: () => setDueRange(EMPTY_RANGE),
     });
+  if (taskCategory !== "all")
+    activeFilters.push({
+      key: "taskCategory",
+      label: `Category: ${taskCategory === "kra" ? "KRA" : "Others"}`,
+      onClear: () => setTaskCategory("all"),
+    });
   if (q.trim()) activeFilters.push({ key: "q", label: `Search: “${q.trim()}”`, onClear: () => setQ("") });
   const clearAll = () => {
     setStatuses([]);
@@ -229,6 +239,7 @@ export default function TasksList() {
     setMetricOnly(false);
     setPersonalOnly(false);
     setOverdueOnly(false);
+    setTaskCategory("all");
     setAssignedRange(EMPTY_RANGE);
     setDueRange(EMPTY_RANGE);
   };
@@ -378,6 +389,15 @@ export default function TasksList() {
                   align="right"
                   triggerClassName="py-1.5 px-2.5 text-[12.5px]"
                   options={STATUS_FILTER_OPTIONS.map((s) => ({ value: s.value, label: s.label }))}
+                />
+              ),
+              category: (
+                <Combobox
+                  value={taskCategory}
+                  onChange={(v) => setTaskCategory((v || "all") as TaskCategoryFilter)}
+                  className="w-full"
+                  triggerClassName="py-1.5 px-2.5 text-[12.5px]"
+                  options={TASK_CATEGORY_FILTER_OPTIONS.map((o) => ({ value: o.value, label: o.label }))}
                 />
               ),
             }}

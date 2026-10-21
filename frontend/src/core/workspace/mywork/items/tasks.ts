@@ -52,5 +52,8 @@ export function taskWorkItems(data: TaskData, uid: string): WorkItem[] {
       to: `/task-management/tasks/${t.id}`,
       // A task has exactly one assignee, so it is always personal.
       assignment: "direct" as const,
+      // Task Category: given against one of the assignee's KRAs, or an ordinary task.
+      // The assignee may always see their own KRA (useKraTaskAccess).
+      category: t.kraId || t.kraOpen ? "KRA" : "Other",
     }));
 }

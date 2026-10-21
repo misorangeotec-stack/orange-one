@@ -79,9 +79,9 @@ interface TaskStoreValue {
   getTask: (id: string) => Task | undefined;
   activityFor: (taskId: string) => TaskActivity[];
   revisionInfo: (task: Task) => RevisionInfo;
-  createTask: (input: { title: string; description?: string; assignedTo: string | null; departmentId: string | null; dueDate: string | null; locationIds?: string[]; isPeerAssignment?: boolean; kraId?: string | null; kraWeight?: number | null; kraCompletionWeight?: number | null }) => Promise<string>;
+  createTask: (input: { title: string; description?: string; assignedTo: string | null; departmentId: string | null; dueDate: string | null; locationIds?: string[]; isPeerAssignment?: boolean; kraId?: string | null; kraOpen?: boolean; kraWeight?: number | null; kraCompletionWeight?: number | null }) => Promise<string>;
   /** The assignee's direct HOD rates a completed KRA task 1-10 (lib/kraTasks.ts). */
-  reviewKraTask: (id: string, rating: number, note?: string) => Promise<void>;
+  reviewKraTask: (id: string, rating: number, note?: string, kraId?: string) => Promise<void>;
   /** Create a personal (self-tracking) task. Self-assigned and excluded from every score/RYG/dashboard metric. */
   createPersonalTask: (input: { title: string; description?: string; dueDate: string | null }) => Promise<string>;
   /** Edit a personal task's title/description/due date. */
@@ -96,7 +96,7 @@ interface TaskStoreValue {
   updateTask: (id: string, patch: { title: string; description?: string; dueDate: string | null; locationIds: string[] }) => Promise<void>;
   deleteTask: (id: string) => Promise<void>;
   startTask: (id: string) => Promise<void>;
-  completeTask: (id: string, note?: string) => Promise<void>;
+  completeTask: (id: string, note?: string, kraId?: string) => Promise<void>;
   reopenTask: (id: string) => Promise<void>;
   /** Mark a "when" task instance Not Applicable for its day, or back to applicable. Reversible. */
   setTaskNotApplicable: (id: string, value: boolean) => Promise<void>;
@@ -104,9 +104,9 @@ interface TaskStoreValue {
   isWhenTask: (task: Task) => boolean;
   /**
    * Revise with a follow-up date. A follow-up in a LATER week is treated as a
-   * shift (original → 'shifted', a continuation task opens in that week) and
-   * returns the new task's id; a same/earlier-week follow-up is a true in-week
-   * revision (capped 2/week) and returns null.
+   * shift: the SAME task's due date (and week) move there — no copy. A
+   * same/earlier-week follow-up is a true in-week revision (capped 2/week).
+   * Always returns null.
    */
   reviseTask: (id: string, args: { followUpDate: string; note?: string }) => Promise<string | null>;
   rescheduleTask: (id: string, newDueDate: string) => Promise<string | null>;
@@ -595,9 +595,9 @@ export function TaskStoreProvider({ children }: { children: ReactNode }) {
         await startTaskWrite(id, user.id);
         await refreshTasks(id);
       },
-      completeTask: async (id, note) => {
+      completeTask: async (id, note, kraId) => {
         try {
-          await completeTaskWrite(id, user.id, note);
+          await completeTaskWrite(id, user.id, note, kraId);
         } catch (e) {
           // The `enforce_task_locations_complete` trigger rejects a completion
           // whose checklist isn't fully resolved, and the modal renders that
@@ -617,8 +617,8 @@ export function TaskStoreProvider({ children }: { children: ReactNode }) {
         await reopenTaskWrite(id, user.id);
         await refreshTasks(id);
       },
-      reviewKraTask: async (id, rating, note) => {
-        await saveKraReview(id, rating, user.id, note);
+      reviewKraTask: async (id, rating, note, kraId) => {
+        await saveKraReview(id, rating, user.id, note, kraId);
         await refreshTasks(id);
       },
       // setTaskNotApplicable: LIVE. A plain not_applicable column update under the
@@ -635,38 +635,32 @@ export function TaskStoreProvider({ children }: { children: ReactNode }) {
       reviseTask: async (id, args) => {
         const task = tasks.find((t) => t.id === id);
         if (!task) return null;
-        // A follow-up date in a LATER week is a shift, not a revision: route it
-        // through the continuation mechanism (original → 'shifted', a fresh task
-        // opens in the new week) so the move is visible as a shift, and it's
-        // allowed even when the weekly revision limit is reached. Same-week (or
-        // earlier) follow-ups are true in-week revisions, capped at 2/week.
+        // A follow-up date in a LATER week is a shift, not a revision: the SAME
+        // task's due date moves there (logged as a shift in its own history), and
+        // it's allowed even when the weekly revision limit is reached. Same-week
+        // (or earlier) follow-ups are true in-week revisions, capped at 2/week.
         const targetWeek = weekStartOf(args.followUpDate);
         const currentWeek = task.weekStart ?? weekStartOf(todayIso());
         if (targetWeek > currentWeek) {
-          const newId = await rescheduleTaskWrite(task, args.followUpDate);
-          if (args.note && newId) await addRemarkWrite(newId, args.note, []);
-          // BOTH tasks changed: the original is marked 'shifted' (and gets its
-          // shifted_to link), the continuation is brand new.
-          await refreshTasks(id, newId);
-          return newId;
+          await rescheduleTaskWrite(task, args.followUpDate, user.id);
+          if (args.note) await addRemarkWrite(id, args.note, []);
+          await refreshTasks(id);
+          return null;
         }
         if (!revisionInfo(task).allowed) return null; // weekly revision limit / closed guard
         await reviseTaskWrite(id, user.id, { ...args, currentRevisionCount: task.revisionCount });
         await refreshTasks(id);
         return null;
       },
-      // rescheduleTask: LIVE (B4). Same/earlier week → move due date; future week →
-      // create a linked continuation task + mark the original shifted. Trigger logs
-      // the shifted/created activity; refetch and return the new id (if any).
+      // rescheduleTask: moves the SAME task's due date (and week, if later) and
+      // logs the old → new date in its history. No continuation copy, so the
+      // creator never changes. Always returns null.
       rescheduleTask: async (id, newDueDate) => {
         const task = tasks.find((t) => t.id === id);
         if (!task || !newDueDate) return null;
-        const newId = await rescheduleTaskWrite(task, newDueDate);
-        // A future-week reschedule shifts: original + continuation both change.
-        // Same/earlier week just moves the due date, so newId is null and this
-        // collapses to the single-task refresh.
-        await refreshTasks(id, newId);
-        return newId;
+        await rescheduleTaskWrite(task, newDueDate, user.id);
+        await refreshTasks(id);
+        return null;
       },
       // addRemark: LIVE (B4). Posts a remark + fans out @mention notifications via
       // the add_task_remark RPC (notifications has no client INSERT policy), then refetches.
@@ -733,6 +727,7 @@ export function TaskStoreProvider({ children }: { children: ReactNode }) {
           active: input.active,
           locationIds: input.locationIds ?? [],
           notify: input.notifyRequired ? { required: true, daysBefore: input.notifyDaysBefore } : undefined,
+          kraId: input.kraId || undefined,
           createdBy: user.id,
         });
         // Materialise today's instance immediately if the template is active and
@@ -768,6 +763,8 @@ export function TaskStoreProvider({ children }: { children: ReactNode }) {
           notify: m.notifyRequired || cur.notifyRequired
             ? { required: m.notifyRequired, daysBefore: m.notifyDaysBefore }
             : undefined,
+          // Named only when the template has a KRA now or had one (so going back to Others is saved).
+          kraId: m.kraId || cur.kraId ? m.kraId ?? null : undefined,
         });
         // If the edit leaves the template active, ensure today's instance exists
         // (e.g. activating via the edit form). Idempotent, so no duplicate if it

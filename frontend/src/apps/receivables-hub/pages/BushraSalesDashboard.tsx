@@ -22,6 +22,7 @@
  * CHART RULES (dataviz skill): each chart is ONE series, so one colour; every bar carries its value
  * and share as a label; clicking a bar filters every panel and clicking again lets it go.
  */
+import { useBackState } from "@/shared/lib/backState";
 import { Fragment, useMemo, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
@@ -1954,7 +1955,7 @@ function SalesReportTable({ storeId, rows, base, from, to, loading, fmtQ, sel, s
     [visible],
   );
   const shownIds = useMemo(() => cols.map(({ c }) => c.header), [cols]);
-  const [q, setQ] = useState("");
+  const [q, setQ] = useBackState("BushraSalesDashboard.q", "");
   const [tsel, setTsel] = useState<Record<TableOnlyKey, string[]>>(NO_TABLE_FILTERS);
 
   /**

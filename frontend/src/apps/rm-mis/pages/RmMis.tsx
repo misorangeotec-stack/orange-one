@@ -35,6 +35,7 @@
  * ETD IS EXCLUDED FROM COVER. Only ETA and AT PORT count towards the total, matching the
  * sheet's "ETA + AT PORT + STOCK". Goods that have not left the supplier are not cover.
  */
+import { useBackState } from "@/shared/lib/backState";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { CSSProperties, ReactNode } from "react";
 import { Link } from "react-router-dom";
@@ -101,7 +102,7 @@ export default function RmMis() {
 
   // One book, so one tab: the book itself. (Ink IMS opens on "combined" across four.)
   const [tab, setTab] = useState<string>(INK_COMPANIES[0].key);
-  const [search, setSearch] = useState("");
+  const [search, setSearch] = useBackState("RmMis.search", "");
   /**
    * A FILTER ON EVERY HEADING, keyed by column id.
    *
@@ -846,7 +847,7 @@ export default function RmMis() {
     { value: "etdTotal", label: "ETD total" },
     { value: "category", label: "Category" },
     { value: "source", label: "Import/Plant" },
-    { value: "supplier", label: "Last supplier" },
+    { value: "supplier", label: "Supplier" },
   ];
   const visibleColumnIds = columnOptions.map((o) => o.value).filter((id) => cols.isVisible(id));
 
@@ -1026,7 +1027,7 @@ export default function RmMis() {
       ...(showCompanyCols ? INK_COMPANIES.map((c) => c.label) : []),
       "Stock", ...shipmentCols.map((s) => `${s.status} ${s.reference || "(no ref)"} ${s.date}`),
       "ETD", "ETA + at port", "Plant total", "ETD total", "Total", "Category",
-      "Import/Plant", "Last supplier", "Last purchase", "To order",
+      "Import/Plant", "Supplier", "Last Tally purchase", "To order",
     ];
     const body = rows.map((r) => [
       order[r.key] ?? order[r.legacyKey] ?? "", r.group, r.itemCode, r.description, r.remark,
@@ -1038,7 +1039,7 @@ export default function RmMis() {
         s.lines.filter((l) => l.itemCode === r.itemCode).reduce((t, l) => t + l.qty, 0) || "",
       ),
       r.etd, r.incoming, r.plant, r.etd, r.total, r.category, sourceLabel(r.source),
-      r.supplier, fmtYmd(r.supplierDate),
+      r.supplier, r.supplierTyped ? "" : fmtYmd(r.supplierDate),
       reorderQty(r),
     ]);
     const esc = (v: unknown) => {
@@ -1296,20 +1297,8 @@ export default function RmMis() {
         </div>
       )}
 
-      {needsCode > 0 && (
-        <div className="flex flex-wrap items-center gap-2 rounded-md border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900">
-          <AlertTriangle className="h-4 w-4 shrink-0" />
-          <span>
-            <strong>{needsCode}</strong> line{needsCode === 1 ? "" : "s"} have no item code, so
-            the same ink in two books is still showing as two lines.
-          </span>
-          <Button size="sm" variant="outline" asChild className="ml-auto">
-            <Link to={`${BASE}/items`}>
-              <ListChecks className="mr-2 h-4 w-4" /> Fill codes in the item master
-            </Link>
-          </Button>
-        </div>
-      )}
+      {/* The "no item code" warning lives on the item master, where codes are filled
+          (user, 14-10-2026: "required in master, not on dashboard"). */}
 
       {/* Two bar charts, each folded until opened (user, 13-10-2026). */}
       <ReorderChart rows={rows} by="category" />
@@ -1340,7 +1329,7 @@ export default function RmMis() {
           "[&_tbody_td]:text-[9pt] [&_tbody_td_*]:text-[9pt]"
         }
       >
-      <ScrollableTable maxHeight="max-h-[calc(100vh-13rem)]" hideControls>
+      <ScrollableTable maxHeight="max-h-[calc(100vh-13rem)]" hideHint containScroll>
         <Table
           style={{ width: tableWidth, minWidth: tableWidth, maxWidth: "none" }}
           className={
@@ -1516,7 +1505,7 @@ export default function RmMis() {
               )}
               {cols.isVisible("supplier") && (
                 <ResizableHead id="supplier" cols={cols} className="min-w-[10rem]">
-                  {colHead("Last supplier", "supplier")}
+                  {colHead("Supplier", "supplier")}
                 </ResizableHead>
               )}
             </TableRow>
@@ -1730,10 +1719,16 @@ export default function RmMis() {
                   <TableCell className="text-xs">{sourceLabel(r.source)}</TableCell>
                 )}
                 {cols.isVisible("supplier") && (
-                  // Who it was last bought from, per Tally's purchase register. The date is on hover.
+                  // The planner's typed supplier (item master), else who Tally last bought it from.
                   <TableCell
                     className="text-xs"
-                    title={r.supplier ? `Last purchase ${fmtYmd(r.supplierDate)}` : "No purchase on record"}
+                    title={
+                      r.supplierTyped
+                        ? "Typed in the item master"
+                        : r.supplier
+                          ? `Tally: last purchase ${fmtYmd(r.supplierDate)}`
+                          : "No purchase on record — type one in the item master"
+                    }
                   >
                     {r.supplier || "—"}
                   </TableCell>

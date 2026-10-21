@@ -80,6 +80,11 @@ export interface WorkItem {
   holdLabel?: string | null;
   /** Why it is parked, when the module records a reason. Shown beside the chip. */
   holdReason?: string | null;
+  /**
+   * A module's own split of its rows, counted in small type on the FMS bucket card
+   * (Task Management: "KRA" / "Other" — the Task Category). Undefined = no split.
+   */
+  category?: string;
 }
 
 export interface MyWorkResult {

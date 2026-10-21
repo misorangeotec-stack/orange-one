@@ -325,6 +325,51 @@ async function fetchAllPages<T>(
   return pagesOf<T>(build, order, label);
 }
 
+/**
+ * Encoded characters of party names one `.in("party", …)` may carry.
+ *
+ * The scope is a GET filter, so every party name rides in the URL. Measured on live ConnectWave
+ * (2026-10-12): a ~14.7 KB URL answers, a ~19.6 KB one is refused by the gateway — the browser
+ * shows "Bad Request". An HOD scoped to two big salespeople holds 350+ parties and crossed it, so
+ * the whole register failed for exactly the viewers the scope exists for. 6,000 leaves room for
+ * the rest of the query string.
+ */
+const PARTY_URL_BUDGET = 6000;
+
+/** The scope's parties cut into URL-safe batches; `[null]` when unscoped (one unfiltered pass). */
+export function partyBatches(parties: string[] | null): (string[] | null)[] {
+  if (!parties) return [null];
+  const out: string[][] = [];
+  let cur: string[] = [];
+  let len = 0;
+  for (const p of parties) {
+    // +3 for the quotes PostgREST may need and the separating comma.
+    const n = encodeURIComponent(p).length + 3;
+    if (cur.length && len + n > PARTY_URL_BUDGET) {
+      out.push(cur);
+      cur = [];
+      len = 0;
+    }
+    cur.push(p);
+    len += n;
+  }
+  if (cur.length) out.push(cur);
+  return out;
+}
+
+/**
+ * Run a read once per party batch and concatenate. Batches are disjoint on `party`, so the union
+ * holds no duplicates. Run one after another so a big scope does not multiply the load at once.
+ */
+export async function byPartyBatch<T>(
+  parties: string[] | null,
+  run: (batch: string[] | null) => Promise<T[]>,
+): Promise<T[]> {
+  const out: T[] = [];
+  for (const batch of partyBatches(parties)) out.push(...(await run(batch)));
+  return out;
+}
+
 /* ------------------------------------------------------- winning FY-split books */
 
 export interface Book { tenant_id: string; fy: string }
@@ -375,7 +420,7 @@ async function loadDespatchDetails(
   // leaves every despatch cell blank and nothing else.
   let rows: DespatchRow[];
   try {
-    rows = await fetchWindow<DespatchRow>(
+    rows = await byPartyBatch(scopedParties, (batch) => fetchWindow<DespatchRow>(
       from,
       to,
       (lo, hi) => {
@@ -385,13 +430,13 @@ async function loadDespatchDetails(
           .in("tenant_id", tenants)
           .gte("vch_date", lo)
           .lt("vch_date", hi);
-        if (scopedParties) q = q.in("party", scopedParties);
+        if (batch) q = q.in("party", batch);
         return q as any;
       },
       // PRIMARY KEY (tenant_id, voucher_guid) — unique, so OFFSET paging is stable.
       (q: any) => q.order("tenant_id", { ascending: true }).order("voucher_guid", { ascending: true }),
       "despatch",
-    );
+    ));
   } catch (e) {
     console.warn("[salesRegister] despatch details unavailable:", e instanceof Error ? e.message : e);
     return out;
@@ -443,14 +488,14 @@ async function loadPendingSoaKeys(tenants: string[], scope: PartyScope): Promise
   type SoaRow = { tenant_id: string; soa_voucher_no: string | null; item: string };
   let rows: SoaRow[];
   try {
-    rows = await fetchAllPages<SoaRow>(
+    rows = await byPartyBatch(scopedParties, (batch) => fetchAllPages<SoaRow>(
       () => {
         let q = cw
           .from("rpt_soa_register")
           .select("tenant_id,soa_voucher_no,item,pending_qty", { count: "exact" })
           .in("tenant_id", tenants)
           .gt("pending_qty", 0);
-        if (scopedParties) q = q.in("party", scopedParties);
+        if (batch) q = q.in("party", batch);
         return q as any;
       },
       // PRIMARY KEY (tenant_id, tracking_no, item) — already unique here.
@@ -459,7 +504,7 @@ async function loadPendingSoaKeys(tenants: string[], scope: PartyScope): Promise
         .order("tracking_no", { ascending: true })
         .order("item", { ascending: true }),
       "pending SOA",
-    );
+    ));
   } catch (e) {
     console.warn("[salesRegister] pending SOA unavailable:", e instanceof Error ? e.message : e);
     return new Set();
@@ -504,7 +549,7 @@ export async function loadSalesRegister(
     fetchCompanyMap(),
     loadDespatchDetails(tenants, from, to, scope),
     loadPendingSoaKeys(tenants, scope),
-    fetchWindow<RawRegisterRow>(
+    byPartyBatch(scopedParties, (batch) => fetchWindow<RawRegisterRow>(
       from,
       to,
       (lo, hi) => {
@@ -515,7 +560,7 @@ export async function loadSalesRegister(
           .gte("vch_date", lo)
           .lt("vch_date", hi);
         // Narrowed on the SERVER — out-of-scope lines never reach the browser.
-        if (scopedParties) q = q.in("party", scopedParties);
+        if (batch) q = q.in("party", batch);
         return q as any;
       },
       // PRIMARY KEY (tenant_id, voucher_guid, line_no) — the sort the SERVER pages by. The old one
@@ -527,7 +572,7 @@ export async function loadSalesRegister(
         .order("voucher_guid", { ascending: true })
         .order("line_no", { ascending: true }),
       "sales register",
-    ),
+    )),
   ]);
   const resolve = makeCompanyResolver(mapRows);
 

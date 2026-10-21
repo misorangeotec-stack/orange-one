@@ -160,6 +160,10 @@ export interface Task {
   reviewRating: number | null;
   reviewedBy: string | null;
   reviewedAt: string | null;
+  // Director KRA task (20270130120000): category "KRA" with the KRA picked later, and
+  // who reviews it (null = the assignee's direct HOD). See lib/kraColumns.ts.
+  kraOpen: boolean;
+  kraReviewerId: string | null;
   createdAt: string; // ISO datetime
   updatedAt: string; // ISO datetime — bumped on any task change (status, revise, remark, reschedule)
   lastRemarkAt: string | null;
@@ -183,6 +187,7 @@ export interface RecurringTask {
   locationIds: string[]; // locations each generated task is tagged with
   notifyRequired: boolean; // remind the assignee before each fire date (weekly/monthly/quarterly only)
   notifyDaysBefore: number | null; // how many days before (1..30); null when no reminder
+  kraId: string | null; // Task Category: the assignee's KRA every generated task carries; null = Others
 }
 
 export interface WeeklyPlan {

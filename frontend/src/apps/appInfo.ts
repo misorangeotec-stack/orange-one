@@ -155,6 +155,15 @@ export const APPS: Record<string, AppInfo> = {
     category: "plant",
   },
   /**
+   * PHYSICAL VERIFICATION — Otec Surat Printing Ink items holding stock; the admin sets a
+   * verification date, the verifier counts, difference = physical − Tally closing at count time.
+   */
+  "physical-verification": {
+    name: "Physical Verification",
+    basePath: "/physical-verification",
+    category: "plant",
+  },
+  /**
    * TRAINING VIDEOS — the training recordings, each a OneDrive / SharePoint link that opens in a new
    * tab. Open to all staff; each sees the videos of the modules they hold. Only admins edit.
    */
@@ -304,6 +313,14 @@ export const APPS: Record<string, AppInfo> = {
   ocpi: {
     name: "OCPI",
     basePath: "/ocpi",
+    category: "sales",
+  },
+  // Machine Resale (MR-1C): the admin side of the pre-owned printer website. Its
+  // data lives in the portal's OWN Supabase project, reached through a short-lived
+  // pass (see apps/machine-resale/data/client.ts); nothing of it is in the hub DB.
+  "machine-resale": {
+    name: "Machine Resale",
+    basePath: "/machine-resale",
     category: "sales",
   },
   "fms-control-center": {

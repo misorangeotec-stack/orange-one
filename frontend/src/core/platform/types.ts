@@ -218,6 +218,12 @@ export interface Profile {
    */
   receivablesAllowPipeline: boolean;
   /**
+   * Report Dashboard full company view (profiles.report_dashboard_full_view). When true, the
+   * Report Dashboard pages ignore this user's salesperson / collection-team scope and show every
+   * party, as an admin sees them. The Outstanding Dashboard still applies the scope. Admin-set.
+   */
+  reportDashboardFullView: boolean;
+  /**
    * When the user last opened the portal (profiles.last_active_at, ISO). Stamped on
    * app open / login via the touch_last_active RPC; null if never seen since the
    * feature shipped. Shown to admins (Users/Hierarchy) and HODs (their team).

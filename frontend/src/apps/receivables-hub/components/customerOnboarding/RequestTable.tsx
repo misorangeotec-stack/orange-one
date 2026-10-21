@@ -8,6 +8,7 @@
  *
  * Pagination is 25/page, the house rule across Orange One.
  */
+import { useBackState } from "@/shared/lib/backState";
 import { useMemo, useState, type ReactNode } from "react";
 import { useNavigate } from "react-router-dom";
 import { ArrowUpDown, ArrowUp, ArrowDown, Download, Search } from "lucide-react";
@@ -51,7 +52,7 @@ export default function RequestTable<T extends { id: string }>({
   toolbar?: ReactNode;
 }) {
   const navigate = useNavigate();
-  const [search, setSearch] = useState("");
+  const [search, setSearch] = useBackState("RequestTable.search", "");
   const [sortKey, setSortKey] = useState<string | null>(null);
   const [sortDir, setSortDir] = useState<"asc" | "desc">("asc");
   const [page, setPage] = useState(1);

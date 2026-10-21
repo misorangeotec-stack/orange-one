@@ -10,6 +10,7 @@ import {
 } from "./fieldSpec";
 import { conditionsFor, render, type Conditions } from "./conditions";
 import { tokensFor } from "./tokens";
+import { inclusionLines } from "./inclusions";
 import { paperDate, paperFileBase, proseCompanyName } from "./format";
 import type {
   OcpiCompanyProfile, OcpiDeal, OcpiMachine, OcpiSalesPage, SalesPageBlock,
@@ -415,6 +416,12 @@ function termsBullets(d: OcpiDeal, machine?: OcpiMachine): string[] {
       bullet, and an unanswered one prints nothing rather than asserting a term.
   */
   if (d.insuranceClauseAgreed === true) out.push(`Insurance : ${INSURANCE_CLAUSE}`);
+  /*
+    What the deal includes — ink, spare parts, print heads, centering device
+    (client, 20-Oct-2026). Only a "Yes" becomes a bullet; a "No" prints nothing,
+    the same rule as the Summary and the OC (inclusions.ts).
+  */
+  for (const l of inclusionLines(d)) out.push(`${l.label} : ${l.text}`);
   if (machine?.countryOfOrigin?.trim()) {
     out.push(`Country of Origin : ${machine.countryOfOrigin.trim()}`);
   }

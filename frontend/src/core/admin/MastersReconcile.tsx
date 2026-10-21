@@ -1,3 +1,4 @@
+import { useBackState } from "@/shared/lib/backState";
 import { useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
@@ -74,7 +75,7 @@ export default function MastersReconcile() {
   const qc = useQueryClient();
   const [tab, setTab] = useState<TabKey>("customer");
   const [filter, setFilter] = useState<Filter>("undecided");
-  const [q, setQ] = useState("");
+  const [q, setQ] = useBackState("MastersReconcile.q", "");
   const [busyId, setBusyId] = useState<string | null>(null);
   const [err, setErr] = useState<string | null>(null);
   /** What the last merge actually did — a link is no longer a no-op, so say so. */

@@ -2,6 +2,7 @@ import { supabase } from "@/core/platform/supabase";
 import type { TaskLocation, WorkspaceSettings } from "../types";
 import type { Database } from "@/core/platform/database.types";
 import { mapTaskLocation } from "./fetchTaskData";
+import { formatDate, weekStartOf } from "@/shared/lib/time";
 import { clearReviewLocally, kraInsertColumns, rememberKraLocally } from "../lib/kraTasks";
 
 type WorkspaceSettingsUpdate = Database["public"]["Tables"]["workspace_settings"]["Update"];
@@ -51,6 +52,8 @@ export async function insertTask(input: {
   isPeerAssignment?: boolean;
   /** Task Category: one of the assignee's KRAs, or null/undefined for "Others". */
   kraId?: string | null;
+  /** Director's Task Category "KRA": the KRA itself is picked later (20270130120000). */
+  kraOpen?: boolean;
   /** Only used in local test mode, where no trigger snapshots them. */
   kraWeight?: number | null;
   kraCompletionWeight?: number | null;
@@ -70,6 +73,8 @@ export async function insertTask(input: {
       is_personal: input.isPersonal ?? false,
       is_peer_assignment: input.isPeerAssignment ?? false,
       ...kraInsertColumns(input.kraId),
+      // The generated Database type predates the KRA columns (as kraInsertColumns).
+      ...(input.kraOpen ? ({ kra_open: true } as Record<string, unknown>) : {}),
     })
     .select("id")
     .single();
@@ -298,10 +303,12 @@ export async function startTask(taskId: string, actorId: string): Promise<void> 
  * activity, so we do NOT insert one (avoids double-logging). Any optional note is
  * recorded as a 'remark' so it shows on the timeline.
  */
-export async function completeTask(taskId: string, actorId: string, note?: string): Promise<void> {
+export async function completeTask(taskId: string, actorId: string, note?: string, kraId?: string): Promise<void> {
+  // A Director's KRA task given to a HOD / Sub-HOD: the KRA they picked rides on the
+  // same update — guard_task_kra refuses the completion without it.
   const { error } = await supabase
     .from("tasks")
-    .update({ status: "completed", completed_at: new Date().toISOString() })
+    .update({ status: "completed", completed_at: new Date().toISOString(), ...(kraId ? ({ kra_id: kraId } as Record<string, unknown>) : {}) })
     .eq("id", taskId);
   if (error) throw new Error(error.message);
   if (note) {
@@ -385,41 +392,50 @@ export async function reviseTask(
 }
 
 /**
- * Reschedule a task by its due date.
- *  - Same week or earlier  → just move the due date (returns null).
- *  - A future week         → create a *continuation* task in that week and mark
- *                            the original `shifted`, linked both ways. Returns the
- *                            new task's id so the caller can navigate to it.
+ * Reschedule a task by its due date. Always the SAME task — no continuation copy,
+ * so the creator ("Created by" / "Assigned by") never changes hands.
+ *  - Same week or earlier  → just move the due date.
+ *  - A later week          → move the due date AND week_start, so the task shows in
+ *                            the new week (the old week stops counting it).
+ * Either way a `shifted` activity with the old → new date is logged on the task,
+ * so the move sits in its own history.
  *
- * The trigger auto-logs `shifted` (on the original's status update) and `created`
- * (on the continuation insert), so we don't log either here. The future-week shift
- * runs in the `shift_task_to_week` RPC so the insert + update are one transaction
- * (no half-applied shift); RLS still applies inside it.
+ * A recurring instance moved FORWARD is unlinked from its template (and flagged
+ * from_recurring so it still counts as recurring): generate_recurring_tasks skips a
+ * date when a task with that recurring_task_id is already due on it, so leaving the
+ * link would silently swallow the template's own instance on the new date. Returns null (kept so callers that used
+ * to navigate to a continuation still compile).
  */
 export async function rescheduleTask(
   task: {
     id: string;
     weekStart: string | null;
+    dueDate: string | null;
+    recurringTaskId: string | null;
   },
-  newDueDate: string
+  newDueDate: string,
+  actorId: string
 ): Promise<string | null> {
-  const targetWeek = mondayOf(newDueDate);
-  const currentWeek = task.weekStart ?? mondayOf(new Date().toISOString());
-  if (targetWeek <= currentWeek) {
-    const { error } = await supabase.from("tasks").update({ due_date: newDueDate }).eq("id", task.id);
-    if (error) throw new Error(error.message);
-    return null;
+  if (task.dueDate === newDueDate) return null;
+  const targetWeek = weekStartOf(newDueDate);
+  const currentWeek = task.weekStart ?? weekStartOf(new Date().toISOString());
+  const patch: Database["public"]["Tables"]["tasks"]["Update"] = { due_date: newDueDate };
+  if (targetWeek > currentWeek) patch.week_start = targetWeek;
+  if (task.recurringTaskId && (!task.dueDate || newDueDate > task.dueDate)) {
+    patch.recurring_task_id = null;
+    patch.from_recurring = true;
   }
-
-  // Future week → atomic shift via RPC (single transaction; the function sets
-  // created_by = auth.uid() inside, satisfying the insert RLS, and marks the
-  // original 'shifted' in the same transaction).
-  const { data, error } = await supabase.rpc("shift_task_to_week", {
-    p_task_id: task.id,
-    p_new_due_date: newDueDate,
-  });
+  const { error } = await supabase.from("tasks").update(patch).eq("id", task.id);
   if (error) throw new Error(error.message);
-  return data as string;
+
+  const { error: actErr } = await supabase.from("task_activity").insert({
+    task_id: task.id,
+    type: "shifted",
+    actor_id: actorId,
+    note: `${formatDate(task.dueDate)} → ${formatDate(newDueDate)}`,
+  });
+  if (actErr) throw new Error(actErr.message);
+  return null;
 }
 
 /**
@@ -492,6 +508,12 @@ export type RecurringWriteInput = {
    * even before migration 20270106120100 has run.
    */
   notify?: { required: boolean; daysBefore: number | null };
+  /**
+   * Task Category: the assignee's KRA (null = Others). Left undefined when the template
+   * has no KRA and never had one, so the write never names the column before migration
+   * 20270123120000 has run. guard_recurring_kra lets only the direct HOD set it.
+   */
+  kraId?: string | null;
 };
 
 /** The reminder columns, only when the caller set them (see RecurringWriteInput.notify). */
@@ -503,6 +525,9 @@ function notifyColumns(input: RecurringWriteInput) {
     notify_days_before: on ? input.notify.daysBefore : null,
   };
 }
+
+/** The KRA column, only when the caller set it (see RecurringWriteInput.kraId). */
+const kraColumn = (input: RecurringWriteInput) => (input.kraId === undefined ? {} : { kra_id: input.kraId });
 
 /** Replace a template's location set: delete the old rows, insert the new set. */
 async function syncRecurringLocations(recurringTaskId: string, locationIds: string[]): Promise<void> {
@@ -536,6 +561,7 @@ export async function insertRecurring(input: RecurringWriteInput & { createdBy: 
       created_by: input.createdBy,
       active: input.active,
       ...notifyColumns(input),
+      ...kraColumn(input),
     })
     .select("id")
     .single();
@@ -561,6 +587,7 @@ export async function updateRecurring(id: string, input: RecurringWriteInput): P
       department_id: input.departmentId,
       active: input.active,
       ...notifyColumns(input),
+      ...kraColumn(input),
     })
     .eq("id", id);
   if (error) throw new Error(error.message);

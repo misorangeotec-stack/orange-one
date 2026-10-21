@@ -1,11 +1,13 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
+import { useLocation } from "react-router-dom";
 import Combobox from "@/shared/components/ui/Combobox";
 import EmptyState from "@/shared/components/ui/EmptyState";
 import MultiSelect from "@/shared/components/ui/MultiSelect";
 import Pagination from "@/shared/components/ui/Pagination";
 import { ScrollableTable } from "@/core/shared/components/ScrollableTable";
 import { usePagination } from "@/shared/lib/usePagination";
+import { LAST_OPENED_ROW, useBackState, useLastOpened } from "@/shared/lib/backState";
 import { exportRowsToXlsx, type ExportColumn } from "@/shared/lib/exportXlsx";
 import { filterOptionLabel, filterValueOf, sortFilterOptions } from "@/shared/lib/blankFilter";
 import { FIT } from "@/shared/lib/tableLook";
@@ -443,7 +445,14 @@ export default function QueueTable<T>({
   // Seeded once from any multiselect column's `initial`, so a screen can open with a
   // sensible default selection. Lazy on purpose: `columns` is usually rebuilt every
   // render, and re-seeding would stamp the default back over the user's choice.
-  const [filters, setFilters] = useState<Record<string, FilterVal>>(() => {
+  /*
+   * Filters, group, sort and page come back with the browser's Back button (see
+   * shared/lib/backState): type in a filter, open a row, press Back, and the queue is
+   * the one you left rather than a fresh, unfiltered one. Keyed by the table's column
+   * set so two different tables on one screen do not share a filter.
+   */
+  const backKey = `qt:${resizeKey ?? ""}:${columns.map((c) => c.key).join(",")}`;
+  const [filters, setFilters] = useBackState<Record<string, FilterVal>>(`${backKey}:filters`, () => {
     const seed: Record<string, FilterVal> = {};
     for (const c of columns) {
       if ((c.filter?.kind === "select" || c.filter?.kind === "multiselect") && c.filter.initial?.length)
@@ -451,8 +460,14 @@ export default function QueueTable<T>({
     }
     return seed;
   });
-  const [group, setGroup] = useState<string>(initialGroup ?? "all");
-  const [sort, setSort] = useState<SortState>(initialSort ?? null);
+  const [group, setGroup] = useBackState<string>(`${backKey}:group`, initialGroup ?? "all");
+  const [sort, setSort] = useBackState<SortState>(`${backKey}:sort`, initialSort ?? null);
+  const pageState = useBackState<number>(`${backKey}:page`, 1);
+  // The row last opened from this table stays highlighted until another is opened.
+  // Any click in a row counts (its link, its View button, the row itself) except the
+  // tick box, which only selects.
+  const { pathname } = useLocation();
+  const [lastOpenedKey, markOpened] = useLastOpened(`${pathname}|${backKey}`);
   const [selectedKeys, setSelectedKeys] = useState<Set<string>>(new Set());
 
   /**
@@ -624,7 +639,10 @@ export default function QueueTable<T>({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sorted]);
 
-  const pg = usePagination(sorted, { resetKey: `${JSON.stringify(filters)}|${group}|${sort?.key}|${sort?.dir}` });
+  const pg = usePagination(sorted, {
+    resetKey: `${JSON.stringify(filters)}|${group}|${sort?.key}|${sort?.dir}`,
+    pageState,
+  });
   /** A rule after every column but the last — the table's own edge closes that side. */
   const rule = (i: number): string => (columnRules && i < shownColumns.length - 1 ? RULE : "");
 
@@ -979,7 +997,10 @@ export default function QueueTable<T>({
                           </tr>
                         )}
                         <tr
-                          className={`hover:bg-page/60 ${onRowClick ? "cursor-pointer" : ""} ${rowClassName?.(row) ?? ""}`}
+                          className={`hover:bg-page/60 ${onRowClick ? "cursor-pointer" : ""} ${rowClassName?.(row) ?? ""} ${lastOpenedKey === rowKey(row) ? LAST_OPENED_ROW : ""}`}
+                          onClickCapture={(e) => {
+                            if (!(e.target as HTMLElement).closest('input[type="checkbox"]')) markOpened(rowKey(row));
+                          }}
                           onClick={onRowClick ? () => onRowClick(row) : undefined}
                         >
                           {selectable && (

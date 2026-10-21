@@ -1,3 +1,4 @@
+import { useBackState } from "@/shared/lib/backState";
 import { useMemo, useState } from "react";
 import Card from "@/shared/components/ui/Card";
 import { matchesSearch } from "@/shared/lib/search";
@@ -25,7 +26,7 @@ export default function ManagementReview() {
   const mayAct = canAct("review", user.id, isAdmin, canEditModule("ink-stabilisation"), flow);
 
   const [tab, setTab] = useState<Tab>("submitted");
-  const [search, setSearch] = useState("");
+  const [search, setSearch] = useBackState("ManagementReview.search", "");
   const [open, setOpen] = useState<FlowTest | null>(null);
 
   // Only tests that have a flow record; oldest submission first, so nothing waits longest.

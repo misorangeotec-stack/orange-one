@@ -1,3 +1,4 @@
+import { useBackState } from "@/shared/lib/backState";
 import { useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { ArrowRight, CalendarClock, FlaskConical, PackageSearch, RefreshCw, TriangleAlert } from "lucide-react";
@@ -88,7 +89,7 @@ export default function RetestSchedule() {
 
   const [view, setView] = useState<View>("lots");
   const [stage, setStage] = useState<Stage>("all");
-  const [search, setSearch] = useState("");
+  const [search, setSearch] = useBackState("RetestSchedule.search", "");
   const [month, setMonth] = useState<string>(thisMonth);
   /*
     PAGE-WIDE FILTERS (asked 30-09-2026) — they drive EVERY section, Power-BI style:

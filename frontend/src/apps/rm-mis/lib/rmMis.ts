@@ -156,6 +156,8 @@ export interface InkPosition {
    *  when no purchase is on record. Several books on one line: the latest purchase wins. */
   supplier: string;
   supplierDate: string;
+  /** True when `supplier` is the planner's typed name rather than Tally's. */
+  supplierTyped: boolean;
   baseUnit: string;
   /** Closing quantity per book, keyed by `InkCompany.key`. Absent book means zero. */
   byCompany: Record<string, number>;
@@ -183,6 +185,8 @@ export interface InkOverride {
   code: string;
   group: string;
   description: string;
+  /** Linked to Bushra Central Master like the other three (user, 13-10-2026). */
+  category: string;
 }
 
 /**
@@ -202,6 +206,11 @@ export interface InkLineFields {
    * have entered them. Blank means one week.
    */
   weeks?: number;
+  /**
+   * Supplier, typed by the planner in the item master (user, 13-10-2026: "free open"). Wins over
+   * Tally's last supplier; blank falls back to it.
+   */
+  supplier?: string;
 }
 
 export type InkLines = Record<string, Partial<InkLineFields>>;
@@ -291,6 +300,10 @@ export interface InkMasterRow {
   /** Planner-only fields: Tally has no equivalent, so there is nothing to fall back to. */
   category: string;
   source: string;
+  /** Who Tally last bought this item from (purchase register) and when, yyyymmdd. Empty when
+   *  no purchase is on record. What the Supplier box shows until the planner types one. */
+  tallySupplier: string;
+  tallySupplierDate: string;
   effectiveDescription: string;
   /** True when nothing anywhere supplies a code, so this item cannot merge across books. */
   needsCode: boolean;
@@ -322,7 +335,7 @@ export interface InkPositionsResult {
    *  can be a different code in a different company. */
   nameToCode: Map<string, string>;
   /** Whether edits may be saved into Bushra Central Master, and why not when they may not. */
-  central: Pick<ImsLinks, "canSave" | "note">;
+  central: Pick<ImsLinks, "canSave" | "note" | "categories">;
 }
 
 const norm = (s: string | null | undefined) => (s ?? "").trim().toUpperCase();
@@ -455,6 +468,27 @@ export async function loadInkPositions(
     );
   };
 
+  /*
+   * EVERY DESCRIPTION SOMEONE CHOSE — typed here, or set in Bushra Central Master. An item whose
+   * own description is word for word one of these joins that line even with nothing chosen
+   * against it, because lines merge on the description the planner gives (user, 14-10-2026:
+   * COMBINATION LIQUID KY BLACK showed twice — once on its description line, once on its code
+   * line — both reading the code's number). Ink IMS fixed the same in PR #86.
+   */
+  const chosenDescriptions = new Set<string>();
+  for (const row of inScope) {
+    const company = BY_GUID.get(row.company_guid);
+    if (!company) continue;
+    const ov = overrides[masterKey(company.key, row.item)] ?? {};
+    const link = links.byKey.get(linkKey(company.guid, row.item));
+    const chosen = link
+      ? link.own.description || Boolean(pendingAdoption(link, { description: ov.description }).description)
+      : Boolean(norm(ov.description));
+    if (!chosen) continue;
+    const d = norm(link ? linkedValue(link, "description", ov.description) : ov.description);
+    if (d) chosenDescriptions.add(d);
+  }
+
   for (const row of inScope) {
     if (row.built_at && (!builtAt || row.built_at > builtAt)) builtAt = row.built_at;
 
@@ -487,7 +521,8 @@ export async function loadInkPositions(
     const descriptionChosen = link
       ? link.own.description || Boolean(pendingAdoption(link, { description: ov.description }).description)
       : Boolean(norm(ov.description));
-    const typedDescription = descriptionChosen ? norm(effectiveDescription) : "";
+    const typedDescription =
+      descriptionChosen || chosenDescriptions.has(norm(effectiveDescription)) ? norm(effectiveDescription) : "";
     const codeKey = effectiveCode || soloKey(company.key, row.item);
     // The key this line had before the link, so numbering, lead times and line settings typed
     // against it are still found where Central changed the code or description.
@@ -498,16 +533,22 @@ export async function loadInkPositions(
     const lineOv = lines[mergeKeyForRow] ?? {};
     const groupOv = groups[norm(effectiveGroup)] ?? {};
     /*
-     * Three sources, narrowest first: something set on THIS ink beats something set on its whole
-     * group, which beats what the item's own name says. So a group can be classified in one go
-     * and a single odd ink inside it can still be corrected on its own.
+     * CATEGORY COMES FROM BUSHRA CENTRAL MASTER (user, 13-10-2026), like code, group and
+     * description: an item in Central shows Central's category, and an edit here saves into
+     * Central. The old line / group categories (Ink IMS's five) no longer override it — they hid
+     * what the team set in Central. An item not in Central keeps this sheet's own: typed on the
+     * item, then its line, then its group, then what the name says.
      */
-    const effectiveCategory =
-      (lineOv.category ?? "").trim() ||
-      (groupOv.category ?? "").trim() ||
-      (link?.category ?? "").trim() ||
-      detectCategory(tallyName || row.item);
+    const effectiveCategory = link
+      ? pick("category", ov.category, "")
+      : (ov.category ?? "").trim() ||
+        (lineOv.category ?? "").trim() ||
+        (groupOv.category ?? "").trim() ||
+        detectCategory(tallyName || row.item);
     const effectiveSource = (lineOv.source ?? "").trim() || (groupOv.source ?? "").trim();
+
+    const bought = lastSuppliers.get(`${row.company_guid}|${norm(row.item)}`);
+    const typedSupplier = (lineOv.supplier ?? "").trim();
 
     master.push({
       key,
@@ -528,6 +569,8 @@ export async function loadInkPositions(
       effectiveGroup,
       category: effectiveCategory,
       source: effectiveSource,
+      tallySupplier: bought?.party ?? "",
+      tallySupplierDate: bought?.date ?? "",
       effectiveDescription,
       needsCode: !effectiveCode,
       link,
@@ -556,6 +599,7 @@ export async function loadInkPositions(
         source: effectiveSource,
         supplier: "",
         supplierDate: "",
+        supplierTyped: false,
         baseUnit: row.base_unit || "KGS",
         byCompany: {},
         stock: 0,
@@ -566,6 +610,13 @@ export async function loadInkPositions(
     }
 
     pos.sources.push({ companyKey: company.key, item: row.item });
+
+    // A line formed by description reads its number from its own key, then the key it had before.
+    // If the first item to arrive brought a code with no number, take the code of a later item
+    // that has one, or a numbered line would drop off the dashboard. (Ink IMS PR #86.)
+    if (order[pos.key] === undefined && order[pos.legacyKey] === undefined && order[codeKey] !== undefined) {
+      pos.legacyKey = codeKey;
+    }
 
     // Books disagree on how fully an item is named; keep the most descriptive one. A description
     // the planner typed always wins, whatever its length.
@@ -582,8 +633,11 @@ export async function loadInkPositions(
     }
     if (!pos.category) pos.category = effectiveCategory;
     if (!pos.source) pos.source = effectiveSource;
-    const bought = lastSuppliers.get(`${row.company_guid}|${norm(row.item).toUpperCase()}`);
-    if (bought && bought.date > pos.supplierDate) {
+    // The planner's typed supplier wins; otherwise the latest Tally purchase across the books.
+    if (typedSupplier) {
+      pos.supplier = typedSupplier;
+      pos.supplierTyped = true;
+    } else if (!pos.supplierTyped && bought && bought.date > pos.supplierDate) {
       pos.supplier = bought.party;
       pos.supplierDate = bought.date;
     }
@@ -604,6 +658,13 @@ export async function loadInkPositions(
     pos.consumed += row.outward_qty;
   }
 
+  // Every item master row falls back to its LINE's previous key, so all the rows of one merged
+  // item show the same number, lead time and plan, whichever book they come from.
+  for (const m of master) {
+    const line = merged.get(m.mergeKey);
+    if (line) m.legacyKey = line.legacyKey;
+  }
+
   // THE PLANNER'S ORDER WINS. Their sheet is not alphabetical — it runs Eco, then E-series, then
   // H-series and so on, the order they actually work in — so a positioned line sits exactly where
   // they put it. Anything unpositioned falls in behind, coded first and then alphabetically, which
@@ -620,7 +681,7 @@ export async function loadInkPositions(
   master.sort(
     (a, b) => a.company.localeCompare(b.company) || a.item.localeCompare(b.item),
   );
-  return { rows, master, builtAt, nameToCode, unsplitItems, central: { canSave: links.canSave, note: links.note } };
+  return { rows, master, builtAt, nameToCode, unsplitItems, central: { canSave: links.canSave, note: links.note, categories: links.categories } };
 }
 
 /* ---------------------------------------------------------------- consumption */
@@ -1207,6 +1268,32 @@ export const loadSeenLines = (): string[] => {
   return Array.isArray(v) ? v.filter((k) => typeof k === "string") : [];
 };
 export const saveSeenLines = (keys: string[]) => writeJson(KEY_SEEN, [...new Set(keys)]);
+
+/**
+ * The group a line is filed under when its books disagree: the group most of its books use; on
+ * a tie, a group the planner typed in the item master; then the more specific (longer) name;
+ * then A–Z, so the answer never depends on load order. Copied from Ink IMS.
+ */
+export function lineGroupOf(rows: InkMasterRow[]): string {
+  const tally = new Map<string, { name: string; count: number; typed: boolean }>();
+  for (const r of rows) {
+    const name = (r.effectiveGroup || "").trim();
+    if (!name) continue;
+    const k = name.toUpperCase();
+    const t = tally.get(k) ?? { name, count: 0, typed: false };
+    t.count++;
+    if (name.toUpperCase() !== (r.tallyGroup || "").trim().toUpperCase()) t.typed = true;
+    tally.set(k, t);
+  }
+  const best = [...tally.values()].sort(
+    (a, b) =>
+      b.count - a.count ||
+      Number(b.typed) - Number(a.typed) ||
+      b.name.length - a.name.length ||
+      a.name.localeCompare(b.name),
+  )[0];
+  return best?.name ?? "";
+}
 
 export const loadOrder = (): InkOrder => {
   const raw = readJson<InkOrder>(KEY_ORDER, {});

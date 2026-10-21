@@ -40,6 +40,17 @@ export interface PoStageRailNode {
    * Optional and off by default — the other FMS rails render unchanged.
    */
   skipped?: boolean;
+  /**
+   * Who ACTUALLY completed this stage — resolved names, de-duplicated. A stage is
+   * often owned by several people (any one of them can action it); once one of
+   * them has, the rail names only that person instead of the whole owner list.
+   *
+   * Read only when the stage renders DONE. Left empty or undefined — the actor
+   * isn't recorded, or the stage isn't done yet — the owner list shows as before.
+   * More than one name is legitimate where a stage was done per line/PO by
+   * different people (a requisition split across POs).
+   */
+  doneBy?: string[];
 }
 
 /**
@@ -122,8 +133,10 @@ export default function PoStageRail({
         const halted = !isSkipped && stopped && i === activeIndex && !finished;
         const current = !isSkipped && i === activeIndex && !finished && !halted;
 
-        const shown = n.people.slice(0, MAX_NAMES);
-        const extraPeople = n.people.length - shown.length;
+        // A done stage names who did it, not everyone who could have.
+        const people = done && n.doneBy?.length ? n.doneBy : n.people;
+        const shown = people.slice(0, MAX_NAMES);
+        const extraPeople = people.length - shown.length;
 
         const deptTone = current
           ? "bg-orange-soft text-orange"
@@ -209,7 +222,7 @@ export default function PoStageRail({
                   <DeptPill departments={n.departments} tone={deptTone} />
                   {shown.length ? (
                     <span
-                      title={n.people.join(", ")}
+                      title={people.join(", ")}
                       className={cn(
                         "flex w-full flex-col items-center text-[10px] leading-tight",
                         peopleTone

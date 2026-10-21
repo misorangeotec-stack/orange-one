@@ -125,6 +125,8 @@ export default function UserForm() {
   // Per-report grants (profiles.receivables_allowed_reports). An ALLOW-list — empty means the
   // user can open no report at all, which is the correct default for a new user.
   const [receivablesAllowedReports, setReceivablesAllowedReports] = useState<string[]>(editing?.receivablesAllowedReports ?? []);
+  // Report Dashboard full company view (profiles.report_dashboard_full_view) — see Profile.
+  const [reportDashboardFullView, setReportDashboardFullView] = useState<boolean>(editing?.reportDashboardFullView ?? false);
   const [spRows, setSpRows] = useState<NameMasterRow[]>([]);
   const [receivablesCollectionTeams, setReceivablesCollectionTeams] =
     useState<string[]>(editing?.receivablesCollectionTeams ?? []);
@@ -416,6 +418,12 @@ export default function UserForm() {
       receivablesHiddenMenus: showReceivablesLimits ? receivablesHiddenMenus : [],
       receivablesAdminMenus: showReceivablesLimits ? receivablesAdminMenus : [],
       receivablesAllowedReports: showReceivablesLimits ? receivablesAllowedReports : [],
+      // Sent only when it CHANGED: every other save then never names the column, so the user
+      // form keeps working on a database that has not had migration 20270120120000 yet.
+      // An admin already sees everything, so the tick is cleared for them.
+      ...((role !== "admin" && reportDashboardFullView) !== (editing?.reportDashboardFullView ?? false)
+        ? { reportDashboardFullView: role !== "admin" && reportDashboardFullView }
+        : {}),
     };
     setBusy(true);
     setError("");
@@ -795,6 +803,8 @@ export default function UserForm() {
               <ReportAccessTree
                 value={receivablesAllowedReports}
                 onChange={setReceivablesAllowedReports}
+                fullView={reportDashboardFullView}
+                onFullViewChange={setReportDashboardFullView}
               />
             </FieldLabel>
           )}

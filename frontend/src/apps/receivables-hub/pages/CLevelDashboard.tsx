@@ -1,3 +1,4 @@
+import { useBackState } from "@/shared/lib/backState";
 import { useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import {
@@ -563,7 +564,7 @@ function StockMoveCard({ title, rows, loading, error, noQty }: { title: string; 
 }
 
 function DutiesCard({ rows, loading, error }: { rows: { taxName: string; receivable: number; payable: number }[]; loading?: boolean; error?: string | null }) {
-  const [q, setQ] = useState("");
+  const [q, setQ] = useBackState("CLevelDashboard.q", "");
   const filtered = useMemo(() => rows.filter((r) => matchesSearch(q, r.taxName)), [rows, q]);
   const pg = usePagination(filtered, { pageSize: 10, resetKey: q });
   return (
