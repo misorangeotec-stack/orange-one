@@ -1,7 +1,11 @@
 import { getConnectwave, hasConnectwave } from "@/core/platform/connectwave";
 
 /**
- * THE MASTER LIST — Otec Surat's items that hold closing stock, every primary group.
+ * THE MASTER LIST — one company's items that hold closing stock, every primary group.
+ *
+ * FOUR COMPANIES (asked 19-10-2026): Otec Surat, Otec Noida, Enterprises Surat, Enterprises
+ * Noida. The Master shows one at a time (each is its own Tally book, and a Stock Journal goes
+ * into one book); every count row carries its company_guid.
  *
  * The Master opens on PRINTING INK (DEFAULT_PRIMARY); the admin can widen it with the Primary
  * group filter (asked 14-10-2026).
@@ -23,10 +27,26 @@ import { getConnectwave, hasConnectwave } from "@/core/platform/connectwave";
  */
 
 export const OTEC_SURAT_GUID = "a4e100d1-3b6f-4193-876a-c754f1a74552";
-export const OTEC_SURAT_NAME = "Otec Surat";
 export const DEFAULT_PRIMARY = "PRINTING INK";
 
+export interface Company { guid: string; name: string }
+
+/** The same GUIDs as ink-expiry / ink-mis. Otec Surat first — where verification started. */
+export const COMPANIES: Company[] = [
+  { guid: OTEC_SURAT_GUID, name: "Otec Surat" },
+  { guid: "53d35745-5246-4e1a-a27a-d4769f245b50", name: "Otec Noida" },
+  { guid: "59a6c2d9-0c5a-4fc5-b8c5-3be6fec3289e", name: "Enterprises Surat" },
+  { guid: "779c26f4-3fd8-46bd-9995-4f9916c98856", name: "Enterprises Noida" },
+];
+export const COMPANY_GUIDS = COMPANIES.map((c) => c.guid);
+export const companyName = (guid: string | null | undefined) =>
+  COMPANIES.find((c) => c.guid === guid)?.name ?? "Unknown company";
+
+/** One item in one company — the key every map in the app uses. */
+export const itemKey = (companyGuid: string, item: string) => `${companyGuid}|${item}`;
+
 export interface StockItem {
+  companyGuid: string;
   item: string;
   /** Top level of the Stock Group Summary — PRINTING INK, MACHINERY PARTS … */
   primaryGroup: string;
@@ -59,7 +79,14 @@ const PAGE = 1000;
 
 export const isProvision = (groupPath: string | null | undefined) => /PROVISION/i.test(groupPath ?? "");
 
-export async function fetchSuratStock(): Promise<StockItem[]> {
+/**
+ * DEAD STOCK and DIFF STOCK INK are left OUT of the figures by default (asked 20-10-2026): the
+ * Master and the Dashboard open with them unticked on every visit, so the totals are the real
+ * stock. Anyone can tick them back in the Stock group filter to look at them.
+ */
+export const isSetAside = (group: string | null | undefined) => /DEAD\s*STOCK|DIFF\s*STOCK/i.test(group ?? "");
+
+export async function fetchStock(companyGuid: string): Promise<StockItem[]> {
   if (!hasConnectwave()) {
     throw new Error("The live Tally mirror is not configured for this site, so closing stock cannot be read.");
   }
@@ -69,7 +96,7 @@ export async function fetchSuratStock(): Promise<StockItem[]> {
     const { data, error } = await cw
       .from("rpt_stock_summary_item")
       .select("item,primary_group,sub_group_1,stock_group,group_path,base_unit,closing_qty,closing_rate,closing_value,built_at")
-      .eq("tenant_id", `acct_orange::${OTEC_SURAT_GUID}`)
+      .eq("tenant_id", `acct_orange::${companyGuid}`)
       .gt("closing_qty", 0)
       // A TOTAL order — unordered offset paging drops and repeats rows.
       .order("item", { ascending: true })
@@ -81,6 +108,7 @@ export async function fetchSuratStock(): Promise<StockItem[]> {
     for (const r of rows) {
       if (isProvision(r.group_path) || isProvision(r.stock_group)) continue;
       out.push({
+        companyGuid,
         item: r.item,
         primaryGroup: r.primary_group ?? "(Ungrouped)",
         subGroup: r.sub_group_1 ?? r.stock_group ?? "",

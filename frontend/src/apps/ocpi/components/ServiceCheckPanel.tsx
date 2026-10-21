@@ -3,6 +3,7 @@ import Button from "@/shared/components/ui/Button";
 import Card from "@/shared/components/ui/Card";
 import { FieldLabel, TextArea, TextInput } from "@/shared/components/ui/Form";
 import { StepOwnersWarning } from "./SetupWarnings";
+import ServiceChecklistLink from "./ServiceChecklistLink";
 import { useOcpiStore } from "../store";
 import { useOrgPersonById } from "@/core/platform/orgPeople";
 import { recordServiceCheck } from "../data/ocpiWrites";
@@ -41,14 +42,20 @@ function Tick({ label, checked, onChange, disabled }: {
 export default function ServiceCheckPanel({ deal }: { deal: OcpiDeal }) {
   const s = useOcpiStore();
   const personById = useOrgPersonById();
-  const activePoints = s.serviceCheckpoints.filter((c) => c.active);
+  // ⚠ THE CHECK POINTS ARE THE MACHINE'S CHECKLIST PDF, read into lines when it
+  //   was uploaded (Masters → Service checklists). The old manual master
+  //   (fms_ocpi_service_checkpoints) is no longer used.
+  const points = s.serviceChecklistFor(deal.machineId)?.items ?? [];
 
   const [installationDate, setInstallationDate] = useState("");
   const [engineer, setEngineer] = useState("");
   const [contactName, setContactName] = useState("");
   const [contactPhone, setContactPhone] = useState("");
   const [siteReady, setSiteReady] = useState(false);
-  const [ticked, setTicked] = useState<Record<string, boolean>>({});
+  /** Per point: Ready (true) / Not Ready (false), and an optional remark for Not Ready. */
+  const [answers, setAnswers] = useState<Record<string, { ok: boolean; remark: string }>>({});
+  const answer = (name: string, patch: Partial<{ ok: boolean; remark: string }>) =>
+    setAnswers((a) => ({ ...a, [name]: { ...(a[name] ?? { ok: true, remark: "" }), ...patch } }));
   const [note, setNote] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -65,6 +72,11 @@ export default function ServiceCheckPanel({ deal }: { deal: OcpiDeal }) {
       ["Site ready", deal.svcSiteReady === null ? "—" : deal.svcSiteReady ? "Yes" : "No"],
     ];
     return (
+      <div className="space-y-4">
+      <ServiceChecklistLink
+        machineId={deal.machineId}
+        note="The checklist for this machine, for the installation visit."
+      />
       <Card className="space-y-4 p-5">
         <div>
           <h2 className="text-[15px] font-bold text-navy">Service Check</h2>
@@ -84,29 +96,43 @@ export default function ServiceCheckPanel({ deal }: { deal: OcpiDeal }) {
           <p className="text-[13px] text-grey">Site remark: {deal.svcSiteRemark}</p>
         )}
         {deal.svcChecks.length > 0 && (
-          <ul className="divide-y divide-line rounded-xl border border-line">
-            {deal.svcChecks.map((c) => (
-              <li key={c.name} className="flex items-start justify-between gap-3 px-4 py-2.5 text-[13.5px]">
-                <span className="text-navy">
-                  {c.name}
-                  {c.remark && <span className="block text-[12.5px] text-grey-2">{c.remark}</span>}
-                </span>
-                <span className={`shrink-0 font-semibold ${c.ok ? "text-ryg-green" : "text-ryg-red"}`}>
-                  {c.ok ? "Yes" : "No"}
-                </span>
-              </li>
-            ))}
-          </ul>
+          <div className="overflow-x-auto rounded-xl border border-line">
+            <table className="w-full text-[13px]">
+              <thead>
+                <tr className="border-b border-line bg-[#F7F9FC] text-[11.5px] font-semibold uppercase tracking-wide text-grey-2">
+                  <th className="w-14 px-3 py-2 text-center">Sr. No</th>
+                  <th className="px-3 py-2 text-left">Particulars</th>
+                  <th className="w-28 px-3 py-2 text-center">Status</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-line">
+                {deal.svcChecks.map((c, i) => (
+                  <tr key={c.name}>
+                    <td className="px-3 py-2 text-center align-top text-grey-2">{i + 1}</td>
+                    <td className="px-3 py-2 align-top text-navy">
+                      {c.name}
+                      {c.remark && <span className="block text-[12.5px] text-grey-2">Remark: {c.remark}</span>}
+                    </td>
+                    <td className={`px-3 py-2 text-center align-top font-semibold ${c.ok ? "text-ryg-green" : "text-ryg-red"}`}>
+                      {c.ok ? "Ready" : "Not Ready"}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         )}
         {deal.svcNote && <p className="text-[13px] text-grey">Note: {deal.svcNote}</p>}
       </Card>
+      </div>
     );
   }
 
   if (!isServiceOpen(deal)) return null;
 
   const mayAct = s.canActOn("service_check");
-  const allTicked = siteReady && activePoints.every((c) => ticked[c.name]);
+  // Every checklist point marked Ready or Not Ready.
+  const allTicked = siteReady && points.every((p) => !!answers[p]);
   const filled =
     !!installationDate && !!engineer.trim() && !!contactName.trim() && !!contactPhone.trim();
 
@@ -121,7 +147,11 @@ export default function ServiceCheckPanel({ deal }: { deal: OcpiDeal }) {
         siteContactPhone: contactPhone,
         siteReady,
         siteRemark: "",
-        checks: activePoints.map((c) => ({ name: c.name, ok: !!ticked[c.name], remark: "" })),
+        checks: points.map((p) => ({
+          name: p,
+          ok: !!answers[p]?.ok,
+          remark: answers[p]?.ok ? "" : (answers[p]?.remark ?? "").trim(),
+        })),
         note,
       });
       await s.refresh();
@@ -141,13 +171,18 @@ export default function ServiceCheckPanel({ deal }: { deal: OcpiDeal }) {
   return (
     <div className="space-y-4">
       <StepOwnersWarning step="service_check" />
+      <ServiceChecklistLink
+        machineId={deal.machineId}
+        note="Download it and confirm with the customer that the site meets it before installation."
+      />
       {mayAct ? (
         <Card className="space-y-5 p-5">
           <div>
             <h2 className="text-[15px] font-bold text-navy">Service Check</h2>
             <p className="mt-0.5 text-[13.5px] text-grey-2">
               Sent to the service team on {dmy(deal.svcOpenedAt)}, together with the Finance handover.
-              Fill the four fields and tick every box, then submit. This completes the service
+              Fill the four fields, tick &ldquo;Site is ready&rdquo;, and mark every point of the
+              machine&rsquo;s service checklist Ready or Not Ready, then submit. This completes the service
               team&rsquo;s part and changes nothing else on the deal.
             </p>
           </div>
@@ -187,22 +222,66 @@ export default function ServiceCheckPanel({ deal }: { deal: OcpiDeal }) {
           </div>
 
           <div className="space-y-2">
-            <h3 className="text-[13.5px] font-bold text-navy">Tick every box</h3>
             <div className="divide-y divide-line rounded-xl border border-line">
               <Tick label="Site is ready for installation" checked={siteReady} onChange={setSiteReady} disabled={busy} />
-              {activePoints.map((c) => (
-                <Tick
-                  key={c.id}
-                  label={c.name}
-                  checked={!!ticked[c.name]}
-                  onChange={(v) => setTicked((t) => ({ ...t, [c.name]: v }))}
-                  disabled={busy}
-                />
-              ))}
             </div>
-            {activePoints.length === 0 && (
+
+            <h3 className="pt-2 text-[13.5px] font-bold text-navy">
+              Service checklist{points.length > 0 && ` — ${points.length} points`}
+            </h3>
+            {points.length > 0 ? (
+              <div className="overflow-x-auto rounded-xl border border-line">
+                <table className="w-full text-[13px]">
+                  <thead>
+                    <tr className="border-b border-line bg-[#F7F9FC] text-[11.5px] font-semibold uppercase tracking-wide text-grey-2">
+                      <th className="w-14 px-3 py-2 text-center">Sr. No</th>
+                      <th className="px-3 py-2 text-left">Particulars</th>
+                      <th className="w-20 px-2 py-2 text-center">Ready</th>
+                      <th className="w-24 px-2 py-2 text-center">Not Ready</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-line">
+                    {points.map((p, i) => {
+                      const a = answers[p];
+                      const pick = (ok: boolean) => (
+                        <input
+                          type="radio"
+                          name={`svc-${i}`}
+                          className={`h-4 w-4 ${ok ? "accent-ryg-green" : "accent-ryg-red"}`}
+                          checked={a?.ok === ok}
+                          onChange={() => answer(p, { ok })}
+                          disabled={busy}
+                          aria-label={`${p} — ${ok ? "Ready" : "Not Ready"}`}
+                        />
+                      );
+                      return (
+                        <tr key={p} className={a && !a.ok ? "bg-[#FFF6F5]" : undefined}>
+                          <td className="px-3 py-2 text-center align-top text-grey-2">{i + 1}</td>
+                          <td className="px-3 py-2 align-top text-navy">
+                            {p}
+                            {a && !a.ok && (
+                              <div className="mt-1.5">
+                                <TextInput
+                                  value={a.remark}
+                                  onChange={(e) => answer(p, { remark: e.target.value })}
+                                  placeholder="Remark — what is pending (optional)"
+                                  disabled={busy}
+                                />
+                              </div>
+                            )}
+                          </td>
+                          <td className="px-2 py-2 text-center align-top">{pick(true)}</td>
+                          <td className="px-2 py-2 text-center align-top">{pick(false)}</td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            ) : (
               <p className="text-[12.5px] text-grey-2">
-                More check points can be added under Masters → Service check points.
+                No service checklist with check points is uploaded for this machine. Upload its PDF
+                on Masters → Service checklists (PDF).
               </p>
             )}
           </div>
@@ -217,7 +296,8 @@ export default function ServiceCheckPanel({ deal }: { deal: OcpiDeal }) {
             </Button>
             {(!allTicked || !filled) && (
               <span className="ml-3 text-[12.5px] text-grey-2">
-                Fill all four fields and tick every box to submit.
+                Fill all four fields, tick &ldquo;Site is ready&rdquo; and mark every checklist
+                point Ready or Not Ready to submit.
               </span>
             )}
           </div>

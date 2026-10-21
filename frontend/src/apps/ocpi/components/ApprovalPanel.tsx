@@ -3,6 +3,7 @@ import Button from "@/shared/components/ui/Button";
 import Card from "@/shared/components/ui/Card";
 import { FieldLabel, TextArea } from "@/shared/components/ui/Form";
 import PaperSet from "./PaperSet";
+import { useServiceChecklistPaper } from "./useServiceChecklistPaper";
 import { CompanyProfileWarning, OcSeriesWarning, StepOwnersWarning } from "./SetupWarnings";
 import { useOcpiStore } from "../store";
 import { decideQuotation, freezeOc, setDealPiPdf, uploadOcPdf } from "../data/ocpiWrites";
@@ -89,6 +90,8 @@ export default function ApprovalPanel({
     s.ownersOf("quotation_approval").length === 1 && s.ownersOf("quotation_approval")[0] === s.userId;
 
   const machine = s.machineById(deal.machineId);
+  // The machine's service checklist — downloads with every paper here.
+  const checklistPaper = useServiceChecklistPaper(deal, deal.quotationNo);
 
   /** The revision that was actually sent for approval — the last one generated. */
   const latest = useMemo(() => {
@@ -320,6 +323,7 @@ export default function ApprovalPanel({
               ? `${machine.name} has no detailed template yet, so the summary and the PI are the whole of it. Approving is not blocked.`
               : "There is no detailed sheet on this deal. Approving is not blocked.",
           },
+          checklistPaper,
         ]}
       />
 
