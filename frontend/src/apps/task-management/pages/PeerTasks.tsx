@@ -47,7 +47,7 @@ type View = "review" | "received" | "given" | "all";
  */
 export default function PeerTasks() {
   const { user, isAdmin } = useSession();
-  const { tasks, mentionablePeople, departments } = useTaskStore();
+  const { tasks, mentionablePeople, departments, refreshTask } = useTaskStore();
   const [searchParams] = useSearchParams();
   const location = useLocation();
 
@@ -60,6 +60,19 @@ export default function PeerTasks() {
   }, [location.pathname, location.search]);
 
   const peerTasks = useMemo(() => tasks.filter(isPeerTask), [tasks]);
+
+  // Peer review moves a task between two people, and their changes reach this cache
+  // only on the next stale refetch. So on opening, re-read my peer tasks that can still
+  // move (not yet marked completed after review) — one small targeted read — so Review,
+  // Given and Received are current. Capped to keep the request URL short.
+  useEffect(() => {
+    const ids = peerTasks
+      .filter((t) => (t.createdBy === user.id || t.assignedTo === user.id) && t.status !== "shifted" && !(t.status === "completed" && t.peerClosedAt))
+      .map((t) => t.id)
+      .slice(0, 150);
+    void refreshTask(...ids);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // Given excludes anything assigned to me. That is not paranoia: older forward
   // reschedules re-created the task with created_by = whoever shifted it (see

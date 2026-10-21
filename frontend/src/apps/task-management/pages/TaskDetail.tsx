@@ -37,7 +37,7 @@ export default function TaskDetail({ taskId }: { taskId?: string } = {}) {
   const navigate = useNavigate();
   const embed = useTaskDetailEmbed();
   const leave = () => (embed ? embed.close() : navigate("/task-management/tasks"));
-  const { getTask, getRecurring, activityFor, revisionInfo, startTask, reopenTask, rescheduleTask, profileById, actorById, departmentById, canWrite, canStatusActions, canReschedule, locationById, taskLocationsComplete, setTaskLocationDone, setTaskLocationNa, setTaskLocationsDone, isWhenTask, setTaskNotApplicable, deletePersonalTask, deleteTask, markTaskNotificationsRead, mentionablePeople } = useTaskStore();
+  const { refreshTask, getTask, getRecurring, activityFor, revisionInfo, startTask, reopenTask, rescheduleTask, profileById, actorById, departmentById, canWrite, canStatusActions, canReschedule, locationById, taskLocationsComplete, setTaskLocationDone, setTaskLocationNa, setTaskLocationsDone, isWhenTask, setTaskNotApplicable, deletePersonalTask, deleteTask, markTaskNotificationsRead, mentionablePeople } = useTaskStore();
   const { user, role } = useSession();
   const [modal, setModal] = useState<ModalKind>(null);
   const [starting, setStarting] = useState(false);
@@ -81,6 +81,9 @@ export default function TaskDetail({ taskId }: { taskId?: string } = {}) {
   // before this ran. Keyed on `id` alone so a realtime refetch doesn't re-fire it.
   useEffect(() => {
     void markTaskNotificationsRead(id);
+    // Opening a task also re-reads it: someone else's change (a peer task completed,
+    // reviewed or re-opened) otherwise reaches this cache only on the next stale refetch.
+    void refreshTask(id);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id]);
 
