@@ -141,6 +141,7 @@ const boxQty = (n: number): string => String(Number(n.toFixed(3)));
 
 export default function LotAllocField({
   rows, onChange, quantity, unit = "", options, bookOf, disabled = false, autoFill = false,
+  alwaysQty = false,
 }: {
   rows: LotRow[];
   onChange: (next: LotRow[]) => void;
@@ -157,6 +158,13 @@ export default function LotAllocField({
    * more than `quantity`. Off unless asked for — see the header.
    */
   autoFill?: boolean;
+  /**
+   * Production Entry's handover: a quantity box beside EVERY picked lot, one lot
+   * included, so the split is always visible. A single lot is filled with
+   * `quantity` (and follows it until someone types). Off for dispatch, whose
+   * single-lot path asks for nothing extra — see the header.
+   */
+  alwaysQty?: boolean;
 }) {
   const qtyRefs = useRef<Record<number, HTMLInputElement | null>>({});
   const wrapRef = useRef<HTMLDivElement>(null);
@@ -164,6 +172,8 @@ export default function LotAllocField({
   const picked = filledLots(rows);
   const values = picked.map((r) => r.lot_no);
   const multi = picked.length > 1;
+  // Show the per-lot boxes: always with alwaysQty, else only once there are several.
+  const showRows = multi || (alwaysQty && picked.length > 0);
   const target = Number(quantity) || 0;
 
   /*
@@ -275,7 +285,18 @@ export default function LotAllocField({
    */
   const reseed = (current: LotRow[], shipNow: number): LotRow[] | null => {
     const lots = filledLots(current);
-    if (!autoFill || disabled || lots.length < 2) return null;
+    if (!autoFill || disabled) return null;
+    // alwaysQty · ONE lot carries the whole quantity, so its box mirrors it —
+    // until a person types a figure of their own.
+    if (alwaysQty && lots.length === 1) {
+      const only = lots[0]!;
+      if (!only.seeded && only.qty.trim() !== "") return null;
+      const qty = shipNow > 0 ? boxQty(shipNow) : "";
+      if (only.seeded ? only.qty === qty : qty === "") return null;
+      return current.map((r): LotRow =>
+        r === only ? (qty ? { lot_no: r.lot_no, qty, seeded: true } : { lot_no: r.lot_no, qty: "" }) : r);
+    }
+    if (lots.length < 2) return null;
     if (lots.some((r) => !r.seeded && r.qty.trim() !== "")) return null;
 
     const seedOf = new Map<string, string>();
@@ -334,7 +355,9 @@ export default function LotAllocField({
     const out: LotRow[] = next.map((lot) => prev.get(lot) ?? { lot_no: lot, qty: "" });
     if (out.length <= 1) {
       const one = out[0] ?? emptyLotRow();
-      onChange([{ lot_no: one.lot_no, qty: "" }]);
+      const single: LotRow[] = [{ lot_no: one.lot_no, qty: "" }];
+      // alwaysQty: the one lot takes the whole quantity, seeded so it follows it.
+      onChange(alwaysQty && one.lot_no ? reseed(single, target) ?? single : single);
       return;
     }
     // Decided in the SAME change as the pick, not in an effect after it, so the
@@ -416,11 +439,11 @@ export default function LotAllocField({
 
       {/* ONE LOT: no box to fill, just what Tally shows against it. Keeping this
           line is what stops OD-12's balance disappearing on the common path. */}
-      {!multi && values[0] && balanceText(values[0]) && (
+      {!showRows && values[0] && balanceText(values[0]) && (
         <p className="text-[11.5px] text-grey-2">{balanceText(values[0])}</p>
       )}
 
-      {multi && (
+      {showRows && (
         <div className="space-y-1">
           {picked.map((r, i) => {
             const bal = balanceText(r.lot_no);

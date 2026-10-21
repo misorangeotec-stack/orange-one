@@ -12,7 +12,7 @@ import StepDocLink from "./StepDocLink";
 import RequestMasterModal from "./RequestMasterModal";
 import CoaModal from "./CoaModal";
 import PackLinesGrid from "./PackLinesGrid";
-import LotAllocField, { rowsFrom, type LotRow } from "@/apps/order-to-dispatch/components/LotAllocField";
+import LotAllocField, { type LotRow } from "@/apps/order-to-dispatch/components/LotAllocField";
 import { useProductionStore } from "../store";
 import { uploadQualityDocument, uploadStepDocument } from "../data/productionWrites";
 import { dmy, numOrDash, packFinalQty } from "../lib/format";
@@ -21,7 +21,7 @@ import type { MasterValues } from "../lib/masterFields";
 import { STATUS_OPTIONS, STEP_CONFIG } from "../lib/stepConfig";
 import { isAisLoopBlocked, type QueueStep } from "../lib/queues";
 import { currentCoaRound } from "../lib/coaRound";
-import { flatLotNo, lotsPayload, rmBookOf, useRmLots } from "../lib/rmLots";
+import { flatLotNo, handoverLotRows, lotSplitError, lotsPayload, rmBookOf, useRmLots } from "../lib/rmLots";
 import type { ProductionMasterType, ProductionRequest } from "../types";
 
 /** Today as yyyy-mm-dd in the browser's LOCAL timezone. Deliberately not the
@@ -98,13 +98,14 @@ const isLogRowBlank = (r: LogRow) => r.isNew && !r.rawMaterialId && !(r.name ?? 
 function seedHandoverRows(request: ProductionRequest): HandoverRow[] {
   return request.bomLines.map((b, i) => {
     const done = request.mhBomLines[i];
+    // pre-fill the handover qty from the recorded value, else the requested qty
+    const qty = done ? (done.qty != null ? String(done.qty) : "") : b.requiredQty != null ? String(b.requiredQty) : "";
     return {
       rawMaterialId: b.rawMaterialId,
       unitId: b.unitId,
       requestedQty: b.requiredQty,
-      // pre-fill the handover qty from the recorded value, else the requested qty
-      qty: done ? (done.qty != null ? String(done.qty) : "") : b.requiredQty != null ? String(b.requiredQty) : "",
-      lots: rowsFrom(done?.lots, done?.lotNo ?? null),
+      qty,
+      lots: handoverLotRows(done?.lots, done?.lotNo ?? null, qty),
       isAdditional: !!b.isAdditional,
     };
   });
@@ -291,12 +292,13 @@ export default function StepModal({
     const recorded = round.mhLines ?? [];
     return round.aisBomLines.map((b, i) => {
       const done = recorded[i];
+      const qty = done ? (done.qty != null ? String(done.qty) : "") : b.qty != null ? String(b.qty) : "";
       return {
         rawMaterialId: b.rawMaterialId,
         unitId: b.unitId,
         requestedQty: b.qty,
-        qty: done ? (done.qty != null ? String(done.qty) : "") : b.qty != null ? String(b.qty) : "",
-        lots: rowsFrom(done?.lots, done?.lotNo ?? null),
+        qty,
+        lots: handoverLotRows(done?.lots, done?.lotNo ?? null, qty),
         // An Additional Issue Slip top-up is its own thing, not an intake extra.
         isAdditional: false,
       };
@@ -423,6 +425,15 @@ export default function StepModal({
       if (filled.length === 0) { setErr("Add at least one additional raw material."); return; }
       if (filled.some((r) => !r.rawMaterialId)) { setErr("Every additional line needs a raw material."); return; }
       if (sum !== total) { setErr("The additional raw-material quantities must add up to the additional quantity."); return; }
+    }
+    if (isHandover) {
+      for (const r of hoRows) {
+        const why = lotSplitError(r.lots, r.qty ?? "");
+        if (why) {
+          setErr(`${s.rawMaterialById(r.rawMaterialId)?.name ?? "A raw material"}: ${why}.`);
+          return;
+        }
+      }
     }
     if (isFgTransfer && !(fgProdTick && fgHojiwalaTick)) {
       setErr("Confirm both Tally entries — Production → Finished Goods and Finished Goods → Hojiwala — before saving.");
@@ -874,6 +885,7 @@ export default function StepModal({
                               bookOf={rmBookOf}
                               disabled={readOnly}
                               autoFill
+                              alwaysQty
                             />
                           </td>
                         </tr>
