@@ -1,4 +1,5 @@
 import { useBackState } from "@/shared/lib/backState";
+import type { MarkType } from "@hub/lib/markType";
 import { useCallback, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
@@ -189,6 +190,8 @@ interface Row {
   salesPerson: string;
   collectionTeam: string;
   category: string;
+  /** Red Mark / Legal — joins the Category filter. */
+  markType?: MarkType;
   creditDays: number;
   creditLimit: number;
   /** creditLimit === 1 — the legacy block flag, shown as a chip and never as a rupee figure. */
@@ -392,6 +395,7 @@ export default function CreditTermsReport() {
         salesPerson: c.salesPerson || "—",
         collectionTeam: c.collectionTeam || "",
         category: c.category || "",
+        markType: c.markType,
         creditDays: c.creditPeriod,
         creditLimit: c.creditLimit,
         limitIsFlag: c.creditLimit === 1,

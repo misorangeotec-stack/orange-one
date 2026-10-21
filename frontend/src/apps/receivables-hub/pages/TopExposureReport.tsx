@@ -192,7 +192,7 @@ export default function TopExposureReport() {
         if (ctSet.size > 0 && !ctSet.has(r.collectionTeam)) return false;
         if (coSet.size > 0 && !coSet.has(r.company)) return false;
         if (loSet.size > 0 && !loSet.has(r.location)) return false;
-        if (!matchesCategory({ category: r.category }, categories)) return false;
+        if (!matchesCategory({ category: r.category, markType: r.markType }, categories)) return false;
         if (q && !(r.customer.toLowerCase().includes(q) || r.salesPerson.toLowerCase().includes(q))) return false;
         return true;
       });

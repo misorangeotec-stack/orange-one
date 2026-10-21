@@ -1,3 +1,4 @@
+import type { MarkType } from "./markType";
 // ── Shared types matching the JSON output from process_data.py ────────────────
 
 export type RiskCategory = "critical" | "high" | "medium" | "low";
@@ -66,6 +67,11 @@ export interface Customer {
    * ~140 references; the UI label is "Red Mark" everywhere.)
    */
   blocked: boolean;
+  /**
+   * Which kind of Red Mark: "redmark" or "legal" (ext_redmark.mark_type). Set exactly when `blocked`
+   * is set from the master — undefined on an unmarked customer and on the legacy pipeline source.
+   */
+  markType?: MarkType;
   openingBalance: number;
   openingDrCr?: 'Dr' | 'Cr';
   remainingOpeningBalance: number;
@@ -223,6 +229,8 @@ export interface ConsolidatedCustomer extends Customer {
   collectionTeams: string[];
   /** All unique categories (tiers) for this consolidated customer */
   categories: string[];
+  /** Every Red Mark type across the merged rows; empty when none is marked. */
+  markTypes?: MarkType[];
   /** Per-constituent AI-proposed-limit breakdowns (one entry per merged source row). */
   proposedConstituents: ProposedConstituent[];
 }

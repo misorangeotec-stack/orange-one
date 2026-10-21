@@ -12,6 +12,7 @@ export const UNCATEGORIZED = "Uncategorized";
 //   and the scheduled report has to call them on a server, where importing a component would drag
 //   React into the bundle. Import them from the lib in new code.
 export { customerCategoryTokens, matchesCategory } from "@hub/lib/customerCategory";
+import { MARK_LABEL } from "@hub/lib/markType";
 
 export const CATEGORY_OPTIONS = [
   { value: "A",  label: "A" },
@@ -21,7 +22,12 @@ export const CATEGORY_OPTIONS = [
   { value: "E",  label: "E" },
   { value: "AA", label: "AA (internal)" },
   { value: UNCATEGORIZED, label: "Uncategorized" },
+  // Not tiers: the Red Mark + Legal master (Settings → Masters). A customer is in one of these AS
+  // WELL AS its tier, so ticking one narrows to just those customers.
+  { value: MARK_LABEL.redmark, label: "Red Mark" },
+  { value: MARK_LABEL.legal, label: "Legal" },
 ];
+const FIRST_MARK_OPTION = MARK_LABEL.redmark;
 
 interface Props {
   value: string[];
@@ -54,9 +60,9 @@ export function CustomerCategoryMultiSelect({ value, onChange, triggerClassName 
       </PopoverTrigger>
       <PopoverContent className="w-48 p-2" align="start">
         <div className="space-y-1">
-          {CATEGORY_OPTIONS.map((opt) => (
+          {CATEGORY_OPTIONS.map((opt) => (<div key={opt.value || "_uncat"}>
+            {opt.value === FIRST_MARK_OPTION && <div className="border-t border-border my-1" />}
             <label
-              key={opt.value || "_uncat"}
               className="flex items-center gap-2 px-2 py-1.5 rounded-md cursor-pointer hover:bg-muted/60 text-sm select-none"
             >
               <Checkbox
@@ -65,7 +71,7 @@ export function CustomerCategoryMultiSelect({ value, onChange, triggerClassName 
               />
               {opt.label}
             </label>
-          ))}
+          </div>))}
           <div className="border-t border-border my-1" />
           {value.length < CATEGORY_OPTIONS.length ? (
             <button

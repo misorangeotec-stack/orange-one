@@ -1,4 +1,5 @@
 import type { AgingBuckets, Customer, CustomerGroupMap, SaleType } from "./types";
+import type { MarkType } from "./markType";
 import { groupNameOf } from "./customerGroups";
 import { utilizationPct } from "./receivables";
 
@@ -27,6 +28,8 @@ export interface ExposureRow {
   company: string;
   location: string;
   category: string;
+  /** Red Mark / Legal — joins the Category filter. */
+  markType?: MarkType;
   /** Parent customer group (muster), or the customer's own name when unmapped. */
   group: string;
   creditPeriod: number;
@@ -56,6 +59,7 @@ export function toExposureRow(c: Customer, groupMap: CustomerGroupMap): Exposure
     company: c.company || "—",
     location: c.location || "—",
     category: c.category || "",
+    markType: c.markType,
     group: groupNameOf(c, groupMap),
     creditPeriod: c.creditPeriod ?? 0,
     creditLimit: c.creditLimit ?? 0,

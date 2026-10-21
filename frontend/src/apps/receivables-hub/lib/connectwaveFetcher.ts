@@ -20,6 +20,7 @@ import { categorizeRisk } from "./appDataCore";
 import { applyOtherPaymentsToLive } from "./liveOtherPayments";
 import { applyNonBillRefsToLive } from "./liveNonBillRefs";
 import { isUnset } from "./nameMasters";
+import { parseMarkType, type MarkType } from "./markType";
 import { fetchCompanyMap, makeCompanyResolver, type CompanyIdentity } from "./companyMap";
 import type {
   Customer, CustomerDetail, DashboardData, CustomerGroupMap,
@@ -319,8 +320,14 @@ export async function loadFromConnectwave(fySuffix: string = ""): Promise<RawApp
     // CLEARED flags the customer as "Red Mark" on the Live (Tally) screens (KPI/badge/filter/
     // report). This REPLACES the old creditLimit===1 sentinel as the driver of the flag on
     // this source.
-    fetchAll<{ ledger_id: string; cleared: boolean }>(
-      () => sb.from("ext_redmark").select("ledger_id,cleared"), ["ledger_id"]),
+    //
+    // mark_type (Red Mark | Legal) arrived 21-10-2026. If the column is not there yet the read falls
+    // back to the old columns, so a frontend deployed ahead of the database still loads — every row
+    // then reads as plain Red Mark.
+    fetchAll<{ ledger_id: string; cleared: boolean; mark_type?: string | null }>(
+      () => sb.from("ext_redmark").select("ledger_id,cleared,mark_type"), ["ledger_id"])
+      .catch(() => fetchAll<{ ledger_id: string; cleared: boolean; mark_type?: string | null }>(
+        () => sb.from("ext_redmark").select("ledger_id,cleared"), ["ledger_id"])),
     // The "Data updated as of" banner: the REAL last Tally sync time (any company, IST clock string),
     // not collection_meta.refreshed_at — that is re-stamped nightly by the snapshot job even when nothing
     // synced, so it would read "today" on a day with no pull. This RPC returns max(tally_sync_run.finished_at)
@@ -351,18 +358,22 @@ export async function loadFromConnectwave(fySuffix: string = ""): Promise<RawApp
   // ⚠ THE RECORD IS NOT DELETED — it is still in the master, marked cleared, and the Red Mark
   //   report reads ext_redmark DIRECTLY (not this flag) so it can still show cleared cases under
   //   its All / Cleared toggle.
-  const redmarkSet = new Set(redmarkRows.filter((r) => r.cleared !== true).map((r) => r.ledger_id));
+  const markByGuid = new Map<string, MarkType>(
+    redmarkRows.filter((r) => r.cleared !== true)
+      .map((r) => [r.ledger_id, parseMarkType(r.mark_type) ?? "redmark"]),
+  );
   const cust = custRows.map((r) => toCustomer(r, resolveCompany(r.tenant_id, r.company))).map((c) => {
     const tallyGroup = tallyGroupByGuid.get(c.id);
-    const blocked = redmarkSet.has(c.id);
+    const markType = markByGuid.get(c.id);
+    const blocked = markType !== undefined;
     // ⚠ STAMPED OUTSIDE THE TAG GUARD BELOW, DELIBERATELY. `t` is the ext_ledger_tags row, which
     // carries salesperson and category; collection_team comes from a DIFFERENT muster. Folding it
     // into the early return would silently blank the team on every customer that happens to have no
     // salesperson-tag row.
     const collectionTeam = teamByGuid.get(c.id) ?? "";
     const t = tagByGuid.get(c.id);
-    if (!t) return { ...c, tallyGroup: tallyGroup ?? c.tallyGroup, blocked, collectionTeam };
-    return { ...c, tallyGroup, blocked, collectionTeam, salesPerson: t.salesperson ?? c.salesPerson, category: t.category ?? c.category };
+    if (!t) return { ...c, tallyGroup: tallyGroup ?? c.tallyGroup, blocked, markType, collectionTeam };
+    return { ...c, tallyGroup, blocked, markType, collectionTeam, salesPerson: t.salesperson ?? c.salesPerson, category: t.category ?? c.category };
   });
   // The as-of month comes from collection_meta (the authoritative stamp collection_refresh()
   // writes), not from an arbitrary snapshot row — row 0 of an unordered fetch is whatever the

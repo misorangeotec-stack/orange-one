@@ -283,7 +283,7 @@ export default function Dashboard() {
   const blockedValue      = String(isGroupMode ? groupCounts.blocked    : kpis?.blockedCustomers   ?? 0);
   const totalCountLabel   = isGroupMode ? "Total Groups"       : "Total Customers";
   const criticalLabel     = isGroupMode ? "Critical Groups"    : "Critical Customers";
-  const blockedLabel      = isGroupMode ? "Red Mark Groups" : "Red Mark Customers";
+  const blockedLabel      = isGroupMode ? "Red Mark + Legal Groups" : "Red Mark + Legal Customers";
 
   /** On Account taken off Total Overdue, and whether there is anything to say about it. Both
    *  come from useAppData so the card can never disagree with the aging footer below. */

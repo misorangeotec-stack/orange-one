@@ -1,4 +1,5 @@
 import { useBackState } from "@/shared/lib/backState";
+import { markTypesOf, type MarkType } from "@hub/lib/markType";
 import { ScrollableTable } from "@/core/shared/components/ScrollableTable";
 import { useState, useMemo, useEffect, useRef, useLayoutEffect, useCallback, type ReactNode, type CSSProperties } from "react";
 import { useSearchParams } from "react-router-dom";
@@ -66,6 +67,9 @@ interface CustomerRow {
   category: string;
   /** All unique categories (tiers) for this consolidated/group row. */
   categories?: string[];
+  /** Red Mark / Legal — joins the Category filter. */
+  markType?: MarkType;
+  markTypes?: MarkType[];
   /** All companies this row spans (one entry = single company; >1 = "Multiple"). */
   companies?: string[];
   /** All locations this row spans (one entry = single location; >1 = "Multiple"). */
@@ -1342,6 +1346,7 @@ export default function CustomerRiskRegister() {
         salesPersons: uniqStr(rs.map((r) => r.salesPersons ?? (r.salesPerson ? [r.salesPerson] : []))),
         category: "",
         categories: uniqStr(rs.map((r) => r.categories ?? (r.category ? [r.category] : []))),
+        markTypes: [...new Set(rs.flatMap((r) => markTypesOf(r)))].sort(),
         companies: uniqStr(rs.map((r) => r.companies ?? [])),
         locations: uniqStr(rs.map((r) => r.locations ?? [])),
         openingBalance: sum("openingBalance"),

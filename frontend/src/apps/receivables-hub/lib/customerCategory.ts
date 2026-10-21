@@ -78,6 +78,7 @@
  */
 
 import "./customerCategory.augment";
+import { MARK_LABEL, markTypesOf, type MarkType } from "./markType";
 
 import {
   pctOf,
@@ -106,18 +107,27 @@ import type { ConsolidatedCustomer, Customer, SaleType } from "./types";
  */
 const UNCATEGORIZED = "Uncategorized";
 
-/** The category tokens a customer matches against (handles groups + blanks). */
+/**
+ * The category tokens a customer matches against (handles groups + blanks).
+ *
+ * The tier ("A", "B", … or "Uncategorized") ALWAYS comes first, and "Red Mark" / "Legal" are ADDED
+ * for a customer on that master. They sit in the same Category dropdown, and the dropdown is a
+ * union: tick "Legal" alone and you see just the legal customers; tick everything ("All
+ * Categories") and you see everybody, exactly as before.
+ */
 export function customerCategoryTokens(
-  c: { category?: string; categories?: string[] },
+  c: { category?: string; categories?: string[]; markType?: MarkType; markTypes?: MarkType[] },
 ): string[] {
-  if (c.categories && c.categories.length) return c.categories;
-  if (c.category && c.category !== "Multiple") return [c.category];
-  return [UNCATEGORIZED];
+  const tiers = c.categories && c.categories.length ? c.categories
+    : c.category && c.category !== "Multiple" ? [c.category]
+    : [UNCATEGORIZED];
+  const marks = markTypesOf(c).map((m) => MARK_LABEL[m]);
+  return marks.length ? [...tiers, ...marks] : tiers;
 }
 
 /** True when the customer matches the selected categories ([] = no filter). */
 export function matchesCategory(
-  c: { category?: string; categories?: string[] },
+  c: { category?: string; categories?: string[]; markType?: MarkType; markTypes?: MarkType[] },
   selected: string[],
 ): boolean {
   if (!selected.length) return true;

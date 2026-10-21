@@ -19,6 +19,8 @@ import { outstandingContribution, sumOutstanding, countByRisk, utilizationPct } 
 // Re-exported here because every page already imports consolidateByName from useAppData.
 export { consolidateByName, categorizeRisk } from "./appDataCore";
 import { consolidateByName, categorizeRisk } from "./appDataCore";
+import { markTypesOf } from "./markType";
+import { customerCategoryTokens } from "./customerCategory";
 
 /**
  * Roll consolidated customers up to group rows using the mapping sheet.
@@ -129,6 +131,7 @@ export function consolidateByGroup(
       collectionTeams,
       category:                 categories.length === 0 ? "" : collapsed(categories),
       categories,
+      markTypes:                [...new Set(children.flatMap((c) => markTypesOf(c)))].sort(),
       sales:                    numSum("sales"),
       receipts:                 numSum("receipts"),
       otherPayments:            numSum("otherPayments"),
@@ -628,11 +631,8 @@ export function useAppData(filters: Filters = {}): AppData {
     }
     if (filters.category && filters.category !== "all") {
       const catSet = new Set(filters.category.split(",").map((s) => s.trim()).filter(Boolean));
-      result = result.filter((c) => {
-        const toks = c.categories?.length ? c.categories
-          : c.category && c.category !== "Multiple" ? [c.category] : ["Uncategorized"];
-        return toks.some((t) => catSet.has(t));
-      });
+      // The shared tokens: the tier, plus "Red Mark" / "Legal" for a customer on that master.
+      result = result.filter((c) => customerCategoryTokens(c).some((t) => catSet.has(t)));
     }
     return result;
   }, [projectedConsolidatedCustomers, filters.customerSegment, filters.balanceFilter, filters.blockedFilter, filters.salesPerson, filters.category]);
@@ -787,11 +787,8 @@ export function useAppData(filters: Filters = {}): AppData {
     }
     if (filters.category && filters.category !== "all") {
       const catSet = new Set(filters.category.split(",").map((s) => s.trim()).filter(Boolean));
-      result = result.filter((c) => {
-        const toks = c.categories?.length ? c.categories
-          : c.category && c.category !== "Multiple" ? [c.category] : ["Uncategorized"];
-        return toks.some((t) => catSet.has(t));
-      });
+      // The shared tokens: the tier, plus "Red Mark" / "Legal" for a customer on that master.
+      result = result.filter((c) => customerCategoryTokens(c).some((t) => catSet.has(t)));
     }
 
     return result;

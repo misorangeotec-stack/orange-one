@@ -34,6 +34,12 @@
 //      what the Live (Tally) netting groups by.)
 //   POST body { action: "update_segment_config", company_guid, small_max_pct, medium_max_pct }
 //     -> { ok: true }  (the Customer Profile screen's "Edit Segments" bands, per company)
+//   POST body { action: "insert_redmark", ledger_id, tally_name, company, location, salesperson,
+//               reason, checked, mark_type? }                     -> { ok: true, row }
+//   POST body { action: "update_redmark", ledger_id, salesperson, reason, checked, mark_type? } -> { ok: true }
+//     (mark_type = "redmark" | "legal" — one master, two kinds of customer (21-10-2026). Optional so a
+//      browser still on the old build keeps working: absent means "redmark" on insert, unchanged on
+//      update.)
 //   POST body { action: "clear_redmark",  ledger_id, clear_note } -> { ok: true, row }
 //   POST body { action: "reopen_redmark", ledger_id }             -> { ok: true, row }
 //     (RC-12. "Cleared" = the case is settled: the customer stops counting as Red Mark everywhere,
@@ -225,9 +231,21 @@ async function checkListValue(
  * Red Mark is a per-ledger flag keyed by the Tally GUID (presence = flagged), so ledger_id is the
  * only hard requirement; everything else is display metadata. Returns the column patch or an error.
  */
+/** The two kinds of customer on the Red Mark + Legal master. Pinned here and by a DB check constraint. */
+const MARK_TYPES = ["redmark", "legal"];
+
+/** mark_type from the body: undefined when absent (keep / default), or an error for anything else. */
+function parseMarkType(v: unknown): { value: string | undefined } | { err: string } {
+  if (v === undefined || v === null || v === "") return { value: undefined };
+  const t = String(v).trim().toLowerCase();
+  return MARK_TYPES.includes(t) ? { value: t } : { err: `mark_type must be one of: ${MARK_TYPES.join(", ")}` };
+}
+
 function parseRedmark(body: Record<string, unknown>): { row: Record<string, unknown> } | { err: string } {
   const ledger_id = clean(body.ledger_id);
   if (!ledger_id) return { err: "ledger_id required (pick a customer)" };
+  const mt = parseMarkType(body.mark_type);
+  if ("err" in mt) return mt;
   return {
     row: {
       ledger_id,
@@ -237,6 +255,7 @@ function parseRedmark(body: Record<string, unknown>): { row: Record<string, unkn
       salesperson: clean(body.salesperson),
       reason: clean(body.reason),
       checked: body.checked !== false, // default true — presence means flagged
+      mark_type: mt.value ?? "redmark",
       match_status: "guid_matched",
       source: "muster",
     },
@@ -701,6 +720,8 @@ Deno.serve(async (req) => {
     const badRmSp = await checkListValue(
       cw, "salesperson", clean(body.salesperson), curRm.salesperson);
     if (badRmSp) return json(400, { error: badRmSp });
+    const rmType = parseMarkType(body.mark_type);
+    if ("err" in rmType) return json(400, { error: rmType.err });
     // Only the editable metadata is patched here (not the key). .select() so a zero-row match is a
     // 404, not a silent ok:true.
     const { data, error } = await cw
@@ -709,6 +730,8 @@ Deno.serve(async (req) => {
         salesperson: clean(body.salesperson),
         reason: clean(body.reason),
         checked: body.checked !== false,
+        // Absent = leave the type alone (an older browser never sends it).
+        ...(rmType.value ? { mark_type: rmType.value } : {}),
         updated_by,
       })
       .eq("ledger_id", ledger_id)
