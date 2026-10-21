@@ -19,8 +19,12 @@
 --      never the assignee; a closed task can be reopened only by the giver / an admin;
 --      reopening clears the close. The stamp is always now() / auth.uid().
 --   3. notify_task_peer_review (AFTER UPDATE OF status): bell rows for both hand-offs.
---   4. Peer tasks ALREADY completed before this runs are stamped closed (at their
---      completed_at, closed_by null), so nobody wakes up to a backlog of old reviews.
+--   4. NO BACKFILL, deliberately (client, 21-10-2026): peer tasks ALREADY completed
+--      before this runs land in each giver's Review tab, so they can check their old
+--      given tasks too and re-open any they want. No bell is sent for them (the notify
+--      trigger fires on status changes only), so nobody is flooded.
+--      The one exception: old shift copies whose creator IS the assignee (2 on live,
+--      21-10-2026) have no giver to review them, so they are stamped closed.
 --
 -- Nothing else: no policy changes (tasks_update already lets the creator update), no
 -- status enum change, no change for any task that is not a peer task.
@@ -72,11 +76,13 @@ create index if not exists tasks_peer_awaiting_review_idx
   where is_peer_assignment and status = 'completed' and peer_closed_at is null;
 
 -- ---------------------------------------------------------------------------
--- 4 · (before the guard exists) Old completed peer tasks count as closed.
+-- 4 · (before the guard exists) Completed peer tasks with nobody to review them —
+--     old shift copies where created_by = assigned_to — count as closed. Every other
+--     completed peer task is left to wait in its giver's Review tab.
 -- ---------------------------------------------------------------------------
 update public.tasks
    set peer_closed_at = coalesce(completed_at, updated_at)
- where is_peer_assignment and status = 'completed' and peer_closed_at is null;
+ where is_peer_assignment and status = 'completed' and created_by = assigned_to;
 
 -- ---------------------------------------------------------------------------
 -- 2 · The guard.
@@ -208,8 +214,13 @@ declare
 begin
   select count(*) into v_n from public.tasks
    where is_peer_assignment and status = 'completed' and peer_closed_at is null;
+  raise notice 'peer review: % completed peer task(s) now wait in their giver''s Review tab', v_n;
+
+  select count(*) into v_n from public.tasks
+   where peer_reopen_count <> 0
+      or (peer_closed_at is not null and not (is_peer_assignment and created_by = assigned_to));
   if v_n <> 0 then
-    raise exception 'peer review post 1: % old completed peer task(s) were not stamped closed', v_n;
+    raise exception 'peer review post 1: % task(s) carry a review stamp -- only giverless copies may be closed', v_n;
   end if;
 
   select count(*) into v_n from public.tasks

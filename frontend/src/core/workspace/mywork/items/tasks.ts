@@ -68,7 +68,9 @@ export function taskWorkItems(data: TaskData, uid: string): WorkItem[] {
  *   `public.user_snapshot()` count (`tasks_sql`); folding reviews into it would make the
  *   two disagree. Putting reviews in the mail needs both changed together.
  *
- * Due = the day it was completed: a review is owed from then.
+ * No due date, deliberately: the peer tasks completed before the review existed all
+ * land here at go-live (74 on live, 21-10-2026), and dating them by completion would
+ * count every one as an overdue approval overnight.
  */
 export function peerReviewWorkItems(data: TaskData, uid: string): WorkItem[] {
   return data.tasks
@@ -80,7 +82,7 @@ export function peerReviewWorkItems(data: TaskData, uid: string): WorkItem[] {
       ref: t.title,
       detail: t.description || undefined,
       stage: "Peer review",
-      dueIso: t.completedAt ? t.completedAt.slice(0, 10) : null,
+      dueIso: null,
       to: `/task-management/tasks/${t.id}`,
       assignment: "direct" as const,
       isApproval: true,
