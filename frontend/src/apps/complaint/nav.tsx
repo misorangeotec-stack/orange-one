@@ -2,6 +2,7 @@ import type { NavItem } from "@/shared/components/layout/types";
 import { appName } from "@/apps/appInfo";
 import {
   B,
+  creditNotesHref,
   masterRequestsHref,
   mastersHref,
   monitoringHref,
@@ -64,6 +65,9 @@ const ic = {
   assignee: (
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="10" cy="8" r="4" /><path d="M3 20c0-3.6 3.1-5.5 7-5.5" /><path d="M14 18h7" /><path d="m18 15 3 3-3 3" /></svg>
   ),
+  creditNote: (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M6 3h12v18l-3-2-3 2-3-2-3 2z" /><path d="M9 8h6M9 12h6M9 16h3" /></svg>
+  ),
   account: (
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="8" r="4" /><path d="M4 20c0-4 3.5-6 8-6s8 2 8 6" /></svg>
   ),
@@ -95,11 +99,12 @@ export function buildComplaintNav(opts: {
   canSeeMasters: boolean;
   canPlant: boolean;
   canService: boolean;
+  /**
+   * The ONE management desk — FG approval, RM / other-supplier review, final
+   * review and customer compensation approval (pages/queues/ApprovalQueue).
+   */
   canApprove: boolean;
   canPurchase: boolean;
-  /** Management's RM bucket — where imported-material complaints land. */
-  canRmManagement: boolean;
-  canReview: boolean;
   /**
    * Not a Setup role — true only while a complaint management assigned to this
    * person is (or has been) theirs. See store.canSeeQueue.
@@ -111,6 +116,8 @@ export function buildComplaintNav(opts: {
   /** False on a view-only grant — every write link is hidden behind it. */
   canEdit: boolean;
   hasRequests: boolean;
+  /** The Tally Entry page — the Tally desk (cn_tally owners), coordinators, viewers, admins. */
+  canSeeCreditNotes: boolean;
 }): NavItem[] {
   const nav: NavItem[] = [
     { label: "Dashboard", to: B, icon: ic.dashboard, section: "Workspace" },
@@ -137,17 +144,15 @@ export function buildComplaintNav(opts: {
     queueUsed = true;
   };
 
-  // Workflow order, both chains interleaved: the finished-good desks, then the
-  // raw-material ones, then the review every chain ends on.
+  // Workflow order: the finished-good desks, the single management desk, the
+  // raw-material ones, then customer compensation's Tally desk.
   if (opts.canPlant) queue("Plant Action", queueHref("plant"), ic.capa);
   if (opts.canService) queue("Service Team", queueHref("service"), ic.resolution);
   if (opts.canApprove) queue("Management Approval", queueHref("approval"), ic.approval);
   if (opts.canPurchase) queue("Purchase Department", queueHref("purchase"), ic.purchase);
-  // TWO MANAGEMENT ENTRIES, NOT ONE. Reading an imported-material complaint is
-  // work; signing off a settled one is not. See lib/steps.ts.
-  if (opts.canRmManagement) queue("RM-Complaint View (MGT)", queueHref("rm-management"), ic.investigation);
   if (opts.canAssignee) queue("Assigned to Me", queueHref("assignee"), ic.assignee);
-  if (opts.canReview) queue("Management Review", queueHref("management-review"), ic.close);
+  // Customer Compensation's Tally desk. Its approvals are on Management Approval.
+  if (opts.canSeeCreditNotes) queue("Tally Entry", creditNotesHref(), ic.creditNote);
 
   let adminUsed = false;
   const admin = (label: string, to: string, icon: JSX.Element) => {

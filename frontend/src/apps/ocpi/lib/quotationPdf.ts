@@ -548,13 +548,22 @@ function sectionRows(
       rows and keeps the parity; an item answered "No" adds one and leaves a
       half-empty final line. That is expected — do not pad it.
   */
-  const inclusions: Row[] = [
-    { label: "Inclusive of Ink?", value: yesNo(d.inclInk) },
-    { label: "Qty. of Ink Included in Deal", value: d.inkQtyIncluded ?? "" },
-  ];
-  if (d.inclInk === false && d.inkOfferAgreed !== null) {
-    inclusions.push({ label: "Ink Offered at a Subsidized Rate?", value: yesNo(d.inkOfferAgreed) });
-    if (d.inkOfferAgreed === true) {
+  /*
+    🔴 ONLY A "YES" PRINTS (client, 20-Oct-2026). An item the deal does NOT
+       include is left off the paper entirely — no "Inclusive of Ink? No" row,
+       no empty quantity box — so the customer reads what they get and never a
+       list of what they do not. The same rule now holds on the PI and the OC
+       (see `inclusionNotes` in ocPdf.ts). A subsidized-rate offer prints only
+       when it was agreed, because then it carries a price the customer holds.
+  */
+  const inclusions: Row[] = [];
+  if (d.inclInk === true) {
+    inclusions.push({ label: "Inclusive of Ink?", value: "Yes" });
+    if (d.inkQtyIncluded?.trim()) inclusions.push({ label: "Qty. of Ink Included in Deal", value: d.inkQtyIncluded });
+  }
+  if (d.inclInk === false && d.inkOfferAgreed === true) {
+    inclusions.push({ label: "Ink Offered at a Subsidized Rate?", value: "Yes" });
+    {
       // "Subsidized Ink Price", not "Ink Price" — Section A already prints
       // "Ink Selling Price", which is a different figure entirely.
       inclusions.push({ label: "Subsidized Ink Price", value: inr(d.inkOfferSubtotal) });
@@ -565,15 +574,19 @@ function sectionRows(
       });
     }
   }
-  inclusions.push(
-    { label: "Inclusive of Spare Parts?", value: yesNo(d.inclSpares) },
-    { label: "Spare Part Details and Quantity", value: d.spareDetails ?? "" },
-    { label: "Inclusive of Head?", value: yesNo(d.inclHead) },
-    { label: "No. of Heads Included in Deal", value: d.headsIncluded === null ? "" : String(d.headsIncluded) },
-  );
-  if (d.inclHead === false && d.headOfferAgreed !== null) {
-    inclusions.push({ label: "Head Offered at a Subsidized Rate?", value: yesNo(d.headOfferAgreed) });
-    if (d.headOfferAgreed === true) {
+  if (d.inclSpares === true) {
+    inclusions.push({ label: "Inclusive of Spare Parts?", value: "Yes" });
+    if (d.spareDetails?.trim()) inclusions.push({ label: "Spare Part Details and Quantity", value: d.spareDetails });
+  }
+  if (d.inclHead === true) {
+    inclusions.push({ label: "Inclusive of Head?", value: "Yes" });
+    if (d.headsIncluded !== null && String(d.headsIncluded).trim()) {
+      inclusions.push({ label: "No. of Heads Included in Deal", value: String(d.headsIncluded) });
+    }
+  }
+  if (d.inclHead === false && d.headOfferAgreed === true) {
+    inclusions.push({ label: "Head Offered at a Subsidized Rate?", value: "Yes" });
+    {
       inclusions.push({ label: "Subsidized Head Price", value: inr(d.headOfferSubtotal) });
       inclusions.push({
         label: "Head Rate Note",
@@ -592,10 +605,9 @@ function sectionRows(
       asks all seven, a reader of the paper section B produces has to find all
       seven on it, or the form and its own document disagree.
 
-    ⚠ A No PRINTS, exactly as the three rows above it print a No. On this paper
-      "not included" is a term of the deal, not an absence — which is the
-      opposite of the order confirmation, where these four feed a bullet list
-      of what the machine IS composed of and a No is simply no bullet.
+    ⚠ A No NO LONGER PRINTS (client, 20-Oct-2026) — same as the rows above and
+      the same as the order confirmation, where these feed a bullet list of
+      what the machine IS composed of and a No is simply no bullet.
 
     🔴 THE THREE EXTRAS ARE CATEGORY-GATED (OCPI-14), matching the form one for
        one. They are asked on a Direct deal and on no other, so printing them
@@ -609,18 +621,16 @@ function sectionRows(
        so it prints above with spare parts, which is where a reader looking for
        what the deal contains will expect it.
   */
-  if (facts.showsCentering) {
-    inclusions.push(
-      { label: "Inclusive of Centering Device?", value: yesNo(d.inclCentering) },
-      { label: "Centering Device Details and Quantity", value: d.centeringDetails ?? "" },
-    );
+  if (facts.showsCentering && d.inclCentering === true) {
+    inclusions.push({ label: "Inclusive of Centering Device?", value: "Yes" });
+    if (d.centeringDetails?.trim()) {
+      inclusions.push({ label: "Centering Device Details and Quantity", value: d.centeringDetails });
+    }
   }
   if (facts.showsExtras) {
-    inclusions.push(
-      { label: "Inclusive of Air Blade?", value: yesNo(d.airBlade) },
-      { label: "Inclusive of Ink Dust Exhauster?", value: yesNo(d.inkDustExhauster) },
-      { label: "Inclusive of Chilling System?", value: yesNo(d.chillingSystem) },
-    );
+    if (d.airBlade === true) inclusions.push({ label: "Inclusive of Air Blade?", value: "Yes" });
+    if (d.inkDustExhauster === true) inclusions.push({ label: "Inclusive of Ink Dust Exhauster?", value: "Yes" });
+    if (d.chillingSystem === true) inclusions.push({ label: "Inclusive of Chilling System?", value: "Yes" });
   }
   if (d.otherInclusions?.trim()) {
     inclusions.push({ label: "Other Inclusions", value: d.otherInclusions, wide: true });
@@ -631,7 +641,8 @@ function sectionRows(
     { title: "B.  Deal Inclusions", rows: inclusions },
     { title: "C.  Commercial Terms", rows: commercial },
     { title: "D.  Special Remarks", rows: remarks },
-  ];
+    // Nothing included ⇒ no section B at all, rather than an empty heading.
+  ].filter((sec) => sec.title !== "B.  Deal Inclusions" || sec.rows.length > 0);
 }
 
 /** Build the document. Returns the jsPDF instance so callers can save, blob or print it. */

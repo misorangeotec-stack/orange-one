@@ -3,6 +3,7 @@ import Card from "@/shared/components/ui/Card";
 import PaperSet from "./PaperSet";
 import { useOcpiStore } from "../store";
 import { fetchStoredPdf } from "../lib/docUrls";
+import { useServiceChecklistPaper } from "./useServiceChecklistPaper";
 import { ocFileName, ocPdfBlob, ocSummaryFileName } from "../lib/ocPdf";
 import { piFileName, piPdfBlob } from "../lib/piPdf";
 import { quotationPdfBlob } from "../lib/quotationPdf";
@@ -47,6 +48,9 @@ export default function ApprovedOcPreview({
   const [busy, setBusy] = useState(true);
   const [rebuilt, setRebuilt] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  // The machine's service checklist — downloads with every paper here.
+  const checklistPaper = useServiceChecklistPaper(deal);
 
   useEffect(() => {
     let cancelled = false;
@@ -165,6 +169,7 @@ export default function ApprovedOcPreview({
               ? `${machine.name} has no detailed template, so the summary and the PI are the whole of this contract.`
               : "There is no detailed sheet on this deal.",
           },
+          checklistPaper,
         ]}
       />
       {error && <p className="text-[13px] text-ryg-red">{error}</p>}
