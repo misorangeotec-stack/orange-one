@@ -432,7 +432,7 @@ export default function TaskTable({ tasks, sort, onSort, showDepartment = false,
                     still genuinely Pending or In Progress underneath. */}
                 <td className="px-3 py-3 align-middle text-center">
                   <div className="flex flex-col items-center gap-1">
-                    <StatusChip status={task.status} notApplicable={task.notApplicable} />
+                    <StatusChip status={task.status} notApplicable={task.notApplicable} peer={task} />
                     {overdue && (
                       <span
                         title={`Overdue — was due ${dateLabel(task.dueDate)}`}
