@@ -1132,9 +1132,8 @@ export default function CustomerRiskRegister() {
     } else if (blockedFilter === "not_blocked") {
       d = d.filter((r) => r.blocked !== true);
     }
-    if (categories.length > 0) {
-      d = d.filter((r) => matchesCategory(r, categories));
-    }
+    // Always applied: an empty selection is the default, which hides Legal customers.
+    d = d.filter((r) => matchesCategory(r, categories));
     if (sortKey && sortDir) {
       // For the Overdue column, sort by the value actually shown: the selected
       // aging bucket's amount when a bucket filter is active, else total overdue

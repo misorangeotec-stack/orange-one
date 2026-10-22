@@ -543,7 +543,8 @@ export default function SalespersonCollectionReport() {
       const set = new Set(collectionTeams);
       d = d.filter((c) => set.has(c.collectionTeam));
     }
-    if (categories.length) d = d.filter((c) => matchesCategory(c, categories));
+    // Always applied: an empty selection is the default, which hides Legal customers.
+    d = d.filter((c) => matchesCategory(c, categories));
     // Customer Segment — judged on the customer's COMBINED (consolidate-by-name) activity,
     // exactly like the Dashboard (useAppData groups ledgers by name BEFORE the segment filter:
     // "segment must be judged on their combined totals, not individual rows"). Judging per raw

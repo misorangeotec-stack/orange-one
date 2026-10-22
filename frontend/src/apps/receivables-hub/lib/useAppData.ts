@@ -20,7 +20,7 @@ import { outstandingContribution, sumOutstanding, countByRisk, utilizationPct } 
 export { consolidateByName, categorizeRisk } from "./appDataCore";
 import { consolidateByName, categorizeRisk } from "./appDataCore";
 import { markTypesOf } from "./markType";
-import { matchesCategory } from "./customerCategory";
+import { isLegalOnly, matchesCategory } from "./customerCategory";
 
 /**
  * Roll consolidated customers up to group rows using the mapping sheet.
@@ -629,7 +629,9 @@ export function useAppData(filters: Filters = {}): AppData {
       const ctSet = new Set(filters.collectionTeam.split(",").map((s) => s.trim()).filter(Boolean));
       result = result.filter((c) => c.collectionTeams?.some((t) => ctSet.has(t)) || ctSet.has(c.collectionTeam));
     }
-    if (filters.category && filters.category !== "all") {
+    // "all" is the Dashboard's untouched Category filter, which hides Legal customers by default.
+    if (filters.category === "all") result = result.filter((c) => !isLegalOnly(c));
+    else if (filters.category) {
       const catSet = new Set(filters.category.split(",").map((s) => s.trim()).filter(Boolean));
       // The shared rule: tiers, plus "Red Mark" / "Legal" (unticking one hides those customers).
       const selected = [...catSet];
@@ -786,7 +788,9 @@ export function useAppData(filters: Filters = {}): AppData {
       const ctSet = new Set(filters.collectionTeam.split(",").map((s) => s.trim()).filter(Boolean));
       result = result.filter((c) => c.collectionTeams?.some((t) => ctSet.has(t)) || ctSet.has(c.collectionTeam));
     }
-    if (filters.category && filters.category !== "all") {
+    // "all" is the Dashboard's untouched Category filter, which hides Legal customers by default.
+    if (filters.category === "all") result = result.filter((c) => !isLegalOnly(c));
+    else if (filters.category) {
       const catSet = new Set(filters.category.split(",").map((s) => s.trim()).filter(Boolean));
       // The shared rule: tiers, plus "Red Mark" / "Legal" (unticking one hides those customers).
       const selected = [...catSet];
