@@ -196,6 +196,19 @@ export default function TripDetail() {
       </Card>
 
       {/*
+        ⚠ RIGHT UNDER THE RAIL, so the person booking adds the tickets without
+          scrolling past the request.
+        ⚠ SHOWN FROM THE BOOKING STEP ONWARDS, not only while booking is open.
+          A refund lands weeks after the trip — hiding the legs once the step
+          closed would hide the evidence at exactly the moment somebody needs it.
+      */}
+      {trip.status !== "draft" &&
+        trip.status !== "awaiting_manager_approval" &&
+        trip.status !== "awaiting_director_approval" &&
+        trip.status !== "returned" &&
+        trip.status !== "rejected" && <LegRows trip={trip} />}
+
+      {/*
         ⚠ BOTH PANELS RENDER; EACH DECIDES FOR ITSELF WHETHER IT APPLIES. A step
           this trip skipped returns null, which is defect (E) of 20260905120000
           handled where the reader can see it — the RPC refuses as well, but by
@@ -322,17 +335,6 @@ export default function TripDetail() {
           </Card>
           )}
 
-      {/*
-        ⚠ SHOWN FROM THE BOOKING STEP ONWARDS, not only while booking is open.
-          A refund lands weeks after the trip, and the claim is measured against
-          what was actually booked — hiding the legs once the step closed would
-          be hiding the evidence at exactly the moment somebody needs it.
-      */}
-          {trip.status !== "draft" &&
-            trip.status !== "awaiting_manager_approval" &&
-            trip.status !== "awaiting_director_approval" &&
-            trip.status !== "returned" &&
-            trip.status !== "rejected" && <LegRows trip={trip} />}
 
           <Card className="p-4">
             <h2 className={SECTION_HEADING_CLASS}>
