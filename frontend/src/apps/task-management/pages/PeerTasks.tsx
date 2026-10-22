@@ -13,9 +13,10 @@ import { pooledPct } from "../lib/exportWeeklyScorecard";
 import { rygCounts } from "../components/RygCells";
 import RygBar from "../components/RygBar";
 import TaskBrowser from "../components/TaskBrowser";
+import { awaitingPeerReview, isPeerReviewerOf } from "../lib/peerReview";
 import type { Task } from "../types";
 
-type View = "received" | "given" | "all";
+type View = "review" | "received" | "given" | "all";
 
 /**
  * Peer Tasks (TM-1) — the one-off work HODs and Sub-HODs hand SIDEWAYS to each
@@ -46,7 +47,7 @@ type View = "received" | "given" | "all";
  */
 export default function PeerTasks() {
   const { user, isAdmin } = useSession();
-  const { tasks, mentionablePeople, departments } = useTaskStore();
+  const { tasks, mentionablePeople, departments, refreshTask } = useTaskStore();
   const [searchParams] = useSearchParams();
   const location = useLocation();
 
@@ -60,18 +61,39 @@ export default function PeerTasks() {
 
   const peerTasks = useMemo(() => tasks.filter(isPeerTask), [tasks]);
 
+  // Peer review moves a task between two people, and their changes reach this cache
+  // only on the next stale refetch. So on opening, re-read my peer tasks that can still
+  // move (not yet marked completed after review) — one small targeted read — so Review,
+  // Given and Received are current. Capped to keep the request URL short.
+  useEffect(() => {
+    const ids = peerTasks
+      .filter((t) => (t.createdBy === user.id || t.assignedTo === user.id) && t.status !== "shifted" && !(t.status === "completed" && t.peerClosedAt))
+      .map((t) => t.id)
+      .slice(0, 150);
+    void refreshTask(...ids);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   // Given excludes anything assigned to me. That is not paranoia: older forward
   // reschedules re-created the task with created_by = whoever shifted it (see
   // shift_task_to_week, no longer called), so a receiver who pushed a peer task
   // to next week became its creator — those rows still exist. Without this guard their own continuation
   // would appear on their Given board as work they had handed out.
   const given = useMemo(
+    // Everything I gave stays here, a completed one showing "In review" until I re-open it
+    // or mark it as completed. The Review tab is the shortcut to just the ones waiting.
     () => peerTasks.filter((t) => t.createdBy === user.id && t.assignedTo !== user.id),
     [peerTasks, user.id],
   );
   const received = useMemo(() => peerTasks.filter((t) => t.assignedTo === user.id), [peerTasks, user.id]);
+  // Completed by the assignee and waiting for me — the giver — to close or reopen.
+  // An admin is not handed everyone's reviews here; they can still open any task.
+  const toReview = useMemo(
+    () => peerTasks.filter((t) => awaitingPeerReview(t) && isPeerReviewerOf(t, user.id, false)),
+    [peerTasks, user.id],
+  );
 
-  const slice: Task[] = view === "given" ? given : view === "received" ? received : peerTasks;
+  const slice: Task[] = view === "review" ? toReview : view === "given" ? given : view === "received" ? received : peerTasks;
 
   // The assignee filter offers exactly the people who appear in these rows,
   // resolved org-wide — a peer HOD is usually outside the viewer's RLS-scoped
@@ -103,12 +125,15 @@ export default function PeerTasks() {
   const VIEWS: { value: View; label: string }[] = [
     { value: "received", label: "Received" + count(received.length) },
     { value: "given", label: "Given" + count(given.length) },
+    { value: "review", label: "Review" + count(toReview.length) },
     ...(isAdmin ? [{ value: "all" as View, label: "All peer tasks" + count(peerTasks.length) }] : []),
   ];
 
   const blurb =
-    view === "given"
-      ? "One-off tasks you have handed to another HOD or Sub-HOD."
+    view === "review"
+      ? "Waiting for you: completed by the other person. Open one to re-open it or mark it as completed."
+      : view === "given"
+      ? "Everything you handed to another HOD or Sub-HOD. Once they complete one it shows In review: open it to re-open it or mark it as completed."
       : view === "received"
         ? "One-off tasks another HOD or Sub-HOD has handed you. Scored here, not in your own weekly score."
         : "Every HOD-to-HOD task in the company.";
@@ -151,14 +176,18 @@ export default function PeerTasks() {
       {slice.length === 0 ? (
         <EmptyState
           title={
-            view === "given"
+            view === "review"
+              ? "Nothing waiting for your review"
+              : view === "given"
               ? "You haven't assigned any peer tasks"
               : view === "received"
                 ? "No peer tasks assigned to you"
                 : "No peer tasks yet"
           }
           message={
-            view === "given"
+            view === "review"
+              ? "When someone completes a peer task you gave them, it comes here for you to mark as completed or re-open."
+              : view === "given"
               ? "Create a task and pick someone from the HODs & Sub-HODs group to assign work sideways."
               : "When another HOD or Sub-HOD assigns you a one-off task it appears here, and in My Tasks with a Peer badge."
           }
@@ -172,7 +201,7 @@ export default function PeerTasks() {
           hideWeekFilter
           initialFilters={initialFilters}
           enableExport
-          exportSubtitle={"Peer tasks · " + (view === "given" ? "Given" : view === "received" ? "Received" : "All")}
+          exportSubtitle={"Peer tasks · " + (view === "review" ? "Review" : view === "given" ? "Given" : view === "received" ? "Received" : "All")}
           stickyScope={sticky}
         />
       )}

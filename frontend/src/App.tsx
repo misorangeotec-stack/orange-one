@@ -12,6 +12,7 @@ import MyProbation from "@/core/probation/MyProbation";
 import MyBuddy from "@/core/probation/MyBuddy";
 import HandbookPage from "@/core/knowledge-base/HandbookPage";
 import AskHrBubble from "@/core/knowledge-base/AskHrBubble";
+import SharedLayoutGate, { SaveLayoutButton } from "@/core/layout/SharedLayoutGate";
 import { WorkPanel, useWorkPanelState } from "@/core/workspace/WorkPanel";
 import { ANNOUNCEMENTS_PATH, HANDBOOK_PATH } from "@/shared/components/layout/types";
 import AdminApp from "@/core/admin/AdminApp";
@@ -151,7 +152,7 @@ export default function App() {
       <Route
         key={app.id}
         path={`${app.basePath}/*`}
-        element={<RequireAuth><RequireModule app={app}><Component /></RequireModule></RequireAuth>}
+        element={<RequireAuth><RequireModule app={app}><SharedLayoutGate><Component /></SharedLayoutGate></RequireModule></RequireAuth>}
       />
     );
   });
@@ -165,7 +166,7 @@ export default function App() {
 
       {/* ---- Signed-in portal (launcher + account + admin) ---- */}
       {/* Nested: HomeLayout renders the shared AppShell, whose <Outlet/> is the page. */}
-      <Route path="/home" element={<RequireAuth><HomeLayout /></RequireAuth>}>
+      <Route path="/home" element={<RequireAuth><SharedLayoutGate><HomeLayout /></SharedLayoutGate></RequireAuth>}>
         <Route index element={<MyWorkToday />} />
       </Route>
       <Route path="/account" element={<RequireAuth><StaffOnly><Account /></StaffOnly></RequireAuth>} />
@@ -212,7 +213,7 @@ export default function App() {
       >
         <Route index element={<HandbookPage />} />
       </Route>
-      <Route path="/admin/*" element={<RequireAuth><RequireRole roles={["admin"]}><AdminApp /></RequireRole></RequireAuth>} />
+      <Route path="/admin/*" element={<RequireAuth><RequireRole roles={["admin"]}><SharedLayoutGate><AdminApp /></SharedLayoutGate></RequireRole></RequireAuth>} />
 
       {/* ---- Registered apps, each owns everything under its basePath, gated by auth + access ---- */}
       {appRoutes}
@@ -237,6 +238,9 @@ export default function App() {
         unmounts, and it also reaches /account, which does not use AppShell at all.
         It renders nothing without the knowledge-base grant, and never for a customer. */}
     <AskHrBubble />
+
+    {/* The admin's "Save layout for everyone" — once, on every screen (core/layout/sharedLayout.ts). */}
+    <SaveLayoutButton />
     </>
   );
 }

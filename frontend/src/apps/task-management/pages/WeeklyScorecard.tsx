@@ -688,7 +688,7 @@ function PendingBucketDrawer({ tasks, name, filter, onFilter, onClose }: {
       header: "Status",
       cell: (t) => (
         <div className="flex flex-wrap items-center gap-1">
-          <StatusChip status={t.status} />
+          <StatusChip status={t.status} peer={t} />
           {isPushedAhead(t) && (
             <span className="inline-flex items-center rounded-pill px-2 py-1 text-[10.5px] font-semibold whitespace-nowrap bg-orange-soft text-orange" title="Shifted by the assignee into a later week">
               Pushed ahead

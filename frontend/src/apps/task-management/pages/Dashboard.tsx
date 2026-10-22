@@ -380,7 +380,7 @@ function TaskRow({ task }: { task: Task }) {
           </span>
         </span>
         <span className="text-[11.5px] text-grey whitespace-nowrap">{dateLabel(task.dueDate)}</span>
-        <StatusChip status={task.status} />
+        <StatusChip status={task.status} peer={task} />
       </Link>
     </li>
   );
