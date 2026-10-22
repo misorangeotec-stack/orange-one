@@ -43,7 +43,7 @@ import { appBasePath } from "../../appInfo";
 import { useQuery } from "@tanstack/react-query";
 import {
   AlertTriangle, Archive, CircleCheck, Clock, Download, ListChecks, Pencil, Plus, RefreshCw, RotateCcw,
-  Search, Ship, Trash2, Wand2, Warehouse,
+  Search, Ship, ShoppingCart, Trash2, Wand2, Warehouse,
 } from "lucide-react";
 import { Button } from "@hub/components/ui/button";
 import { Input } from "@hub/components/ui/input";
@@ -52,6 +52,7 @@ import {
 } from "@hub/components/ui/table";
 import { ScrollableTable } from "@/core/shared/components/ScrollableTable";
 import { reorderQty } from "../components/ReorderChart";
+import PlaceOrderPanel, { type PlacedOrder } from "../components/PlaceOrderPanel";
 import MultiSelect from "@/shared/components/ui/MultiSelect";
 import HeaderFilter, { ColumnHead, isFilterActive, type ColumnFilter } from "../components/HeaderFilter";
 import {
@@ -437,11 +438,15 @@ export default function InkMis() {
     [shipments, companyKey],
   );
   const shipmentCols = useMemo(
-    () => inScope.filter((s) => s.status !== "PLANT" && s.status !== "ETD"),
+    () => inScope.filter((s) => s.status === "ETA" || s.status === "AT PORT"),
     [inScope],
   );
   const plantCols = useMemo(() => inScope.filter((s) => s.status === "PLANT"), [inScope]);
-  const etdCols = useMemo(() => inScope.filter((s) => s.status === "ETD"), [inScope]);
+  // NEW ORDER (from Place order) is an ETD that is not yet confirmed: same block, same total.
+  const etdCols = useMemo(
+    () => inScope.filter((s) => s.status === "ETD" || s.status === "NEW ORDER"),
+    [inScope],
+  );
 
   const totals = useMemo(
     () =>
@@ -917,6 +922,27 @@ export default function InkMis() {
     };
     setShipments((prev) => [...prev, column]);
     setJustAdded(column.id);
+  };
+
+  /**
+   * Place order → one NEW ORDER column in the ETD block, landing in the book the order is for.
+   * The panel opens fresh each time (keyed by `placeSeq`) so it always starts from the inks the
+   * card is showing now.
+   */
+  const [placeSeq, setPlaceSeq] = useState(0);
+  const [placeOpen, setPlaceOpen] = useState(false);
+  const placeOrder = (o: PlacedOrder) => {
+    const today = new Date().toISOString().slice(0, 10);
+    const column: Shipment = {
+      ...emptyShipment(),
+      status: "NEW ORDER",
+      reference: "New Order",
+      date: today,
+      company: o.companyKey,
+      note: "Placed from the dashboard",
+      lines: o.lines.map((l) => ({ id: newId(), itemCode: l.itemCode, qty: l.qty })),
+    };
+    setShipments((prev) => [...prev, column]);
   };
 
   const patchColumn = (id: string, patch: Partial<Shipment>) =>
@@ -1422,6 +1448,34 @@ export default function InkMis() {
           );
         })}
       </div>
+
+      {(bandPick === "low" || bandPick === "mid") && (
+        <div className="-mt-1 flex justify-end">
+          <Button
+            size="sm"
+            className={BAR_BTN}
+            onClick={() => {
+              setPlaceSeq((n) => n + 1);
+              setPlaceOpen(true);
+            }}
+            disabled={rows.length === 0}
+            title="Order these inks: quantities go into a NEW ORDER column, Import/Domestic go on to Purchase"
+          >
+            <ShoppingCart className={BAR_ICON} /> Place order
+          </Button>
+        </div>
+      )}
+      {placeOpen && (
+        <PlaceOrderPanel
+          key={placeSeq}
+          open
+          onClose={() => setPlaceOpen(false)}
+          rows={rows}
+          allRows={searchedRows}
+          companyKey={companyKey}
+          onPlace={placeOrder}
+        />
+      )}
 
       {/*
         THE TABLE SCROLLS IN ITS OWN BOX, not with the page.

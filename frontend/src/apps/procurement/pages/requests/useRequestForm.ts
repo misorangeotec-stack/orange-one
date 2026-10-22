@@ -8,6 +8,9 @@ import type { MasterValues } from "../../lib/masterFields";
 import type { MasterType, RequestItem } from "../../types";
 import { asStoredDoc, type SourcingFile } from "../../components/SourcingDocsCapture";
 import { useProcurementStore } from "../../store";
+import {
+  matchCompany, matchItem, normName, type HandoffLine, type OrderHandoff,
+} from "../../../ink-mis/lib/orderHandoff";
 
 /**
  * Everything New Request and Edit Request share: the form state, the
@@ -81,8 +84,13 @@ export interface RequestDraft {
   lines: RequestLine[];
 }
 
-export function useRequestForm(opts: { mode: "new" | "edit"; init?: RequestFormInit | null }) {
-  const { mode, init } = opts;
+export function useRequestForm(opts: {
+  mode: "new" | "edit";
+  init?: RequestFormInit | null;
+  /** An order placed on the Ink IMS dashboard (`?ink=` on New Request) — see `ink` below. */
+  handoff?: OrderHandoff | null;
+}) {
+  const { mode, init, handoff } = opts;
   const s = useProcurementStore();
 
   const [companyId, setCompanyId] = useState("");
@@ -228,6 +236,54 @@ export function useRequestForm(opts: { mode: "new" | "edit"; init?: RequestFormI
     setRaise({ mt: "item", prefill: { name, category_id: line.categoryId, company_id: companyId } });
   };
 
+  /**
+   * INK IMS ORDER. Company from the ink book's Tally GUID; then, once that company's item book
+   * has loaded, one line per ink whose Tally name (or description / code) matches a Central
+   * Masters item of that book, with the ink's quantity. The line's category is the first one
+   * covering the item's Tally type (an "ink" category preferred). Inks that match nothing stay
+   * listed above the form. Re-runs if the company is changed, since that clears the items.
+   */
+  const companyItems = useMemo(
+    () => (companyId ? s.items.filter((i) => i.active && i.companyId === companyId) : []),
+    [s.items, companyId]
+  );
+  const inkCompanySeeded = useRef(false);
+  useEffect(() => {
+    if (!handoff || inkCompanySeeded.current || mode !== "new") return;
+    inkCompanySeeded.current = true;
+    const co = matchCompany(handoff, s.activeCompanies);
+    if (co) setCompanyId(co.id);
+    setNote(`Ink IMS new order (${handoff.companyLabel})`);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [handoff]);
+  // The book can land in two steps (working set first, then the full book), so the fill re-runs
+  // while it keeps matching MORE inks for the same company, and stops there.
+  const inkFilled = useRef<{ companyId: string; matched: number } | null>(null);
+  useEffect(() => {
+    if (!handoff || mode !== "new" || !companyId || itemsLoading || companyItems.length === 0) return;
+    const categoryFor = (itemType: string | null) => {
+      const fits = s.activeCategories.filter(
+        (c) => c.itemTypes.length === 0 || (itemType !== null && c.itemTypes.includes(itemType))
+      );
+      return (fits.find((c) => /INK/.test(normName(c.name))) ?? fits[0])?.id ?? "";
+    };
+    const out: RequestLine[] = [];
+    for (const l of handoff.lines) {
+      const it = matchItem(l, companyItems);
+      if (!it || out.some((o) => o.itemId === it.id)) continue;
+      out.push({ ...makeEmptyLine(), categoryId: categoryFor(it.itemType), itemId: it.id, unit: it.unit, qty: String(l.qty) });
+    }
+    const prev = inkFilled.current;
+    if (prev && prev.companyId === companyId && out.length <= prev.matched) return;
+    inkFilled.current = { companyId, matched: out.length };
+    if (out.length > 0) setLines(out);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [handoff, companyId, itemsLoading, companyItems]);
+  const inkOnForm = (l: HandoffLine) => {
+    const it = matchItem(l, companyItems);
+    return !!it && lines.some((x) => x.itemId === it.id);
+  };
+
   const filled = lines.filter((l) => !isLineBlank(l));
 
   const validate = (): string | null => {
@@ -248,6 +304,8 @@ export function useRequestForm(opts: { mode: "new" | "edit"; init?: RequestFormI
     err, setErr,
     requested, setRequested,
     raise, setRaise,
+    /** The Ink IMS order being raised, and whether each of its inks is on the form now. */
+    ink: handoff ? { handoff, onForm: inkOnForm } : null,
     companyOptions, categoryOptions,
     itemOptionsFor, raiseItem, itemsLoading,
     itemById: s.itemById,

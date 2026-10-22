@@ -815,10 +815,13 @@ export async function loadInkConsumption(
  *            imported, but it is supply arriving on a date, which is the only thing the planning
  *            maths cares about, so it rides the same entry screen and the same edits. One entry
  *            per week; an ink set to two weeks in the item master wants two of them.
+ *   NEW ORDER  placed from the dashboard's "Place order" panel, not yet confirmed by the
+ *            supplier. Sits in the ETD block and counts exactly like ETD; the planner moves it
+ *            to ETD / ETA as the order progresses.
  * A consignment that has been received is DELETED, because from then on it is in the stock
  * figure and counting it twice would overstate cover.
  */
-export const SHIPMENT_STATUSES = ["ETD", "ETA", "AT PORT", "PLANT"] as const;
+export const SHIPMENT_STATUSES = ["ETD", "ETA", "AT PORT", "PLANT", "NEW ORDER"] as const;
 export type ShipmentStatus = (typeof SHIPMENT_STATUSES)[number];
 
 /** One item and quantity inside a consignment — a single cell of the sheet's shipment column. */
@@ -982,7 +985,7 @@ export function deriveInkRow(
       // Without this guard every blank consignment line would count as incoming for EVERY
       // uncoded item.
       if (!pos.itemCode || line.itemCode !== pos.itemCode) continue;
-      if (s.status === "ETD") etd += line.qty;
+      if (s.status === "ETD" || s.status === "NEW ORDER") etd += line.qty;
       else if (s.status === "ETA") eta += line.qty;
       else if (s.status === "AT PORT") atPort += line.qty;
       else plant += line.qty;

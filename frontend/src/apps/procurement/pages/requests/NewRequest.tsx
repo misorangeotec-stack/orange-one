@@ -1,11 +1,13 @@
 import { useRef, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import Button from "@/shared/components/ui/Button";
 import SavedDraftsPanel, { SaveDraftButton } from "@/shared/components/ui/SavedDraftsPanel";
 import { useSavedDrafts } from "@/shared/lib/useSavedDrafts";
 import RequestForm from "../../components/RequestForm";
 import { useProcurementStore } from "../../store";
 import { useRequestForm, type RequestDraft } from "./useRequestForm";
+import InkOrderBanner from "../../../ink-mis/components/InkOrderBanner";
+import { keepRemaining, readHandoff } from "../../../ink-mis/lib/orderHandoff";
 import { toPendingDoc, uploadSourcingFiles } from "../../components/SourcingDocsCapture";
 
 /**
@@ -21,7 +23,11 @@ import { toPendingDoc, uploadSourcingFiles } from "../../components/SourcingDocs
 export default function NewRequest() {
   const s = useProcurementStore();
   const navigate = useNavigate();
-  const form = useRequestForm({ mode: "new" });
+  const [params] = useSearchParams();
+  const inkId = params.get("ink");
+  // Read once: the hand-off is trimmed after submit, and the form must not re-seed mid-edit.
+  const [handoff] = useState(() => readHandoff(inkId));
+  const form = useRequestForm({ mode: "new", handoff });
   const [busy, setBusy] = useState(false);
   // The request has no id until it is submitted, so its files go up under a
   // one-off folder key. Kept across retries so a retry re-uses what landed.
@@ -84,6 +90,7 @@ export default function NewRequest() {
       // unmount flush, which would otherwise rewrite what we just removed.
       form.draft.clear();
       await drafts.finish();
+      if (form.ink && inkId) keepRemaining(inkId, form.ink.handoff.lines.filter((l) => !form.ink!.onForm(l)));
       navigate(`/procurement/requests/${id}`);
     } catch (e) {
       form.setErr((e as Error).message);
@@ -97,6 +104,18 @@ export default function NewRequest() {
         <h1 className="text-[22px] font-bold text-navy">New Purchase Request</h1>
         <p className="text-[13.5px] text-grey-2 mt-1">Pick the company, then add the items you need — each row can be a different category.</p>
       </div>
+
+      {form.ink && (
+        <InkOrderBanner
+          handoff={form.ink.handoff}
+          onForm={form.ink.onForm}
+          missingHint={
+            form.itemsLoading
+              ? "loading the company's items…"
+              : "no item of this company has the same name. Add them in the grid yourself, or raise the item in Central Masters."
+          }
+        />
+      )}
 
       <SavedDraftsPanel api={drafts} onContinue={continueDraft} />
 

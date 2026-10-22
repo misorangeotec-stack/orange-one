@@ -165,7 +165,7 @@ type MstTbl = "mst_companies" | "mst_parties" | "mst_items" | "mst_units";
  *   as undefined in the UI with no compiler error. Change both together.
  */
 const MST_COLS = {
-  companies: "id,name,alias,location,active,sort_order,created_at",
+  companies: "id,name,alias,location,tally_guid,active,sort_order,created_at",
   vendors: "id,name,company_id,gstin,contact_name,phone,email,address,active,created_at",
   items: "id,name,company_id,unit_id,item_type,active,sort_order,created_at",
   units: "id,name",
@@ -224,6 +224,7 @@ const mapCompany = (r: any): Company => ({
   id: r.id,
   name: str(r.alias) ?? r.name,
   location: str(r.location),
+  tallyGuid: str(r.tally_guid),
   active: r.active,
   sortOrder: r.sort_order ?? 0,
   createdAt: r.created_at,

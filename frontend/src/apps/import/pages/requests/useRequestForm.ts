@@ -1,9 +1,12 @@
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type { ComboOption } from "@/shared/components/ui/Combobox";
 import { newUid, type LineGridRow } from "@/shared/components/ui/LineGrid";
 import type { MasterValues } from "../../lib/masterFields";
 import { SHIPMENT_TYPES, type Item, type MasterType, type RequestItem } from "../../types";
 import { useImportStore } from "../../store";
+import {
+  matchCompany, matchItem, normName, type HandoffLine, type OrderHandoff,
+} from "../../../ink-mis/lib/orderHandoff";
 
 /**
  * Everything the New Request and Edit Request screens have in common: the form
@@ -99,8 +102,13 @@ export interface RequestDraft {
   lines: RequestLine[];
 }
 
-export function useRequestForm(opts: { mode: "new" | "edit"; init?: RequestFormInit | null }) {
-  const { mode, init } = opts;
+export function useRequestForm(opts: {
+  mode: "new" | "edit";
+  init?: RequestFormInit | null;
+  /** An order placed on the Ink IMS dashboard (`?ink=` on New Request) — see `ink` below. */
+  handoff?: OrderHandoff | null;
+}) {
+  const { mode, init, handoff } = opts;
   const s = useImportStore();
 
   const [companyId, setCompanyId] = useState("");
@@ -206,11 +214,53 @@ export function useRequestForm(opts: { mode: "new" | "edit"; init?: RequestFormI
    */
   const onPickVendor = (vid: string) => {
     setVendorId(vid);
-    setLines([makeEmptyLine()]);
+    setLines(handoff ? inkLinesFor(vid) : [makeEmptyLine()]);
     setMapped(null);
     const v = s.vendorById(vid);
     setCurrency(v?.defaultCurrency || "");
   };
+
+  /**
+   * INK IMS ORDER. The inks arrive by name, not id, and Import items are vendor-scoped — so the
+   * lines are filled when a VENDOR is picked: every ink this vendor supplies (matched by name)
+   * becomes a line with its quantity; the rest stay listed above the form as "not supplied by
+   * this vendor", to be mapped or raised on another vendor's request. Picking another vendor
+   * re-fills from the same list.
+   */
+  const inkLinesFor = (vid: string): RequestLine[] => {
+    if (!handoff) return [makeEmptyLine()];
+    const items = s.itemsForVendor(vid);
+    const out: RequestLine[] = [];
+    for (const l of handoff.lines) {
+      const it = matchItem(l, items);
+      if (!it || out.some((o) => o.itemId === it.id)) continue;
+      out.push({ ...makeEmptyLine(), categoryId: it.categoryId, itemId: it.id, unit: it.unit, qty: String(l.qty) });
+    }
+    return out.length > 0 ? out : [makeEmptyLine()];
+  };
+  const inkOnForm = (l: HandoffLine) => {
+    const it = vendorId ? matchItem(l, s.itemsForVendor(vendorId)) : undefined;
+    return !!it && lines.some((x) => x.itemId === it.id);
+  };
+
+  /**
+   * Seed an Ink IMS order once: the company from the ink book, and the vendor where every ink
+   * names the same supplier and exactly one vendor carries that name.
+   */
+  const inkSeeded = useRef(false);
+  useEffect(() => {
+    if (!handoff || inkSeeded.current || mode !== "new") return;
+    inkSeeded.current = true;
+    const co = matchCompany(handoff, s.activeCompanies);
+    if (co) setCompanyId(co.id);
+    setNote(`Ink IMS new order (${handoff.companyLabel})`);
+    const suppliers = [...new Set(handoff.lines.map((l) => normName(l.supplier)).filter(Boolean))];
+    if (suppliers.length === 1) {
+      const hits = s.activeVendors.filter((v) => normName(v.name).includes(suppliers[0]));
+      if (hits.length === 1) onPickVendor(hits[0].id);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [handoff]);
 
   /** Picking an item seeds unit; qty defaults to 1 here, never in the blank row. */
   const onPickItem = (line: RequestLine, itemId: string, patch: (n: Partial<RequestLine>) => void) => {
@@ -305,6 +355,8 @@ export function useRequestForm(opts: { mode: "new" | "edit"; init?: RequestFormI
     raise, setRaise,
     mapping, setMapping,
     mapped,
+    /** The Ink IMS order being raised, and whether each of its inks is on the form now. */
+    ink: handoff ? { handoff, onForm: inkOnForm } : null,
     // options
     companyOptions, vendorOptions, categoryOptions, shipmentOptions, hasVendorItems,
     // behaviour

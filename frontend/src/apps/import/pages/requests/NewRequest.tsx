@@ -1,11 +1,13 @@
 import { useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import Button from "@/shared/components/ui/Button";
 import SavedDraftsPanel, { SaveDraftButton } from "@/shared/components/ui/SavedDraftsPanel";
 import { useSavedDrafts } from "@/shared/lib/useSavedDrafts";
 import RequestForm from "../../components/RequestForm";
 import { useImportStore } from "../../store";
 import { useRequestForm, type RequestDraft } from "./useRequestForm";
+import InkOrderBanner from "../../../ink-mis/components/InkOrderBanner";
+import { keepRemaining, readHandoff } from "../../../ink-mis/lib/orderHandoff";
 
 /**
  * Stage 1 — raise an Import Purchase Request. Import has FIXED vendors, so there
@@ -22,7 +24,11 @@ import { useRequestForm, type RequestDraft } from "./useRequestForm";
 export default function NewRequest() {
   const s = useImportStore();
   const navigate = useNavigate();
-  const form = useRequestForm({ mode: "new" });
+  const [params] = useSearchParams();
+  const inkId = params.get("ink");
+  // Read once: the hand-off is trimmed after submit, and the form must not re-seed mid-edit.
+  const [handoff] = useState(() => readHandoff(inkId));
+  const form = useRequestForm({ mode: "new", handoff });
 
   const [busy, setBusy] = useState(false);
   const drafts = useSavedDrafts<RequestDraft>("import:request");
@@ -78,6 +84,8 @@ export default function NewRequest() {
         })),
       });
       await drafts.finish();
+      // Inks this request did not cover stay on the hand-off for the next vendor's request.
+      if (form.ink && inkId) keepRemaining(inkId, form.ink.handoff.lines.filter((l) => !form.ink!.onForm(l)));
       navigate(`/import/requests/${id}`);
     } catch (e) {
       form.setErr((e as Error).message);
@@ -94,6 +102,18 @@ export default function NewRequest() {
           Press Tab or Enter at the end of a row to start the next one.
         </p>
       </div>
+
+      {form.ink && (
+        <InkOrderBanner
+          handoff={form.ink.handoff}
+          onForm={form.ink.onForm}
+          missingHint={
+            form.vendorId
+              ? "this vendor does not supply them (or the item names differ). Map them to this vendor, or raise another request with their vendor — this link will then offer only what is left."
+              : "pick the vendor and the inks it supplies fill the grid."
+          }
+        />
+      )}
 
       <SavedDraftsPanel api={drafts} onContinue={continueDraft} />
 
