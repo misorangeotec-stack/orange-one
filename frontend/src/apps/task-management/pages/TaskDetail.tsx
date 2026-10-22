@@ -22,7 +22,8 @@ import EditTaskModal from "../components/EditTaskModal";
 import { useTaskDetailEmbed } from "../components/TaskDetailEmbed";
 import KraTaskCard, { KraBadge, useKraTaskAccess } from "../components/KraTaskCard";
 import PeerReviewCard from "../components/PeerReviewCard";
-import { awaitingPeerReview } from "../lib/peerReview";
+import { awaitingPeerReview, completedBeforeReview, isPeerReviewerOf } from "../lib/peerReview";
+import { TextArea } from "@/shared/components/ui/Form";
 
 type ModalKind = "revise" | "complete" | null;
 
@@ -37,8 +38,13 @@ export default function TaskDetail({ taskId }: { taskId?: string } = {}) {
   const navigate = useNavigate();
   const embed = useTaskDetailEmbed();
   const leave = () => (embed ? embed.close() : navigate("/task-management/tasks"));
-  const { refreshTask, getTask, getRecurring, activityFor, revisionInfo, startTask, reopenTask, rescheduleTask, profileById, actorById, departmentById, canWrite, canStatusActions, canReschedule, locationById, taskLocationsComplete, setTaskLocationDone, setTaskLocationNa, setTaskLocationsDone, isWhenTask, setTaskNotApplicable, deletePersonalTask, deleteTask, markTaskNotificationsRead, mentionablePeople } = useTaskStore();
-  const { user, role } = useSession();
+  const { refreshTask, getTask, getRecurring, activityFor, revisionInfo, startTask, reopenTask, rescheduleTask, profileById, actorById, departmentById, canWrite, canStatusActions, canReschedule, locationById, taskLocationsComplete, setTaskLocationDone, setTaskLocationNa, setTaskLocationsDone, isWhenTask, setTaskNotApplicable, deletePersonalTask, deleteTask, markTaskNotificationsRead, mentionablePeople, reopenPeerTask, closePeerTask } = useTaskStore();
+  const { user, role, isAdmin } = useSession();
+  // Peer task review buttons at the top of the page (giver only).
+  const [peerAction, setPeerAction] = useState<"reopen" | "complete" | null>(null);
+  const [peerNote, setPeerNote] = useState("");
+  const [peerBusy, setPeerBusy] = useState(false);
+  const [peerErr, setPeerErr] = useState("");
   const [modal, setModal] = useState<ModalKind>(null);
   const [starting, setStarting] = useState(false);
   const [reopening, setReopening] = useState(false);
@@ -131,6 +137,28 @@ export default function TaskDetail({ taskId }: { taskId?: string } = {}) {
   // card (with what to change), and "Mark as completed" there is final — so no header
   // Reopen for peer tasks at all.
   const peerAwaiting = awaitingPeerReview(task);
+  // The giver's Re-open (and, while it waits for review, Mark as completed) sit at the top
+  // of the page — the same actions as the Peer review card, where people look first.
+  const peerGiver = isPeerReviewerOf(task, user.id, isAdmin) && canStatusActions;
+  const peerCanReopen = peerGiver && (peerAwaiting || completedBeforeReview(task));
+  const runPeer = async () => {
+    if (!peerAction) return;
+    if (peerAction === "reopen" && !peerNote.trim()) {
+      setPeerErr("Write what needs to change before re-opening.");
+      return;
+    }
+    setPeerBusy(true);
+    setPeerErr("");
+    try {
+      if (peerAction === "reopen") await reopenPeerTask(task.id, peerNote);
+      else await closePeerTask(task.id, peerNote);
+      setPeerAction(null);
+    } catch (e) {
+      setPeerErr((e as Error).message || "Couldn't save.");
+    } finally {
+      setPeerBusy(false);
+    }
+  };
   const canReopen = task.status === "completed" && isCurrentWeek && canStatusActions && (task.reviewRating == null || kraAccess.isReviewer) && !task.isPeerAssignment;
 
   // "When" instances can be parked as Not Applicable for the day (reversible).
@@ -339,6 +367,21 @@ export default function TaskDetail({ taskId }: { taskId?: string } = {}) {
               <Button variant="ghost" size="sm" onClick={() => setConfirmDelete(true)} title="Delete this pending task">
                 <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6" /><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6" /><path d="M10 11v6" /><path d="M14 11v6" /><path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2" /></svg>
                 Delete
+              </Button>
+            )}
+          </div>
+        )}
+
+        {peerCanReopen && (
+          <div className="flex flex-wrap items-center gap-2">
+            <Button variant="progress" size="sm" onClick={() => { setPeerNote(""); setPeerErr(""); setPeerAction("reopen"); }}>
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 2v6h6" /><path d="M3 13a9 9 0 1 0 3-7.7L3 8" /></svg>
+              Re-open
+            </Button>
+            {peerAwaiting && (
+              <Button size="sm" onClick={() => { setPeerNote(""); setPeerErr(""); setPeerAction("complete"); }}>
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round"><path d="M20 6L9 17l-5-5" /></svg>
+                Mark as completed
               </Button>
             )}
           </div>
@@ -603,6 +646,34 @@ export default function TaskDetail({ taskId }: { taskId?: string } = {}) {
       </div>
 
       {/* modals */}
+      <Modal
+        open={!!peerAction}
+        onClose={() => setPeerAction(null)}
+        title={peerAction === "reopen" ? "Re-open task" : "Mark as completed"}
+        subtitle={task.title}
+        size="sm"
+        footer={
+          <>
+            <Button variant="ghost" onClick={() => setPeerAction(null)} disabled={peerBusy}>Cancel</Button>
+            <Button onClick={runPeer} disabled={peerBusy}>
+              {peerBusy ? "Saving…" : peerAction === "reopen" ? "Re-open" : "Mark as completed"}
+            </Button>
+          </>
+        }
+      >
+        <p className="text-[13px] text-grey mb-2">
+          {peerAction === "reopen"
+            ? `It goes back to ${owner?.name ?? "the HOD"} as Re-opened, with your note.`
+            : "The task is completed for good. A note is optional."}
+        </p>
+        <TextArea
+          rows={3}
+          value={peerNote}
+          onChange={(e) => { setPeerNote(e.target.value); setPeerErr(""); }}
+          placeholder={peerAction === "reopen" ? "What needs to change (required)" : "Note (optional)"}
+        />
+        {peerErr && <p className="mt-1.5 text-[12px] text-[#d4493f]">{peerErr}</p>}
+      </Modal>
       <ReviseModal task={task} open={modal === "revise"} onClose={() => setModal(null)} />
       <CompleteModal task={task} open={modal === "complete"} onClose={() => setModal(null)} onCompleted={leave} />
       <PersonalTaskModal task={task} open={editOpen} onClose={() => setEditOpen(false)} />
