@@ -372,6 +372,19 @@ export default function LotAllocField({
       onChange(alwaysQty && one.lot_no ? reseed(single, target) ?? single : single);
       return;
     }
+    // alwaysQty · lots already there keep their figures; a newly picked one takes
+    // what is still missing (capped at what it holds), as the next-lot row does.
+    if (alwaysQty) {
+      let left = target - out.filter((r) => prev.has(r.lot_no)).reduce((a, r) => a + (Number(r.qty) || 0), 0);
+      onChange(out.map((r): LotRow => {
+        if (prev.has(r.lot_no) || left <= QTY_EPS) return r;
+        const cap = lotCap(r.lot_no);
+        const fill = cap !== null ? Math.min(left, cap) : left;
+        left -= fill;
+        return { lot_no: r.lot_no, qty: boxQty(fill) };
+      }));
+      return;
+    }
     // Decided in the SAME change as the pick, not in an effect after it, so the
     // parent never holds the unfilled split for a render.
     const filled = reseed(out, target) ?? out;
