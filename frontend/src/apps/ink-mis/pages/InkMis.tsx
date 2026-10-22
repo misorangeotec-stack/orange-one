@@ -42,8 +42,8 @@ import { Link } from "react-router-dom";
 import { appBasePath } from "../../appInfo";
 import { useQuery } from "@tanstack/react-query";
 import {
-  AlertTriangle, Download, ListChecks, Pencil, Plus, RefreshCw, RotateCcw, Search, Ship, Trash2, Wand2,
-  Warehouse,
+  AlertTriangle, Archive, CircleCheck, Clock, Download, ListChecks, Pencil, Plus, RefreshCw, RotateCcw,
+  Search, Ship, Trash2, Wand2, Warehouse,
 } from "lucide-react";
 import { Button } from "@hub/components/ui/button";
 import { Input } from "@hub/components/ui/input";
@@ -51,7 +51,7 @@ import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from "@hub/components/ui/table";
 import { ScrollableTable } from "@/core/shared/components/ScrollableTable";
-import ReorderChart, { reorderQty } from "../components/ReorderChart";
+import { reorderQty } from "../components/ReorderChart";
 import MultiSelect from "@/shared/components/ui/MultiSelect";
 import HeaderFilter, { ColumnHead, isFilterActive, type ColumnFilter } from "../components/HeaderFilter";
 import {
@@ -236,7 +236,6 @@ export default function InkMis() {
     () => allPositions.filter((p) => (order[p.key] ?? order[p.legacyKey]) !== undefined),
     [allPositions, order],
   );
-  const needsCode = useMemo(() => positions.filter((p) => !p.coded).length, [positions]);
 
   /** The Lines picker: every numbered line, in sheet order; ticked = shown. */
   const hiddenSet = useMemo(() => new Set(hiddenLines), [hiddenLines]);
@@ -398,9 +397,25 @@ export default function InkMis() {
    * With no sort chosen the rows keep the numbering the item master gave them, which is the
    * order the sheet is read in. One click on the No. heading always returns to it.
    */
-  const rows: InkRow[] = useMemo(
+  const filteredRows: InkRow[] = useMemo(
     () => applySort(rowsPassing(searchedRows, colFilters, cellValue), sort, cellValue),
     [searchedRows, colFilters, sort, cellValue],
+  );
+
+  /**
+   * The status cards above the table. Clicking one shows only the inks in that colour band (the
+   * Total column's colour); clicking it again shows them all. The cards count AFTER the other
+   * filters and the search, so "18 to order now" is always what clicking will show.
+   */
+  const [bandPick, setBandPick] = useState<InkBand | null>(null);
+  const bandCounts = useMemo(() => {
+    const c: Record<InkBand, number> = { low: 0, mid: 0, normal: 0, excess: 0, none: 0 };
+    for (const r of filteredRows) c[r.band] += 1;
+    return c;
+  }, [filteredRows]);
+  const rows: InkRow[] = useMemo(
+    () => (bandPick ? filteredRows.filter((r) => r.band === bandPick) : filteredRows),
+    [filteredRows, bandPick],
   );
 
   /**
@@ -1173,9 +1188,10 @@ export default function InkMis() {
           onClick={() => {
             clearFilters();
             setSearch("");
+            setBandPick(null);
           }}
-          disabled={!filtersOn && !search.trim()}
-          title="Clear every filter and the search box"
+          disabled={!filtersOn && !search.trim() && !bandPick}
+          title="Clear every filter, the search box and the status card"
         >
           <RotateCcw className={BAR_ICON} /> Reset filters
         </Button>
@@ -1352,25 +1368,60 @@ export default function InkMis() {
         </div>
       )}
 
-      {needsCode > 0 && (
-        <div className="flex flex-wrap items-center gap-2 rounded-md border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900">
-          <AlertTriangle className="h-4 w-4 shrink-0" />
-          <span>
-            <strong>{needsCode}</strong> line{needsCode === 1 ? "" : "s"} have no item code, so
-            the same ink in two books is still showing as two lines.
-          </span>
-          <Button size="sm" variant="outline" asChild className="ml-auto">
-            <Link to={`${BASE}/items`}>
-              <ListChecks className="mr-2 h-4 w-4" /> Fill codes in the item master
-            </Link>
-          </Button>
-        </div>
-      )}
-
-      {/* Both charts start folded; the header carries the total, so the figure is there
-          without opening anything. */}
-      <ReorderChart rows={rows} by="group" />
-      <ReorderChart rows={rows} by="supplier" />
+      {/* STATUS CARDS replace the two bar charts (user, 2026-10-22: the charts took too much
+          space). Each card is a colour band of the Total column; click to show only those inks. */}
+      <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+        {(
+          [
+            {
+              band: "low", title: "Order now", Icon: AlertTriangle,
+              note: `Below ${thresholds.low}% of month max. Place orders immediately.`,
+              edge: "border-l-red-500", head: "text-red-700", icon: "bg-red-500",
+            },
+            {
+              band: "mid", title: "Order soon", Icon: Clock,
+              note: `${thresholds.low}–${thresholds.mid}% of month max. Plan orders soon.`,
+              edge: "border-l-amber-500", head: "text-amber-700", icon: "bg-amber-500",
+            },
+            {
+              band: "normal", title: "Coverage OK", Icon: CircleCheck,
+              note: `${thresholds.mid}–${thresholds.excess}% of month max. Sufficient stock.`,
+              edge: "border-l-emerald-600", head: "text-emerald-700", icon: "bg-emerald-600",
+            },
+            {
+              band: "excess", title: "Excess stock", Icon: Archive,
+              note: `${thresholds.excess}% of month max or more. Hold orders.`,
+              edge: "border-l-fuchsia-600", head: "text-fuchsia-700", icon: "bg-fuchsia-600",
+            },
+          ] as const
+        ).map(({ band, title, Icon, note, edge, head, icon }) => {
+          const picked = bandPick === band;
+          return (
+            <button
+              key={band}
+              type="button"
+              onClick={() => setBandPick(picked ? null : band)}
+              aria-pressed={picked}
+              title={picked ? "Show all inks again" : `Show only the ${title.toLowerCase()} inks`}
+              className={`flex items-start gap-3 rounded-md border border-l-4 bg-card p-3 text-left transition hover:shadow-md ${edge} ${
+                picked ? "shadow-md ring-2 ring-primary" : bandPick ? "opacity-60" : ""
+              }`}
+            >
+              <span className={`mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-white ${icon}`}>
+                <Icon className="h-4 w-4" />
+              </span>
+              <span className="min-w-0">
+                <span className={`block text-xs font-semibold uppercase tracking-wide ${head}`}>{title}</span>
+                <span className="block">
+                  <strong className="text-2xl tabular-nums">{bandCounts[band]}</strong>{" "}
+                  <span className="text-sm text-muted-foreground">items</span>
+                </span>
+                <span className="block text-xs text-muted-foreground">{note}</span>
+              </span>
+            </button>
+          );
+        })}
+      </div>
 
       {/*
         THE TABLE SCROLLS IN ITS OWN BOX, not with the page.
@@ -1661,7 +1712,7 @@ export default function InkMis() {
                 <TableCell colSpan={40} className="py-10 text-center text-muted-foreground">
                   {positions.length === 0 ? (
                     "No numbered items yet. Give an item a number in the item master to show it here."
-                  ) : filtersOn || search.trim() ? (
+                  ) : filtersOn || search.trim() || bandPick ? (
                     <span className="inline-flex flex-wrap items-center justify-center gap-2">
                       No ink matches the filters you have set.
                       <Button
@@ -1670,6 +1721,7 @@ export default function InkMis() {
                         onClick={() => {
                           clearFilters();
                           setSearch("");
+                          setBandPick(null);
                         }}
                       >
                         Clear filters
