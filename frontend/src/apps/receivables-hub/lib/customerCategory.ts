@@ -138,7 +138,7 @@ export function isLegalOnly(c: { markType?: MarkType; markTypes?: MarkType[] }):
  *   • Nothing ticked (every page's default) → everybody except Legal.
  *
  * ⚠ A list of tiers with NO mark ticked therefore hides every Red Mark and Legal customer. A preset
- *   list that should show everybody must carry both marks — see DEFAULT_CATEGORIES.
+ *   list that should show everybody but Legal must carry "Red Mark" — see DEFAULT_CATEGORIES.
  */
 export function matchesCategory(
   c: { category?: string; categories?: string[]; markType?: MarkType; markTypes?: MarkType[] },
