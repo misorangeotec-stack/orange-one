@@ -1,6 +1,7 @@
 import { useEffect, useRef } from "react";
 import { TextInput } from "@/shared/components/ui/Form";
 import MultiSelect from "@/shared/components/ui/MultiSelect";
+import Combobox from "@/shared/components/ui/Combobox";
 import { advanceFocus } from "@/shared/lib/advanceFocus";
 import type { LotOption } from "../data/lotFetch";
 
@@ -283,15 +284,26 @@ export default function LotAllocField({
    * The capacity is summed from the ROUNDED figures the boxes will hold, so the
    * decision and the footer's own sum can never disagree.
    */
+  /** What one lot can give, when Tally answers for it cleanly (one book, the line's unit). */
+  const lotCap = (lot: string): number | null => {
+    const found = byLot.get(lot);
+    const one = found && found.length === 1 ? found[0]! : null;
+    if (!one || !(one.balance > 0)) return null;
+    const sameUnit = !one.uom || !unit || one.uom.trim().toLowerCase() === unit.trim().toLowerCase();
+    return sameUnit ? one.balance : null;
+  };
+
   const reseed = (current: LotRow[], shipNow: number): LotRow[] | null => {
     const lots = filledLots(current);
     if (!autoFill || disabled) return null;
-    // alwaysQty · ONE lot carries the whole quantity, so its box mirrors it —
-    // until a person types a figure of their own.
+    // alwaysQty · ONE lot carries the whole quantity — or as much of it as the
+    // lot holds, so a short lot opens the next-lot row below by itself. Its box
+    // follows the quantity until a person types a figure of their own.
     if (alwaysQty && lots.length === 1) {
       const only = lots[0]!;
       if (!only.seeded && only.qty.trim() !== "") return null;
-      const qty = shipNow > 0 ? boxQty(shipNow) : "";
+      const cap = lotCap(only.lot_no);
+      const qty = shipNow > 0 ? boxQty(cap !== null ? Math.min(shipNow, cap) : shipNow) : "";
       if (only.seeded ? only.qty === qty : qty === "") return null;
       return current.map((r): LotRow =>
         r === only ? (qty ? { lot_no: r.lot_no, qty, seeded: true } : { lot_no: r.lot_no, qty: "" }) : r);
@@ -409,6 +421,28 @@ export default function LotAllocField({
   const anyQty = picked.some((r) => r.qty.trim() !== "");
   const off = anyQty && target > 0 && Math.abs(sum - target) > QTY_EPS;
 
+  /*
+    alwaysQty · THE NEXT LOT OPENS BY ITSELF. While the lots picked so far cover
+    less than the quantity (every box answered), a second picker appears under
+    them for the rest; picking from it adds the lot with what is still missing,
+    capped at what that lot holds — so a short lot opens yet another row, until
+    the lots add up.
+  */
+  const remaining = target - sum;
+  const showNext =
+    alwaysQty && !disabled && picked.length > 0 && target > 0 &&
+    picked.every((r) => r.qty.trim() !== "") && remaining > QTY_EPS;
+  const nextOpts = opts
+    .filter((o) => !values.includes(o.value))
+    .map((o) => ({ value: o.value, label: o.value, sublabel: balanceText(o.value) ?? undefined }));
+  const addLot = (lot: string) => {
+    const t = lot.trim();
+    if (!t || values.includes(t)) return;
+    const cap = lotCap(t);
+    const fill = cap !== null ? Math.min(remaining, cap) : remaining;
+    onChange([...picked, { lot_no: t, qty: boxQty(fill) }]);
+  };
+
   return (
     <div ref={wrapRef} className="space-y-1.5">
       <MultiSelect
@@ -497,11 +531,24 @@ export default function LotAllocField({
           {/* The same shape as the grid's credit footer: the figure is always
               there, and only its colour changes. A gap is shown, never blocked —
               see the header. */}
+          {showNext && (
+            <Combobox
+              value=""
+              onChange={addLot}
+              options={nextOpts}
+              onCreate={(typed) => { addLot(typed); }}
+              createLabel={(q) => (byLot.has(q.trim()) ? `Use “${q}”` : `Use “${q}” (not in Tally)`)}
+              searchable
+              placeholder={`pick the next lot — ${fmtQty(remaining)}${unit ? ` ${unit}` : ""} still to cover`}
+              triggerClassName="py-1"
+            />
+          )}
+
           <p className={`text-[11.5px] ${off ? "text-orange" : "text-grey-2"}`}>
             {!anyQty
               ? `Say how much came from each — ${target || "the quantity"}${unit ? ` ${unit}` : ""} in total.`
               : off
-                ? `${fmtQty(sum)} of ${fmtQty(target)}${unit ? ` ${unit}` : ""} — ${fmtQty(Math.abs(target - sum))} ${sum < target ? "short" : "over"}, saved as it is.`
+                ? `${fmtQty(sum)} of ${fmtQty(target)}${unit ? ` ${unit}` : ""} — ${fmtQty(Math.abs(target - sum))} ${sum < target ? "short" : "over"}${alwaysQty ? (sum < target ? " — pick another lot" : " — reduce a lot") : ", saved as it is"}.`
                 : `${fmtQty(sum)} of ${fmtQty(target)}${unit ? ` ${unit}` : ""}`}
           </p>
         </div>
