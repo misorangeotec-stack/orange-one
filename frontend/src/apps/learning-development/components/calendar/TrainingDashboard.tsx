@@ -59,7 +59,6 @@ function Tile({
         <div className="text-[11.5px] uppercase tracking-wide text-grey-2">{label}</div>
         <div className="mt-1 text-[26px] font-bold leading-tight text-navy">{value}</div>
         {hint && <div className="mt-0.5 text-[12px] text-grey-2">{hint}</div>}
-        <div className="mt-1 text-[11.5px] font-medium text-orange">{active ? "Showing below ↓" : "Click to see the list"}</div>
       </Card>
     </button>
   );

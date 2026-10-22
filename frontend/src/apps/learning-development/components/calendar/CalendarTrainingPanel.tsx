@@ -8,6 +8,7 @@ import TrainingFormModal from "./TrainingFormModal";
 import CancelModal from "./CancelModal";
 import CompleteModal from "./CompleteModal";
 import DocField from "../DocField";
+import { downloadTrainingFiles } from "../../lib/momExport";
 import type { TrainingSession } from "../../types";
 
 const ATT_TONE: Record<string, string> = {
@@ -30,6 +31,7 @@ export default function CalendarTrainingPanel({ session: x }: { session: Trainin
   const [editing, setEditing] = useState(false);
   const [cancelling, setCancelling] = useState(false);
   const [completing, setCompleting] = useState(false);
+  const [zipping, setZipping] = useState(false);
 
   const attendees = useMemo(
     () =>
@@ -143,6 +145,23 @@ export default function CalendarTrainingPanel({ session: x }: { session: Trainin
               {x.evidencePaths.map((path) => (
                 <DocField key={path} path={path} disabled onUpload={async () => {}} />
               ))}
+              {x.evidencePaths.length > 1 && (
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  disabled={zipping}
+                  onClick={async () => {
+                    setZipping(true);
+                    try {
+                      await downloadTrainingFiles(s, [x], `${x.code ?? "Training"} ${x.title}`);
+                    } finally {
+                      setZipping(false);
+                    }
+                  }}
+                >
+                  {zipping ? "Preparing…" : "Download all (ZIP)"}
+                </Button>
+              )}
             </div>
           )}
         </div>

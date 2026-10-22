@@ -20,6 +20,7 @@ import TrainingFormModal from "../../components/calendar/TrainingFormModal";
 import BulkUploadModal from "../../components/calendar/BulkUploadModal";
 import CompleteModal from "../../components/calendar/CompleteModal";
 import AttendancePendingBanner from "../../components/calendar/AttendancePendingBanner";
+import DownloadModal from "../../components/calendar/DownloadModal";
 import type { TrainingCategory, TrainingSession } from "../../types";
 
 const MONTHS = ["January","February","March","April","May","June","July","August","September","October","November","December"];
@@ -75,6 +76,7 @@ export default function TrainingCalendar() {
   const [cat, setCat] = useState<CatFilter>("all");
   const [adding, setAdding] = useState<string | null | false>(false);
   const [uploading, setUploading] = useState(false);
+  const [downloading, setDownloading] = useState(false);
   const [completing, setCompleting] = useState<TrainingSession | null>(null);
 
   const visible = useMemo(
@@ -154,6 +156,7 @@ export default function TrainingCalendar() {
         </div>
         {s.canManageCalendar && (
           <div className="flex flex-wrap gap-2">
+            <Button variant="ghost" onClick={() => setDownloading(true)}>Download MOM &amp; files</Button>
             <Button variant="ghost" onClick={() => setUploading(true)}>Upload calendar</Button>
             <Button onClick={() => setAdding(null)}>Add training</Button>
           </div>
@@ -392,6 +395,9 @@ export default function TrainingCalendar() {
         <TrainingFormModal open onClose={() => setAdding(false)} defaultDate={adding} />
       )}
       {uploading && <BulkUploadModal open onClose={() => setUploading(false)} />}
+      {downloading && (
+        <DownloadModal open onClose={() => setDownloading(false)} year={y} month={m} category={cat} />
+      )}
       {completing && <CompleteModal open onClose={() => setCompleting(null)} session={completing} />}
     </div>
   );
