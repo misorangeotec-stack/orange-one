@@ -42,6 +42,7 @@ import { BadgeIndianRupee } from "lucide-react";
 import { FileWarning } from "lucide-react";
 // The Purchase dashboards' icon, on its own line for the same reason.
 import { Truck } from "lucide-react";
+import { Activity } from "lucide-react";
 import { appBasePath } from "@/apps/appInfo";
 import { SALES_DASHBOARDS } from "./bushraSalesDashboards";
 import { PURCHASE_DASHBOARDS, purchaseDashboardTitle } from "./bushraPurchaseDashboards";
@@ -922,13 +923,14 @@ export const REPORTS: ReportEntry[] = [
     // Same read as the Tally Sales Register — rpt_sales_register with .in("party", …).
     scoping: "party-server",
     title: "Sales Register",
-    purpose: "Every sales voucher line, with sales-type, ink type, group and category from Central Masters, and colour.",
+    purpose: "The one sales report: every sales line, viewed whole or as any Sales dashboard's lines (Ink, Machines, Heads, Spare Parts, Papers, FOC, SOA…), with salesperson, customer group, Orange / Non-Orange, and the Central Masters classification.",
     category: "bushra-report",
     path: "reports/bushra-sales-register",
     icon: NotebookText,
     source: "tally",
     status: "live",
-    keywords: ["sales register", "sales", "colour", "color", "item group", "item category", "item type", "bushra"],
+    keywords: ["sales register", "sales", "colour", "color", "item group", "item category", "item type", "bushra",
+               "salesperson", "customer group", "orange", "non-orange", "ink", "machine", "heads", "spare parts", "foc", "soa", "paper"],
   },
   {
     id: "bushra-purchase-register",
@@ -991,6 +993,9 @@ export const REPORTS: ReportEntry[] = [
     status: "live",
     keywords: ["packing material", "caps", "cans", "stickers", "packing", "cost per kg", "production", "bushra"],
   },
+  // ⚠ ONE SALES REPORT (10-10-2026): the Sales Register above is the only Bushra sales report. The
+  //   Orange vs Non-Orange, Salesperson and Active / In-active Ink screens are dashboards below, and
+  //   open the register on their own lines; do not add report-mode twins of them again.
   // Bushra-Dashboard → Sales: one entry per dashboard, generated from lib/bushraSalesDashboards.ts so
   // each id and path matches its screen. All built on the Bushra Sales Register (party-server scope).
   ...SALES_DASHBOARDS.map((p): ReportEntry => ({
@@ -1010,6 +1015,45 @@ export const REPORTS: ReportEntry[] = [
     status: "live",
     keywords: ["sales dashboard", p.title.toLowerCase(), "sales type", "category", "bushra"],
   })),
+  {
+    // Bushra-Dashboard → Sales → Orange vs Non-Orange (pages/BushraOrangeCustomers.tsx, mode "dashboard").
+    id: "bushra-sales-orange-customers",
+    scoping: "party-server",
+    title: "Sales — Orange vs Non-Orange Customers",
+    purpose: "Customers who bought our machine against those who buy only our ink — last two FYs, by Customer Group.",
+    category: "bushra-report",
+    path: "bushra-dashboard/sales-orange-customers",
+    icon: Users,
+    source: "tally",
+    status: "live",
+    keywords: ["orange", "non-orange", "machine customers", "ink customers", "sales dashboard", "bushra"],
+  },
+  {
+    // Bushra-Dashboard → Sales → Salesperson (pages/BushraSalespersonSales.tsx, mode "dashboard").
+    id: "bushra-sales-salesperson",
+    scoping: "party-server",
+    title: "Sales — Salesperson Dashboard",
+    purpose: "The sales register read per salesperson — net sales, product mix and growth on last year, down to each line.",
+    category: "bushra-report",
+    path: "bushra-dashboard/sales-salesperson",
+    icon: UserCheck,
+    source: "tally",
+    status: "live",
+    keywords: ["salesperson", "sales person", "rep", "sales dashboard", "bushra"],
+  },
+  {
+    // Bushra-Dashboard → Sales → Active / In-active Ink (pages/BushraInkActiveCustomers.tsx, mode "dashboard").
+    id: "bushra-sales-ink-active",
+    scoping: "party-server",
+    title: "Sales — Active / In-active Ink Customers",
+    purpose: "Who still buys our ink and who has gone quiet — months since the last ink purchase, by salesperson.",
+    category: "bushra-report",
+    path: "bushra-dashboard/sales-ink-active",
+    icon: Activity,
+    source: "tally",
+    status: "live",
+    keywords: ["active", "inactive", "in-active", "dormant", "ink customers", "sales dashboard", "bushra"],
+  },
   // Bushra-Dashboard → Purchase: one entry per dashboard, generated from lib/bushraPurchaseDashboards.ts
   // so each id and path matches its screen. All built on the Bushra Purchase Register (vendors — no scope).
   ...PURCHASE_DASHBOARDS.map((p): ReportEntry => ({

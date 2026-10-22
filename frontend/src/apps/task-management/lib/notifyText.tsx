@@ -34,6 +34,10 @@ export function notificationMessage(
   switch (n.type) {
     case "assigned":
       return <span>assigned you {title}</span>;
+    case "peer_review":
+      return <span>completed {title} — please review it</span>;
+    case "peer_reopened":
+      return <span>re-opened {title} — changes needed</span>;
     case "task_recurring_reminder":
       return <span>reminder: {title} is due on {formatReminderDate(n.reminderDate)}</span>;
     case "mention":

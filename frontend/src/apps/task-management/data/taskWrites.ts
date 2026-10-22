@@ -339,6 +339,39 @@ export async function reopenTask(taskId: string, actorId: string): Promise<void>
 }
 
 /**
+ * Peer task review: the person who gave the task closes it. guard_task_peer_review
+ * stamps the time and the reviewer itself and refuses anyone else. An optional note
+ * goes on the timeline as a remark.
+ */
+export async function closePeerTask(taskId: string, actorId: string, note?: string): Promise<void> {
+  // The generated Database type predates the column.
+  const { error } = await supabase
+    .from("tasks")
+    .update({ peer_closed_at: new Date().toISOString() } as never)
+    .eq("id", taskId);
+  if (error) throw new Error(error.message);
+  const text = `Reviewed — marked as completed${note?.trim() ? ` — ${note.trim()}` : ""}`;
+  const { error: actErr } = await supabase
+    .from("task_activity")
+    .insert({ task_id: taskId, type: "remark", actor_id: actorId, note: text });
+  if (actErr) throw new Error(actErr.message);
+}
+
+/**
+ * Peer task review: the giver sends it back. Same write as reopenTask (back to In
+ * Progress, same assignee; the trigger notifies them), plus the reason as a remark so
+ * the assignee knows what to recheck.
+ */
+export async function reopenPeerTask(taskId: string, actorId: string, reason: string): Promise<void> {
+  if (!reason.trim()) throw new Error("Write what needs to change before re-opening.");
+  await reopenTask(taskId, actorId);
+  const { error } = await supabase
+    .from("task_activity")
+    .insert({ task_id: taskId, type: "remark", actor_id: actorId, note: `Re-opened — ${reason.trim()}` });
+  if (error) throw new Error(error.message);
+}
+
+/**
  * Mark a "when" task instance Not Applicable for its day (or back to applicable).
  * Reversible: only the not_applicable flag changes, the underlying status is kept.
  * A plain column update under the existing task UPDATE RLS (assignee/creator/admin/
@@ -484,7 +517,7 @@ export async function addRemark(taskId: string, note: string, mentionedIds: stri
 }
 
 /* ----------------------------- recurring tasks ----------------------------- */
-// recurrence_type enum is daily/weekly/monthly/when. weekly_days is an int[]
+// recurrence_type enum is daily/weekly/monthly/when/quarterly/half_yearly/yearly. weekly_days is an int[]
 // (0=Sun..6=Sat); monthly_days is an int[] (1..31; 32 = last day of month).
 // "when" fires every working day Mon–Sat and its instances may be marked N/A.
 // RLS: insert created_by=auth.uid(); update created_by/admin/hod-of-assignee;
@@ -493,11 +526,16 @@ export async function addRemark(taskId: string, note: string, mentionedIds: stri
 export type RecurringWriteInput = {
   title: string;
   description: string | null;
-  recurrenceType: "daily" | "weekly" | "monthly" | "when" | "quarterly";
+  recurrenceType: "daily" | "weekly" | "monthly" | "when" | "quarterly" | "half_yearly" | "yearly";
   weeklyDays: number[];
   monthlyDays: number[];
   monthlyNth: number | null; // monthly Nth-weekday mode (e.g. 1 = 1st); null = day-of-month mode
   monthlyWeekday: number | null; // monthly Nth-weekday mode (0=Sun..6=Sat); null = day-of-month mode
+  /**
+   * Half-yearly / yearly: the month (1..12; half-yearly also fires 6 months on). Written only
+   * for those two types, so other saves never name the column before 20270205120100 has run.
+   */
+  yearlyMonth: number | null;
   assignedTo: string | null;
   departmentId: string | null;
   active: boolean;
@@ -519,12 +557,19 @@ export type RecurringWriteInput = {
 /** The reminder columns, only when the caller set them (see RecurringWriteInput.notify). */
 function notifyColumns(input: RecurringWriteInput) {
   if (!input.notify) return {};
-  const on = input.notify.required && ["weekly", "monthly", "quarterly"].includes(input.recurrenceType);
+  const on = input.notify.required && ["weekly", "monthly", "quarterly", "half_yearly", "yearly"].includes(input.recurrenceType);
   return {
     notify_required: on,
     notify_days_before: on ? input.notify.daysBefore : null,
   };
 }
+
+/** Monthly, half-yearly and yearly all pick their day inside a month the same way. */
+const usesMonthDays = (t: RecurringWriteInput["recurrenceType"]) => t === "monthly" || t === "half_yearly" || t === "yearly";
+
+/** The month column, only for half-yearly / yearly (see RecurringWriteInput.yearlyMonth). */
+const yearlyMonthColumn = (input: RecurringWriteInput) =>
+  input.recurrenceType === "half_yearly" || input.recurrenceType === "yearly" ? { yearly_month: input.yearlyMonth } : {};
 
 /** The KRA column, only when the caller set it (see RecurringWriteInput.kraId). */
 const kraColumn = (input: RecurringWriteInput) => (input.kraId === undefined ? {} : { kra_id: input.kraId });
@@ -553,9 +598,10 @@ export async function insertRecurring(input: RecurringWriteInput & { createdBy: 
       description: input.description,
       recurrence_type: input.recurrenceType,
       weekly_days: input.recurrenceType === "weekly" ? input.weeklyDays : [],
-      monthly_days: input.recurrenceType === "monthly" ? input.monthlyDays : [],
-      monthly_nth: input.recurrenceType === "monthly" ? input.monthlyNth : null,
-      monthly_weekday: input.recurrenceType === "monthly" ? input.monthlyWeekday : null,
+      monthly_days: usesMonthDays(input.recurrenceType) ? input.monthlyDays : [],
+      monthly_nth: usesMonthDays(input.recurrenceType) ? input.monthlyNth : null,
+      monthly_weekday: usesMonthDays(input.recurrenceType) ? input.monthlyWeekday : null,
+      ...yearlyMonthColumn(input),
       assigned_to: input.assignedTo,
       department_id: input.departmentId,
       created_by: input.createdBy,
@@ -580,9 +626,10 @@ export async function updateRecurring(id: string, input: RecurringWriteInput): P
       description: input.description,
       recurrence_type: input.recurrenceType,
       weekly_days: input.recurrenceType === "weekly" ? input.weeklyDays : [],
-      monthly_days: input.recurrenceType === "monthly" ? input.monthlyDays : [],
-      monthly_nth: input.recurrenceType === "monthly" ? input.monthlyNth : null,
-      monthly_weekday: input.recurrenceType === "monthly" ? input.monthlyWeekday : null,
+      monthly_days: usesMonthDays(input.recurrenceType) ? input.monthlyDays : [],
+      monthly_nth: usesMonthDays(input.recurrenceType) ? input.monthlyNth : null,
+      monthly_weekday: usesMonthDays(input.recurrenceType) ? input.monthlyWeekday : null,
+      ...yearlyMonthColumn(input),
       assigned_to: input.assignedTo,
       department_id: input.departmentId,
       active: input.active,

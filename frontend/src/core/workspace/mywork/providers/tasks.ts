@@ -17,7 +17,7 @@ import { useQuery } from "@tanstack/react-query";
 import { useSession } from "@/core/platform/session";
 import { appName } from "@/apps/appInfo";
 import { fetchTaskData } from "@/apps/task-management/data/fetchTaskData";
-import { taskWorkItems } from "../items/tasks";
+import { peerReviewWorkItems, taskWorkItems } from "../items/tasks";
 import type { MyWorkProvider, MyWorkResult, WorkItem } from "../types";
 
 function useTaskWork(active: boolean): MyWorkResult {
@@ -32,7 +32,8 @@ function useTaskWork(active: boolean): MyWorkResult {
 
   const items = useMemo<WorkItem[]>(() => {
     if (!data) return [];
-    return taskWorkItems(data, uid);
+    // Peer reviews are screen-only for now — see peerReviewWorkItems.
+    return [...taskWorkItems(data, uid), ...peerReviewWorkItems(data, uid)];
   }, [data, uid]);
 
   return { items, isLoading, error };
