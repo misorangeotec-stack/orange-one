@@ -1,4 +1,4 @@
-import { createContext, useContext, useEffect, useMemo } from "react";
+import { createContext, useContext, useEffect, useMemo, useRef } from "react";
 import type { ReactNode } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import type { QueryClient } from "@tanstack/react-query";
@@ -20,6 +20,8 @@ import {
   startTask as startTaskWrite,
   completeTask as completeTaskWrite,
   reopenTask as reopenTaskWrite,
+  closePeerTask as closePeerTaskWrite,
+  reopenPeerTask as reopenPeerTaskWrite,
   setTaskNotApplicable as setTaskNotApplicableWrite,
   reviseTask as reviseTaskWrite,
   rescheduleTask as rescheduleTaskWrite,
@@ -98,6 +100,17 @@ interface TaskStoreValue {
   startTask: (id: string) => Promise<void>;
   completeTask: (id: string, note?: string, kraId?: string) => Promise<void>;
   reopenTask: (id: string) => Promise<void>;
+  /** Peer task review: the person who gave it closes the completed task (lib/peerReview.ts). */
+  closePeerTask: (id: string, note?: string) => Promise<void>;
+  /** Peer task review: the giver sends it back to the same assignee, with what to recheck. */
+  reopenPeerTask: (id: string, reason: string) => Promise<void>;
+  /**
+   * Re-read these tasks (and their timeline) from the server. Read-only: no full
+   * reconcile is scheduled. Used when a task is opened and when a peer review /
+   * re-open notification arrives, because other people's changes otherwise reach
+   * this cache only on the next stale refetch.
+   */
+  refreshTask: (...ids: string[]) => Promise<void>;
   /** Mark a "when" task instance Not Applicable for its day, or back to applicable. Reversible. */
   setTaskNotApplicable: (id: string, value: boolean) => Promise<void>;
   /** True when this task was generated from a "when" recurring template (so N/A is offered). */
@@ -479,6 +492,18 @@ export function TaskStoreProvider({ children }: { children: ReactNode }) {
       scheduleFullReconcile(queryClient);
     };
 
+    const refreshTask = async (...ids: string[]) => {
+      const wanted = ids.filter(Boolean);
+      if (wanted.length === 0) return;
+      try {
+        const [freshTasks, freshActivity] = await Promise.all([fetchTasksByIds(wanted), fetchActivityByTaskIds(wanted)]);
+        upsertTasksInCache(queryClient, freshTasks);
+        replaceActivityForTasks(queryClient, wanted, freshActivity);
+      } catch {
+        // A view refresh: the cached copy simply stays until the next refetch.
+      }
+    };
+
     // Org-wide id → person map (name + avatar only) so activity actors can be
     // named even when they fall outside the viewer's RLS-scoped directory — e.g.
     // a Director in another department who assigned a recurring task. Without
@@ -615,6 +640,15 @@ export function TaskStoreProvider({ children }: { children: ReactNode }) {
       // status → in_progress, completed_at cleared, and a 'reopened' activity logged.
       reopenTask: async (id) => {
         await reopenTaskWrite(id, user.id);
+        await refreshTasks(id);
+      },
+      refreshTask,
+      closePeerTask: async (id, note) => {
+        await closePeerTaskWrite(id, user.id, note);
+        await refreshTasks(id);
+      },
+      reopenPeerTask: async (id, reason) => {
+        await reopenPeerTaskWrite(id, user.id, reason);
         await refreshTasks(id);
       },
       reviewKraTask: async (id, rating, note, kraId) => {
@@ -978,6 +1012,21 @@ export function TaskStoreProvider({ children }: { children: ReactNode }) {
       canWeeklyPlan: canEdit,
     };
   }, [tasks, activity, notifications, recurringTasks, weeklyPlans, workspace, locations, orgPeople, dir, user, role, canEdit, queryClient]);
+
+  // Peer task review: the bell is realtime but this task cache is not, so when
+  // "X completed … please review it" (or "re-opened") arrives, re-read that task —
+  // otherwise the Review / Received tabs and the task page show the old status until
+  // the next stale refetch. Each notification is handled once per session.
+  const handledPeerNotifs = useRef(new Set<string>());
+  const { refreshTask } = value;
+  useEffect(() => {
+    const fresh = notifications.filter(
+      (n) => n.userId === user?.id && !n.readAt && n.taskId && (n.type === "peer_review" || n.type === "peer_reopened") && !handledPeerNotifs.current.has(n.id),
+    );
+    if (fresh.length === 0) return;
+    fresh.forEach((n) => handledPeerNotifs.current.add(n.id));
+    void refreshTask(...new Set(fresh.map((n) => n.taskId as string)));
+  }, [notifications, user?.id, refreshTask]);
 
   // The realtime notification subscription used to live here. It now belongs to
   // useMyNotifications (called above) so the portal home screen gets the same

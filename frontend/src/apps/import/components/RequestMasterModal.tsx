@@ -68,7 +68,12 @@ export default function RequestMasterModal({
 
   const ctx = useMasterFieldCtx();
 
-  const typeOptions: ComboOption[] = MASTER_TYPES.map((m) => ({ value: m.value, label: m.label }));
+  // A vendor-item mapping is no longer requested: anyone who may raise a
+  // requisition maps it directly (MapVendorItemModal), so it is not offered
+  // here. Its owner can still approve a request raised before this change.
+  const typeOptions: ComboOption[] = MASTER_TYPES
+    .filter((m) => m.value !== "vendor_item_price" || masterType === "vendor_item_price")
+    .map((m) => ({ value: m.value, label: m.label }));
 
   const pickType = (v: string) => {
     const next = v as MasterType;

@@ -96,6 +96,7 @@ import {
   updateVendor,
   insertVendorItemPrice,
   updateVendorItemPrice,
+  mapVendorItems as mapVendorItemsWrite,
   fetchFxRate as fetchFxRateWrite,
   setMasterManagers as setMasterManagersWrite,
   requestNewMaster as requestNewMasterWrite,
@@ -166,6 +167,7 @@ import {
   type ItemInput,
   type VendorInput,
   type VendorItemPriceInput,
+  type MapVendorItemsResult,
   type StepOwnerInput,
   type ApprovalBandInput,
   type NewRequestLine,
@@ -599,6 +601,12 @@ interface ImportStoreValue {
   editVendor: (id: string, input: VendorInput) => Promise<void>;
   createVendorItemPrice: (input: VendorItemPriceInput) => Promise<string>;
   editVendorItemPrice: (id: string, input: VendorItemPriceInput) => Promise<void>;
+  /**
+   * Map a vendor to existing items straight away, no approval. Open to anyone
+   * who may raise a requisition (`canEdit`), unlike the two above, which need
+   * the master's owner.
+   */
+  mapVendorItems: (vendorId: string, itemIds: string[]) => Promise<MapVendorItemsResult>;
 
   // mutations — governance
   setMasterManagers: (masterType: MasterType, userIds: string[]) => Promise<void>;
@@ -1721,6 +1729,11 @@ export function ImportStoreProvider({ children }: { children: ReactNode }) {
       editVendorItemPrice: async (id, input) => {
         await updateVendorItemPrice(id, input);
         await invalidate();
+      },
+      mapVendorItems: async (vendorId, itemIds) => {
+        const result = await mapVendorItemsWrite(vendorId, itemIds);
+        await invalidate();
+        return result;
       },
 
       // ---- governance mutations ----

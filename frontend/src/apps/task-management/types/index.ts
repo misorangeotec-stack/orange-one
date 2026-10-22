@@ -155,6 +155,12 @@ export interface Task {
   // ordinary downward work. Peer work is scored in the peer block ONLY — see
   // countsTowardMetrics / countsTowardPeerMetrics (selectors).
   isPeerAssignment: boolean;
+  // Peer task review (20270204120100): when the person who GAVE the peer task closed it
+  // after reviewing the work. A completed peer task with no close is awaiting their
+  // review; a reopen clears it. Always null on a non-peer task. See lib/peerReview.ts.
+  peerClosedAt: string | null;
+  peerClosedBy: string | null;
+  peerReopenCount: number; // times the giver sent it back; drives the "Re-opened" label
   // KRA task (Task Category ≠ Others) — see lib/kraTasks.ts. kraWeight is the KRA's Wt%
   // and kraCompletionWeight the part of it earned on completion, both snapshotted when
   // the task was given; reviewRating is the direct HOD's 1-10, null while awaiting
@@ -224,8 +230,11 @@ export interface TaskActivity {
  * `task_recurring_reminder` = a recurring task with "Notification required" is due
  * in N days (send_recurring_reminders, 20270106120100). There is no task yet, so
  * taskId is null and recurringTaskId / reminderDate say which template and date.
+ * `peer_review` = a peer task you gave was completed and waits for your review;
+ * `peer_reopened` = the giver reopened your peer task (trg_tasks_notify_peer_review,
+ * 20270204120100).
  */
-export type NotificationType = "mention" | "assigned" | "task_recurring_reminder";
+export type NotificationType = "mention" | "assigned" | "task_recurring_reminder" | "peer_review" | "peer_reopened";
 
 export interface Notification {
   id: string;

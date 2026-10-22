@@ -21,6 +21,8 @@ import PersonalTaskModal from "../components/PersonalTaskModal";
 import EditTaskModal from "../components/EditTaskModal";
 import { useTaskDetailEmbed } from "../components/TaskDetailEmbed";
 import KraTaskCard, { KraBadge, useKraTaskAccess } from "../components/KraTaskCard";
+import PeerReviewCard from "../components/PeerReviewCard";
+import { awaitingPeerReview } from "../lib/peerReview";
 
 type ModalKind = "revise" | "complete" | null;
 
@@ -35,7 +37,7 @@ export default function TaskDetail({ taskId }: { taskId?: string } = {}) {
   const navigate = useNavigate();
   const embed = useTaskDetailEmbed();
   const leave = () => (embed ? embed.close() : navigate("/task-management/tasks"));
-  const { getTask, getRecurring, activityFor, revisionInfo, startTask, reopenTask, rescheduleTask, profileById, actorById, departmentById, canWrite, canStatusActions, canReschedule, locationById, taskLocationsComplete, setTaskLocationDone, setTaskLocationNa, setTaskLocationsDone, isWhenTask, setTaskNotApplicable, deletePersonalTask, deleteTask, markTaskNotificationsRead, mentionablePeople } = useTaskStore();
+  const { refreshTask, getTask, getRecurring, activityFor, revisionInfo, startTask, reopenTask, rescheduleTask, profileById, actorById, departmentById, canWrite, canStatusActions, canReschedule, locationById, taskLocationsComplete, setTaskLocationDone, setTaskLocationNa, setTaskLocationsDone, isWhenTask, setTaskNotApplicable, deletePersonalTask, deleteTask, markTaskNotificationsRead, mentionablePeople } = useTaskStore();
   const { user, role } = useSession();
   const [modal, setModal] = useState<ModalKind>(null);
   const [starting, setStarting] = useState(false);
@@ -79,6 +81,9 @@ export default function TaskDetail({ taskId }: { taskId?: string } = {}) {
   // before this ran. Keyed on `id` alone so a realtime refetch doesn't re-fire it.
   useEffect(() => {
     void markTaskNotificationsRead(id);
+    // Opening a task also re-reads it: someone else's change (a peer task completed,
+    // reviewed or re-opened) otherwise reaches this cache only on the next stale refetch.
+    void refreshTask(id);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id]);
 
@@ -122,7 +127,11 @@ export default function TaskDetail({ taskId }: { taskId?: string } = {}) {
   const isCurrentWeek = task.weekStart === weekStartOf(todayIso());
   // Once the HOD has rated a KRA task only that HOD may reopen it — reopening wipes the
   // rating (guard_task_kra enforces the same on the server).
-  const canReopen = task.status === "completed" && isCurrentWeek && canStatusActions && (task.reviewRating == null || kraAccess.isReviewer);
+  // Peer task review: the only Re-open on a peer task is the giver's, in the Peer review
+  // card (with what to change), and "Mark as completed" there is final — so no header
+  // Reopen for peer tasks at all.
+  const peerAwaiting = awaitingPeerReview(task);
+  const canReopen = task.status === "completed" && isCurrentWeek && canStatusActions && (task.reviewRating == null || kraAccess.isReviewer) && !task.isPeerAssignment;
 
   // "When" instances can be parked as Not Applicable for the day (reversible).
   // While N/A the normal status actions are hidden and the task is excluded from reports.
@@ -178,7 +187,7 @@ export default function TaskDetail({ taskId }: { taskId?: string } = {}) {
         <div className="min-w-0">
           <div className="flex items-center gap-2.5 flex-wrap">
             <h2 className="text-[22px] font-bold text-navy">{task.title}</h2>
-            <StatusChip status={task.status} notApplicable={na} />
+            <StatusChip status={task.status} notApplicable={na} peer={task} />
             {personal && (
               <span
                 title="Other task — for your own tracking; excluded from all scores"
@@ -581,11 +590,12 @@ export default function TaskDetail({ taskId }: { taskId?: string } = {}) {
           </Card>
 
           <KraTaskCard task={task} />
+          <PeerReviewCard task={task} />
 
           {closed && (
             <Card className="p-4 text-center">
               <p className="text-[13px] text-grey">
-                This task is <b className="text-navy">{task.status === "completed" ? "completed" : "shifted to next week"}</b>.
+                This task is <b className="text-navy">{task.status === "completed" ? (peerAwaiting ? "in review — not completed until it is reviewed" : "completed") : "shifted to next week"}</b>.
               </p>
             </Card>
           )}
