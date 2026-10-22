@@ -17,7 +17,15 @@ import type { SupabaseClient } from "@supabase/supabase-js";
  *     - whatever Tally holds beyond the lots is "stock without a lot" — it cannot carry an expiry
  *
  * ⚠ ~100k ink lines. Deep offset paging on that brushes PostgREST's ~8 s statement timeout, so
- *   the read is split per company × financial year, a few requests at a time.
+ *   the read is split per company × financial year, a few requests at a time; a year holding more
+ *   than SPLIT_ROWS lines is split again by month (Otec Surat FY 2025-26 = 55 pages one after
+ *   another, 47 s — the "stuck at 98 %" on the page, 21-10-2026).
+ *
+ * ⚠ ONLY THE CURRENT FY CHANGES. ConnectWave's hourly after-sync job rebuilds rpt_batch_line for
+ *   the current financial year only; closed years were last built in Sep-2026 and stay put.
+ *   `rpt_batch_coverage` stamps every tenant × FY with its row count and built_at, so with a
+ *   `LineCache` a company × year is read again only when that stamp moves, and a year with no
+ *   lines at all is not requested. Before this every refresh re-read every year since 2019.
  *
  * ⚠ EXPIRY sits on whichever voucher the lot's expiry was typed on — sale, transfer, purchase —
  *   as text ('21-Aug-27'). If vouchers disagree, the latest-dated one wins.
@@ -31,6 +39,41 @@ const INK_WORDS = ["INK", "SUBLIMATION", "REACTIVE", "PIGMENT", "DISPERSE"];
 const NON_LOT = new Set(["", "any", "not applicable", "primary batch", "none"]);
 /** First FY any book reaches back to (Colorix, from 1-Apr-2020), with a year's margin. */
 const FIRST_FY = 2019;
+/** A company × year with more lines than this (all stock, per rpt_batch_coverage) is read month by month. */
+const SPLIT_ROWS = 4000;
+
+/** One row of `rpt_batch_coverage`: a tenant's lines in one financial year ('2025-26'). */
+export interface CoverageRow { tenant_id: string; fy: string; batch_rows: number; built_at: string | null }
+
+/** Ink voucher lines kept between visits, one entry per company × FY, valid while `sig` matches. */
+export interface LineCache {
+  get(window: string, sig: string): Promise<unknown[] | null>;
+  put(window: string, sig: string, rows: unknown[]): Promise<void>;
+}
+
+/**
+ * What changes when ConnectWave rebuilds anything this page reads — the per-year line stamps plus
+ * the newest built_at of both stock tables. Three small reads (~¼ s each). Same stamp as last time
+ * = nothing new from Tally, so the saved figures can be shown as they are.
+ */
+export async function fetchSyncStamp(cw: SupabaseClient): Promise<{ coverage: CoverageRow[]; stamp: string }> {
+  const newest = (table: string) => cw.from(table).select("built_at")
+    .order("built_at", { ascending: false, nullsFirst: false }).limit(1);
+  const [cov, ana, sum] = await Promise.all([
+    cw.from("rpt_batch_coverage").select("tenant_id,fy,batch_rows,built_at"),
+    newest("rpt_stock_analysis_item"),
+    newest("rpt_stock_summary_item"),
+  ]);
+  const err = cov.error ?? ana.error ?? sum.error;
+  if (err) throw new Error(err.message);
+  const coverage = (cov.data ?? []) as CoverageRow[];
+  const stamp = [
+    ...coverage.map((c) => `${c.tenant_id}|${c.fy}|${c.batch_rows}|${c.built_at}`).sort(),
+    `analysis|${ana.data?.[0]?.built_at}`,
+    `summary|${sum.data?.[0]?.built_at}`,
+  ].join("\n");
+  return { coverage, stamp };
+}
 
 export const COMPANY_SHORT: Record<string, string> = {
   "59a6c2d9-0c5a-4fc5-b8c5-3be6fec3289e": "Enterprises Surat",
@@ -127,7 +170,9 @@ export interface ExpiryStatus {
  */
 export const HELD_GODOWNS = /^(LAB|LOOSE INK)$/i;
 
-interface Line {
+export interface Line {
+  /** 'acct_orange::<guid>' is the live book; '…~<yyyymmdd>' an older-FY archive of the same company. */
+  tenant_id: string;
   company_guid: string;
   vch_date: string;
   voucher_type: string | null;
@@ -243,22 +288,34 @@ export const EXCLUDED_GROUPS = /PROVISION|DEAD STOCK|DIFF (INK )?STOCK|LOOSE INK
 const isExcluded = (path: string | null, item: string) => EXCLUDED_GROUPS.test(path ?? "") || /^PROVISION/i.test(item.trim());
 
 const K = (...parts: string[]) => parts.join("\u0000");
+/** Short fingerprint of a long string (FNV-1a), for cache signatures. */
+const hash = (s: string) => {
+  let h = 0x811c9dc5;
+  for (let i = 0; i < s.length; i++) h = Math.imul(h ^ s.charCodeAt(i), 0x01000193);
+  return `f${(h >>> 0).toString(36)}:${s.length}`;
+};
 
 export async function fetchExpiryStatus(
   cw: SupabaseClient,
   today: string,
   onProgress: (done: number, total: number) => void = () => {},
+  /** cache — keep each company × year's lines between visits; coverage — already read by fetchSyncStamp. */
+  opts: { cache?: LineCache; coverage?: CoverageRow[] } = {},
 ): Promise<ExpiryStatus> {
   const asOf = today.replace(/-/g, "");
 
   // 1. Which items are ink, and their groups. The live (un-suffixed) tenant wins — but an item is
   //    ink if ANY book says so: EPN SUBLIMATION MAGENTA is '(Ungrouped)' in FY 2026-27 and only
   //    the FY 2024-26 book still files it under EP SUBLIMATION INK NORMAL.
-  const items = await readAll<ItemRow>((a, b) => cw.from("rpt_stock_summary_item")
-    .select("tenant_id,company_guid,item,stock_group,primary_group,group_path,base_unit,stock_category")
-    .ilike("group_path", "%INK%")
-    .order("tenant_id").order("item").order("fy")
-    .range(a, b));
+  //    The coverage stamps are read alongside; if they can't be, every year is read as before.
+  const [items, coverage] = await Promise.all([
+    readAll<ItemRow>((a, b) => cw.from("rpt_stock_summary_item")
+      .select("tenant_id,company_guid,item,stock_group,primary_group,group_path,base_unit,stock_category")
+      .ilike("group_path", "%INK%")
+      .order("tenant_id").order("item").order("fy")
+      .range(a, b)),
+    opts.coverage ?? fetchSyncStamp(cw).then((s) => s.coverage, () => null),
+  ]);
   const ink = new Map<string, ItemRow>();
   for (const r of [...items].sort((x, y) => Number(!x.tenant_id.includes("~")) - Number(!y.tenant_id.includes("~")))) {
     if (isInk(r.group_path)) ink.set(K(r.company_guid, r.item), r);
@@ -270,45 +327,90 @@ export async function fetchExpiryStatus(
 
   // 2. The jobs: Tally's closing qty per item, the expiry lines, and the ink lines per company × FY.
   const thisFy = Number(today.slice(0, 4)) - (Number(today.slice(5, 7)) < 4 ? 1 : 0);
-  const windows: [string, number][] = guids.flatMap((g) =>
-    Array.from({ length: thisFy - FIRST_FY + 1 }, (_, i) => [g, FIRST_FY + i] as [string, number]));
+  // Today's ink groups, plus blank groups and any group named like ink: lines keep the group
+  // name they were booked under, so an item whose group was renamed ('KN REACTIVE INK HD (RP)'
+  // → '… HD RP'; Noida's 'EP SUBLIMATION SUPER HD' → '…SUPERHD') would otherwise lose those
+  // lines. Non-ink items are dropped below.
+  const groupFilter = [
+    `stock_group.in.(${leaves.map((l) => `"${l.replace(/"/g, '\\"')}"`).join(",")})`,
+    "stock_group.is.null",
+    ...INK_WORDS.map((w) => `stock_group.ilike.*${w}*`),
+  ].join(",");
 
-  let done = 0;
-  const total = windows.length + guids.length + 1;
-  const tick = () => onProgress(++done, total);
-  onProgress(0, total);
+  // Each company × year's ConnectWave stamp (every tenant of the company — live and archive books).
+  // The group filter is part of the signature: a new ink group means the saved lines missed some.
+  const stamps = new Map<string, { sig: string[]; rows: number }>();
+  for (const c of coverage ?? []) {
+    const k = K(c.tenant_id.split("::")[1]?.split("~")[0] ?? "", c.fy.slice(0, 4));
+    const s = stamps.get(k) ?? { sig: [], rows: 0 };
+    s.sig.push(`${c.tenant_id}|${c.batch_rows}|${c.built_at}`);
+    s.rows += Number(c.batch_rows) || 0;
+    stamps.set(k, s);
+  }
+  const filterSig = hash(groupFilter);
+  // Bump when Line's columns change, so saved lines of the old shape are read again.
+  const LINE_SHAPE = "line:v2";
+  const windows = guids.flatMap((g) =>
+    Array.from({ length: thisFy - FIRST_FY + 1 }, (_, i) => FIRST_FY + i).flatMap((fy) => {
+      const s = stamps.get(K(g, String(fy)));
+      // Coverage read and no row for this company × year → it has no lines at all; skip it.
+      if (coverage && !s) return [];
+      return [{ g, fy, key: `${g}|${fy}`, sig: s ? [...s.sig.sort(), filterSig, LINE_SHAPE].join("\n") : "", rows: s?.rows ?? 0 }];
+    }));
+  const cached = await Promise.all(windows.map((w) =>
+    opts.cache && w.sig ? opts.cache.get(w.key, w.sig).catch(() => null) : Promise.resolve(null)));
 
-  const lineJobs = windows.map(([g, fy]) => () => readAll<Line>((a, b) => cw.from("rpt_batch_line")
-    .select("company_guid,vch_date,voucher_type,movement,affects_stock,stock_item,batch_name,is_real_lot,godown_name,qty,uom,tracking_number,voucher_guid,line_no,batch_no")
-    // Today's ink groups, plus blank groups and any group named like ink: lines keep the group
-    // name they were booked under, so an item whose group was renamed ('KN REACTIVE INK HD (RP)'
-    // → '… HD RP'; Noida's 'EP SUBLIMATION SUPER HD' → '…SUPERHD') would otherwise lose those
-    // lines. Non-ink items are dropped below.
+  const readLines = (g: string, from: string, to: string) => () => readAll<Line>((a, b) => cw.from("rpt_batch_line")
+    .select("tenant_id,company_guid,vch_date,voucher_type,movement,affects_stock,stock_item,batch_name,is_real_lot,godown_name,qty,uom,tracking_number,voucher_guid,line_no,batch_no")
     .eq("company_guid", g)
-    .or([
-      `stock_group.in.(${leaves.map((l) => `"${l.replace(/"/g, '\\"')}"`).join(",")})`,
-      "stock_group.is.null",
-      ...INK_WORDS.map((w) => `stock_group.ilike.*${w}*`),
-    ].join(","))
-    .gte("vch_date", `${fy}0401`).lte("vch_date", `${fy + 1}0331`)
+    .or(groupFilter)
+    .gte("vch_date", from).lte("vch_date", to)
     // A TOTAL order — offset paging drops or repeats rows that tie.
     .order("tenant_id").order("voucher_guid").order("line_no").order("batch_no")
-    .range(a, b)));
+    .range(a, b));
+  // The years still to read, a big one split into its 12 months so they run side by side.
+  const parts: { w: number; job: () => Promise<Line[]> }[] = [];
+  windows.forEach(({ g, fy, rows }, w) => {
+    if (cached[w]) return;
+    if (rows <= SPLIT_ROWS) { parts.push({ w, job: readLines(g, `${fy}0401`, `${fy + 1}0331`) }); return; }
+    for (let m = 0; m < 12; m++) {
+      const y = m < 9 ? fy : fy + 1;
+      const mm = String(((m + 3) % 12) + 1).padStart(2, "0");
+      parts.push({ w, job: readLines(g, `${y}${mm}01`, `${y}${mm}31`) });
+    }
+  });
+
   const anchorJobs = guids.map((g) => () => readAll<AnchorRow>((a, b) => cw.from("rpt_stock_analysis_item")
     .select("tenant_id,company_guid,item,base_unit,closing_qty,closing_value")
     .eq("company_guid", g)
     .order("tenant_id").order("item")
     .range(a, b)));
-  const datedJob = () => readAll<DatedRow>((a, b) => cw.from("rpt_batch_line")
+  // One per company, so they run side by side too.
+  const datedJobs = guids.map((g) => () => readAll<DatedRow>((a, b) => cw.from("rpt_batch_line")
     .select("company_guid,vch_date,voucher_no,stock_item,batch_name,batch_mfd,batch_expiry_raw,built_at")
+    .eq("company_guid", g)
     .not("batch_expiry_raw", "is", null)
     .order("tenant_id").order("voucher_guid").order("line_no").order("batch_no")
-    .range(a, b));
+    .range(a, b)));
 
-  const results = await pool<unknown[]>([datedJob, ...anchorJobs, ...lineJobs], PARALLEL, tick);
-  const dated = results[0] as DatedRow[];
-  const anchors = (results.slice(1, 1 + guids.length) as AnchorRow[][]).flat();
-  const lines = (results.slice(1 + guids.length) as Line[][]).flat();
+  let done = 0;
+  const total = parts.length + anchorJobs.length + datedJobs.length;
+  const tick = () => onProgress(++done, total);
+  onProgress(0, total);
+
+  // Expiry lines and closing qty first, then the line parts.
+  const results = await pool<unknown[]>([...datedJobs, ...anchorJobs, ...parts.map((p) => p.job)], PARALLEL, tick);
+  const n = guids.length;
+  const dated = (results.slice(0, n) as DatedRow[][]).flat();
+  const anchors = (results.slice(n, 2 * n) as AnchorRow[][]).flat();
+  const fresh = results.slice(2 * n) as Line[][];
+  const perWindow: Line[][] = windows.map((_, w) => (cached[w] as Line[] | null) ?? []);
+  parts.forEach((p, i) => { for (const x of fresh[i]) perWindow[p.w].push(x); });
+  if (opts.cache) {
+    await Promise.all(windows.map((win, w) =>
+      !cached[w] && win.sig ? opts.cache!.put(win.key, win.sig, perWindow[w]).catch(() => {}) : null));
+  }
+  const lines = perWindow.flat();
 
   // 3. Tally's closing qty per ink item — live tenant only (older-FY snapshots share the guid).
   const closing = new Map<string, AnchorRow>();
@@ -323,7 +425,17 @@ export async function fetchExpiryStatus(
   }
 
   // 4. Stock-moving lines, tracked pairs counted once (the earlier line is kept).
-  const moving = lines
+  //    First, one row per physical line across books: Enterprises Noida's archive (~20250401)
+  //    repeats FY 2026-27 vouchers that the live book also holds — same voucher_guid / line_no /
+  //    batch_no — and both copies were being counted (1,109 lines, 21-10-2026). The live copy wins,
+  //    as in rpt_lot_balance.
+  const byLine = new Map<string, Line>();
+  for (const x of lines) {
+    const k = K(x.voucher_guid, String(x.line_no), String(x.batch_no));
+    const c = byLine.get(k);
+    if (!c || (c.tenant_id.includes("~") && !x.tenant_id.includes("~"))) byLine.set(k, x);
+  }
+  const moving = [...byLine.values()]
     .filter((x) => ink.has(K(x.company_guid, x.stock_item)) && x.vch_date <= asOf && x.affects_stock &&
       !ORDERISH.test(x.voucher_type ?? "") && (x.movement === "in" || x.movement === "out"))
     .sort((a, b) => a.company_guid.localeCompare(b.company_guid) || a.vch_date.localeCompare(b.vch_date) ||
@@ -369,12 +481,16 @@ export async function fetchExpiryStatus(
   const originByLot = new Map<string, Origin>();
   const keep = (m: Map<string, Origin>, k: string, o: Origin) => { const c = m.get(k); if (!c || o.d < c.d) m.set(k, o); };
   const acc = new Map<string, Acc>();
+  const lotAcc = (guid: string, item: string, lot: string) => {
+    const k = K(guid, item, lot);
+    let a = acc.get(k);
+    if (!a) acc.set(k, (a = { guid, item, lot, bal: 0, held: 0, ins: [], godown: "", uom: "", first: null, lastReturn: null }));
+    return a;
+  };
   for (const x of kept) {
     const lot = x.batch_name ?? "";
     if (!x.is_real_lot || NON_LOT.has(lot.trim().toLowerCase())) continue;
-    const k = K(x.company_guid, x.stock_item, lot);
-    let a = acc.get(k);
-    if (!a) acc.set(k, (a = { guid: x.company_guid, item: x.stock_item, lot, bal: 0, held: 0, ins: [], godown: "", uom: "", first: null, lastReturn: null }));
+    const a = lotAcc(x.company_guid, x.stock_item, lot);
     const q = Number(x.qty) || 0;
     a.bal += x.movement === "in" ? q : -q;
     if (x.godown_name && HELD_GODOWNS.test(x.godown_name.trim())) a.held += x.movement === "in" ? q : -q;
