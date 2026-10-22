@@ -469,6 +469,8 @@ export default function LotAllocField({
            not caught up with looks impossible to enter. */
         placeholder="pick or type the lot"
         triggerClassName="py-1"
+        // Production's handover: close on each pick so the lot and its box show at once.
+        closeOnPick={alwaysQty}
       />
 
       {/* ONE LOT: no box to fill, just what Tally shows against it. Keeping this
