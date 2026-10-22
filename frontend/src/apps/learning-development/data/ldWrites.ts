@@ -985,10 +985,14 @@ export const cancelTraining = (sessionId: string, reason: string): Promise<{ can
 export const completeTraining = (
   sessionId: string,
   rows: { employeeId: string; status: "present" | "absent" }[],
+  mom: string | null = null,
+  paths: string[] = [],
 ): Promise<{ present: number; absent: number }> =>
   rpc("fms_ld_complete_session", {
     p_session_id: sessionId,
     p_rows: rows.map((r) => ({ employee_id: r.employeeId, status: r.status })),
+    p_mom: mom,
+    p_paths: paths,
   });
 
 export interface DirectoryPerson {

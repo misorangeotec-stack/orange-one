@@ -14,6 +14,7 @@ begin
 end $cron$;
 
 drop function if exists public.fms_ld_send_due_training_mails(date);
+drop function if exists public.fms_ld_complete_session(uuid, jsonb, text, text[]);
 drop function if exists public.fms_ld_complete_session(uuid, jsonb);
 drop function if exists public.fms_ld_cancel_session(uuid, text);
 drop function if exists public.fms_ld_bulk_save_calendar(jsonb);
@@ -37,6 +38,7 @@ alter table public.fms_ld_sessions
   drop constraint if exists fms_ld_sessions_calendar_complete_chk,
   drop constraint if exists fms_ld_sessions_source_chk,
   drop constraint if exists fms_ld_sessions_category_chk,
+  drop column if exists mom,
   drop column if exists ics_sequence,
   drop column if exists cancel_mail_sent_at,
   drop column if exists invite_mail_sent_at,

@@ -1,6 +1,7 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import Modal from "@/shared/components/ui/Modal";
 import Button from "@/shared/components/ui/Button";
+import { FieldLabel, TextArea } from "@/shared/components/ui/Form";
 import { useLdStore } from "../../store";
 import { dmy } from "../../lib/format";
 import { hm, sessionHours } from "../../lib/training";
@@ -11,7 +12,8 @@ type Mark = "present" | "absent";
 /**
  * "Complete" — requirement 5. The trainer (or a calendar manager) marks every
  * attendee Present or Absent in one pop-up; saving completes the training and
- * credits its hours to everyone marked Present.
+ * credits its hours to everyone marked Present. MOM (minutes of the meeting)
+ * and files are optional and saved in the same call.
  *
  * ⚠ NOTHING IS PRE-TICKED. Defaulting everyone to Present would turn "I clicked
  *   Save" into "they all attended" and inflate every hours figure downstream.
@@ -28,6 +30,9 @@ export default function CompleteModal({
 }) {
   const s = useLdStore();
   const [marks, setMarks] = useState<Record<string, Mark>>({});
+  const [mom, setMom] = useState("");
+  const [files, setFiles] = useState<File[]>([]);
+  const fileRef = useRef<HTMLInputElement>(null);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
 
@@ -43,6 +48,8 @@ export default function CompleteModal({
   useEffect(() => {
     if (open) {
       setMarks({});
+      setMom("");
+      setFiles([]);
       setErr(null);
     }
   }, [open]);
@@ -55,9 +62,13 @@ export default function CompleteModal({
     setBusy(true);
     setErr(null);
     try {
+      const paths: string[] = [];
+      for (const f of files) paths.push(await s.writes.uploadEvidence(x.id, f));
       await s.writes.completeTraining(
         x.id,
         attendees.map((a) => ({ employeeId: a.id, status: marks[a.id] })),
+        mom.trim() || null,
+        paths,
       );
       await s.refresh();
       onClose();
@@ -125,6 +136,39 @@ export default function CompleteModal({
             </div>
           ))}
           {attendees.length === 0 && <p className="p-3 text-[13px] text-grey-2">No attendees on this training.</p>}
+        </div>
+        <FieldLabel label="MOM — minutes of the meeting (optional)">
+          <TextArea rows={4} value={mom} onChange={(e) => setMom(e.target.value)} placeholder="Key points discussed, decisions, action items…" />
+        </FieldLabel>
+        <div className="flex flex-wrap items-center gap-2">
+          <Button size="sm" variant="ghost" disabled={busy} onClick={() => fileRef.current?.click()}>
+            Attach files (optional)
+          </Button>
+          <input
+            ref={fileRef}
+            type="file"
+            multiple
+            className="hidden"
+            onChange={(e) => {
+              const picked = Array.from(e.target.files ?? []);
+              if (picked.length > 0) setFiles((cur) => [...cur, ...picked]);
+              if (fileRef.current) fileRef.current.value = "";
+            }}
+          />
+          {files.map((f, i) => (
+            <span key={`${f.name}-${i}`} className="inline-flex items-center gap-1.5 rounded-full bg-[#F1F4F9] px-2.5 py-1 text-[12px] text-navy">
+              {f.name}
+              <button
+                type="button"
+                className="text-grey-2 hover:text-ryg-red"
+                title="Remove"
+                disabled={busy}
+                onClick={() => setFiles((cur) => cur.filter((_, j) => j !== i))}
+              >
+                ×
+              </button>
+            </span>
+          ))}
         </div>
         {err && <p className="rounded-lg bg-[#FEF2F2] px-3 py-2 text-[13px] text-[#B42318]">{err}</p>}
       </div>

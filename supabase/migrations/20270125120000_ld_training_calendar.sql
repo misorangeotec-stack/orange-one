@@ -60,7 +60,8 @@ alter table public.fms_ld_sessions
   add column if not exists completed_by          uuid references auth.users on delete set null,
   add column if not exists invite_mail_sent_at   timestamptz,
   add column if not exists cancel_mail_sent_at   timestamptz,
-  add column if not exists ics_sequence          integer not null default 0;
+  add column if not exists ics_sequence          integer not null default 0,
+  add column if not exists mom                   text;
 
 alter table public.fms_ld_sessions drop constraint if exists fms_ld_sessions_category_chk;
 alter table public.fms_ld_sessions add constraint fms_ld_sessions_category_chk
@@ -84,6 +85,8 @@ comment on column public.fms_ld_sessions.trainer_user_id is
   'Internal trainer as an Orange Hub user. They may press Complete on their own training.';
 comment on column public.fms_ld_sessions.invite_mail_sent_at is
   'First time the Teams-style invitation mail was queued for this training. Null = no attendee has had it, so a cancel sends no mail.';
+comment on column public.fms_ld_sessions.mom is
+  'Minutes of the meeting, typed in the Complete pop-up. Optional. Files attached there go to evidence_paths.';
 comment on column public.fms_ld_sessions.ics_sequence is
   'SEQUENCE of the calendar (.ics) invite. Bumped on every update / cancel mail so Outlook replaces the earlier invite instead of adding a second one.';
 
@@ -567,10 +570,15 @@ grant execute on function public.fms_ld_cancel_session(uuid, text) to authentica
 -- 8. Complete + Present/Absent (requirement 5)
 -- p_rows: [{employee_id, status: 'present'|'absent'}] — one per attendee.
 --
+-- p_mom / p_paths: optional minutes of the meeting + files (already uploaded to
+-- the ld bucket under evidence/<session>/), both from the same pop-up.
+--
 -- ⚠ NO 30-DAY HOD TASKS ARE CREATED HERE (D7: optional for calendar
 --   trainings). fms_ld_close_attendance still does that for request-born ones.
 -- ---------------------------------------------------------------------------
-create or replace function public.fms_ld_complete_session(p_session_id uuid, p_rows jsonb)
+drop function if exists public.fms_ld_complete_session(uuid, jsonb);
+create or replace function public.fms_ld_complete_session(
+  p_session_id uuid, p_rows jsonb, p_mom text default null, p_paths text[] default '{}')
 returns jsonb
 language plpgsql
 security definer
@@ -636,7 +644,9 @@ begin
      set outcome = 'conducted', status = 'attendance_closed', trainer_attended = true,
          actual_start = (s.session_date + s.start_time) at time zone 'Asia/Kolkata',
          actual_end   = (s.session_date + s.end_time)   at time zone 'Asia/Kolkata',
-         attendance_closed_at = now(), completed_at = now(), completed_by = v_uid
+         attendance_closed_at = now(), completed_at = now(), completed_by = v_uid,
+         mom = nullif(btrim(coalesce(p_mom, '')), ''),
+         evidence_paths = evidence_paths || coalesce(p_paths, '{}')
    where id = p_session_id;
 
   perform public.fms_ld_announce('session', p_session_id, 'ld_session_completed',
@@ -645,7 +655,7 @@ begin
 
   return jsonb_build_object('present', v_present, 'absent', v_absent);
 end $$;
-grant execute on function public.fms_ld_complete_session(uuid, jsonb) to authenticated;
+grant execute on function public.fms_ld_complete_session(uuid, jsonb, text, text[]) to authenticated;
 
 -- ---------------------------------------------------------------------------
 -- 9. Daily sender — 3 days before (requirement 3)

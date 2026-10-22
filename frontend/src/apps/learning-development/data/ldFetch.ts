@@ -214,6 +214,7 @@ const mapSession = (r: any): TrainingSession => ({
   cancelledBy: r.cancelled_by ?? null,
   completedAt: r.completed_at ?? null,
   completedBy: r.completed_by ?? null,
+  mom: r.mom ?? null,
   inviteMailSentAt: r.invite_mail_sent_at ?? null,
   cancelMailSentAt: r.cancel_mail_sent_at ?? null,
 });

@@ -229,6 +229,8 @@ export interface TrainingSession {
   cancelledBy: string | null;
   completedAt: string | null;
   completedBy: string | null;
+  /** Minutes of the meeting, typed when completing. Files go to evidencePaths. */
+  mom: string | null;
   /** First time the Teams-style invite mail went out. Null = nobody has had it. */
   inviteMailSentAt: string | null;
   cancelMailSentAt: string | null;

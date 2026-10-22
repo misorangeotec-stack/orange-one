@@ -7,6 +7,7 @@ import { CATEGORY_LABEL, CATEGORY_TONE, endsAt, hm, isCancelled, isCompleted, se
 import TrainingFormModal from "./TrainingFormModal";
 import CancelModal from "./CancelModal";
 import CompleteModal from "./CompleteModal";
+import DocField from "../DocField";
 import type { TrainingSession } from "../../types";
 
 const ATT_TONE: Record<string, string> = {
@@ -125,6 +126,26 @@ export default function CalendarTrainingPanel({ session: x }: { session: Trainin
           <b>This training is over.</b> Ending the Teams meeting does not close it here — press{" "}
           <b>Mark attendance &amp; complete</b> and mark each attendee Present or Absent.
         </p>
+      )}
+
+      {/* MOM + files recorded when the training was completed. */}
+      {completed && (x.mom || x.evidencePaths.length > 0) && (
+        <div className="mt-3 space-y-2 rounded-lg bg-[#F7F7FD] px-3 py-2">
+          {x.mom && (
+            <div>
+              <div className="text-[12.5px] font-semibold text-navy">MOM — minutes of the meeting</div>
+              <p className="mt-0.5 whitespace-pre-line text-[13.5px] text-navy">{x.mom}</p>
+            </div>
+          )}
+          {x.evidencePaths.length > 0 && (
+            <div className="flex flex-wrap items-center gap-3">
+              <span className="text-[12.5px] text-grey-2">Files ({x.evidencePaths.length})</span>
+              {x.evidencePaths.map((path) => (
+                <DocField key={path} path={path} disabled onUpload={async () => {}} />
+              ))}
+            </div>
+          )}
+        </div>
       )}
 
       {/* Mail status — so HR can see whether the 3-day invite has gone. */}
