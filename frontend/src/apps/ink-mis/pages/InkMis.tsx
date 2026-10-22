@@ -406,8 +406,10 @@ export default function InkMis() {
   /**
    * Consignment columns, one per entry, mirroring the sheet. Scoped to the book in view.
    *
-   * Split in two: shipments first, then the plant's weekly orders, so the sheet reads
-   * left-to-right as bought-in supply and then made-here supply, with a total after each.
+   * Split in three, in the planner's sheet order, each block followed by its own total:
+   * ETA / at port → "ETA + at port", then the plant's weekly orders → "Plant total", then
+   * ETD → "ETD total". ETD used to ride with the ETA block, so a new ETD column landed before
+   * "ETA + at port" and looked like it was counted there.
    */
   const inScope = useMemo(
     () =>
@@ -419,8 +421,12 @@ export default function InkMis() {
         .sort((a, b) => (a.date || "9999").localeCompare(b.date || "9999")),
     [shipments, companyKey],
   );
-  const shipmentCols = useMemo(() => inScope.filter((s) => s.status !== "PLANT"), [inScope]);
+  const shipmentCols = useMemo(
+    () => inScope.filter((s) => s.status !== "PLANT" && s.status !== "ETD"),
+    [inScope],
+  );
   const plantCols = useMemo(() => inScope.filter((s) => s.status === "PLANT"), [inScope]);
+  const etdCols = useMemo(() => inScope.filter((s) => s.status === "ETD"), [inScope]);
 
   const totals = useMemo(
     () =>
@@ -769,13 +775,14 @@ export default function InkMis() {
     if (cols.isVisible("incoming")) ids.push("incoming");
     if (showPlantCols) ids.push(...plantCols.map((x) => `plant:${x.id}`));
     ids.push("plantTotal");
+    if (showShipmentCols) ids.push(...etdCols.map((x) => `ship:${x.id}`));
     if (cols.isVisible("etdTotal")) ids.push("etdTotal");
     ids.push("total");
     if (cols.isVisible("category")) ids.push("category");
     if (cols.isVisible("source")) ids.push("source");
     if (cols.isVisible("supplier")) ids.push("supplier");
     return ids;
-  }, [leadVisible, showCompanyCols, showShipmentCols, shipmentCols, showPlantCols, plantCols, cols]);
+  }, [leadVisible, showCompanyCols, showShipmentCols, shipmentCols, showPlantCols, plantCols, etdCols, cols]);
 
   /**
    * The table is EXACTLY as wide as its columns, set inline.
@@ -1036,13 +1043,20 @@ export default function InkMis() {
   /* --------------------------------------------------------------------- export */
 
   const exportCsv = () => {
+    const colTitle = (s: (typeof inScope)[number]) =>
+      `${s.status} ${s.reference || "(no ref)"} ${fmtDdMmYy(s.date)}`;
+    const qtyIn = (s: (typeof inScope)[number], itemCode: string) =>
+      s.lines.filter((l) => l.itemCode === itemCode).reduce((t, l) => t + l.qty, 0) || "";
     const head = [
       "No.", "Group", "Item code", "Description", "Remark",
       "3-month avg", "Per day avg", "Lead time", "Safety factor",
       "Days cover", "Days cover with ETA", "Month max level", "Daily max level",
       ...(showCompanyCols ? INK_COMPANIES.map((c) => c.label) : []),
-      "Stock", ...shipmentCols.map((s) => `${s.status} ${s.reference || "(no ref)"} ${fmtDdMmYy(s.date)}`),
-      "ETD", "ETA + at port", "Plant total", "ETD total", "Total", "Category",
+      "Stock",
+      ...shipmentCols.map(colTitle), "ETA + at port",
+      ...plantCols.map(colTitle), "Plant total",
+      ...etdCols.map(colTitle), "ETD total",
+      "Total", "Category",
       "Import/Plant", "To order", "Supplier",
     ];
     const body = rows.map((r) => [
@@ -1051,10 +1065,10 @@ export default function InkMis() {
       r.daysCover ?? "", r.daysCoverWithIncoming ?? "", r.monthMaxLevel, r.dailyMaxLevel,
       ...(showCompanyCols ? INK_COMPANIES.map((c) => r.byCompany[c.key] ?? 0) : []),
       r.stock,
-      ...shipmentCols.map((s) =>
-        s.lines.filter((l) => l.itemCode === r.itemCode).reduce((t, l) => t + l.qty, 0) || "",
-      ),
-      r.etd, r.incoming, r.plant, r.etd, r.total, r.category, sourceLabel(r.source),
+      ...shipmentCols.map((s) => qtyIn(s, r.itemCode)), r.incoming,
+      ...plantCols.map((s) => qtyIn(s, r.itemCode)), r.plant,
+      ...etdCols.map((s) => qtyIn(s, r.itemCode)), r.etd,
+      r.total, r.category, sourceLabel(r.source),
       reorderQty(r),
       r.supplier,
     ]);
@@ -1417,9 +1431,10 @@ export default function InkMis() {
                 </TableHead>
                 <TableHead
                   colSpan={
-                    (showShipmentCols ? shipmentCols.length : 0) +
+                    (showShipmentCols ? shipmentCols.length + etdCols.length : 0) +
                     (cols.isVisible("incoming") ? 1 : 0) +
                     (showPlantCols ? plantCols.length : 0) +
+                    (cols.isVisible("etdTotal") ? 1 : 0) +
                     2
                   }
                 />
@@ -1538,6 +1553,17 @@ export default function InkMis() {
               <ResizableHead id="plantTotal" cols={cols} className="text-right">
                 {colHead("Plant total", "plantTotal")}
               </ResizableHead>
+              {showShipmentCols &&
+                etdCols.map((s) => (
+                  <ResizableHead
+                    key={s.id}
+                    id={`ship:${s.id}`}
+                    cols={cols}
+                    className={`text-right ${s.id === justAdded ? "bg-primary/15 ring-2 ring-primary" : ""}`}
+                  >
+                    {consignmentHeader(s)}
+                  </ResizableHead>
+                ))}
               {cols.isVisible("etdTotal") && (
                 <ResizableHead id="etdTotal" cols={cols} className="text-right">
                   {colHead("ETD total", "etdTotal")}
@@ -1599,6 +1625,12 @@ export default function InkMis() {
                     </TableCell>
                   ))}
                 <TableCell className="text-right tabular-nums">{fmtQty(totals.plant)}</TableCell>
+                {showShipmentCols &&
+                  etdCols.map((s) => (
+                    <TableCell key={s.id} className="text-right tabular-nums">
+                      {fmtQty(s.lines.reduce((t, l) => t + l.qty, 0))}
+                    </TableCell>
+                  ))}
                 {cols.isVisible("etdTotal") && (
                   <TableCell className="text-right tabular-nums">{fmtQty(totals.etd)}</TableCell>
                 )}
@@ -1758,6 +1790,7 @@ export default function InkMis() {
                 )}
                 {showPlantCols && plantCols.map((s) => consignmentCell(s, r))}
                 <TableCell className="text-right tabular-nums">{fmtQty(r.plant)}</TableCell>
+                {showShipmentCols && etdCols.map((s) => consignmentCell(s, r))}
                 {cols.isVisible("etdTotal") && (
                   <TableCell className="text-right tabular-nums">{fmtQty(r.etd)}</TableCell>
                 )}
