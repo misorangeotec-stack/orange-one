@@ -80,8 +80,9 @@ export default function PeerTasks() {
   // to next week became its creator — those rows still exist. Without this guard their own continuation
   // would appear on their Given board as work they had handed out.
   const given = useMemo(
-    // A task waiting for my review sits in Review only; a re-open moves it back here.
-    () => peerTasks.filter((t) => t.createdBy === user.id && t.assignedTo !== user.id && !awaitingPeerReview(t)),
+    // Everything I gave stays here, a completed one showing "In review" until I re-open it
+    // or mark it as completed. The Review tab is the shortcut to just the ones waiting.
+    () => peerTasks.filter((t) => t.createdBy === user.id && t.assignedTo !== user.id),
     [peerTasks, user.id],
   );
   const received = useMemo(() => peerTasks.filter((t) => t.assignedTo === user.id), [peerTasks, user.id]);
@@ -130,9 +131,9 @@ export default function PeerTasks() {
 
   const blurb =
     view === "review"
-      ? "Completed by the other person — open one to mark it as completed, or re-open it for changes."
+      ? "Waiting for you: completed by the other person. Open one to re-open it or mark it as completed."
       : view === "given"
-      ? "One-off tasks you have handed to another HOD or Sub-HOD."
+      ? "Everything you handed to another HOD or Sub-HOD. Once they complete one it shows In review: open it to re-open it or mark it as completed."
       : view === "received"
         ? "One-off tasks another HOD or Sub-HOD has handed you. Scored here, not in your own weekly score."
         : "Every HOD-to-HOD task in the company.";
