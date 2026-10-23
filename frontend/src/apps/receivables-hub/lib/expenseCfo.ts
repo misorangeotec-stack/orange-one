@@ -187,6 +187,26 @@ export function fyMonths(dateTo: string): string[] {
   return out;
 }
 
+/**
+ * The last COMPLETE month on or before `dateTo` (yyyy-mm). The load runs daily, so its own month
+ * is usually part-way through; set beside a full month it would read as a collapse in spend
+ * (Commission and Employee Cost "fell" by crores on 23-Oct for exactly that reason). The report
+ * opens on complete months only; a part month can still be chosen and is then labelled.
+ */
+export function lastFullMonth(dateTo: string): string {
+  const d = new Date(`${dateTo}T00:00:00`);
+  const next = new Date(d); next.setDate(d.getDate() + 1);
+  if (next.getMonth() !== d.getMonth()) return dateTo.slice(0, 7);
+  const prev = new Date(d.getFullYear(), d.getMonth() - 1, 1);
+  return `${prev.getFullYear()}-${String(prev.getMonth() + 1).padStart(2, "0")}`;
+}
+
+/** "OCT-26 is a part month (1-Oct to 23-Oct)" when the range runs past the last complete month. */
+export function partMonthNote(months: readonly string[], dateTo: string): string {
+  const last = months[months.length - 1];
+  return last && last > lastFullMonth(dateTo) ? `${monthLabel(last)} is a part month (1 to ${Number(dateTo.slice(8, 10))} ${MON[Number(dateTo.slice(5, 7)) - 1].charAt(0)}${MON[Number(dateTo.slice(5, 7)) - 1].slice(1).toLowerCase()})` : "";
+}
+
 /** A table column: a month, a quarter total placed after its last month, or the grand total. */
 export type Col = { kind: "month"; key: string; label: string }
   | { kind: "quarter"; q: number; months: string[]; label: string }

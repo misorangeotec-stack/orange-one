@@ -15,12 +15,12 @@ import { cn } from "@hub/lib/utils";
 import { MultiSelectFilter } from "@hub/components/MultiSelectFilter";
 import {
   COMPANIES, DEFAULT_DOWNLOAD, NO_FILTERS, TIE_TOLERANCE, UNIT_LABEL, applyFilters, buildTree, colValue, dmy, fmtAmt, fmtCr, fyMonths, isNarrowed,
-  loadExpenseCfo, monthLabel, pivot, quarterColumns, quarterOf, sum,
+  lastFullMonth, loadExpenseCfo, monthLabel, partMonthNote, pivot, quarterColumns, quarterOf, sum,
   type Col, type DownloadOptions, type ExpLine, type ExpenseCfoData, type Filters, type TreeNode,
 } from "@hub/lib/expenseCfo";
 import {
   DEFAULT_MATERIALITY, auditFlags, bridge, cfoNotes, draftRemark, entityName, flagText, monthVariance,
-  paretoSet, sheetIndex, tbStatus,
+  paretoSet, reviewRating, sheetIndex, tbStatus,
   type Materiality, type Review, type SheetEntry, type VarianceRow,
 } from "@hub/lib/expenseCfoRules";
 import { exportExpenseCfoXlsx } from "@hub/lib/exportExpenseCfo";
@@ -67,7 +67,11 @@ export default function ExpenseCfoReport() {
 
 function Report({ data }: { data: ExpenseCfoData }) {
   const allMonths = useMemo(() => fyMonths(data.meta.dateTo), [data.meta.dateTo]);
-  const [filters, setFilters] = useState<Filters>({ from: allMonths[0], to: allMonths[allMonths.length - 1], ...NO_FILTERS });
+  const lastFull = lastFullMonth(data.meta.dateTo);
+  // Opens on complete months only — see lastFullMonth. Early in April there is none yet.
+  const [filters, setFilters] = useState<Filters>({
+    from: allMonths[0], to: allMonths.filter((m) => m <= lastFull).pop() ?? allMonths[0], ...NO_FILTERS,
+  });
   const [sheet, setSheet] = useState("analytics");
   const [busy, setBusy] = useState(false);
   const [asking, setAsking] = useState(false);
@@ -75,7 +79,8 @@ function Report({ data }: { data: ExpenseCfoData }) {
 
   const months = allMonths.filter((m) => m >= filters.from && m <= filters.to);
   const lines = useMemo(() => applyFilters(data.lines, filters), [data.lines, filters]);
-  const flags = useMemo(() => auditFlags(lines), [lines]);
+  const flags = useMemo(() => auditFlags(lines, months, lastFull), [lines, months.join(), lastFull]); // eslint-disable-line react-hooks/exhaustive-deps
+  const partNote = partMonthNote(months, data.meta.dateTo);
   const index = useMemo(() => sheetIndex(lines, flags), [lines, flags]);
   const tb = useMemo(() => tbStatus(data), [data]);
   const current = index.find((s) => s.id === sheet) ?? index[0];
@@ -108,6 +113,11 @@ function Report({ data }: { data: ExpenseCfoData }) {
           </Button>
         </div>
         <TbBanner tb={tb} onOpen={() => setSheet("tb")} />
+        {partNote && (
+          <div className="mt-2 flex items-center gap-2 rounded-md bg-amber-50 px-3 py-2 text-sm text-amber-900">
+            <AlertTriangle className="h-4 w-4 shrink-0" /> {partNote} — compare it with full months with care. Choose "To" = {monthLabel(lastFull)} for complete months only.
+          </div>
+        )}
       </Card>
 
       <Dialog open={asking} onOpenChange={setAsking}>
@@ -143,7 +153,7 @@ function Report({ data }: { data: ExpenseCfoData }) {
           ))}
         </Card>
         <Card className="min-w-0 p-4">
-          <FilterBar all={data.lines} months={allMonths} filters={filters} setFilters={setFilters} shown={lines} />
+          <FilterBar all={data.lines} months={allMonths} lastFull={lastFull} filters={filters} setFilters={setFilters} shown={lines} />
           <h2 className="mb-1 mt-4 text-lg font-semibold">{current.name}</h2>
           <p className="mb-4 text-sm text-muted-foreground">{current.description}</p>
           {!lines.length ? <p className="text-muted-foreground">No expense lines for this selection.</p> : (
@@ -157,8 +167,8 @@ function Report({ data }: { data: ExpenseCfoData }) {
 
 // ── The filter bar (every sheet) ─────────────────────────────────────────────────────────────
 
-function FilterBar({ all, months, filters, setFilters, shown }: {
-  all: ExpLine[]; months: string[]; filters: Filters; setFilters: (f: (p: Filters) => Filters) => void; shown: ExpLine[];
+function FilterBar({ all, months, lastFull, filters, setFilters, shown }: {
+  all: ExpLine[]; months: string[]; lastFull: string; filters: Filters; setFilters: (f: (p: Filters) => Filters) => void; shown: ExpLine[];
 }) {
   // Each list offers only what the OTHER filters leave, so a choice can never empty the table.
   const optsFor = (field: keyof Filters, pick: (l: ExpLine) => string) => {
@@ -168,8 +178,8 @@ function FilterBar({ all, months, filters, setFilters, shown }: {
   const set = (field: keyof Filters) => (v: string[]) => setFilters((f) => ({ ...f, [field]: v }));
   return (
     <div className="flex flex-wrap items-center gap-2 rounded-md border bg-muted/40 p-2">
-      <MonthSelect label="From" value={filters.from} months={months} onChange={(v) => setFilters((f) => ({ ...f, from: v, to: v > f.to ? v : f.to }))} />
-      <MonthSelect label="To" value={filters.to} months={months} onChange={(v) => setFilters((f) => ({ ...f, to: v, from: v < f.from ? v : f.from }))} />
+      <MonthSelect label="From" value={filters.from} months={months} lastFull={lastFull} onChange={(v) => setFilters((f) => ({ ...f, from: v, to: v > f.to ? v : f.to }))} />
+      <MonthSelect label="To" value={filters.to} months={months} lastFull={lastFull} onChange={(v) => setFilters((f) => ({ ...f, to: v, from: v < f.from ? v : f.from }))} />
       <MultiSelectFilter options={COMPANIES.map((c) => ({ value: c, label: c }))} value={filters.companies} onChange={set("companies")} allLabel="All companies" unit="Company" triggerClassName="h-9 w-[160px]" />
       <MultiSelectFilter options={optsFor("expTypes", (l) => l.expType)} value={filters.expTypes} onChange={set("expTypes")} allLabel="Direct + Indirect" unit="Type" triggerClassName="h-9 w-[150px]" />
       <MultiSelectFilter options={optsFor("mainGroups", (l) => l.mainGroup)} value={filters.mainGroups} onChange={set("mainGroups")} allLabel="All main groups" unit="Group" searchable triggerClassName="h-9 w-[170px]" />
@@ -389,12 +399,12 @@ function Choice({ label, value, options, onChange }: { label: string; value: str
   );
 }
 
-function MonthSelect({ label, value, months, onChange }: { label: string; value: string; months: string[]; onChange: (v: string) => void }) {
+function MonthSelect({ label, value, months, onChange, lastFull }: { label: string; value: string; months: string[]; onChange: (v: string) => void; lastFull?: string }) {
   return (
     <label className="flex items-center gap-1 text-sm text-muted-foreground">
       {label}
       <select className="h-9 rounded-md border bg-background px-2 text-foreground" value={value} onChange={(e) => onChange(e.target.value)}>
-        {months.map((m) => <option key={m} value={m}>{monthLabel(m)}</option>)}
+        {months.map((m) => <option key={m} value={m}>{monthLabel(m)}{lastFull && m > lastFull ? " (part month)" : ""}</option>)}
       </select>
     </label>
   );
@@ -479,7 +489,7 @@ function Analytics({ lines, months, flags, tb }: { lines: ExpLine[]; months: str
   const indirect = total - direct - other;
   const last = months[months.length - 1], prev = months[months.length - 2];
   const lastT = sum(lines.filter((l) => l.month === last)), prevT = prev ? sum(lines.filter((l) => l.month === prev)) : 0;
-  const high = [...flags.values()].filter((r) => r.some((x) => x.includes("Top-5")) || r.length > 1).length;
+  const high = [...flags.values()].filter((r) => reviewRating(r) === "HIGH").length;
   const trend = months.map((m) => ({
     month: monthLabel(m),
     Direct: sum(lines.filter((l) => l.month === m && l.expType === "DIRECT")),

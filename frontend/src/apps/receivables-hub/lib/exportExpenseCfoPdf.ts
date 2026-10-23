@@ -9,7 +9,7 @@ import {
 import { formatDateTime } from "@/shared/lib/time";
 
 import {
-  COMPANIES, TIE_TOLERANCE, UNIT_LABEL, buildTree, colValue, columnsFor, dmy, filterLabel, fmtAmt, fmtCr, fmtUnit, monthLabel,
+  COMPANIES, TIE_TOLERANCE, UNIT_LABEL, buildTree, colValue, columnsFor, dmy, filterLabel, fmtAmt, fmtCr, fmtUnit, monthLabel, partMonthNote,
   pivot, quarterColumns, sum,
   type Col, type ExpLine, type TieRow, type TreeNode,
 } from "./expenseCfo";
@@ -132,7 +132,8 @@ export async function exportExpenseCfoPdf(ctx: ExportCtx): Promise<void> {
   const period = `${monthLabel(months[0])} to ${monthLabel(months[months.length - 1])}`;
   const note = tb.tied ? `Tied to Tally TB as at ${dmy(tb.asOf)}` : "DRAFT - NOT TIED TO TB";
   const u = ctx.opts.unit;
-  const footNote = `${period} · ${UNIT_LABEL[u]} · load #${ctx.data.meta.loadId} · ${note}`;
+  const part = partMonthNote(months, ctx.data.meta.dateTo);
+  const footNote = `${period} · ${UNIT_LABEL[u]} · load #${ctx.data.meta.loadId} · ${note}${part ? ` · ${part}` : ""}`;
   const links: DeferredLink[] = [];
   const pageOf = new Map<string, number>();
   const W = () => contentW(pdf);
@@ -206,7 +207,7 @@ export async function exportExpenseCfoPdf(ctx: ExportCtx): Promise<void> {
   text(pdf, "Expense Analysis (CFO)", MARGIN, y, { size: 18, bold: true });
   y += 10;
   y = metaStrip(pdf, MARGIN, y, W(), [
-    { label: "Period", value: period },
+    { label: "Period", value: period, ...(part ? { note: part } : {}) },
     { label: "Covers", value: filterLabel(ctx.filters) },
     { label: "Data", value: `Load #${ctx.data.meta.loadId}`, note: `built ${formatDateTime(ctx.data.meta.finishedAt)}` },
     { label: "Trial Balance", value: tb.tied ? "Tied" : "NOT TIED", note: tb.tied ? `as at ${dmy(tb.asOf)}` : `${tb.gaps.length} gap line(s) - see TB Reconciliation` },

@@ -19,29 +19,68 @@ import {
 
 const gkey = (t: ExpType, mg: string) => `${t}|${mg}`;
 
-/** (exp type, main group) → the AUDIT FLAG reasons, exactly as the Excel words them. */
-export function auditFlags(lines: readonly ExpLine[]): Map<string, string[]> {
+/** A rise this large, quarter on quarter, is a HIGH review on its own (user, 23-Oct-2026). */
+export const SHARP_RISE = { factor: 2, amount: 25_00_000 };
+/** A group below ₹10 L in the period is too small for a concentration flag to be worth a director's time. */
+export const CONCENTRATION_MIN = 10_00_000;
+
+/**
+ * (exp type, main group) → the AUDIT FLAG reasons.
+ *
+ * Three rules are the Excel's, worded the same. Three corrections were made for the CFO / Board
+ * presentation (23-Oct-2026):
+ *  - Other (inventory valuation, exchange) never takes a Top-5 place: it is not a cost decision,
+ *    and it pushed a real cost out of the five.
+ *  - "Sharp rise": the Excel only looked at SIZE, so Advertising — 7x up from Q1 to Q2 — rated LOW.
+ *    A group whose last complete quarter is ≥ 2x the one before and ≥ ₹25 L higher is flagged.
+ *  - Concentration is measured against the group's GROSS spend. Against the NET total, a group
+ *    whose credits offset its debits read "315% concentrated", which means nothing.
+ * `months` is the selected range; `lastFull` the last COMPLETE month — a part month never counts
+ * as a quarter.
+ */
+export function auditFlags(lines: readonly ExpLine[], months: readonly string[] = [], lastFull = "9999-12"): Map<string, string[]> {
   const mgTotal = new Map<string, number>();
   const vendor = new Map<string, Map<string, number>>();
+  const byQuarter = new Map<string, Map<string, number>>();   // group -> "yyyy-Qn" -> amount
+  const qKey = (m: string) => `${Number(m.slice(5, 7)) >= 4 ? m.slice(0, 4) : Number(m.slice(0, 4)) - 1}-Q${Math.floor(((Number(m.slice(5, 7)) + 8) % 12) / 3) + 1}`;
   for (const l of lines) {
     const k = gkey(l.expType, l.mainGroup);
     mgTotal.set(k, (mgTotal.get(k) ?? 0) + l.amount);
     if (!vendor.has(k)) vendor.set(k, new Map());
     const v = vendor.get(k)!;
     v.set(l.party, (v.get(l.party) ?? 0) + l.amount);
+    if (!byQuarter.has(k)) byQuarter.set(k, new Map());
+    const q = byQuarter.get(k)!;
+    q.set(qKey(l.month), (q.get(qKey(l.month)) ?? 0) + l.amount);
   }
-  const grandAbs = [...mgTotal.values()].reduce((s, v) => s + Math.abs(v), 0);
-  const top5 = new Set([...mgTotal.entries()].sort((a, b) => Math.abs(b[1]) - Math.abs(a[1])).slice(0, 5).map((e) => e[0]));
+  const ranked = [...mgTotal.entries()].filter(([k]) => !k.startsWith("OTHER|"));
+  const grandAbs = ranked.reduce((s, [, v]) => s + Math.abs(v), 0);
+  const top5 = new Set(ranked.sort((a, b) => Math.abs(b[1]) - Math.abs(a[1])).slice(0, 5).map((e) => e[0]));
+
+  // Complete quarters inside the selected range: all three months chosen and finished.
+  const counts = new Map<string, number>();
+  for (const m of months) if (m <= lastFull) counts.set(qKey(m), (counts.get(qKey(m)) ?? 0) + 1);
+  const full = [...counts.entries()].filter(([, n]) => n === 3).map(([q]) => q).sort();
+  const [qPrev, qCur] = full.slice(-2);
 
   const out = new Map<string, string[]>();
   for (const [k, total] of mgTotal) {
     const reasons: string[] = [];
-    if (top5.has(k) && grandAbs) reasons.push(`Top-5 cost driver - ${Math.round(Math.abs(total) / grandAbs * 100)}% of total spend`);
+    if (top5.has(k) && grandAbs) reasons.push(`Top-5 cost driver - ${Math.round(Math.abs(total) / grandAbs * 100)}% of spend excl. valuation & exchange`);
+    if (qPrev && qCur && !k.startsWith("OTHER|")) {
+      const p = byQuarter.get(k)?.get(qPrev) ?? 0, c = byQuarter.get(k)?.get(qCur) ?? 0;
+      if (c - p >= SHARP_RISE.amount && (p <= 0 || c >= SHARP_RISE.factor * p)) {
+        reasons.push(`Sharp rise - ${qCur.slice(5)} ${fmtCr(c)} vs ${qPrev.slice(5)} ${fmtCr(p)}${p > 0 ? ` (+${Math.round(((c - p) / p) * 100)}%)` : ""}`);
+      }
+    }
     const vs = [...(vendor.get(k)?.entries() ?? [])];
-    if (vs.length && total) {
-      const [name, amt] = vs.reduce((a, b) => (total < 0 ? (b[1] < a[1] ? b : a) : (b[1] > a[1] ? b : a)));
-      const share = Math.abs(amt) / Math.abs(total) * 100;
-      if (share > 70) reasons.push(`${Math.round(share)}% concentrated in one ledger (${name})`);
+    const gross = vs.reduce((s, [, a]) => s + Math.abs(a), 0);
+    // Only groups that matter: on 23-Oct a ₹6,000 group "100% concentrated" in its one supplier
+    // stood beside the crore-sized ones and 17 groups carried the flag.
+    if (vs.length && gross >= CONCENTRATION_MIN) {
+      const [name, amt] = vs.reduce((a, b) => (Math.abs(b[1]) > Math.abs(a[1]) ? b : a));
+      const share = Math.abs(amt) / gross * 100;
+      if (share > 70) reasons.push(`${Math.round(share)}% concentrated in one party (${name})`);
     }
     const mg = k.split("|")[1];
     if (mg === "Direct Expenses" || mg === "Indirect Expenses") reasons.push("Catch-all bucket name - review the underlying postings");
@@ -57,7 +96,7 @@ export type Review = "HIGH" | "MEDIUM" | "LOW";
 
 export function reviewRating(reasons: readonly string[]): Review {
   if (!reasons.length) return "LOW";
-  return reasons.some((r) => r.includes("Top-5 cost driver")) || reasons.length > 1 ? "HIGH" : "MEDIUM";
+  return reasons.some((r) => r.includes("Top-5 cost driver") || r.includes("Sharp rise")) || reasons.length > 1 ? "HIGH" : "MEDIUM";
 }
 
 export interface SheetEntry { id: string; name: string; description: string; review: Review; mainGroup?: string }
@@ -319,7 +358,7 @@ export function cfoNotes(lines: readonly ExpLine[], months: string[], tb: TbStat
     if (down) notes.push(`Largest decrease: ${down.mainGroup} ${fmtCr(down.change)} (${down.nature || "—"}${down.drivers[0] ? `, led by ${down.drivers[0].label}` : ""}).`);
   }
   const conc = [...flags.values()].flat().filter((r) => r.includes("concentrated")).length;
-  if (conc) notes.push(`${conc} main group${conc > 1 ? "s are" : " is"} more than 70% dependent on a single ledger - see AUDIT FLAG.`);
+  if (conc) notes.push(`${conc} main group${conc > 1 ? "s are" : " is"} more than 70% dependent on a single party - see AUDIT FLAG.`);
   notes.push(tb.tied
     ? `Ties to Tally's Trial Balance for all companies (as at ${tb.asOf}).`
     : `NOT tied to Tally's Trial Balance: ${tb.gaps.length} line(s) differ - see TB Reconciliation before relying on these figures.`);

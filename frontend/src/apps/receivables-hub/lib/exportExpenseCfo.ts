@@ -1,7 +1,7 @@
 import * as XLSX from "xlsx-js-style";
 
 import {
-  UNIT_LABEL, buildTree, colValue, columnsFor, dmy, filterLabel, inUnit, monthLabel, quarterColumns, quarterOf, sum,
+  UNIT_LABEL, buildTree, colValue, columnsFor, dmy, filterLabel, inUnit, monthLabel, partMonthNote, quarterColumns, quarterOf, sum,
   type Col, type DownloadOptions, type ExpLine, type ExpenseCfoData, type Filters, type TreeNode,
 } from "./expenseCfo";
 import {
@@ -117,6 +117,8 @@ function header(sh: Sheet, ctx: ExportCtx, title: string, index: string | null, 
   const r = sh.add([title], S.title);
   if (index) { sh.rows[r][6] = "<< Back to Index"; sh.link(r, 6, index); }
   if (!ctx.tb.tied) sh.add(["DRAFT – NOT TIED TO TB. See TB Reconciliation before relying on these figures."], S.draft);
+  const part = partMonthNote(ctx.months, ctx.data.meta.dateTo);
+  if (part) sh.add([`${part} - compare it with full months with care.`], S.draft);
   sh.add([`Period ${monthLabel(ctx.months[0])} to ${monthLabel(ctx.months[ctx.months.length - 1])} · ` +
     `${filterLabel(ctx.filters)} · load #${ctx.data.meta.loadId}${unit ? ` · amounts ${UNIT_LABEL[ctx.opts.unit]}` : ""}`], S.italic);
   sh.add([]);
