@@ -42,8 +42,8 @@ import { Link } from "react-router-dom";
 import { appBasePath } from "../../appInfo";
 import { useQuery } from "@tanstack/react-query";
 import {
-  AlertTriangle, Download, ListChecks, Pencil, Plus, RefreshCw, RotateCcw, Search, Ship, Trash2, Wand2,
-  Warehouse,
+  AlertTriangle, Archive, CircleCheck, Clock, Download, ListChecks, Pencil, Plus, RefreshCw, RotateCcw,
+  Search, Ship, ShoppingCart, Trash2, Wand2, Warehouse,
 } from "lucide-react";
 import { Button } from "@hub/components/ui/button";
 import { Input } from "@hub/components/ui/input";
@@ -51,7 +51,10 @@ import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from "@hub/components/ui/table";
 import { ScrollableTable } from "@/core/shared/components/ScrollableTable";
-import ReorderChart, { reorderQty } from "../components/ReorderChart";
+import { reorderQty } from "../components/ReorderChart";
+import PlaceOrderPanel, { type PlacedOrder } from "../components/PlaceOrderPanel";
+import RaiseSlider from "../components/RaiseSlider";
+import { readHandoff } from "../lib/orderHandoff";
 import MultiSelect from "@/shared/components/ui/MultiSelect";
 import HeaderFilter, { ColumnHead, isFilterActive, type ColumnFilter } from "../components/HeaderFilter";
 import {
@@ -212,7 +215,7 @@ export default function InkMis() {
   useEffect(() => saveThresholds(thresholds), [thresholds]);
   useEffect(() => saveHolidays(holidays), [holidays]);
 
-  const { data, isLoading, error, refetch, isFetching } = useQuery({
+  const { data, isLoading, error, refetch, isFetching, dataUpdatedAt } = useQuery({
     queryKey: ["inkMis", "positions", fy, overrides, scope, order, lineFields, groupFields, godownChoice],
     queryFn: () =>
       loadInkPositions(
@@ -236,7 +239,6 @@ export default function InkMis() {
     () => allPositions.filter((p) => (order[p.key] ?? order[p.legacyKey]) !== undefined),
     [allPositions, order],
   );
-  const needsCode = useMemo(() => positions.filter((p) => !p.coded).length, [positions]);
 
   /** The Lines picker: every numbered line, in sheet order; ticked = shown. */
   const hiddenSet = useMemo(() => new Set(hiddenLines), [hiddenLines]);
@@ -398,16 +400,34 @@ export default function InkMis() {
    * With no sort chosen the rows keep the numbering the item master gave them, which is the
    * order the sheet is read in. One click on the No. heading always returns to it.
    */
-  const rows: InkRow[] = useMemo(
+  const filteredRows: InkRow[] = useMemo(
     () => applySort(rowsPassing(searchedRows, colFilters, cellValue), sort, cellValue),
     [searchedRows, colFilters, sort, cellValue],
   );
 
   /**
+   * The status cards above the table. Clicking one shows only the inks in that colour band (the
+   * Total column's colour); clicking it again shows them all. The cards count AFTER the other
+   * filters and the search, so "18 to order now" is always what clicking will show.
+   */
+  const [bandPick, setBandPick] = useState<InkBand | null>(null);
+  const bandCounts = useMemo(() => {
+    const c: Record<InkBand, number> = { low: 0, mid: 0, normal: 0, excess: 0, none: 0 };
+    for (const r of filteredRows) c[r.band] += 1;
+    return c;
+  }, [filteredRows]);
+  const rows: InkRow[] = useMemo(
+    () => (bandPick ? filteredRows.filter((r) => r.band === bandPick) : filteredRows),
+    [filteredRows, bandPick],
+  );
+
+  /**
    * Consignment columns, one per entry, mirroring the sheet. Scoped to the book in view.
    *
-   * Split in two: shipments first, then the plant's weekly orders, so the sheet reads
-   * left-to-right as bought-in supply and then made-here supply, with a total after each.
+   * Split in three, in the planner's sheet order, each block followed by its own total:
+   * ETA / at port → "ETA + at port", then the plant's weekly orders → "Plant total", then
+   * ETD → "ETD total". ETD used to ride with the ETA block, so a new ETD column landed before
+   * "ETA + at port" and looked like it was counted there.
    */
   const inScope = useMemo(
     () =>
@@ -419,8 +439,16 @@ export default function InkMis() {
         .sort((a, b) => (a.date || "9999").localeCompare(b.date || "9999")),
     [shipments, companyKey],
   );
-  const shipmentCols = useMemo(() => inScope.filter((s) => s.status !== "PLANT"), [inScope]);
+  const shipmentCols = useMemo(
+    () => inScope.filter((s) => s.status === "ETA" || s.status === "AT PORT"),
+    [inScope],
+  );
   const plantCols = useMemo(() => inScope.filter((s) => s.status === "PLANT"), [inScope]);
+  // NEW ORDER (from Place order) is an ETD that is not yet confirmed: same block, same total.
+  const etdCols = useMemo(
+    () => inScope.filter((s) => s.status === "ETD" || s.status === "NEW ORDER"),
+    [inScope],
+  );
 
   const totals = useMemo(
     () =>
@@ -697,8 +725,9 @@ export default function InkMis() {
   const showPlantCols = cols.isVisible("plant");
 
   /**
-   * The planning block, left of the stock columns. Item code is not hideable: without it a row
-   * cannot be identified. Stock and Total are not hideable either — they are the answer.
+   * The planning block, left of the stock columns. Every one of them is in the Columns picker,
+   * Item code included (the planner asked to be able to hide it, 2026-10-23 — Description still
+   * identifies the row). Stock and Total are not hideable — they are the answer.
    */
   /**
    * FROZEN LEAD COLUMNS.
@@ -743,7 +772,7 @@ export default function InkMis() {
     // rather than infer it from the position.
     { id: "no", label: "No." },
     { id: "group", label: "Group" },
-    { id: "code", label: "Item code", locked: true },
+    { id: "code", label: "Item code" },
     { id: "description", label: "Description" },
     { id: "remark", label: "Remark" },
     { id: "m3", label: "3-month avg" },
@@ -755,7 +784,7 @@ export default function InkMis() {
     { id: "monthMax", label: "Month max" },
     { id: "dailyMax", label: "Daily max" },
   ];
-  const leadVisible = LEAD_COLS.filter((c) => c.locked || cols.isVisible(c.id));
+  const leadVisible = LEAD_COLS.filter((c) => cols.isVisible(c.id));
 
   /**
    * The columns actually rendered, in order. Mirrors the heading row exactly — if one changes,
@@ -769,13 +798,14 @@ export default function InkMis() {
     if (cols.isVisible("incoming")) ids.push("incoming");
     if (showPlantCols) ids.push(...plantCols.map((x) => `plant:${x.id}`));
     ids.push("plantTotal");
+    if (showShipmentCols) ids.push(...etdCols.map((x) => `ship:${x.id}`));
     if (cols.isVisible("etdTotal")) ids.push("etdTotal");
     ids.push("total");
     if (cols.isVisible("category")) ids.push("category");
     if (cols.isVisible("source")) ids.push("source");
     if (cols.isVisible("supplier")) ids.push("supplier");
     return ids;
-  }, [leadVisible, showCompanyCols, showShipmentCols, shipmentCols, showPlantCols, plantCols, cols]);
+  }, [leadVisible, showCompanyCols, showShipmentCols, shipmentCols, showPlantCols, plantCols, etdCols, cols]);
 
   /**
    * The table is EXACTLY as wide as its columns, set inline.
@@ -852,8 +882,10 @@ export default function InkMis() {
     };
   };
   const on = (id: string) => leadVisible.some((c) => c.id === id);
+  /** The first frozen heading on screen carries the heading-height grab strip. */
+  const handleOn = PINNED.find((id) => on(id));
   const columnOptions = [
-    ...LEAD_COLS.filter((c) => !c.locked).map((c) => ({ value: c.id, label: c.label })),
+    ...LEAD_COLS.map((c) => ({ value: c.id, label: c.label })),
     { value: "companies", label: "Stock by company" },
     { value: "shipments", label: "Consignment columns" },
     { value: "plant", label: "Plant weekly columns" },
@@ -895,6 +927,39 @@ export default function InkMis() {
     };
     setShipments((prev) => [...prev, column]);
     setJustAdded(column.id);
+  };
+
+  /**
+   * Place order → one NEW ORDER column in the ETD block, landing in the book the order is for.
+   * The panel opens fresh each time (keyed by `placeSeq`) so it always starts from the inks the
+   * card is showing now.
+   */
+  const [placeSeq, setPlaceSeq] = useState(0);
+  const [placeOpen, setPlaceOpen] = useState(false);
+  const placeOrder = (o: PlacedOrder) => {
+    const today = new Date().toISOString().slice(0, 10);
+    const column: Shipment = {
+      ...emptyShipment(),
+      status: "NEW ORDER",
+      reference: "New Order",
+      date: today,
+      company: o.companyKey,
+      note: "Placed from the dashboard",
+      lines: o.lines.map((l) => ({ id: newId(), itemCode: l.itemCode, qty: l.qty })),
+      handoffs: o.handoffs,
+    };
+    setShipments((prev) => [...prev, column]);
+  };
+
+  /**
+   * A NEW ORDER column's unraised Purchase requests, reopened from its heading. `raiseTick`
+   * re-reads the hand-offs after a request is raised (they shrink, or go once all are raised).
+   */
+  const [raiseFrom, setRaiseFrom] = useState<{ target: "import" | "domestic"; id: string } | null>(null);
+  const [raiseTick, setRaiseTick] = useState(0);
+  const pendingHandoffs = (s: Shipment) => {
+    void raiseTick;
+    return (s.handoffs ?? []).filter((h) => (readHandoff(h.id)?.lines.length ?? 0) > 0);
   };
 
   const patchColumn = (id: string, patch: Partial<Shipment>) =>
@@ -1008,6 +1073,18 @@ export default function InkMis() {
         <div className="whitespace-nowrap text-[10px] font-normal text-muted-foreground">
           {s.date ? fmtDdMmYy(s.date) : "no date"}
         </div>
+        {s.status === "NEW ORDER" &&
+          pendingHandoffs(s).map((h) => (
+            <button
+              key={h.id}
+              type="button"
+              onClick={() => setRaiseFrom(h)}
+              className="block whitespace-nowrap text-[10px] font-semibold text-primary underline"
+              title="This order's Purchase request is not raised yet — open it"
+            >
+              Raise {h.target === "import" ? "Import" : "Domestic"}
+            </button>
+          ))}
       </>
     );
 
@@ -1036,13 +1113,20 @@ export default function InkMis() {
   /* --------------------------------------------------------------------- export */
 
   const exportCsv = () => {
+    const colTitle = (s: (typeof inScope)[number]) =>
+      `${s.status} ${s.reference || "(no ref)"} ${fmtDdMmYy(s.date)}`;
+    const qtyIn = (s: (typeof inScope)[number], itemCode: string) =>
+      s.lines.filter((l) => l.itemCode === itemCode).reduce((t, l) => t + l.qty, 0) || "";
     const head = [
       "No.", "Group", "Item code", "Description", "Remark",
       "3-month avg", "Per day avg", "Lead time", "Safety factor",
       "Days cover", "Days cover with ETA", "Month max level", "Daily max level",
       ...(showCompanyCols ? INK_COMPANIES.map((c) => c.label) : []),
-      "Stock", ...shipmentCols.map((s) => `${s.status} ${s.reference || "(no ref)"} ${fmtDdMmYy(s.date)}`),
-      "ETD", "ETA + at port", "Plant total", "ETD total", "Total", "Category",
+      "Stock",
+      ...shipmentCols.map(colTitle), "ETA + at port",
+      ...plantCols.map(colTitle), "Plant total",
+      ...etdCols.map(colTitle), "ETD total",
+      "Total", "Category",
       "Import/Plant", "To order", "Supplier",
     ];
     const body = rows.map((r) => [
@@ -1051,10 +1135,10 @@ export default function InkMis() {
       r.daysCover ?? "", r.daysCoverWithIncoming ?? "", r.monthMaxLevel, r.dailyMaxLevel,
       ...(showCompanyCols ? INK_COMPANIES.map((c) => r.byCompany[c.key] ?? 0) : []),
       r.stock,
-      ...shipmentCols.map((s) =>
-        s.lines.filter((l) => l.itemCode === r.itemCode).reduce((t, l) => t + l.qty, 0) || "",
-      ),
-      r.etd, r.incoming, r.plant, r.etd, r.total, r.category, sourceLabel(r.source),
+      ...shipmentCols.map((s) => qtyIn(s, r.itemCode)), r.incoming,
+      ...plantCols.map((s) => qtyIn(s, r.itemCode)), r.plant,
+      ...etdCols.map((s) => qtyIn(s, r.itemCode)), r.etd,
+      r.total, r.category, sourceLabel(r.source),
       reorderQty(r),
       r.supplier,
     ]);
@@ -1098,6 +1182,16 @@ export default function InkMis() {
           ))}
         </div>
         <div className="ml-auto flex flex-wrap items-center gap-1.5 pb-1">
+          {/* Same wording as the other dashboards: when the stock on screen was last read. */}
+          <span className="whitespace-nowrap text-[11px] text-muted-foreground" title="When the stock on this sheet was last read from Tally (ConnectWave)">
+            {isFetching
+              ? "Refreshing…"
+              : `Last refreshed: ${
+                  dataUpdatedAt
+                    ? new Date(dataUpdatedAt).toLocaleString("en-IN", { dateStyle: "medium", timeStyle: "short" })
+                    : "never"
+                }`}
+          </span>
           <Button variant="outline" size="sm" className={BAR_BTN} onClick={() => void refetch()} disabled={isFetching}>
             <RefreshCw className={`${BAR_ICON} ${isFetching ? "animate-spin" : ""}`} /> Refresh
           </Button>
@@ -1159,9 +1253,10 @@ export default function InkMis() {
           onClick={() => {
             clearFilters();
             setSearch("");
+            setBandPick(null);
           }}
-          disabled={!filtersOn && !search.trim()}
-          title="Clear every filter and the search box"
+          disabled={!filtersOn && !search.trim() && !bandPick}
+          title="Clear every filter, the search box and the status card"
         >
           <RotateCcw className={BAR_ICON} /> Reset filters
         </Button>
@@ -1338,25 +1433,100 @@ export default function InkMis() {
         </div>
       )}
 
-      {needsCode > 0 && (
-        <div className="flex flex-wrap items-center gap-2 rounded-md border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900">
-          <AlertTriangle className="h-4 w-4 shrink-0" />
-          <span>
-            <strong>{needsCode}</strong> line{needsCode === 1 ? "" : "s"} have no item code, so
-            the same ink in two books is still showing as two lines.
-          </span>
-          <Button size="sm" variant="outline" asChild className="ml-auto">
-            <Link to={`${BASE}/items`}>
-              <ListChecks className="mr-2 h-4 w-4" /> Fill codes in the item master
-            </Link>
+      {/* STATUS CARDS replace the two bar charts (user, 2026-10-22: the charts took too much
+          space). Each card is a colour band of the Total column; click to show only those inks. */}
+      <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+        {(
+          [
+            {
+              band: "low", title: "Order now", Icon: AlertTriangle,
+              note: `Below ${thresholds.low}% of month max. Place orders immediately.`,
+              edge: "border-l-red-500", head: "text-red-700", icon: "bg-red-500",
+            },
+            {
+              band: "mid", title: "Order soon", Icon: Clock,
+              note: `${thresholds.low}–${thresholds.mid}% of month max. Plan orders soon.`,
+              edge: "border-l-amber-500", head: "text-amber-700", icon: "bg-amber-500",
+            },
+            {
+              band: "normal", title: "Coverage OK", Icon: CircleCheck,
+              note: `${thresholds.mid}–${thresholds.excess}% of month max. Sufficient stock.`,
+              edge: "border-l-emerald-600", head: "text-emerald-700", icon: "bg-emerald-600",
+            },
+            {
+              band: "excess", title: "Excess stock", Icon: Archive,
+              note: `${thresholds.excess}% of month max or more. Hold orders.`,
+              edge: "border-l-fuchsia-600", head: "text-fuchsia-700", icon: "bg-fuchsia-600",
+            },
+          ] as const
+        ).map(({ band, title, Icon, note, edge, head, icon }) => {
+          const picked = bandPick === band;
+          return (
+            <button
+              key={band}
+              type="button"
+              onClick={() => setBandPick(picked ? null : band)}
+              aria-pressed={picked}
+              title={picked ? "Show all inks again" : `Show only the ${title.toLowerCase()} inks`}
+              className={`flex items-start gap-3 rounded-md border border-l-4 bg-card p-3 text-left transition hover:shadow-md ${edge} ${
+                picked ? "shadow-md ring-2 ring-primary" : bandPick ? "opacity-60" : ""
+              }`}
+            >
+              <span className={`mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-white ${icon}`}>
+                <Icon className="h-4 w-4" />
+              </span>
+              <span className="min-w-0">
+                <span className={`block text-xs font-semibold uppercase tracking-wide ${head}`}>{title}</span>
+                <span className="block">
+                  <strong className="text-2xl tabular-nums">{bandCounts[band]}</strong>{" "}
+                  <span className="text-sm text-muted-foreground">items</span>
+                </span>
+                <span className="block text-xs text-muted-foreground">{note}</span>
+              </span>
+            </button>
+          );
+        })}
+      </div>
+
+      {(bandPick === "low" || bandPick === "mid") && (
+        <div className="-mt-1 flex justify-end">
+          <Button
+            size="sm"
+            className={BAR_BTN}
+            onClick={() => {
+              setPlaceSeq((n) => n + 1);
+              setPlaceOpen(true);
+            }}
+            disabled={rows.length === 0}
+            title="Order these inks: quantities go into a NEW ORDER column, Import/Domestic go on to Purchase"
+          >
+            <ShoppingCart className={BAR_ICON} /> Place order
           </Button>
         </div>
       )}
-
-      {/* Both charts start folded; the header carries the total, so the figure is there
-          without opening anything. */}
-      <ReorderChart rows={rows} by="group" />
-      <ReorderChart rows={rows} by="supplier" />
+      {placeOpen && (
+        <PlaceOrderPanel
+          key={placeSeq}
+          open
+          onClose={() => setPlaceOpen(false)}
+          rows={rows}
+          allRows={searchedRows}
+          companyKey={companyKey}
+          onPlace={placeOrder}
+          onRaised={() => setRaiseTick((n) => n + 1)}
+        />
+      )}
+      {raiseFrom && (
+        <RaiseSlider
+          target={raiseFrom.target}
+          inkId={raiseFrom.id}
+          onClose={() => setRaiseFrom(null)}
+          onSubmitted={() => {
+            setRaiseFrom(null);
+            setRaiseTick((n) => n + 1);
+          }}
+        />
+      )}
 
       {/*
         THE TABLE SCROLLS IN ITS OWN BOX, not with the page.
@@ -1417,9 +1587,10 @@ export default function InkMis() {
                 </TableHead>
                 <TableHead
                   colSpan={
-                    (showShipmentCols ? shipmentCols.length : 0) +
+                    (showShipmentCols ? shipmentCols.length + etdCols.length : 0) +
                     (cols.isVisible("incoming") ? 1 : 0) +
                     (showPlantCols ? plantCols.length : 0) +
+                    (cols.isVisible("etdTotal") ? 1 : 0) +
                     2
                   }
                 />
@@ -1429,22 +1600,25 @@ export default function InkMis() {
               {on("no") && (
                 <ResizableHead {...pinHead("no")} cols={cols} className="text-right">
                   {colHead("No.", "no")}
-                  {headHandle}
+                  {handleOn === "no" && headHandle}
                 </ResizableHead>
               )}
               {on("group") && (
                 <ResizableHead {...pinHead("group")} cols={cols}>
                   {colHead("Group", "group")}
+                  {handleOn === "group" && headHandle}
                 </ResizableHead>
               )}
-              <ResizableHead {...pinHead("code")} cols={cols}>
-                {colHead("Item code", "code")}
-                {/* Second home for the heading's grab strip, for when No. is hidden. */}
-                {!on("no") && headHandle}
-              </ResizableHead>
+              {on("code") && (
+                <ResizableHead {...pinHead("code")} cols={cols}>
+                  {colHead("Item code", "code")}
+                  {handleOn === "code" && headHandle}
+                </ResizableHead>
+              )}
               {on("description") && (
                 <ResizableHead {...pinHead("description")} cols={cols}>
                   {colHead("Description", "description")}
+                  {handleOn === "description" && headHandle}
                 </ResizableHead>
               )}
               {on("remark") && (
@@ -1538,6 +1712,17 @@ export default function InkMis() {
               <ResizableHead id="plantTotal" cols={cols} className="text-right">
                 {colHead("Plant total", "plantTotal")}
               </ResizableHead>
+              {showShipmentCols &&
+                etdCols.map((s) => (
+                  <ResizableHead
+                    key={s.id}
+                    id={`ship:${s.id}`}
+                    cols={cols}
+                    className={`text-right ${s.id === justAdded ? "bg-primary/15 ring-2 ring-primary" : ""}`}
+                  >
+                    {consignmentHeader(s)}
+                  </ResizableHead>
+                ))}
               {cols.isVisible("etdTotal") && (
                 <ResizableHead id="etdTotal" cols={cols} className="text-right">
                   {colHead("ETD total", "etdTotal")}
@@ -1599,6 +1784,12 @@ export default function InkMis() {
                     </TableCell>
                   ))}
                 <TableCell className="text-right tabular-nums">{fmtQty(totals.plant)}</TableCell>
+                {showShipmentCols &&
+                  etdCols.map((s) => (
+                    <TableCell key={s.id} className="text-right tabular-nums">
+                      {fmtQty(s.lines.reduce((t, l) => t + l.qty, 0))}
+                    </TableCell>
+                  ))}
                 {cols.isVisible("etdTotal") && (
                   <TableCell className="text-right tabular-nums">{fmtQty(totals.etd)}</TableCell>
                 )}
@@ -1629,7 +1820,7 @@ export default function InkMis() {
                 <TableCell colSpan={40} className="py-10 text-center text-muted-foreground">
                   {positions.length === 0 ? (
                     "No numbered items yet. Give an item a number in the item master to show it here."
-                  ) : filtersOn || search.trim() ? (
+                  ) : filtersOn || search.trim() || bandPick ? (
                     <span className="inline-flex flex-wrap items-center justify-center gap-2">
                       No ink matches the filters you have set.
                       <Button
@@ -1638,6 +1829,7 @@ export default function InkMis() {
                         onClick={() => {
                           clearFilters();
                           setSearch("");
+                          setBandPick(null);
                         }}
                       >
                         Clear filters
@@ -1662,9 +1854,11 @@ export default function InkMis() {
                 {on("group") && (
                   <TableCell {...pinMerge(pinCell("group"), "text-xs")}>{r.group}</TableCell>
                 )}
-                <TableCell {...pinMerge(pinCell("code"), "font-medium")}>
-                  {r.itemCode}
-                </TableCell>
+                {on("code") && (
+                  <TableCell {...pinMerge(pinCell("code"), "font-medium")}>
+                    {r.itemCode}
+                  </TableCell>
+                )}
                 {on("description") && (
                   <TableCell {...pinCell("description")}>{r.description}</TableCell>
                 )}
@@ -1758,6 +1952,7 @@ export default function InkMis() {
                 )}
                 {showPlantCols && plantCols.map((s) => consignmentCell(s, r))}
                 <TableCell className="text-right tabular-nums">{fmtQty(r.plant)}</TableCell>
+                {showShipmentCols && etdCols.map((s) => consignmentCell(s, r))}
                 {cols.isVisible("etdTotal") && (
                   <TableCell className="text-right tabular-nums">{fmtQty(r.etd)}</TableCell>
                 )}
