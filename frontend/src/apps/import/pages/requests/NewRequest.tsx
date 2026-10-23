@@ -21,11 +21,19 @@ import { keepRemaining, readHandoff } from "../../../ink-mis/lib/orderHandoff";
  * Drafts page). Continue loads one into the form; submitting it raises the
  * request as normal and deletes the draft. The form has no attachments.
  */
-export default function NewRequest() {
+/**
+ * `inkId` / `onSubmitted` are for the Ink IMS "Place order" slide-over, which shows this page in
+ * place: the order arrives as a prop (not `?ink=`), and a raised request reports back instead of
+ * navigating away from the Ink sheet.
+ */
+export default function NewRequest({
+  inkId: inkIdProp,
+  onSubmitted,
+}: { inkId?: string; onSubmitted?: (requestId: string) => void } = {}) {
   const s = useImportStore();
   const navigate = useNavigate();
   const [params] = useSearchParams();
-  const inkId = params.get("ink");
+  const inkId = inkIdProp ?? params.get("ink");
   // Read once: the hand-off is trimmed after submit, and the form must not re-seed mid-edit.
   const [handoff] = useState(() => readHandoff(inkId));
   const form = useRequestForm({ mode: "new", handoff });
@@ -86,6 +94,10 @@ export default function NewRequest() {
       await drafts.finish();
       // Inks this request did not cover stay on the hand-off for the next vendor's request.
       if (form.ink && inkId) keepRemaining(inkId, form.ink.handoff.lines.filter((l) => !form.ink!.onForm(l)));
+      if (onSubmitted) {
+        onSubmitted(id);
+        return;
+      }
       navigate(`/import/requests/${id}`);
     } catch (e) {
       form.setErr((e as Error).message);

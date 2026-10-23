@@ -1,12 +1,13 @@
-import { useMemo, useState } from "react";
-import { ExternalLink, Plus, X } from "lucide-react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { CheckCircle2, ExternalLink, PanelRightOpen, Plus, X } from "lucide-react";
 import Modal from "@/shared/components/ui/Modal";
 import { Button } from "@hub/components/ui/button";
 import { Input } from "@hub/components/ui/input";
-import { INK_COMPANIES, INK_SOURCES, fmtQty, newId, sourceLabel, type InkRow } from "../lib/inkMis";
+import { INK_COMPANIES, INK_SOURCES, fmtDays, fmtQty, newId, sourceLabel, type InkRow } from "../lib/inkMis";
 import {
-  handoffUrl, writeHandoff, type HandoffLine, type HandoffTarget, type OrderHandoff,
+  readHandoff, writeHandoff, type HandoffLine, type HandoffTarget, type OrderHandoff,
 } from "../lib/orderHandoff";
+import RaiseSlider from "./RaiseSlider";
 
 /**
  * PLACE ORDER — from the Order now / Order soon cards straight to a purchase.
@@ -28,9 +29,36 @@ interface OrderLine {
   names: string[];
   supplier: string;
   source: string;
+  /** The decision figures, as the dashboard shows them. */
+  stock: number;
+  total: number;
+  monthAvg: number;
+  leadTime: number;
+  safety: number;
+  /** Stock the lead time calls for: 3-month avg x lead time x safety (the Month max level). */
+  required: number;
+  daysCover: number | null;
   suggested: number;
   qty: string;
 }
+
+/** The panel's columns. Widths are dragged at the heading's right edge and remembered per browser. */
+const COLS: { id: string; label: string; width: number; right?: boolean; title?: string }[] = [
+  { id: "description", label: "Description", width: 220 },
+  { id: "code", label: "Item code", width: 170 },
+  { id: "source", label: "Import / Domestic / Plant", width: 120 },
+  { id: "supplier", label: "Supplier", width: 90 },
+  { id: "stock", label: "Stock", width: 80, right: true, title: "Stock in hand now" },
+  { id: "total", label: "Total", width: 80, right: true, title: "Stock + ETA + at port + plant + ETD: everything already arranged" },
+  { id: "avg", label: "Avg / month", width: 80, right: true, title: "3-month average consumption per month" },
+  { id: "lead", label: "Lead time (months)", width: 75, right: true, title: "Months a replacement takes to arrive" },
+  { id: "required", label: "Required", width: 90, right: true, title: "Stock needed for the lead time: avg / month x lead time x safety factor (the Month max level)" },
+  { id: "days", label: "Days cover", width: 70, right: true, title: "How many working days the stock in hand lasts" },
+  { id: "suggested", label: "Suggested", width: 85, right: true, title: "Required minus Total" },
+  { id: "qty", label: "Qty to order", width: 110, right: true },
+  { id: "remove", label: "", width: 34 },
+];
+const WIDTH_KEY = "ink-mis:order-panel-cols";
 
 export interface PlacedOrder {
   companyKey: string;
@@ -45,6 +73,13 @@ const toLine = (r: InkRow, companyKey: string): OrderLine => {
   const rest = r.sources.filter((s) => s.companyKey !== companyKey).map((s) => s.item);
   const suggested = suggestedQty(r);
   return {
+    stock: r.stock,
+    total: r.total,
+    monthAvg: r.plan.threeMonthAvg,
+    leadTime: r.plan.leadTime,
+    safety: r.plan.safetyFactor,
+    required: r.monthMaxLevel,
+    daysCover: r.daysCover,
     key: r.key,
     itemCode: r.itemCode,
     description: r.description,
@@ -85,6 +120,48 @@ export default function PlaceOrderPanel({
     handoffs: { target: HandoffTarget; id: string; count: number }[];
     plant: number;
   }>(null);
+  /** The purchase raise form slid in over the panel, and the requests raised per hand-off. */
+  const [slider, setSlider] = useState<{ target: HandoffTarget; id: string } | null>(null);
+  const [raised, setRaised] = useState<Record<string, string[]>>({});
+
+  const [widths, setWidths] = useState<Record<string, number>>(() => {
+    try {
+      return JSON.parse(window.localStorage.getItem(WIDTH_KEY) ?? "{}") as Record<string, number>;
+    } catch {
+      return {};
+    }
+  });
+  useEffect(() => {
+    try {
+      window.localStorage.setItem(WIDTH_KEY, JSON.stringify(widths));
+    } catch {
+      /* private mode: widths last this visit */
+    }
+  }, [widths]);
+  const widthOf = (id: string) => widths[id] ?? COLS.find((c) => c.id === id)?.width ?? 80;
+  const drag = useRef<{ id: string; x: number; w: number } | null>(null);
+  const startResize = (id: string) => (e: React.MouseEvent) => {
+    e.preventDefault();
+    drag.current = { id, x: e.clientX, w: widthOf(id) };
+    const move = (ev: MouseEvent) => {
+      const d = drag.current;
+      if (!d) return;
+      setWidths((ws) => ({ ...ws, [d.id]: Math.max(40, d.w + ev.clientX - d.x) }));
+    };
+    const up = () => {
+      drag.current = null;
+      window.removeEventListener("mousemove", move);
+      window.removeEventListener("mouseup", up);
+    };
+    window.addEventListener("mousemove", move);
+    window.addEventListener("mouseup", up);
+  };
+  const resetWidth = (id: string) =>
+    setWidths((ws) => {
+      const rest = { ...ws };
+      delete rest[id];
+      return rest;
+    });
 
   const label = (r: InkRow) => (r.itemCode ? `${r.description} — ${r.itemCode}` : r.description);
   const addable = useMemo(() => {
@@ -195,15 +272,49 @@ export default function PlaceOrderPanel({
                   ? "add the vendor and shipment type, then raise the request."
                   : "check the lines and raise the request; the vendor is chosen at Sourcing."}
               </span>
-              <Button
-                className="ml-auto"
-                onClick={() => window.open(handoffUrl(h.target, h.id), "_blank", "noopener")}
-              >
-                <ExternalLink className="mr-2 h-4 w-4" />
-                {h.target === "import" ? "Raise Import request" : "Raise Domestic request"}
-              </Button>
+              {(() => {
+                const raisedIds = raised[h.id] ?? [];
+                // After a request, the hand-off keeps only the inks it did not cover (gone = all done).
+                const left = raisedIds.length > 0 ? (readHandoff(h.id)?.lines.length ?? 0) : h.count;
+                const kind = h.target === "import" ? "Import" : "Domestic";
+                return (
+                  <span className="ml-auto flex flex-wrap items-center gap-2">
+                    {raisedIds.length > 0 && (
+                      <span className="inline-flex items-center gap-1 text-emerald-700">
+                        <CheckCircle2 className="h-4 w-4" />
+                        {raisedIds.length === 1 ? "Request raised" : `${raisedIds.length} requests raised`}
+                        <a
+                          href={`${h.target === "import" ? "/import" : "/procurement"}/requests/${raisedIds[raisedIds.length - 1]}`}
+                          target="_blank"
+                          rel="noopener"
+                          className="inline-flex items-center gap-0.5 underline"
+                        >
+                          open <ExternalLink className="h-3 w-3" />
+                        </a>
+                      </span>
+                    )}
+                    {left > 0 && (
+                      <Button onClick={() => setSlider({ target: h.target, id: h.id })}>
+                        <PanelRightOpen className="mr-2 h-4 w-4" />
+                        {raisedIds.length > 0 ? `Raise ${kind} request for the ${left} left` : `Raise ${kind} request`}
+                      </Button>
+                    )}
+                  </span>
+                );
+              })()}
             </div>
           ))}
+          {slider && (
+            <RaiseSlider
+              target={slider.target}
+              inkId={slider.id}
+              onClose={() => setSlider(null)}
+              onSubmitted={(requestId) => {
+                setRaised((r) => ({ ...r, [slider.id]: [...(r[slider.id] ?? []), requestId] }));
+                setSlider(null);
+              }}
+            />
+          )}
           {done.plant > 0 && (
             <p className="text-muted-foreground">
               {done.plant} Plant ink{done.plant === 1 ? "" : "s"} saved on this sheet only — no purchase request.
@@ -227,30 +338,52 @@ export default function PlaceOrderPanel({
           </label>
 
           <div className="max-h-[55vh] overflow-auto rounded-md border">
-            <table className="w-full text-[12px]">
-              <thead className="sticky top-0 bg-muted text-left">
+            <table
+              className="table-fixed text-[12px]"
+              style={{ width: COLS.reduce((t, c) => t + widthOf(c.id), 0) }}
+            >
+              <colgroup>
+                {COLS.map((c) => (
+                  <col key={c.id} style={{ width: widthOf(c.id) }} />
+                ))}
+              </colgroup>
+              <thead className="sticky top-0 z-10 bg-muted text-left">
                 <tr>
-                  <th className="px-2 py-1.5">Description</th>
-                  <th className="px-2 py-1.5">Item code</th>
-                  <th className="px-2 py-1.5">Import / Domestic / Plant</th>
-                  <th className="px-2 py-1.5">Supplier</th>
-                  <th className="px-2 py-1.5 text-right">Suggested</th>
-                  <th className="px-2 py-1.5 text-right">Qty to order</th>
-                  <th className="w-8" />
+                  {COLS.map((c) => (
+                    <th
+                      key={c.id}
+                      title={c.title}
+                      className={`relative px-2 py-1.5 align-bottom leading-tight ${c.right ? "text-right" : ""}`}
+                    >
+                      {c.label}
+                      {c.id !== "remove" && (
+                        <span
+                          role="separator"
+                          aria-label={`Resize ${c.label}`}
+                          title="Drag to resize, double-click to reset"
+                          onMouseDown={startResize(c.id)}
+                          onDoubleClick={() => resetWidth(c.id)}
+                          className="absolute right-0 top-0 h-full w-1.5 cursor-col-resize hover:bg-primary/40"
+                        />
+                      )}
+                    </th>
+                  ))}
                 </tr>
               </thead>
               <tbody>
                 {lines.length === 0 && (
                   <tr>
-                    <td colSpan={7} className="px-2 py-6 text-center text-muted-foreground">
+                    <td colSpan={COLS.length} className="px-2 py-6 text-center text-muted-foreground">
                       No inks yet — add one below.
                     </td>
                   </tr>
                 )}
                 {lines.map((l) => (
                   <tr key={l.key} className="border-t">
-                    <td className="px-2 py-1">{l.description}</td>
-                    <td className={`px-2 py-1 ${l.itemCode ? "" : "text-red-700"}`}>{l.itemCode || "no code"}</td>
+                    <td className="truncate px-2 py-1" title={l.description}>{l.description}</td>
+                    <td className={`truncate px-2 py-1 ${l.itemCode ? "" : "text-red-700"}`} title={l.itemCode}>
+                      {l.itemCode || "no code"}
+                    </td>
                     <td className="px-2 py-1">
                       <select
                         className={`h-7 rounded border bg-background px-1 ${l.source ? "" : "border-red-400"}`}
@@ -264,7 +397,18 @@ export default function PlaceOrderPanel({
                         ))}
                       </select>
                     </td>
-                    <td className="px-2 py-1">{l.supplier}</td>
+                    <td className="truncate px-2 py-1" title={l.supplier}>{l.supplier}</td>
+                    <td className="px-2 py-1 text-right tabular-nums">{fmtQty(l.stock)}</td>
+                    <td className="px-2 py-1 text-right tabular-nums">{fmtQty(l.total)}</td>
+                    <td className="px-2 py-1 text-right tabular-nums">{l.monthAvg ? fmtQty(l.monthAvg) : "–"}</td>
+                    <td className="px-2 py-1 text-right tabular-nums">{l.leadTime || "–"}</td>
+                    <td
+                      className="px-2 py-1 text-right font-semibold tabular-nums"
+                      title={`${fmtQty(l.monthAvg)} × ${l.leadTime} months × safety ${l.safety}`}
+                    >
+                      {l.required ? fmtQty(l.required) : "–"}
+                    </td>
+                    <td className="px-2 py-1 text-right tabular-nums">{fmtDays(l.daysCover)}</td>
                     <td className="px-2 py-1 text-right tabular-nums text-muted-foreground">
                       {l.suggested ? fmtQty(l.suggested) : "–"}
                     </td>
@@ -311,8 +455,9 @@ export default function PlaceOrderPanel({
             </datalist>
           </div>
           <p className="text-xs text-muted-foreground">
-            Suggested = month max level − Total. Import and Plant come from the Item master; a line where it is not set
-            asks you to choose.
+            Required = avg / month × lead time × safety factor (the Month max level). Suggested = Required − Total.
+            Drag a heading's right edge to resize it; double-click the edge to reset. Import / Domestic / Plant comes
+            from the Item master; a line where it is not set asks you to choose.
           </p>
         </div>
       )}
