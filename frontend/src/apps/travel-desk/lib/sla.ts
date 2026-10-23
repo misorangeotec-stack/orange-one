@@ -94,6 +94,9 @@ const OVERRIDES: Partial<Record<StepKey, Partial<StepSla>>> = {
   claim_review: { anchor: "claim", days: 2 },
   finance_review: { anchor: "claim_review", days: 5 },
   settlement: { anchor: "claim_review", days: 7 },
+
+  // A trigger step: measured from the moment the cancellation was asked for.
+  cancel_trip: { anchor: "booking", days: 2 },
 };
 
 /**
@@ -115,6 +118,11 @@ export const TRIGGER_STEPS: Partial<
     dueAfter: "Return date",
     rule:
       "This many working days AFTER the trip returns (actual date if recorded, else planned). Policy Section 11.1: the claim is due within 5 working days of return.",
+  },
+  cancel_trip: {
+    dueAfter: "Cancellation request",
+    rule:
+      "This many working days AFTER the raiser asks for the booking to be cancelled — time to get the credit note from the airline, hotel or agent.",
   },
 };
 

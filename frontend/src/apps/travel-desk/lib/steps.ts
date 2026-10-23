@@ -64,7 +64,13 @@ export type StepKey =
   | "claim"
   | "claim_review"
   | "finance_review"
-  | "settlement";
+  | "settlement"
+  /**
+   * Since 2026-10-23: the raiser asks for a booked-and-closed trip to be
+   * cancelled (tickets + reason); this step's owner files the credit note.
+   * It shows on a trip's pipeline only once a cancellation has been asked for.
+   */
+  | "cancel_trip";
 
 /** One scope — no cross-scope anchor walk. */
 export type StepScope = "trip";
@@ -98,6 +104,7 @@ export const STEPS: StepDef[] = [
   { key: "claim_review",      index: 7, title: "Claim Approval",              short: "Claim Appr", scope: "trip" },
   { key: "finance_review",    index: 8, title: "Finance Verification",        short: "Finance",    scope: "trip" },
   { key: "settlement",        index: 9, title: "Settlement",                  short: "Settle",     scope: "trip" },
+  { key: "cancel_trip",       index: 10, title: "Cancel Trip",                short: "Cancel",     scope: "trip" },
 ];
 
 export const stepByKey = (key: string): StepDef | undefined => STEPS.find((s) => s.key === key);
@@ -119,6 +126,7 @@ export const STAGES: { label: string; keys: StepKey[] }[] = [
   { label: "Arrangements", keys: ["advance", "booking"] },
   { label: "Claim",        keys: ["claim", "claim_review"] },
   { label: "Settlement",   keys: ["finance_review", "settlement"] },
+  { label: "Cancellation", keys: ["cancel_trip"] },
 ];
 
 /**

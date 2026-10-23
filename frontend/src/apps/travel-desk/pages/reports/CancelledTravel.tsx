@@ -29,6 +29,9 @@ export default function CancelledTravel() {
   const s = useTravelStore();
   const { departmentById } = useDirectory();
 
+  /** Cancellations the Cancel Trip team completed — a request still waiting has no credit note yet. */
+  const done = (t: Trip) => s.cancellationsOf(t.id).filter((c) => c.status === "completed");
+
   const rows = useMemo(
     () =>
       s.trips.filter(
@@ -36,7 +39,7 @@ export default function CancelledTravel() {
           t.status === "cancelled" ||
           t.status === "cancelled_pending_claim" ||
           // Since 2026-10 the booker may cancel one ticket and leave the trip closed.
-          s.cancellationsOf(t.id).length > 0,
+          done(t).length > 0,
       ),
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [s.trips, s.legs],
@@ -44,11 +47,11 @@ export default function CancelledTravel() {
 
   /** The booker's credit notes on this trip (new process, 2026-10). */
   const creditNoteNos = (t: Trip): string =>
-    s.cancellationsOf(t.id).map((c) => c.creditNoteNo).join(", ");
+    done(t).map((c) => c.creditNoteNo ?? "").filter(Boolean).join(", ");
   const creditNoteTotal = (t: Trip): number =>
-    s.cancellationsOf(t.id).reduce((sum, c) => sum + c.creditNoteAmount, 0);
+    done(t).reduce((sum, c) => sum + (c.creditNoteAmount ?? 0), 0);
   const whyOf = (t: Trip): string | null =>
-    t.cancelReason ?? (s.cancellationsOf(t.id).map((c) => c.reason).join(" · ") || null);
+    t.cancelReason ?? (done(t).map((c) => c.reason).join(" · ") || null);
 
   /** The reason recorded on the legs — the trip itself carries only the words. */
   const kindOf = (t: Trip): "business" | "personal" | null =>

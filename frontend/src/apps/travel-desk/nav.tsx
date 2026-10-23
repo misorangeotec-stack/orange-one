@@ -35,6 +35,7 @@ export const QUEUE_PATH: Record<QueueStep, string> = {
   claim_review: "approve-claim",
   finance_review: "finance-check",
   settlement: "settlement",
+  cancel_trip: "cancel-trip",
 };
 
 export function buildTravelNav(opts: {
