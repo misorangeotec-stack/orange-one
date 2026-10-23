@@ -184,7 +184,10 @@ export default function TripStepper({ trip, fit }: { trip: Trip; fit?: boolean }
         key: st.key,
         label: st.label,
         departments: [],
-        people: actor ? [actor] : pending(),
+        // A done step's actor goes to `doneBy`, which the rail shows in place of the
+        // owners; with no actor on record the owner list still shows.
+        people: actor && !isDone ? [actor] : pending(),
+        doneBy: actor && isDone ? [actor] : undefined,
         hasStep: true,
         note: isDone && doneAt ? formatDateDMY(doneAt) : undefined,
       };

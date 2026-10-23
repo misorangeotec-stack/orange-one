@@ -9,21 +9,26 @@ import { formatDateTime, timeAgo } from "@/shared/lib/time";
 import { fetchKras, KRAS_QUERY_KEY } from "@/core/admin/kras";
 import { useTaskStore } from "../mock/store";
 import { useSession } from "../mock/session";
-import { awaitingKraReview, kraScore, pctLabel } from "../lib/kraTasks";
+import Combobox from "@/shared/components/ui/Combobox";
+import { awaitingKraReview, hodMayChangeKra, isKraReviewerOf, isKraTask, kraScore, kraToPick, pctLabel, seesKraWeights } from "../lib/kraTasks";
 import type { Task } from "../types";
 
 /**
- * Who may see a task's KRA at all: the assignee, and their DIRECT HOD. The client ruled
+ * Who may see a task's KRA at all: the assignee, their DIRECT HOD, and the Director who
+ * reviews it (a Director's KRA task given to a HOD / Sub-HOD). The client ruled
  * (05-10-2026) that nobody else sees a person's KRAs — not a higher-up HOD, not a
  * colleague tagged on the task. org_kras RLS hides the KRA name from them anyway; this
  * also hides the weight and the score that ride on the task row.
+ *
+ * `isReviewer` = gives the 1-10 review (and, on the employee path, picks the KRA).
  */
 export function useKraTaskAccess(task: Task | undefined) {
   const { user } = useSession();
   const { profileById } = useTaskStore();
-  if (!task?.kraId) return { visible: false, isReviewer: false };
-  const isReviewer = !!task.assignedTo && !!profileById(task.assignedTo)?.hodIds.includes(user.id);
-  return { visible: isReviewer || task.assignedTo === user.id, isReviewer };
+  if (!task || !isKraTask(task)) return { visible: false, isReviewer: false };
+  const isReviewer = isKraReviewerOf(task, user.id, (id) => profileById(id)?.hodIds);
+  const isDirectHod = !!task.assignedTo && !!profileById(task.assignedTo)?.hodIds.includes(user.id);
+  return { visible: isReviewer || isDirectHod || task.assignedTo === user.id, isReviewer };
 }
 
 /** Header badge for a KRA task. Renders nothing for anyone who may not see it. */
@@ -42,28 +47,53 @@ export function KraBadge({ task }: { task: Task }) {
 }
 
 /**
- * The KRA, what the task is worth, what has been earned, and — for the direct HOD once the
- * task is completed — the 1-10 review. Score: W/2 on completion + (rating/10) × W/2.
+ * The KRA, what the task is worth, what has been earned, and — for the reviewer once the
+ * task is completed — the 1-10 review (on a Director's employee-path task the HOD picks
+ * the KRA in the same form). Score: C on completion + (rating/10) × (W − C).
  */
 export default function KraTaskCard({ task }: { task: Task }) {
   const { visible, isReviewer } = useKraTaskAccess(task);
+  const { role } = useSession();
+  const showWt = seesKraWeights(role);
   const { reviewKraTask, actorById } = useTaskStore();
   const krasQ = useQuery({ queryKey: KRAS_QUERY_KEY, queryFn: fetchKras, enabled: visible });
   const [rating, setRating] = useState<number | null>(null);
   const [note, setNote] = useState("");
+  const [pickKraId, setPickKraId] = useState("");
   const [editing, setEditing] = useState(false);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
 
-  const score = kraScore(task);
-  if (!visible || !score) return null;
+  if (!visible) return null;
+
+  // A Director's KRA task whose KRA is still to be picked (20270130120000).
+  const toPick = kraToPick(task);
+  const awaiting = task.status === "completed" && task.reviewRating == null;
+  const showReviewForm = isReviewer && task.status === "completed" && (awaiting || editing);
+  // Employee path: the HOD sees the KRA the employee picked and may change it in the review.
+  const hodChanges = showReviewForm && hodMayChangeKra(task);
+  const assigneeKras = (krasQ.data ?? []).filter((k) => k.profileId === task.assignedTo && k.active).sort((a, b) => a.sortOrder - b.sortOrder);
+  // The KRA the review will save: the HOD's choice, else what the employee picked.
+  const reviewKraId = hodChanges ? pickKraId || task.kraId || "" : "";
+  const changedKra = hodChanges && reviewKraId !== task.kraId ? assigneeKras.find((k) => k.id === reviewKraId) : undefined;
+
+  // The score: the task's own snapshot, or — when the HOD switches the KRA — the new one.
+  const score = changedKra
+    ? kraScore({ ...task, kraId: changedKra.id, kraWeight: changedKra.weight, kraCompletionWeight: changedKra.completionWeight })
+    : kraScore(task);
 
   const kra = krasQ.data?.find((k) => k.id === task.kraId);
-  const showReviewForm = isReviewer && task.status === "completed" && (score.stage === "awaiting-review" || editing);
-  const preview = rating == null ? null : score.completionMax + (rating / 10) * score.reviewMax;
+  const preview = rating == null || !score ? null : score.completionMax + (rating / 10) * score.reviewMax;
   const reviewer = actorById(task.reviewedBy);
+  // Who reviews: the Director named on the task, otherwise "the HOD".
+  const reviewerLabel = task.kraReviewerId ? actorById(task.kraReviewerId)?.name ?? "the Director" : "the HOD";
+  const assigneeName = actorById(task.assignedTo)?.name;
 
   const save = async () => {
+    if (hodChanges && !reviewKraId) {
+      setErr("Pick which KRA this task belongs to.");
+      return;
+    }
     if (rating == null) {
       setErr("Pick a rating from 1 to 10.");
       return;
@@ -71,10 +101,12 @@ export default function KraTaskCard({ task }: { task: Task }) {
     setBusy(true);
     setErr("");
     try {
-      await reviewKraTask(task.id, rating, note);
+      // The KRA rides on the save only when the HOD changed (or first set) it.
+      await reviewKraTask(task.id, rating, note, hodChanges && reviewKraId !== task.kraId ? reviewKraId : undefined);
       setEditing(false);
       setRating(null);
       setNote("");
+      setPickKraId("");
     } catch (e) {
       setErr((e as Error).message || "Couldn't save the review.");
     } finally {
@@ -85,33 +117,51 @@ export default function KraTaskCard({ task }: { task: Task }) {
   return (
     <Card className="p-5">
       <h3 className="text-[13px] font-semibold text-navy mb-3">KRA</h3>
-      <p className="text-[13.5px] font-medium text-navy">{kra?.name ?? (krasQ.isLoading ? "…" : "KRA")}</p>
-      <p className="text-[12px] text-grey mt-0.5">Worth {pctLabel(score.max)} of the employee's KRA score</p>
-
-      <dl className="mt-3.5 space-y-2 text-[12.5px]">
-        <ScoreRow
-          label="On completion"
-          value={score.stage === "open" ? `— of ${pctLabel(score.completionMax)}` : `${pctLabel(score.completionPart)} of ${pctLabel(score.completionMax)}`}
-        />
-        <ScoreRow
-          label="On HOD review"
-          value={score.stage === "reviewed" ? `${task.reviewRating}/10 → ${pctLabel(score.reviewPart)} of ${pctLabel(score.reviewMax)}` : `— of ${pctLabel(score.reviewMax)}`}
-        />
-        <div className="flex items-center justify-between border-t border-line pt-2">
-          <dt className="font-semibold text-navy">Achieved</dt>
-          <dd className="font-semibold text-navy">
-            {pctLabel(score.earned)} <span className="font-normal text-grey">/ {pctLabel(score.max)}</span>
-          </dd>
-        </div>
-      </dl>
-
-      {score.stage === "open" && (
-        <p className="mt-3 text-[12px] text-grey">Once completed, this goes to the HOD for a 1–10 review.</p>
+      {toPick && !changedKra ? (
+        <>
+          <p className="text-[13.5px] font-medium text-navy">KRA to be picked</p>
+          <p className="text-[12px] text-grey mt-0.5">
+            Given as a KRA task by {actorById(task.createdBy)?.name ?? "a Director"}.{" "}
+            {assigneeName ?? "The assignee"} picks which of their KRAs it belongs to when marking it complete; {reviewerLabel} then reviews it 1–10
+            {hodMayChangeKra(task) ? " and may change the KRA." : "."}
+          </p>
+        </>
+      ) : (
+        <>
+          <p className="text-[13.5px] font-medium text-navy">{changedKra?.name ?? kra?.name ?? (krasQ.isLoading ? "…" : "KRA")}</p>
+          {task.kraOpen && !changedKra && (
+            <p className="text-[11.5px] text-grey-2">Picked by {assigneeName ?? "the assignee"}</p>
+          )}
+          {score && showWt && <p className="text-[12px] text-grey mt-0.5">Worth {pctLabel(score.max)} of the employee's KRA score</p>}
+        </>
       )}
-      {score.stage === "awaiting-review" && !isReviewer && (
-        <p className="mt-3 rounded-lg bg-[#FFF6E5] px-3 py-2 text-[12px] text-[#9a6200]">Waiting for the HOD's review.</p>
+
+      {score && showWt && (
+        <dl className="mt-3.5 space-y-2 text-[12.5px]">
+          <ScoreRow
+            label="On completion"
+            value={score.stage === "open" ? `— of ${pctLabel(score.completionMax)}` : `${pctLabel(score.completionPart)} of ${pctLabel(score.completionMax)}`}
+          />
+          <ScoreRow
+            label="On review"
+            value={score.stage === "reviewed" ? `${task.reviewRating}/10 → ${pctLabel(score.reviewPart)} of ${pctLabel(score.reviewMax)}` : `— of ${pctLabel(score.reviewMax)}`}
+          />
+          <div className="flex items-center justify-between border-t border-line pt-2">
+            <dt className="font-semibold text-navy">Achieved</dt>
+            <dd className="font-semibold text-navy">
+              {pctLabel(score.earned)} <span className="font-normal text-grey">/ {pctLabel(score.max)}</span>
+            </dd>
+          </div>
+        </dl>
       )}
-      {score.stage === "reviewed" && !editing && (
+
+      {!toPick && task.status !== "completed" && (
+        <p className="mt-3 text-[12px] text-grey">Once completed, this goes to {reviewerLabel} for a 1–10 review.</p>
+      )}
+      {awaiting && !isReviewer && (
+        <p className="mt-3 rounded-lg bg-[#FFF6E5] px-3 py-2 text-[12px] text-[#9a6200]">Waiting for {reviewerLabel}'s review.</p>
+      )}
+      {task.reviewRating != null && !editing && (
         <p className="mt-3 text-[12px] text-grey">
           Reviewed{reviewer ? ` by ${reviewer.name}` : ""}
           {task.reviewedAt && <span title={formatDateTime(task.reviewedAt)}> · {timeAgo(task.reviewedAt)}</span>}
@@ -126,7 +176,21 @@ export default function KraTaskCard({ task }: { task: Task }) {
       {showReviewForm && (
         <div className="mt-4 border-t border-line pt-4">
           <p className="text-[12.5px] font-semibold text-navy">Your review</p>
-          <p className="text-[11.5px] text-grey mb-2">How much of the review's {pctLabel(score.reviewMax)} has this earned?</p>
+          {hodChanges && (
+            <div className="mt-1.5 mb-3">
+              <p className="text-[11.5px] text-grey mb-1">
+                KRA {task.kraId ? `${assigneeName ?? "the employee"} picked — change it if it belongs to another` : "this task belongs to"}
+              </p>
+              <Combobox
+                value={reviewKraId}
+                onChange={(v) => { setPickKraId(v); setErr(""); }}
+                placeholder={krasQ.isLoading ? "Loading…" : assigneeKras.length ? "Pick the KRA" : "No KRAs set for this person yet"}
+                options={assigneeKras.map((k) => ({ value: k.id, label: k.name, sublabel: showWt ? `KRA · Wt ${pctLabel(k.weight)}` : "KRA" }))}
+              />
+            </div>
+          )}
+          {score && showWt && <p className="text-[11.5px] text-grey mb-2">How much of the review's {pctLabel(score.reviewMax)} has this earned?</p>}
+          {!showWt && <p className="text-[11.5px] text-grey mb-2">Rate this task from 1 to 10.</p>}
           <div className="grid grid-cols-5 gap-1.5">
             {Array.from({ length: 10 }, (_, i) => i + 1).map((n) => (
               <button
@@ -142,7 +206,7 @@ export default function KraTaskCard({ task }: { task: Task }) {
               </button>
             ))}
           </div>
-          {preview != null && (
+          {preview != null && score && showWt && (
             <p className="mt-2 text-[12px] text-grey">
               {pctLabel(score.completionMax)} + {rating}/10 × {pctLabel(score.reviewMax)} = <b className="text-navy">{pctLabel(preview)}</b> of {pctLabel(score.max)}
             </p>
@@ -169,15 +233,17 @@ function ScoreRow({ label, value }: { label: string; value: string }) {
 }
 
 /**
- * The direct HOD's queue: KRA tasks their reports have completed and nobody has rated.
+ * The reviewer's queue: completed KRA tasks nobody has rated, that THIS user reviews —
+ * a direct HOD for their reports, a Director for the HOD / Sub-HOD tasks they gave.
  * All-time on purpose — a review owed from last week is still owed. Renders nothing when
  * the queue is empty, so a HOD who never gives KRA tasks never sees it.
  */
 export function KraReviewQueue() {
-  const { user } = useSession();
-  const { tasks, profileById } = useTaskStore();
+  const { user, role } = useSession();
+  const showWt = seesKraWeights(role);
+  const { tasks, profileById, actorById } = useTaskStore();
   const queue = tasks
-    .filter((t) => awaitingKraReview(t) && !!t.assignedTo && !!profileById(t.assignedTo)?.hodIds.includes(user.id))
+    .filter((t) => awaitingKraReview(t) && isKraReviewerOf(t, user.id, (id) => profileById(id)?.hodIds))
     .sort((a, b) => (a.completedAt ?? "").localeCompare(b.completedAt ?? ""));
   if (queue.length === 0) return null;
   return (
@@ -190,14 +256,14 @@ export function KraReviewQueue() {
       </div>
       <ul className="divide-y divide-line">
         {queue.map((t) => {
-          const who = profileById(t.assignedTo);
+          const who = actorById(t.assignedTo);
           return (
             <li key={t.id}>
               <Link to={`/task-management/tasks/${t.id}`} className="flex items-center justify-between gap-3 px-5 py-2.5 hover:bg-[#FAFAFB]">
                 <span className="min-w-0">
                   <span className="block truncate text-[13px] font-medium text-navy">{t.title}</span>
                   <span className="text-[11.5px] text-grey">
-                    {who?.name ?? "—"} · worth {pctLabel(t.kraWeight ?? 0)}
+                    {who?.name ?? "—"} · {t.kraId ? (showWt ? `worth ${pctLabel(t.kraWeight ?? 0)}` : "KRA task") : "KRA to be picked"}
                     {t.completedAt && <> · completed <span title={formatDateTime(t.completedAt)}>{timeAgo(t.completedAt)}</span></>}
                   </span>
                 </span>

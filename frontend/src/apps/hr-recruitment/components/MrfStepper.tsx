@@ -2,8 +2,8 @@ import { useMemo } from "react";
 import PoStageRail, { type PoStageRailNode } from "@/shared/components/ui/PoStageRail";
 import { formatDateDMY } from "@/shared/lib/date";
 import { useHrStore } from "../store";
-import { STEPS, isHodStep, type StepKey } from "../lib/steps";
-import { STAGE_PENDING_STEP } from "../lib/queues";
+import { CHECKIN_STEPS, STEPS, isHodStep, type StepKey } from "../lib/steps";
+import { STAGE_PENDING_STEP, candidateStepActorId } from "../lib/queues";
 import type { Requisition } from "../types";
 
 /**
@@ -78,6 +78,43 @@ export default function MrfStepper({ requisition: r }: { requisition: Requisitio
     job_posting: r.postedAt,
   };
 
+  /**
+   * Who ACTUALLY did a step on this requisition (ids; may hold nulls). Requisition
+   * steps have their own *_by column; candidate and hire steps collect every actor
+   * across this vacancy's candidates, since different CVs can be moved by different
+   * people. `completedFor` already pairs most steps with their actor — except the
+   * check-ins, which it credits to the configured OWNER, so those read the two
+   * people who actually answered (HOD + joiner).
+   */
+  const doneByIds = (key: StepKey): (string | null)[] => {
+    const cans = s.candidatesFor(r.id);
+    switch (key) {
+      case "mrf":
+        return [r.requesterId];
+      case "resume_upload":
+        return cans.map((c) => c.createdBy);
+      case "hr_shortlist":
+      case "hod_shortlist":
+      case "final_decision":
+        return cans.map((c) => candidateStepActorId(c, key));
+      case "probation_d7":
+      case "probation_d15":
+      case "probation_d30":
+      case "probation_d60":
+      case "probation_d90": {
+        const day = CHECKIN_STEPS.find((c) => c.key === key)?.day;
+        return cans.flatMap((c) => {
+          const o = s.onboardingForCandidate(c.id);
+          const p = o ? s.probationForOnboarding(o.id) : undefined;
+          const k = p ? s.checkinsFor(p.id).find((x) => x.dayNo === day) : undefined;
+          return k?.completedAt ? [k.hodBy, k.joinerBy] : [];
+        });
+      }
+      default:
+        return s.completedFor(key).filter((e) => e.requisitionId === r.id).map((e) => e.actorId);
+    }
+  };
+
   const nodes: PoStageRailNode[] = useMemo(
     () =>
       steps.map((key) => {
@@ -103,12 +140,21 @@ export default function MrfStepper({ requisition: r }: { requisition: Requisitio
           ),
         ];
 
+        const doneBy = [
+          ...new Set(
+            doneByIds(key)
+              .map((id) => (id ? s.personNameOrNull(id) : undefined))
+              .filter((n): n is string => !!n && n !== "—"),
+          ),
+        ];
+
         const at = doneOn[key];
         return {
           key,
           label: def.short,
           departments,
           people,
+          doneBy: doneBy.length ? doneBy : undefined,
           note: at ? formatDateDMY(at) : undefined,
           // `mrf` is noQueue — raising the requisition IS the event, nobody owes it.
           hasStep: !def.noQueue,

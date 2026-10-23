@@ -37,6 +37,7 @@ import { customerOnboardingProvider } from "./providers/customer-onboarding";
 import { complaintProvider } from "./providers/complaint";
 import { ocpiProvider } from "./providers/ocpi";
 import { inkStabilisationProvider } from "./providers/ink-stabilisation";
+import { physicalVerificationProvider } from "./providers/physical-verification";
 
 export const myWorkProviders: MyWorkProvider[] = [
   tasksProvider,
@@ -53,6 +54,7 @@ export const myWorkProviders: MyWorkProvider[] = [
   ocpiProvider,
   complaintProvider,
   inkStabilisationProvider,
+  physicalVerificationProvider,
   assetMaintenanceProvider,
   travelDeskProvider,
   /*

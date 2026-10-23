@@ -108,12 +108,54 @@ export default function SamplingStepper({ request }: { request: SamplingRequest 
             : INWARD_NO_LAB_FLOW
           : withMachine(INWARD_LAB_FLOW, request);
 
+  /**
+   * Who actually did each node — the `*_by` stamp its RPC wrote. The rail shows
+   * these instead of the owners once the node is DONE. The two-pass steps
+   * (lab / machine process) name both passes' actors, de-duplicated.
+   */
+  const doneByIds: Partial<Record<FlowKey, (string | null)[]>> = {
+    receive_sample: [request.receivedBy],
+    sample_collect: [request.collectedBy],
+    sample_received: [request.sampleReceivedBy],
+    sample_to_lab: [request.labSentBy],
+    lab_process: [request.labStartedBy, request.labCompletedBy],
+    result_received: [request.resultReceivedBy],
+    machine_process: [request.machineStartedBy, request.machineCompletedBy],
+    machine_result: [request.machineResultReceivedBy],
+    send_sample: [request.sentBy],
+    confirm_receipt: [request.confirmedBy],
+    testing: [request.testedBy],
+    result: [request.resultedBy],
+    result_handover: [request.handedOverBy],
+  };
+  const doneByOf = (key: FlowKey): string[] | undefined => {
+    const names = [
+      ...new Set(
+        (doneByIds[key] ?? [])
+          .filter((id): id is string => !!id)
+          .map((id) => s.personName(id))
+          .filter((nm) => nm !== "—" && nm !== "Unknown user"),
+      ),
+    ];
+    return names.length ? names : undefined;
+  };
+
   const nodes: PoStageRailNode[] = useMemo(
     () =>
       flow.map((n) => {
-        // Excluding the three step-less keys also NARROWS n.key to StepKey below,
+        // Request has no step owners — caption it with whoever raised it.
+        if (n.key === "request") {
+          const raiser = [request.requesterName].filter(Boolean);
+          return { key: n.key, label: n.label, departments: [], people: raiser, doneBy: raiser, hasStep: true };
+        }
+        // The retired receive step has no owners either; name its receiver if recorded.
+        if (n.key === "receive_sample") {
+          const doneBy = doneByOf(n.key);
+          return { key: n.key, label: n.label, departments: [], people: [], doneBy, hasStep: !!doneBy };
+        }
+        // Excluding the three step-less keys (two handled above) also NARROWS n.key to StepKey below,
         // which is what lets ownersFor() take it without a cast.
-        if (n.key === "request" || n.key === "closed" || n.key === "receive_sample") {
+        if (n.key === "closed") {
           return { key: n.key, label: n.label, departments: [], people: [], hasStep: false };
         }
         // Raised with no collector: collect never ran and never will. It KEEPS its
@@ -161,6 +203,7 @@ export default function SamplingStepper({ request }: { request: SamplingRequest 
             .map((id) => s.orgDepartments.find((d) => d.id === id)?.name)
             .filter((nm): nm is string => !!nm),
           people,
+          doneBy: doneByOf(n.key),
           hasStep: true,
         };
       }),

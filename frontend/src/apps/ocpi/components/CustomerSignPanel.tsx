@@ -70,7 +70,7 @@ export default function CustomerSignPanel({ deal }: { deal: OcpiDeal }) {
 
       <ApprovedOcPreview
         deal={deal}
-        note="Print this, get the customer to sign it, then photograph every page below."
+        note="Print this, get the customer to sign it, then photograph every page below. Send the Service checklist with it, so the site is ready before installation."
       />
 
       {mayAct ? (

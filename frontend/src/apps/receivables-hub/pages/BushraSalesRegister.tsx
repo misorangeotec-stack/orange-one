@@ -7,11 +7,22 @@
  * lib/bushraSalesRegister.ts. The Tally report itself is left untouched.
  *
  * The five new columns sit AFTER Revenue, so the first columns read exactly like the Tally report.
+ *
+ * THE ONE SALES REPORT (10-10-2026). Every Sales dashboard reads these same lines, so this is where
+ * every line is read, corrected and exported:
+ *   View row        All lines, then one per Sales dashboard with that dashboard's own rule
+ *                   (lib/bushraRegisterLink.ts) — Ink here is exactly the Ink dashboard's lines.
+ *   Salesperson,    from the hub masters (lib/useRegisterExtras.ts) — columns and filters like the rest.
+ *   Customer Group,
+ *   Orange / Non-Orange
+ *   From a dashboard  "Open in Sales Register" carries its view, window and filters in the URL; they
+ *                   show as removable chips.
  * The per-company Refresh control is not repeated here: the snapshot rebuilds after every Tally
  * sync, and the manual refresh stays on the Tally report.
  */
+import { useBackState } from "@/shared/lib/backState";
 import { useMemo, useState } from "react";
-import { Link } from "react-router-dom";
+import { Link, useSearchParams } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { ArrowDown, ArrowLeft, ArrowUp, ArrowUpDown, Download, NotebookText, PencilLine, RotateCcw, Search } from "lucide-react";
 import { Button } from "@hub/components/ui/button";
@@ -24,6 +35,12 @@ import { useColumnWidths } from "@/shared/lib/useColumnWidths";
 import { usePagination } from "@/shared/lib/usePagination";
 import Pagination from "@/shared/components/ui/Pagination";
 import { defaultRange, ymdToIso, isoToYmd } from "@hub/lib/salesRegister";
+import {
+  ALL_VIEW, REGISTER_DIM, REGISTER_VIEWS, matchesDims, parseRegisterLink, viewById,
+  type RegisterDim, type RegisterLine,
+} from "@hub/lib/bushraRegisterLink";
+import { useRegisterExtras } from "@hub/lib/useRegisterExtras";
+import { cn } from "@hub/lib/utils";
 import { copiesOf, loadBushraSalesRegister, loadItemLookup, type BushraRegisterRow } from "@hub/lib/bushraSalesRegister";
 import BushraItemEditDialog, { type EditSuggestions } from "@hub/components/BushraItemEditDialog";
 import BushraBulkItemEditDialog from "@hub/components/BushraBulkItemEditDialog";
@@ -49,7 +66,7 @@ const fmtRev = (n: number) => nf(2).format(n);
 const NOT_SET = "(Not set)";
 const orNotSet = (v: string) => v || NOT_SET;
 
-type Row = BushraRegisterRow;
+type Row = RegisterLine;
 
 /**
  * Every filterable column. The toolbar shows a few of them; the filter row under the table headings
@@ -61,6 +78,9 @@ const FILTERS = {
   type: { label: "Type", get: (r: Row) => r.type },
   date: { label: "Date", get: (r: Row) => r.date_display },
   party: { label: "Party Name", get: (r: Row) => r.party },
+  salesperson: { label: "Salesperson", get: (r: Row) => r.salesperson },
+  customerGroup: { label: "Customer Group", get: (r: Row) => r.customer_group },
+  orange: { label: "Orange / Non-Orange", get: (r: Row) => r.orange },
   particulars: { label: "Particulars", get: (r: Row) => r.particulars },
   voucherType: { label: "Voucher Type", get: (r: Row) => r.voucher_type },
   voucherNo: { label: "Voucher No.", get: (r: Row) => r.voucher_no },
@@ -95,6 +115,9 @@ const TABLE_COLUMNS: { header: string; filter: FilterKey | null; right?: boolean
   { header: "Type", filter: "type", sort: (r) => r.type },
   { header: "Date", filter: "date", sort: (r) => r.vch_date },
   { header: "Party Name", filter: "party", sort: (r) => r.party },
+  { header: "Salesperson", filter: "salesperson", sort: (r) => r.salesperson },
+  { header: "Customer Group", filter: "customerGroup", sort: (r) => r.customer_group },
+  { header: "Orange / Non-Orange", filter: "orange", sort: (r) => r.orange },
   { header: "Particulars", filter: "particulars", sort: (r) => r.particulars },
   { header: "Voucher Type", filter: "voucherType", sort: (r) => r.voucher_type },
   { header: "Voucher No.", filter: "voucherNo", sort: (r) => r.voucher_no },
@@ -120,6 +143,9 @@ const FIT_MIN = 30;
 
 
 const EXPORT_EXTRA: ExtraColumn<Row>[] = [
+  { header: "SALESPERSON", width: 22, get: (r) => r.salesperson },
+  { header: "CUSTOMER GROUP", width: 36, get: (r) => r.customer_group },
+  { header: "ORANGE / NON-ORANGE", width: 14, get: (r) => r.orange },
   { header: "SALES-TYPE", width: 16, get: (r) => r.sales_type },
   { header: "INK TYPE", width: 22, get: (r) => r.ink_type },
   { header: "GROUP", width: 22, get: (r) => r.item_group },
@@ -138,9 +164,17 @@ export default function BushraSalesRegister() {
   const fit = useColumnWidths("tb", COL_IDS, "bushra-sales-register");
   const [editing, setEditing] = useState<Row | null>(null);
   const [bulkOpen, setBulkOpen] = useState(false);
+  /** What a dashboard's "Open in Sales Register" asked for — read once, on arrival. */
+  const [params] = useSearchParams();
+  const link = useMemo(() => parseRegisterLink(params), []); // eslint-disable-line react-hooks/exhaustive-deps
   const init = useMemo(() => defaultRange(), []);
-  const [fromIso, setFromIso] = useState(ymdToIso(init.from));
-  const [toIso, setToIso] = useState(ymdToIso(init.to));
+  const [fromIso, setFromIso] = useState(ymdToIso(link.from ?? init.from));
+  const [toIso, setToIso] = useState(ymdToIso(link.to ?? init.to));
+  const [viewId, setViewId] = useState(viewById(link.view).id);
+  const view = viewById(viewId);
+  /** The dashboard's own filters, applied with its own readers until the reader removes them. */
+  const [dims, setDims] = useState<Partial<Record<RegisterDim, string[]>>>(link.dims ?? {});
+  const extras = useRegisterExtras();
   const from = isoToYmd(fromIso);
   const to = isoToYmd(toIso);
   const validRange = !!from && !!to && from <= to;
@@ -155,17 +189,20 @@ export default function BushraSalesRegister() {
     staleTime: 30 * 60 * 1000,
   });
 
-  const { data: rows, isLoading, error: rowsError } = useQuery<Row[]>({
+  const { data: rows, isLoading, error: rowsError } = useQuery<BushraRegisterRow[]>({
     queryKey: ["bushraSalesRegister", "v8", from, to, scopeKey],
     queryFn: () => loadBushraSalesRegister(from, to, scope, lookup),
     enabled: validRange && !scopeLoading && !!lookup,
     staleTime: 5 * 60 * 1000,
   });
+  // The extras (Salesperson / Customer Group / Orange) never take the register down: if they cannot
+  // load, the lines still show and the note below says those three columns are unavailable.
   const error = lookupError ?? rowsError;
   // The rows query waits, DISABLED, for the item lookup and the scope — and a disabled query is not
   // "loading" to TanStack. Without the two extra checks the page shows "0 lines · ₹0" meanwhile.
   const loading = !error && (isLoading || scopeLoading || !lookup);
-  const all = useMemo(() => rows ?? [], [rows]);
+  // The view first (it is the report's own slice), then the hub masters' columns beside each line.
+  const all = useMemo(() => extras.enrich((rows ?? []).filter(view.include)), [rows, view, extras.enrich]); // eslint-disable-line react-hooks/exhaustive-deps
   // Discount ledgers are never stock items — they read "Discount", so they are not counted as missing.
   const notInMasters = useMemo(() => new Set(all.filter((r) => !r.in_masters && !r.is_discount).map((r) => r.particulars)).size, [all]);
 
@@ -186,17 +223,20 @@ export default function BushraSalesRegister() {
 
   /* -------- filters (same one-pass cascade as the Tally Sales Register) -------- */
   const [sel, setSel] = useState<Record<FilterKey, string[]>>(NO_FILTERS);
-  const [search, setSearch] = useState("");
+  const [search, setSearch] = useBackState("BushraSalesRegister.search", "");
 
   const searched = useMemo(() => {
     const q = search.trim().toLowerCase();
-    if (!q) return all;
-    return all.filter((r) =>
+    const carried = Object.values(dims).some((v) => v?.length) ? all.filter((r) => matchesDims(r, dims)) : all;
+    if (!q) return carried;
+    return carried.filter((r) =>
       r.party.toLowerCase().includes(q) ||
       r.particulars.toLowerCase().includes(q) ||
       r.voucher_no.toLowerCase().includes(q) ||
-      (r.gstin ?? "").toLowerCase().includes(q));
-  }, [all, search]);
+      (r.gstin ?? "").toLowerCase().includes(q) ||
+      r.salesperson.toLowerCase().includes(q) ||
+      r.customer_group.toLowerCase().includes(q));
+  }, [all, search, dims]);
 
   const filtered = useMemo(
     () => searched.filter((r) =>
@@ -251,19 +291,30 @@ export default function BushraSalesRegister() {
     s?.col === col ? { col, dir: s.dir === 1 ? -1 : 1 } : { col, dir: TABLE_COLUMNS[col].right ? -1 : 1 });
 
   const page = usePagination(sorted, {
-    resetKey: `${from}|${to}|${FILTER_KEYS.map((k) => sel[k].join(",")).join("|")}|${search}|${sort?.col}|${sort?.dir}`,
+    resetKey: `${from}|${to}|${viewId}|${JSON.stringify(dims)}|${FILTER_KEYS.map((k) => sel[k].join(",")).join("|")}|${search}|${sort?.col}|${sort?.dir}`,
   });
 
-  const chips: FilterChip[] = FILTER_KEYS.flatMap((k) =>
-    sel[k].map((v) => ({
-      label: `${FILTERS[k].label}: ${v}`,
-      onRemove: () => setSel((s) => ({ ...s, [k]: s[k].filter((x) => x !== v) })),
-    })));
-  const clearAll = () => { setSel(NO_FILTERS); setSearch(""); };
+  const chips: FilterChip[] = [
+    // A dashboard's filters, carried in the link — removable like any other.
+    ...(Object.entries(dims) as [RegisterDim, string[]][]).flatMap(([k, vals]) =>
+      (vals ?? []).map((v) => ({
+        label: `Dashboard · ${REGISTER_DIM[k].label}: ${v}`,
+        onRemove: () => setDims((d) => ({ ...d, [k]: (d[k] ?? []).filter((x) => x !== v) })),
+      }))),
+    ...FILTER_KEYS.flatMap((k) =>
+      sel[k].map((v) => ({
+        label: `${FILTERS[k].label}: ${v}`,
+        onRemove: () => setSel((s) => ({ ...s, [k]: s[k].filter((x) => x !== v) })),
+      }))),
+  ];
+  const clearAll = () => { setSel(NO_FILTERS); setSearch(""); setDims({}); };
 
   const onExport = () => {
     if (!sorted.length) return;
-    exportSalesRegisterXlsx(sorted, { from, to, extra: EXPORT_EXTRA, filePrefix: "Bushra_Sales_Register" });
+    exportSalesRegisterXlsx(sorted, {
+      from, to, extra: EXPORT_EXTRA,
+      filePrefix: viewId === ALL_VIEW ? "Bushra_Sales_Register" : `Bushra_Sales_Register_${view.label.replace(/[^A-Za-z0-9]+/g, "_")}`,
+    });
   };
 
   const filterBox = (key: FilterKey, allLabel: string, unit: string, width: string) => (
@@ -318,6 +369,20 @@ export default function BushraSalesRegister() {
         </div>
       </div>
 
+      {/* ── View: the whole register, or one Sales dashboard's lines ─────── */}
+      <div className="flex flex-wrap items-center gap-1.5">
+        <span className="mr-1 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">View</span>
+        {REGISTER_VIEWS.map((v) => (
+          <button key={v.id} type="button" onClick={() => setViewId(v.id)}
+                  title={v.id === ALL_VIEW ? "Every line in the register" : `Exactly the lines the ${v.label} dashboard counts`}
+                  className={cn("rounded-pill border px-3 py-1 text-[12px] font-medium transition-colors",
+                                viewId === v.id ? "border-primary bg-primary text-primary-foreground"
+                                  : "border-border bg-surface text-muted-foreground hover:bg-muted/50 hover:text-foreground")}>
+            {v.label}
+          </button>
+        ))}
+      </div>
+
       <div className="flex flex-wrap items-end gap-3">
         <div className="flex flex-col gap-1">
           <span className="text-[10px] font-medium text-muted-foreground uppercase tracking-wide leading-none">Period</span>
@@ -329,6 +394,8 @@ export default function BushraSalesRegister() {
         </div>
         {filterBox("company", "All Companies", "Companies", "w-[200px]")}
         {filterBox("type", "All Types", "Types", "w-[180px]")}
+        {filterBox("salesperson", "All Salespersons", "Salespersons", "w-[180px]")}
+        {filterBox("orange", "All", "Buckets", "w-[150px]")}
         {filterBox("salesType", "All Sales-Types", "Sales-Types", "w-[170px]")}
         {filterBox("inkType", "All Ink Types", "Ink Types", "w-[180px]")}
         {filterBox("group", "All Groups", "Groups", "w-[180px]")}
@@ -341,7 +408,7 @@ export default function BushraSalesRegister() {
             <Input
               value={search}
               onChange={(e) => setSearch(e.target.value)}
-              placeholder="Party, particulars, voucher no…"
+              placeholder="Party, particulars, voucher no, salesperson…"
               className="pl-9 h-9 w-64 rounded-input"
             />
           </div>
@@ -361,6 +428,9 @@ export default function BushraSalesRegister() {
           <div className="text-xs text-muted-foreground">
             {filtered.length.toLocaleString("en-IN")} line{filtered.length === 1 ? "" : "s"}
             {" · "}revenue <b className="text-foreground font-semibold">₹ {fmtRev(totalRevenue)}</b>
+            {extras.error
+              ? <> · <span className="text-amber-700" title={extras.error.message}>Salesperson / Customer Group / Orange could not be loaded — the lines are unaffected</span></>
+              : !extras.ready && <> · <span className="text-amber-700">Salesperson / Customer Group / Orange still loading…</span></>}
             {notInMasters > 0 && (
               <> · {notInMasters.toLocaleString("en-IN")} item{notInMasters === 1 ? "" : "s"} not found in Central Masters</>
             )}
@@ -431,6 +501,14 @@ export default function BushraSalesRegister() {
                       <td className="py-1.5 px-3 text-sm whitespace-nowrap">{r.type}</td>
                       <td className="py-1.5 px-3 text-sm whitespace-nowrap tabular-nums">{r.date_display}</td>
                       <td className="py-1.5 px-3 text-sm">{r.party}</td>
+                      <td className={`py-1.5 px-3 text-sm whitespace-nowrap ${r.salesperson === "(Not assigned)" ? "text-muted-foreground" : ""}`}>{r.salesperson}</td>
+                      <td className="py-1.5 px-3 text-sm">{r.customer_group}</td>
+                      <td className="py-1.5 px-3 text-sm whitespace-nowrap">
+                        {r.orange === "Orange" || r.orange === "Non-Orange" ? (
+                          <span className="rounded-pill px-2 py-0.5 text-[11px] font-semibold text-white"
+                                style={{ background: r.orange === "Orange" ? "#ea580c" : "#2563eb" }}>{r.orange}</span>
+                        ) : <span className="text-muted-foreground">{r.orange}</span>}
+                      </td>
                       <td className="py-1.5 px-3 text-sm">{r.particulars}</td>
                       <td className="py-1.5 px-3 text-sm text-muted-foreground whitespace-nowrap">{r.voucher_type}</td>
                       <td className="py-1.5 px-3 text-sm whitespace-nowrap">{r.voucher_no}</td>

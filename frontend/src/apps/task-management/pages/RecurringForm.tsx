@@ -10,9 +10,9 @@ import { cn } from "@/shared/lib/cn";
 import { useSession } from "../mock/session";
 import { useTaskStore } from "../mock/store";
 import LocationPicker from "../components/LocationPicker";
-import { MONTH_LAST_DAY, type RecurrenceType } from "../types";
+import { MONTH_DAY_TYPES, MONTH_LAST_DAY, type RecurrenceType } from "../types";
 import { fetchKras, KRAS_QUERY_KEY, reviewWeightOf } from "@/core/admin/kras";
-import { pctLabel } from "../lib/kraTasks";
+import { pctLabel, seesKraWeights } from "../lib/kraTasks";
 
 /** Task Category value for the ordinary task — no KRA, no review (same as Create Task). */
 const OTHERS = "others";
@@ -33,6 +33,11 @@ const NTH_OPTIONS = [
 const WEEKDAY_LABEL: Record<number, string> = {
   0: "Sunday", 1: "Monday", 2: "Tuesday", 3: "Wednesday", 4: "Thursday", 5: "Friday", 6: "Saturday",
 };
+
+// Yearly picks one month; Half-yearly picks a pair six months apart (stored as the first, 1..6).
+const MONTH_NAMES = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
+const halfYearMonth = (m: number) => ((m - 1) % 6) + 1;
+const halfYearLabel = (m: number) => `${MONTH_NAMES[m - 1]} & ${MONTH_NAMES[m + 5]}`;
 
 export default function RecurringForm() {
   const { id } = useParams();
@@ -55,16 +60,20 @@ export default function RecurringForm() {
   const [weeklyDays, setWeeklyDays] = useState<number[]>(editing?.weeklyDays ?? [1]);
   const [monthlyDays, setMonthlyDays] = useState<number[]>(editing?.monthlyDays ?? [1]);
   // Monthly sub-mode: "nth" = Nth weekday (e.g. 1st Saturday, the default), "dates" = specific day(s) of month.
-  const [monthlyMode, setMonthlyMode] = useState<"nth" | "dates">(editing && editing.monthlyWeekday == null && editing.recurrenceType === "monthly" ? "dates" : "nth");
+  // Half-yearly / Yearly use the same two sub-modes, inside their month(s).
+  const [monthlyMode, setMonthlyMode] = useState<"nth" | "dates">(editing && editing.monthlyWeekday == null && MONTH_DAY_TYPES.includes(editing.recurrenceType) ? "dates" : "nth");
   const [monthlyNth, setMonthlyNth] = useState<number>(editing?.monthlyNth ?? 1);
   const [monthlyWeekday, setMonthlyWeekday] = useState<number>(editing?.monthlyWeekday ?? 6); // 6 = Saturday
+  // Yearly: the month (1..12). Half-yearly reads it as its pair (halfYearMonth). New = this month.
+  const [yearlyMonth, setYearlyMonth] = useState<number>(editing?.yearlyMonth ?? new Date().getMonth() + 1);
+  const usesMonthDays = MONTH_DAY_TYPES.includes(recurrenceType);
   const [active, setActive] = useState(editing?.active ?? true);
   const [locationIds, setLocationIds] = useState<string[]>(editing?.locationIds ?? []);
   // "Notification required" — remind the assignee N days before each date the task fires.
   const [notifyRequired, setNotifyRequired] = useState(editing?.notifyRequired ?? false);
   const [notifyDays, setNotifyDays] = useState<string>(String(editing?.notifyDaysBefore ?? 3));
   // Daily / As and When fire every working day, so an advance reminder makes no sense there.
-  const canNotify = recurrenceType === "weekly" || recurrenceType === "monthly" || recurrenceType === "quarterly";
+  const canNotify = recurrenceType === "weekly" || recurrenceType === "quarterly" || usesMonthDays;
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
 
@@ -100,22 +109,23 @@ export default function RecurringForm() {
     if (!title.trim()) return setError("Please enter a title.");
     if (!assignedTo) return setError("Please choose who to assign this task to.");
     if (recurrenceType === "weekly" && weeklyDays.length === 0) return setError("Pick at least one weekday.");
-    // Monthly: "dates" sub-mode needs at least one day; "nth" mode (the default) never needs a pick.
-    if (recurrenceType === "monthly" && monthlyMode === "dates" && monthlyDays.length === 0)
+    // Monthly / Half-yearly / Yearly: "dates" sub-mode needs at least one day; "nth" mode (the default) never needs a pick.
+    if (usesMonthDays && monthlyMode === "dates" && monthlyDays.length === 0)
       return setError("Pick at least one day of the month.");
     const notifyOn = canNotify && notifyRequired;
     const days = Number(notifyDays);
     if (notifyOn && !(Number.isInteger(days) && days >= 1 && days <= 30))
       return setError("Notify before: enter a number of days from 1 to 30.");
-    const useNth = recurrenceType === "monthly" && monthlyMode === "nth";
+    const useNth = usesMonthDays && monthlyMode === "nth";
     const payload = {
       title: title.trim(),
       description: description.trim() || null,
       recurrenceType,
       weeklyDays: recurrenceType === "weekly" ? weeklyDays : [],
-      monthlyDays: recurrenceType === "monthly" && monthlyMode === "dates" ? monthlyDays : [],
+      monthlyDays: usesMonthDays && monthlyMode === "dates" ? monthlyDays : [],
       monthlyNth: useNth ? monthlyNth : null,
       monthlyWeekday: useNth ? monthlyWeekday : null,
+      yearlyMonth: recurrenceType === "yearly" ? yearlyMonth : recurrenceType === "half_yearly" ? halfYearMonth(yearlyMonth) : null,
       assignedTo,
       createdBy: user.id,
       departmentId: profileById(assignedTo)?.departmentId ?? null,
@@ -185,11 +195,11 @@ export default function RecurringForm() {
                 onChange={(v) => setCategory(v || OTHERS)}
                 options={[
                   { value: OTHERS, label: "Others", sublabel: "Ordinary task — no KRA, no review" },
-                  ...assigneeKras.map((k) => ({ value: k.id, label: k.name, sublabel: `KRA · Wt ${pctLabel(k.weight)}`, group: "KRAs" })),
+                  ...assigneeKras.map((k) => ({ value: k.id, label: k.name, sublabel: seesKraWeights(role) ? `KRA · Wt ${pctLabel(k.weight)}` : "KRA", group: "KRAs" })),
                   ...(staleKra ? [{ value: category, label: "KRA switched off", sublabel: "Tasks generate as Others until you pick a KRA", group: "KRAs" }] : []),
                 ]}
               />
-              {pickedKra && (
+              {pickedKra && seesKraWeights(role) && (
                 <p className="mt-1.5 text-[12px] text-grey">
                   Every task this generates is worth <b className="text-navy">{pctLabel(pickedKra.weight)}</b>:{" "}
                   {pctLabel(pickedKra.completionWeight)} when it is completed, and up to{" "}
@@ -201,20 +211,22 @@ export default function RecurringForm() {
 
           {/* frequency segmented */}
           <FieldLabel label="Frequency">
-            <div className="inline-flex rounded-xl border border-line p-1 bg-page">
+            <div className="inline-flex flex-wrap rounded-xl border border-line p-1 bg-page">
               {([
                 ["daily", "Daily"],
                 ["weekly", "Weekly"],
                 ["monthly", "Monthly"],
                 ["when", "As and When"],
                 ["quarterly", "Quarterly"],
+                ["half_yearly", "Half-yearly"],
+                ["yearly", "Yearly"],
               ] as [RecurrenceType, string][]).map(([f, label]) => (
                 <button
                   key={f}
                   type="button"
                   onClick={() => setRecurrenceType(f)}
                   className={cn(
-                    "px-5 py-2 rounded-lg text-[13px] font-semibold transition",
+                    "px-4 py-2 rounded-lg text-[13px] font-semibold transition",
                     recurrenceType === f ? "bg-white text-orange shadow-soft" : "text-grey hover:text-navy"
                   )}
                 >
@@ -254,8 +266,23 @@ export default function RecurringForm() {
             </FieldLabel>
           )}
 
-          {recurrenceType === "monthly" && (
-            <FieldLabel label="When each month">
+          {(recurrenceType === "half_yearly" || recurrenceType === "yearly") && (
+            <FieldLabel label={recurrenceType === "yearly" ? "Month" : "Months"}>
+              <Combobox
+                value={String(recurrenceType === "yearly" ? yearlyMonth : halfYearMonth(yearlyMonth))}
+                onChange={(v) => setYearlyMonth(Number(v))}
+                className="min-w-[200px]"
+                options={
+                  recurrenceType === "yearly"
+                    ? MONTH_NAMES.map((n, i) => ({ value: String(i + 1), label: n }))
+                    : [1, 2, 3, 4, 5, 6].map((m) => ({ value: String(m), label: halfYearLabel(m) }))
+                }
+              />
+            </FieldLabel>
+          )}
+
+          {usesMonthDays && (
+            <FieldLabel label={recurrenceType === "yearly" ? `When in ${MONTH_NAMES[yearlyMonth - 1]}` : recurrenceType === "half_yearly" ? `When in ${halfYearLabel(halfYearMonth(yearlyMonth))}` : "When each month"}>
               {/* sub-mode: Nth weekday (default) vs specific day-of-month */}
               <div className="inline-flex rounded-xl border border-line p-1 bg-page mb-3">
                 {([["nth", "On the Nth weekday"], ["dates", "On specific dates"]] as ["nth" | "dates", string][]).map(([m, l]) => (
@@ -288,7 +315,13 @@ export default function RecurringForm() {
                     className="min-w-[128px]"
                     options={WEEKDAYS.map((d) => ({ value: String(d.v), label: WEEKDAY_LABEL[d.v] }))}
                   />
-                  <span className="text-[13px] text-grey">of every month</span>
+                  <span className="text-[13px] text-grey">
+                    {recurrenceType === "yearly"
+                      ? `of ${MONTH_NAMES[yearlyMonth - 1]}, every year`
+                      : recurrenceType === "half_yearly"
+                        ? `of ${halfYearLabel(halfYearMonth(yearlyMonth))}, every year`
+                        : "of every month"}
+                  </span>
                 </div>
               ) : (
                 <>

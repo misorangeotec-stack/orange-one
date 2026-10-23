@@ -4,6 +4,7 @@ import type { ReactNode } from "react";
 import { Navigate, useLocation } from "react-router-dom";
 import type { Session } from "@supabase/supabase-js";
 import { clearAllSticky } from "@/shared/lib/stickyState";
+import { clearAllBackState } from "@/shared/lib/backState";
 import { clearAllReturnTo } from "@/shared/lib/returnTo";
 import { supabase } from "./supabase";
 import { clearPersistedCache } from "@/queryPersister";
@@ -93,6 +94,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       // hand them the previous user's filters, search text and assignee selections.
       clearAllSticky();
       clearAllReturnTo();
+      clearAllBackState();
       /*
         ⚠ AND THE SERVER DATA, WHICH IS THE HALF THAT WAS MISSING. The query cache
           is also persisted to IndexedDB, and nothing ever cleared it: the last

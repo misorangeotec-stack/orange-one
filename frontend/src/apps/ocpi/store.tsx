@@ -17,7 +17,7 @@ import type {
   OcpiCompanyProfile, OcpiDeal, OcpiMachine, OcpiMachineSection, OcpiNotification,
   OcpiStepOwner, QuotationVersion,
   OcpiMasterManager, OcpiMasterRequest, OcpiMasterType, OcpiNamedMaster,
-  OcpiDryer, OcpiMachineHead, OcpiSalesPage, OcpiServiceCheckpoint,
+  OcpiDryer, OcpiMachineHead, OcpiSalesPage, OcpiServiceCheckpoint, OcpiServiceChecklist,
 } from "./types";
 
 /**
@@ -97,6 +97,10 @@ interface OcpiStoreValue {
   masterRequests: OcpiMasterRequest[];
   /** Masters → Service check points, all rows (active and not). */
   serviceCheckpoints: OcpiServiceCheckpoint[];
+  /** Masters → Service checklists (PDF), one row per machine that has one. */
+  serviceChecklists: OcpiServiceChecklist[];
+  /** The checklist PDF for a machine, or undefined when none is uploaded. */
+  serviceChecklistFor: (machineId: string | null) => OcpiServiceChecklist | undefined;
 
   /**
    * May this person EDIT this master directly, and resolve requests against it?
@@ -275,6 +279,9 @@ export function OcpiStoreProvider({ children }: { children: ReactNode }) {
     const masterManagers = data?.masterManagers ?? [];
     const masterRequests = data?.masterRequests ?? [];
     const serviceCheckpoints = data?.serviceCheckpoints ?? [];
+    const serviceChecklists = data?.serviceChecklists ?? [];
+    const serviceChecklistFor = (machineId: string | null) =>
+      machineId ? serviceChecklists.find((c) => c.machineId === machineId) : undefined;
 
     // Mirrors fms_ocpi_is_master_manager, plus the admin bypass every table
     // policy carries. NOT gated on canEdit: master ownership is granted
@@ -399,6 +406,8 @@ export function OcpiStoreProvider({ children }: { children: ReactNode }) {
       masterManagers,
       masterRequests,
       serviceCheckpoints,
+      serviceChecklists,
+      serviceChecklistFor,
       canManageMaster,
       pendingMasterRequests: masterRequests.filter((r) => r.status === "pending"),
 

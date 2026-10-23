@@ -21,6 +21,7 @@ import { bushraCentralMasterApp } from "./bushra-central-master/meta";
 import { allDraftsApp } from "./all-drafts/meta";
 import { inkStabilisationApp } from "./ink-stabilisation/meta";
 import { inkExpiryApp } from "./ink-expiry/meta";
+import { physicalVerificationApp } from "./physical-verification/meta";
 import { orderToDispatchApp } from "./order-to-dispatch/meta";
 import { customerOrdersApp } from "./customer-orders/meta";
 import { customerOnboardingApp } from "./customer-onboarding/meta";
@@ -28,6 +29,7 @@ import { reportsApp } from "./reports/meta";
 import { assetMaintenanceApp } from "./asset-maintenance/meta";
 import { leadsDashboardApp } from "./leads-dashboard/meta";
 import { ocpiApp } from "./ocpi/meta";
+import { machineResaleApp } from "./machine-resale/meta";
 import { fmsControlCenterApp } from "./fms-control-center/meta";
 import { processCoordinatorApp } from "./process-coordinator/meta";
 import { masterReportApp } from "./master-report/meta";
@@ -110,6 +112,8 @@ export const apps: AppManifest[] = [
   inkStabilisationApp,
   // Ink Expiry — in-stock ink lots and whether Tally has their expiry; read-only ConnectWave.
   inkExpiryApp,
+  // Physical Verification — Otec Surat Printing Ink counts vs Tally closing (pv_* tables).
+  physicalVerificationApp,
   // Order to Dispatch FMS — separate module (own fms_dispatch_* tables), granted
   // per user to the sales, stores, accounts and plant teams. Sales order through
   // credit, stock, LOT, sales bill and gate-out to the delivery confirmation.
@@ -148,6 +152,10 @@ export const apps: AppManifest[] = [
   // order confirmation the customer signs. Own fms_ocpi_* tables, granted per
   // user to the sales team and to whoever approves.
   ocpiApp,
+  // Machine Resale: staff list pre-owned printers for the resale website and follow
+  // up its inquiries. Granted per user (view or edit); the grant is also what the
+  // portal's login bridge checks, so it must never be made universal.
+  machineResaleApp,
   fmsControlCenterApp,
   // Process Coordinator — the coordinator's own desk, and the only screen in the
   // Control category that WRITES: every module's master approvals land in one

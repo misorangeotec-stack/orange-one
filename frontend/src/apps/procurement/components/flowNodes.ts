@@ -64,18 +64,25 @@ const visibleStages = (showReturnBranch: boolean) =>
  * knows which requisition this rail belongs to (RequestStepper) passes the
  * resolved approvers here; without it the node falls back to the `step_owners`
  * row, which is the *configured* approval team rather than this PR's approver.
+ *
+ * `doneByIds` (from {@link stageActorIds}) names who ACTUALLY did each stage;
+ * PoStageRail shows it in place of the owner list once that node is done.
  */
 export function buildFlowNodes(
   s: Store,
   showReturnBranch = false,
   approvalOwnerIds?: string[],
+  doneByIds?: Partial<Record<string, string[]>>,
 ): PoStageRailNode[] {
+  const names = (ids: string[]) => [...new Set(ids.map((id) => s.personName(id)).filter((n) => !!n && n !== "—"))];
   return visibleStages(showReturnBranch).map((st) => {
     const stepKey = stageStepKey(st.key);
     // `closed` has no backing step, so it has no owners to show.
     if (!stepKey) {
       return { key: st.key, label: st.label, departments: [], people: [], hasStep: false };
     }
+    const done = doneByIds?.[st.key];
+    const doneBy = done?.length ? names(done) : undefined;
     if (stepKey === "approval" && approvalOwnerIds) {
       return {
         key: st.key,
@@ -85,6 +92,7 @@ export function buildFlowNodes(
         departments: [],
         people: approvalOwnerIds.map((id) => s.personName(id)).filter((n) => n !== "—"),
         hasStep: true,
+        doneBy,
       };
     }
     const owner = s.stepOwnerFor(stepKey);
@@ -98,8 +106,45 @@ export function buildFlowNodes(
         .map((id) => s.personName(id))
         .filter((n) => n !== "—"),
       hasStep: true,
+      doneBy,
     };
   });
+}
+
+/**
+ * Who actually did each stage, per FLOW_STAGES key, across the given
+ * requisitions and POs — the same actor columns the "completed" stage lists in
+ * lib/queues.ts use. A stage whose rows pre-date their actor column simply has
+ * no entry, so the rail falls back to the owner list. `closed` is stamped by the
+ * stage machine, not a person, so it never gets one.
+ */
+export function stageActorIds(s: Store, requestIds: string[], poIds: string[]): Partial<Record<string, string[]>> {
+  const reqs = new Set(requestIds);
+  const pos = new Set(poIds);
+  const lines = s.requestItems.filter((l) => reqs.has(l.requestId));
+  const qcs = s.qcInspections.filter((q) => pos.has(q.poId));
+  const ids = (xs: (string | null | undefined)[]) => [...new Set(xs.filter((x): x is string => !!x))];
+  return {
+    request: ids(requestIds.map((id) => s.requestById(id)?.requesterId)),
+    // Request-level stamp first; legacy requisitions were sourced per line.
+    sourcing: ids(requestIds.flatMap((id) => {
+      const r = s.requestById(id);
+      return r?.sourcedBy ? [r.sourcedBy] : lines.filter((l) => l.requestId === id).map((l) => l.sourcedBy);
+    })),
+    // approver_id is stamped with auth.uid() at the decision; on a line still
+    // under decision it is not a decider yet.
+    approval: ids(lines.filter((l) => !["sourcing", "approval", "on_hold"].includes(l.status)).map((l) => l.approverId)),
+    generated: ids(poIds.map((id) => s.poById(id)?.createdBy)),
+    share_po: ids(poIds.map((id) => s.poById(id)?.sharedBy)),
+    collect_pi: ids(s.pis.filter((p) => pos.has(p.poId)).map((p) => p.createdBy)),
+    advance_payment: ids(s.payments.filter((p) => pos.has(p.poId) && p.kind === "advance").map((p) => p.createdBy)),
+    follow_up: ids(s.followups.filter((f) => pos.has(f.poId)).map((f) => f.createdBy)),
+    inward: ids(s.grns.filter((g) => pos.has(g.poId)).map((g) => g.receivedBy)),
+    tally: ids(s.tallyBookings.filter((t) => pos.has(t.poId)).map((t) => t.bookedBy)),
+    qc_inspection: ids(qcs.map((q) => q.inspectedBy)),
+    purchase_return: ids(qcs.map((q) => q.returnedBy)),
+    gate_outward: ids(qcs.map((q) => q.gateOutBy)),
+  };
 }
 
 /**

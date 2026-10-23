@@ -65,6 +65,8 @@ const CADENCE: Record<string, string> = {
   weekly: "weekly",
   monthly: "monthly",
   quarterly: "quarterly",
+  half_yearly: "half-yearly",
+  yearly: "yearly",
 };
 export function templateLabel(
   tpl: Pick<RecurringTask, "title" | "description"> & Partial<Pick<RecurringTask, "recurrenceType">>,

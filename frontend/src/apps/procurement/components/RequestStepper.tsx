@@ -1,7 +1,7 @@
 import { useMemo } from "react";
 import PoStageRail, { type PoStageRailNode } from "@/shared/components/ui/PoStageRail";
 import { useProcurementStore } from "../store";
-import { buildFlowNodes, flowIndex, poFlowIndex } from "./flowNodes";
+import { buildFlowNodes, flowIndex, poFlowIndex, stageActorIds } from "./flowNodes";
 import type { PurchaseRequest } from "../types";
 
 /**
@@ -53,9 +53,21 @@ export default function RequestStepper({ request }: { request: PurchaseRequest }
     return decided.length > 0 ? decided : undefined;
   }, [s, request]);
 
+  // Done nodes name who actually did them, across every PO this requisition spawned.
+  const doneByIds = useMemo(() => {
+    const poIds = [
+      ...new Set(
+        s.itemsForRequest(request.id)
+          .map((l) => s.poItemForLine(l.id)?.poId)
+          .filter((id): id is string => !!id),
+      ),
+    ];
+    return stageActorIds(s, [request.id], poIds);
+  }, [s, request]);
+
   const nodes: PoStageRailNode[] = useMemo(
-    () => buildFlowNodes(s, showReturnBranch, approvalOwnerIds),
-    [s, showReturnBranch, approvalOwnerIds],
+    () => buildFlowNodes(s, showReturnBranch, approvalOwnerIds, doneByIds),
+    [s, showReturnBranch, approvalOwnerIds, doneByIds],
   );
 
   const { activeIndex, finished } = useMemo(() => {

@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import Button from "@/shared/components/ui/Button";
 import Card from "@/shared/components/ui/Card";
+import { appendPdfs } from "../lib/mergePdf";
 
 /**
  * One issue of a document set, shown as a pair rather than a pile.
@@ -37,6 +38,14 @@ export interface Paper {
   fileName: string;
   /** Why this paper is absent, when `blob` is null and nothing is loading. */
   missingNote?: string;
+  /**
+   * Goes WITH every download: pressing Download on any other paper, or
+   * "Download all", saves this one too. Its tick is always on. Used for the
+   * machine's service checklist, which must reach the customer with the papers.
+   */
+  attach?: boolean;
+  /** An attached paper still on its way — Download/Print wait for it. */
+  loading?: boolean;
 }
 
 export default function PaperSet({
@@ -97,15 +106,64 @@ export default function PaperSet({
     own cleanup — that runs before the re-render that swaps `src`, leaving the
     frame pointed at a url that no longer resolves.
   */
+  /*
+    ── Attached papers go AT THE END of every other paper ─────────────────────
+
+    ⚠ ONE FILE, NOT TWO. A paper marked `attach` (the machine's service
+      checklist) is appended to the Summary, the PI and the OC themselves, so
+      the frame shows it, Print prints it and Download saves it — all from the
+      single paper the user is on. A second, separate download was tried first
+      and was not enough: Print could never include it, and browsers block or
+      lose the second file.
+
+    ⚠ "Download all" still hands over the ORIGINAL papers plus the checklist
+      once (below) — merging there would repeat the checklist in every file.
+  */
+  const attached = useMemo(() => papers.filter((p) => p.attach), [papers]);
+  const attachedBlobs = attached.filter((p) => p.blob).map((p) => p.blob as Blob);
+  const attachKey = attached.map((p) => p.key + ":" + (p.blob ? p.blob.size : "0")).join("|");
+  const baseKey = papers.map((p) => p.key + ":" + (p.blob ? p.blob.size : "0")).join("|");
+
+  const [merged, setMerged] = useState<Record<string, Blob>>({});
+  const [mergeFailed, setMergeFailed] = useState<Set<string>>(new Set());
+  useEffect(() => {
+    let cancelled = false;
+    setMerged({});
+    setMergeFailed(new Set());
+    if (attachedBlobs.length === 0) return;
+    void (async () => {
+      for (const p of papers) {
+        if (p.attach || !p.blob) continue;
+        try {
+          const m = await appendPdfs(p.blob, attachedBlobs);
+          if (!cancelled) setMerged((prev) => ({ ...prev, [p.key]: m }));
+        } catch {
+          if (!cancelled) setMergeFailed((prev) => new Set(prev).add(p.key));
+        }
+      }
+    })();
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [baseKey, attachKey]);
+
+  /** What the frame shows, Print prints and Download saves for this paper. */
+  const shownBlob = (p: Paper): Blob | null => (!p.attach && merged[p.key]) || p.blob;
+  const shownKey = papers
+    .map((p) => p.key + ":" + (shownBlob(p)?.size ?? 0))
+    .join("|");
+
   const [urls, setUrls] = useState<Record<string, string>>({});
   const prev = useRef<Record<string, string>>({});
 
   useEffect(() => {
     const next: Record<string, string> = {};
-    for (const p of papers) if (p.blob) next[p.key] = URL.createObjectURL(p.blob);
+    for (const p of papers) {
+      const b = shownBlob(p);
+      if (b) next[p.key] = URL.createObjectURL(b);
+    }
     setUrls(next);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [papers.map((p) => p.key + ":" + (p.blob ? p.blob.size : "0")).join("|")]);
+  }, [shownKey]);
 
   useEffect(() => {
     for (const [k, u] of Object.entries(prev.current)) {
@@ -124,13 +182,33 @@ export default function PaperSet({
   const frame = useRef<HTMLIFrameElement | null>(null);
   const activeUrl = active ? urls[active.key] : undefined;
 
-  function downloadOne(p: Paper) {
-    const u = urls[p.key];
-    if (!u) return;
+  /*
+    Download/Print wait while the checklist is still loading or being joined
+    on, so nobody prints the paper a second before the checklist arrives.
+  */
+  const attaching =
+    !!active && !active.attach && !!active.blob &&
+    (attached.some((p) => p.loading) ||
+      (attachedBlobs.length > 0 && !merged[active.key] && !mergeFailed.has(active.key)));
+
+  function save(blob: Blob | null, fileName: string, url?: string) {
+    if (!blob && !url) return;
+    const href = url ?? URL.createObjectURL(blob as Blob);
     const a = document.createElement("a");
-    a.href = u;
-    a.download = p.fileName;
+    a.href = href;
+    a.download = fileName;
     a.click();
+    if (!url) setTimeout(() => URL.revokeObjectURL(href), 60_000);
+  }
+
+  /** The paper as shown — with the checklist at its end when there is one. */
+  function downloadOne(p: Paper) {
+    save(null, p.fileName, urls[p.key]);
+  }
+
+  /** The paper exactly as issued, without anything appended (Download all). */
+  function downloadOriginal(p: Paper) {
+    save(p.blob, p.fileName);
   }
 
   /*
@@ -142,7 +220,20 @@ export default function PaperSet({
       which it does, since the three fetches resolve independently.
   */
   const [unticked, setUnticked] = useState<Set<string>>(new Set());
-  const picked = available.filter((p) => !unticked.has(p.key));
+  // An attached paper cannot be unticked — it always goes with the others.
+  const picked = available.filter((p) => p.attach || !unticked.has(p.key));
+
+  /**
+   * The single Download button. Normally one file with the checklist inside.
+   * If joining failed (a damaged or locked PDF), the checklist is saved as a
+   * second file instead, so it still goes out.
+   */
+  function downloadActive(p: Paper) {
+    downloadOne(p);
+    if (!p.attach && mergeFailed.has(p.key)) {
+      attached.filter((a) => a.blob).forEach((a, i) => setTimeout(() => downloadOriginal(a), 400 * (i + 1)));
+    }
+  }
 
   function toggle(key: string) {
     setUnticked((prev) => {
@@ -169,8 +260,8 @@ export default function PaperSet({
   */
   function downloadAll() {
     picked.forEach((p, i) => {
-      if (i === 0) downloadOne(p);
-      else setTimeout(() => downloadOne(p), 400 * i);
+      if (i === 0) downloadOriginal(p);
+      else setTimeout(() => downloadOriginal(p), 400 * i);
     });
   }
 
@@ -209,8 +300,10 @@ export default function PaperSet({
                 >
                   <input
                     type="checkbox"
-                    checked={!unticked.has(p.key)}
+                    checked={p.attach || !unticked.has(p.key)}
                     onChange={() => toggle(p.key)}
+                    disabled={p.attach}
+                    title={p.attach ? "Always downloaded with the other papers" : undefined}
                     className="h-3.5 w-3.5 accent-orange"
                   />
                   {p.label}
@@ -226,13 +319,13 @@ export default function PaperSet({
               </Button>
             </div>
           )}
-          <Button size="sm" variant="ghost" onClick={print} disabled={!activeUrl}>
-            Print
+          <Button size="sm" variant="ghost" onClick={print} disabled={!activeUrl || attaching}>
+            {attaching ? "Adding checklist…" : "Print"}
           </Button>
           <Button
             size="sm"
-            onClick={() => active && downloadOne(active)}
-            disabled={!activeUrl}
+            onClick={() => active && downloadActive(active)}
+            disabled={!activeUrl || attaching}
           >
             Download
           </Button>

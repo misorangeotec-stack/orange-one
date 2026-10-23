@@ -69,6 +69,26 @@ export default function DispatchStepper({ order, fit }: { order: DispatchOrder; 
 
   const nodes: PoStageRailNode[] = useMemo(() => {
     const deptName = (id: string) => s.orgDepartments.find((d) => d.id === id)?.name;
+    /*
+      Who actually did each step, for the rail to show once it is done. The live
+      round's stamps are on the order; every earlier round — and the last one,
+      since closing or cancelling archives it and wipes the header — is in
+      `rounds`. All of them count: an order delivered over three consignments
+      had its bill raised by whoever raised each of the three.
+    */
+    const actors = (pick: (r: Pick<DispatchOrder, "ccBy" | "msBy" | "sbBy" | "goBy" | "dcBy">) => string | null) =>
+      [...order.rounds, order]
+        .map(pick)
+        .filter((id): id is string => !!id)
+        .map((id) => s.personName(id))
+        .filter((n, i, all) => n !== "—" && n !== "Unknown user" && all.indexOf(n) === i);
+    const doneByFor: Partial<Record<StepKey, string[]>> = {
+      credit_check: actors((r) => r.ccBy),
+      material_status: actors((r) => r.msBy),
+      sales_bill: actors((r) => r.sbBy),
+      gate_out: actors((r) => r.goBy),
+      dispatch_confirm: actors((r) => r.dcBy),
+    };
     return STAGES.map((st) => {
       // Received has no step owner — caption it with whoever raised the order.
       if (st.key === "received") {
@@ -134,12 +154,13 @@ export default function DispatchStepper({ order, fit }: { order: DispatchOrder; 
           : (owner?.departmentIds ?? []).map(deptName).filter((n): n is string => !!n),
         people,
         hasStep: true,
+        doneBy: doneByFor[st.step],
         // Says WHICH site these names cover, and names the gap when none do —
         // "Unassigned" alone reads as a global hole rather than a per-site one.
         note: ownSite ? siteName : !people.length && siteName ? `No owner for ${siteName}` : undefined,
       };
     });
-  }, [s, order.requesterName, order.locationId, siteName]);
+  }, [s, order, siteName]);
 
   /*
     ⚠ ONLY A ROUND THAT WAS GATED OUT HAS "GONE OUT". `order.rounds` is every
