@@ -1037,8 +1037,14 @@ export interface InkRow extends InkPosition {
   band: InkBand;
   stockPct: number | null;          // shelf only
   stockBand: InkBand;
-  incomingPct: number | null;       // ETA + at port only
-  incomingBand: InkBand;
+  /**
+   * Stock + ETA + at port: the shelf plus what is already moving. ETA + at port on its own was
+   * coloured once, but incoming against the target ignores the shelf, so an ink with little
+   * stock and one consignment showed green. The colour now sits on this sum.
+   */
+  stockIncoming: number;
+  stockIncomingPct: number | null;
+  stockIncomingBand: InkBand;
   remark: "NEW ORDER REQUIRED" | "EXCESS STOCK" | "";
 }
 
@@ -1107,7 +1113,7 @@ export function deriveInkRow(
    */
   const pctOf = (qty: number) => (monthMaxLevel > 0 ? (qty / monthMaxLevel) * 100 : null);
   const stockPct = pctOf(stock);
-  const incomingPct = pctOf(incoming);
+  const stockIncomingPct = pctOf(stock + incoming);
   const coverPct = pctOf(stock + committed + etd);
 
   let remark: InkRow["remark"] = "";
@@ -1135,8 +1141,9 @@ export function deriveInkRow(
     band: bandFor(coverPct, thresholds),
     stockPct,
     stockBand: bandFor(stockPct, thresholds),
-    incomingPct,
-    incomingBand: bandFor(incomingPct, thresholds),
+    stockIncoming: stock + incoming,
+    stockIncomingPct,
+    stockIncomingBand: bandFor(stockIncomingPct, thresholds),
     remark,
   };
 }

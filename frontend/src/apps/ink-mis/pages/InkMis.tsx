@@ -177,6 +177,26 @@ export default function InkMis() {
       /* private mode: the toggle still works for this visit */
     }
   }, [companiesOpen]);
+  // ETA, Plant and ETD fold the same way: closed, a bucket keeps only its total columns. Starts
+  // open, so nobody loses the consignment columns they are used to seeing.
+  type Bucket = "eta" | "plant" | "etd";
+  const [bucketsOpen, setBucketsOpen] = useState<Record<Bucket, boolean>>(() => {
+    const all = { eta: true, plant: true, etd: true };
+    try {
+      const raw = window.localStorage.getItem("ink-mis:buckets-open");
+      return raw ? { ...all, ...JSON.parse(raw) } : all;
+    } catch {
+      return all;
+    }
+  });
+  useEffect(() => {
+    try {
+      window.localStorage.setItem("ink-mis:buckets-open", JSON.stringify(bucketsOpen));
+    } catch {
+      /* private mode: the toggle still works for this visit */
+    }
+  }, [bucketsOpen]);
+  const toggleBucket = (b: Bucket) => setBucketsOpen((prev) => ({ ...prev, [b]: !prev[b] }));
   // Lines the viewer has hidden from the dashboard, by line key. Remembered per browser, like the
   // Columns picker: it narrows this person's view and never touches the planner's numbering.
   const [hiddenLines, setHiddenLines] = useState<string[]>(() => {
@@ -340,6 +360,7 @@ export default function InkMis() {
         case "dailyMax": return r.dailyMaxLevel;
         case "stock": return r.stock;
         case "incoming": return r.incoming;
+        case "stockIncoming": return r.stockIncoming;
         case "plantTotal": return r.plant;
         case "etdTotal": return r.etd;
         case "total": return r.total;
@@ -368,7 +389,7 @@ export default function InkMis() {
    * from these narrowed by every filter except its own, which is what stops the planner
    * assembling a combination that matches nothing.
    */
-  const searchedRows: InkRow[] = useMemo(() => {
+  const allSearchedRows: InkRow[] = useMemo(() => {
     const built = positions.map((p) => {
       const base = plans[p.key] ?? plans[p.legacyKey] ?? EMPTY_PLAN;
       // The company tabs use that book's own sales; Combined uses the group's.
@@ -393,6 +414,44 @@ export default function InkMis() {
     // NOT re-sorted here. loadInkPositions already applied the planner's own row order, and
     // sorting again would throw it away. A sort the planner ASKS for is applied below.
   }, [positions, plans, consumption, shipments, thresholds, companyKey, search, isHidden]);
+
+  /**
+   * The source tabs (All · Import · Domestic · Plant) on the ‹ › row above the table. Applied
+   * here, with the search, so the table, the totals line, the four cards and the column-filter
+   * lists all speak for the same source.
+   */
+  const [sourcePick, setSourcePick] = useState<string>("");
+  const sourceCounts = useMemo(() => {
+    const c: Record<string, number> = {};
+    for (const r of allSearchedRows) c[r.source] = (c[r.source] ?? 0) + 1;
+    return c;
+  }, [allSearchedRows]);
+  const searchedRows: InkRow[] = useMemo(
+    () => (sourcePick ? allSearchedRows.filter((r) => r.source === sourcePick) : allSearchedRows),
+    [allSearchedRows, sourcePick],
+  );
+  const sourceTabs = (
+    <div role="tablist" className="inline-flex h-7 items-center rounded-md border border-border bg-muted/40 p-0.5">
+      {[{ value: "", label: "All" }, ...INK_SOURCES].map((t) => {
+        const active = sourcePick === t.value;
+        const n = t.value ? (sourceCounts[t.value] ?? 0) : allSearchedRows.length;
+        return (
+          <button
+            key={t.value || "all"}
+            type="button"
+            role="tab"
+            aria-selected={active}
+            onClick={() => setSourcePick(t.value)}
+            className={`h-6 rounded px-2.5 text-[11px] font-medium ${
+              active ? "bg-background text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground"
+            }`}
+          >
+            {t.label} <span className="tabular-nums opacity-60">{n}</span>
+          </button>
+        );
+      })}
+    </div>
+  );
 
   /**
    * What is on screen: the filters, then the planner's chosen order.
@@ -721,8 +780,34 @@ export default function InkMis() {
     }
   }, [freeze]);
   const showCompanyCols = !companyKey && companiesOpen && cols.isVisible("companies");
-  const showShipmentCols = cols.isVisible("shipments");
-  const showPlantCols = cols.isVisible("plant");
+  const showShipmentCols = cols.isVisible("shipments") && bucketsOpen.eta;
+  const showEtdCols = cols.isVisible("shipments") && bucketsOpen.etd;
+  const showPlantCols = cols.isVisible("plant") && bucketsOpen.plant;
+  /**
+   * One bucket's cell in the band row, spanning its consignment columns and its totals. The +/−
+   * shows only when the bucket has consignment columns to fold; with those hidden in the Columns
+   * picker it is just a label.
+   */
+  const bucketHead = (b: Bucket, label: string, span: number, foldable: boolean) => {
+    if (span <= 0) return null;
+    const open = bucketsOpen[b];
+    return (
+      <TableHead colSpan={span} className="border-x text-center">
+        {foldable ? (
+          <button
+            type="button"
+            onClick={() => toggleBucket(b)}
+            className="inline-flex items-center gap-1 text-[9px] font-semibold text-foreground hover:underline"
+            title={open ? `Fold the ${label} columns into their totals` : `Show each ${label} column`}
+          >
+            {open ? `− ${label}` : `+ ${label}`}
+          </button>
+        ) : (
+          <span className="text-[9px] font-semibold text-foreground">{label}</span>
+        )}
+      </TableHead>
+    );
+  };
 
   /**
    * The planning block, left of the stock columns. Every one of them is in the Columns picker,
@@ -762,7 +847,7 @@ export default function InkMis() {
     if (id === "source") return 110;
     if (id === "supplier") return 160;
     if (id.startsWith("ship:") || id.startsWith("plant:")) return 110;
-    if (id === "stock" || id === "total" || id === "etdTotal") return 110;
+    if (id === "stock" || id === "total" || id === "etdTotal" || id === "stockIncoming") return 110;
     return 90;
   };
 
@@ -796,16 +881,17 @@ export default function InkMis() {
     ids.push("stock");
     if (showShipmentCols) ids.push(...shipmentCols.map((x) => `ship:${x.id}`));
     if (cols.isVisible("incoming")) ids.push("incoming");
+    if (cols.isVisible("stockIncoming")) ids.push("stockIncoming");
     if (showPlantCols) ids.push(...plantCols.map((x) => `plant:${x.id}`));
     ids.push("plantTotal");
-    if (showShipmentCols) ids.push(...etdCols.map((x) => `ship:${x.id}`));
+    if (showEtdCols) ids.push(...etdCols.map((x) => `ship:${x.id}`));
     if (cols.isVisible("etdTotal")) ids.push("etdTotal");
     ids.push("total");
     if (cols.isVisible("category")) ids.push("category");
     if (cols.isVisible("source")) ids.push("source");
     if (cols.isVisible("supplier")) ids.push("supplier");
     return ids;
-  }, [leadVisible, showCompanyCols, showShipmentCols, shipmentCols, showPlantCols, plantCols, etdCols, cols]);
+  }, [leadVisible, showCompanyCols, showShipmentCols, shipmentCols, showPlantCols, plantCols, showEtdCols, etdCols, cols]);
 
   /**
    * The table is EXACTLY as wide as its columns, set inline.
@@ -890,6 +976,7 @@ export default function InkMis() {
     { value: "shipments", label: "Consignment columns" },
     { value: "plant", label: "Plant weekly columns" },
     { value: "incoming", label: "ETA + at port" },
+    { value: "stockIncoming", label: "Stock + ETA + at port" },
     { value: "etdTotal", label: "ETD total" },
     { value: "category", label: "Category" },
     { value: "source", label: "Import/Plant" },
@@ -909,9 +996,24 @@ export default function InkMis() {
 
   useEffect(() => {
     if (!justAdded) return;
-    newColumnRef.current?.scrollIntoView({ behavior: "smooth", inline: "end", block: "nearest" });
+    // A column added into a folded bucket would land out of sight, so its bucket opens first.
+    const added = shipments.find((s) => s.id === justAdded);
+    if (added) {
+      const b: Bucket =
+        added.status === "PLANT" ? "plant" : added.status === "ETA" || added.status === "AT PORT" ? "eta" : "etd";
+      setBucketsOpen((prev) => (prev[b] ? prev : { ...prev, [b]: true }));
+    }
+    // Next tick, so a bucket opened just above has rendered the column before we scroll to it.
+    const s = window.setTimeout(
+      () => newColumnRef.current?.scrollIntoView({ behavior: "smooth", inline: "end", block: "nearest" }),
+      0,
+    );
     const t = window.setTimeout(() => setJustAdded(null), 6000);
-    return () => window.clearTimeout(t);
+    return () => {
+      window.clearTimeout(s);
+      window.clearTimeout(t);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [justAdded]);
 
   const addColumn = (status: ShipmentStatus) => {
@@ -1123,7 +1225,7 @@ export default function InkMis() {
       "Days cover", "Days cover with ETA", "Month max level", "Daily max level",
       ...(showCompanyCols ? INK_COMPANIES.map((c) => c.label) : []),
       "Stock",
-      ...shipmentCols.map(colTitle), "ETA + at port",
+      ...shipmentCols.map(colTitle), "ETA + at port", "Stock + ETA + at port",
       ...plantCols.map(colTitle), "Plant total",
       ...etdCols.map(colTitle), "ETD total",
       "Total", "Category",
@@ -1135,7 +1237,7 @@ export default function InkMis() {
       r.daysCover ?? "", r.daysCoverWithIncoming ?? "", r.monthMaxLevel, r.dailyMaxLevel,
       ...(showCompanyCols ? INK_COMPANIES.map((c) => r.byCompany[c.key] ?? 0) : []),
       r.stock,
-      ...shipmentCols.map((s) => qtyIn(s, r.itemCode)), r.incoming,
+      ...shipmentCols.map((s) => qtyIn(s, r.itemCode)), r.incoming, r.stockIncoming,
       ...plantCols.map((s) => qtyIn(s, r.itemCode)), r.plant,
       ...etdCols.map((s) => qtyIn(s, r.itemCode)), r.etd,
       r.total, r.category, sourceLabel(r.source),
@@ -1510,7 +1612,7 @@ export default function InkMis() {
           open
           onClose={() => setPlaceOpen(false)}
           rows={rows}
-          allRows={searchedRows}
+          allRows={allSearchedRows}
           companyKey={companyKey}
           onPlace={placeOrder}
           onRaised={() => setRaiseTick((n) => n + 1)}
@@ -1552,7 +1654,7 @@ export default function InkMis() {
           "[&_tbody_td]:text-[9pt] [&_tbody_td_*]:text-[9pt]"
         }
       >
-      <ScrollableTable maxHeight="max-h-[calc(100vh-13rem)]" hideHint containScroll>
+      <ScrollableTable maxHeight="max-h-[calc(100vh-13rem)]" hideHint containScroll barLeft={sourceTabs}>
         <Table
           style={{ width: tableWidth, minWidth: tableWidth, maxWidth: "none" }}
           className={
@@ -1569,9 +1671,10 @@ export default function InkMis() {
             ))}
           </colgroup>
           <TableHeader>
-            {!companyKey && cols.isVisible("companies") && (
-              <TableRow className="bg-card hover:bg-card [&>th]:!static">
-                {leadVisible.length > 0 && <TableHead colSpan={leadVisible.length} />}
+            {/* The bucket band: companies, then ETA, Plant and ETD, each folding to its totals. */}
+            <TableRow className="bg-card hover:bg-card [&>th]:!static">
+              {leadVisible.length > 0 && <TableHead colSpan={leadVisible.length} />}
+              {!companyKey && cols.isVisible("companies") ? (
                 <TableHead
                   colSpan={showCompanyCols ? INK_COMPANIES.length + 1 : 1}
                   className="border-x text-center"
@@ -1585,17 +1688,33 @@ export default function InkMis() {
                     {showCompanyCols ? "− All four companies" : "+ All four companies"}
                   </button>
                 </TableHead>
-                <TableHead
-                  colSpan={
-                    (showShipmentCols ? shipmentCols.length + etdCols.length : 0) +
-                    (cols.isVisible("incoming") ? 1 : 0) +
-                    (showPlantCols ? plantCols.length : 0) +
-                    (cols.isVisible("etdTotal") ? 1 : 0) +
-                    2
-                  }
-                />
-              </TableRow>
-            )}
+              ) : (
+                <TableHead colSpan={showCompanyCols ? INK_COMPANIES.length + 1 : 1} />
+              )}
+              {bucketHead(
+                "eta",
+                "ETA",
+                (showShipmentCols ? shipmentCols.length : 0) +
+                  (cols.isVisible("incoming") ? 1 : 0) +
+                  (cols.isVisible("stockIncoming") ? 1 : 0),
+                cols.isVisible("shipments"),
+              )}
+              {bucketHead("plant", "Plant", (showPlantCols ? plantCols.length : 0) + 1, cols.isVisible("plant"))}
+              {bucketHead(
+                "etd",
+                "ETD",
+                (showEtdCols ? etdCols.length : 0) + (cols.isVisible("etdTotal") ? 1 : 0),
+                cols.isVisible("shipments"),
+              )}
+              <TableHead
+                colSpan={
+                  1 +
+                  (cols.isVisible("category") ? 1 : 0) +
+                  (cols.isVisible("source") ? 1 : 0) +
+                  (cols.isVisible("supplier") ? 1 : 0)
+                }
+              />
+            </TableRow>
             <TableRow>
               {on("no") && (
                 <ResizableHead {...pinHead("no")} cols={cols} className="text-right">
@@ -1698,6 +1817,11 @@ export default function InkMis() {
                   {colHead("ETA + at port", "incoming")}
                 </ResizableHead>
               )}
+              {cols.isVisible("stockIncoming") && (
+                <ResizableHead id="stockIncoming" cols={cols} className="text-right">
+                  {colHead("Stock + ETA + at port", "stockIncoming")}
+                </ResizableHead>
+              )}
               {showPlantCols &&
                 plantCols.map((s) => (
                   <ResizableHead
@@ -1712,7 +1836,7 @@ export default function InkMis() {
               <ResizableHead id="plantTotal" cols={cols} className="text-right">
                 {colHead("Plant total", "plantTotal")}
               </ResizableHead>
-              {showShipmentCols &&
+              {showEtdCols &&
                 etdCols.map((s) => (
                   <ResizableHead
                     key={s.id}
@@ -1777,6 +1901,11 @@ export default function InkMis() {
                     {fmtQty(totals.eta + totals.atPort)}
                   </TableCell>
                 )}
+                {cols.isVisible("stockIncoming") && (
+                  <TableCell className="text-right tabular-nums">
+                    {fmtQty(totals.stock + totals.eta + totals.atPort)}
+                  </TableCell>
+                )}
                 {showPlantCols &&
                   plantCols.map((s) => (
                     <TableCell key={s.id} className="text-right tabular-nums">
@@ -1784,7 +1913,7 @@ export default function InkMis() {
                     </TableCell>
                   ))}
                 <TableCell className="text-right tabular-nums">{fmtQty(totals.plant)}</TableCell>
-                {showShipmentCols &&
+                {showEtdCols &&
                   etdCols.map((s) => (
                     <TableCell key={s.id} className="text-right tabular-nums">
                       {fmtQty(s.lines.reduce((t, l) => t + l.qty, 0))}
@@ -1820,7 +1949,7 @@ export default function InkMis() {
                 <TableCell colSpan={40} className="py-10 text-center text-muted-foreground">
                   {positions.length === 0 ? (
                     "No numbered items yet. Give an item a number in the item master to show it here."
-                  ) : filtersOn || search.trim() || bandPick ? (
+                  ) : filtersOn || search.trim() || bandPick || sourcePick ? (
                     <span className="inline-flex flex-wrap items-center justify-center gap-2">
                       No ink matches the filters you have set.
                       <Button
@@ -1830,6 +1959,7 @@ export default function InkMis() {
                           clearFilters();
                           setSearch("");
                           setBandPick(null);
+                          setSourcePick("");
                         }}
                       >
                         Clear filters
@@ -1946,13 +2076,16 @@ export default function InkMis() {
                 {showShipmentCols && shipmentCols.map((s) => consignmentCell(s, r))}
 
                 {cols.isVisible("incoming") && (
-                  <TableCell className={`text-right tabular-nums ${BAND_CLASS[r.incomingBand]}`}>
-                    {fmtQty(r.incoming)}
+                  <TableCell className="text-right tabular-nums">{fmtQty(r.incoming)}</TableCell>
+                )}
+                {cols.isVisible("stockIncoming") && (
+                  <TableCell className={`text-right tabular-nums ${BAND_CLASS[r.stockIncomingBand]}`}>
+                    {fmtQty(r.stockIncoming)}
                   </TableCell>
                 )}
                 {showPlantCols && plantCols.map((s) => consignmentCell(s, r))}
                 <TableCell className="text-right tabular-nums">{fmtQty(r.plant)}</TableCell>
-                {showShipmentCols && etdCols.map((s) => consignmentCell(s, r))}
+                {showEtdCols && etdCols.map((s) => consignmentCell(s, r))}
                 {cols.isVisible("etdTotal") && (
                   <TableCell className="text-right tabular-nums">{fmtQty(r.etd)}</TableCell>
                 )}
