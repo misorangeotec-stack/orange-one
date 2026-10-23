@@ -51,7 +51,8 @@ export const STATUS_LABEL: Record<TripStatus, string> = {
   awaiting_claim_review: "Claim awaiting approval",
   awaiting_finance_review: "Claim with Finance",
   awaiting_settlement: "Awaiting payment",
-  closed: "Settled",
+  // "Closed", not "Settled": since 2026-10 a trip closes at booking, with nothing paid out.
+  closed: "Closed",
   on_hold: "On hold",
   cancelled: "Cancelled",
 };

@@ -4,7 +4,8 @@ import Card from "@/shared/components/ui/Card";
 import MultiSelect from "@/shared/components/ui/MultiSelect";
 import { fetchOrgPeople } from "@/core/platform/orgPeople";
 import { useTravelStore } from "../../store";
-import { STEPS, MANAGER_STEPS } from "../../lib/steps";
+import { shownSteps, MANAGER_STEPS } from "../../lib/steps";
+import { STATUS_STEP } from "../../types";
 
 /**
  * Who owns each step — which, at the two approval gates, is who may approve.
@@ -83,7 +84,8 @@ export default function StepOwnersSection() {
       {err && <p className="mt-3 break-words text-[12.5px] text-ryg-red">{err}</p>}
 
       <div className="mt-4 space-y-4">
-        {STEPS.map((st) => {
+        {/* Hidden steps keep their owners; they are listed only while a trip still waits at one. */}
+        {shownSteps((k) => s.trips.some((t) => STATUS_STEP[t.status] === k)).map((st) => {
           const ids = s.ownersOf(st.key);
           const isManagerStep = MANAGER_STEPS.includes(st.key);
           return (

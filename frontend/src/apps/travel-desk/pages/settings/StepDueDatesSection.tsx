@@ -3,7 +3,8 @@ import Card from "@/shared/components/ui/Card";
 import Button from "@/shared/components/ui/Button";
 import { TextInput } from "@/shared/components/ui/Form";
 import { useTravelStore } from "../../store";
-import { STEPS, stepByKey, type StepKey } from "../../lib/steps";
+import { STEPS, isHiddenStep, stepByKey, type StepKey } from "../../lib/steps";
+import { STATUS_STEP } from "../../types";
 import { TRIGGER_STEPS, type StepSlaMap } from "../../lib/sla";
 
 /**
@@ -90,7 +91,11 @@ export default function StepDueDatesSection() {
       </div>
 
       <div className="space-y-3">
-        {queueSteps.map((st) => {
+        {/* Hidden steps keep their saved days (save() writes every step); they are
+            listed only while a trip still waits at one. */}
+        {queueSteps
+          .filter((st) => !isHiddenStep(st.key) || s.trips.some((t) => STATUS_STEP[t.status] === st.key))
+          .map((st) => {
           const trigger = TRIGGER_STEPS[st.key as StepKey];
           return (
             <div key={st.key} className="flex items-start justify-between gap-4">

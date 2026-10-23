@@ -184,6 +184,34 @@ export async function completeBooking(tripId: string): Promise<string> {
   return data as string;
 }
 
+export interface CancelBookingInput {
+  /** The tickets to cancel — one, several, or every one still live (the whole trip). */
+  legIds: string[];
+  reason: string;
+  creditNoteNo: string;
+  creditNoteAmount: number;
+  /** Already uploaded to the trip's `cancellation` slot. */
+  creditNotePath: string;
+}
+
+/**
+ * The booker cancels tickets on a trip that closed at booking. Reason and the
+ * credit note (file, number, amount) are all mandatory; the RPC refuses
+ * without them. Returns the trip's new status — `cancelled` once no ticket is left.
+ */
+export async function cancelBooking(tripId: string, input: CancelBookingInput): Promise<string> {
+  const { data, error } = await db.rpc("fms_travel_cancel_booking", {
+    p_trip: tripId,
+    p_leg_ids: input.legIds,
+    p_reason: input.reason,
+    p_cn_no: input.creditNoteNo,
+    p_cn_amount: input.creditNoteAmount,
+    p_cn_path: input.creditNotePath,
+  });
+  if (error) throw new Error(error.message);
+  return data as string;
+}
+
 export async function requestCancellation(tripId: string, reason: string): Promise<void> {
   const { error } = await db.rpc("fms_travel_request_cancellation", {
     p_trip: tripId,

@@ -122,6 +122,30 @@ export const STAGES: { label: string; keys: StepKey[] }[] = [
 ];
 
 /**
+ * Steps HIDDEN by the new process (2026-10): the trip closes at booking, so
+ * everything after it is not used, and a request no longer asks for an advance.
+ *
+ * ⚠ HIDDEN, NOT DELETED. Every page, RPC, table and setting behind these steps
+ *   is still in place. A hidden step still shows wherever an older trip is
+ *   waiting at it, so that trip can finish. To bring a step back, take it out of
+ *   this list (the booking RPC also needs its old version back — see the
+ *   rollback of migration 20270124120000).
+ */
+export const HIDDEN_STEPS: StepKey[] = ["advance", "claim", "claim_review", "finance_review", "settlement"];
+
+export const isHiddenStep = (key: StepKey): boolean => HIDDEN_STEPS.includes(key);
+
+/** The steps to show: all but the hidden ones, plus any hidden one `inUse` says a trip still waits at. */
+export const shownSteps = (inUse: (key: StepKey) => boolean = () => false): StepDef[] =>
+  STEPS.filter((s) => !isHiddenStep(s.key) || inUse(s.key));
+
+/** `STAGES` cut down the same way; a stage left with no steps is dropped. */
+export const shownStages = (inUse: (key: StepKey) => boolean = () => false): typeof STAGES =>
+  STAGES.map((st) => ({ ...st, keys: st.keys.filter((k) => !isHiddenStep(k) || inUse(k)) })).filter(
+    (st) => st.keys.length > 0,
+  );
+
+/**
  * Steps an admin may assign owners to in Settings.
  *
  * ⚠ `request` IS INCLUDED, and that is what makes raising restrictable. No
