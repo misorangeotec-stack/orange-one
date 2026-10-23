@@ -723,8 +723,9 @@ export default function InkMis() {
   const showPlantCols = cols.isVisible("plant");
 
   /**
-   * The planning block, left of the stock columns. Item code is not hideable: without it a row
-   * cannot be identified. Stock and Total are not hideable either — they are the answer.
+   * The planning block, left of the stock columns. Every one of them is in the Columns picker,
+   * Item code included (the planner asked to be able to hide it, 2026-10-23 — Description still
+   * identifies the row). Stock and Total are not hideable — they are the answer.
    */
   /**
    * FROZEN LEAD COLUMNS.
@@ -769,7 +770,7 @@ export default function InkMis() {
     // rather than infer it from the position.
     { id: "no", label: "No." },
     { id: "group", label: "Group" },
-    { id: "code", label: "Item code", locked: true },
+    { id: "code", label: "Item code" },
     { id: "description", label: "Description" },
     { id: "remark", label: "Remark" },
     { id: "m3", label: "3-month avg" },
@@ -781,7 +782,7 @@ export default function InkMis() {
     { id: "monthMax", label: "Month max" },
     { id: "dailyMax", label: "Daily max" },
   ];
-  const leadVisible = LEAD_COLS.filter((c) => c.locked || cols.isVisible(c.id));
+  const leadVisible = LEAD_COLS.filter((c) => cols.isVisible(c.id));
 
   /**
    * The columns actually rendered, in order. Mirrors the heading row exactly — if one changes,
@@ -879,8 +880,10 @@ export default function InkMis() {
     };
   };
   const on = (id: string) => leadVisible.some((c) => c.id === id);
+  /** The first frozen heading on screen carries the heading-height grab strip. */
+  const handleOn = PINNED.find((id) => on(id));
   const columnOptions = [
-    ...LEAD_COLS.filter((c) => !c.locked).map((c) => ({ value: c.id, label: c.label })),
+    ...LEAD_COLS.map((c) => ({ value: c.id, label: c.label })),
     { value: "companies", label: "Stock by company" },
     { value: "shipments", label: "Consignment columns" },
     { value: "plant", label: "Plant weekly columns" },
@@ -1559,22 +1562,25 @@ export default function InkMis() {
               {on("no") && (
                 <ResizableHead {...pinHead("no")} cols={cols} className="text-right">
                   {colHead("No.", "no")}
-                  {headHandle}
+                  {handleOn === "no" && headHandle}
                 </ResizableHead>
               )}
               {on("group") && (
                 <ResizableHead {...pinHead("group")} cols={cols}>
                   {colHead("Group", "group")}
+                  {handleOn === "group" && headHandle}
                 </ResizableHead>
               )}
-              <ResizableHead {...pinHead("code")} cols={cols}>
-                {colHead("Item code", "code")}
-                {/* Second home for the heading's grab strip, for when No. is hidden. */}
-                {!on("no") && headHandle}
-              </ResizableHead>
+              {on("code") && (
+                <ResizableHead {...pinHead("code")} cols={cols}>
+                  {colHead("Item code", "code")}
+                  {handleOn === "code" && headHandle}
+                </ResizableHead>
+              )}
               {on("description") && (
                 <ResizableHead {...pinHead("description")} cols={cols}>
                   {colHead("Description", "description")}
+                  {handleOn === "description" && headHandle}
                 </ResizableHead>
               )}
               {on("remark") && (
@@ -1810,9 +1816,11 @@ export default function InkMis() {
                 {on("group") && (
                   <TableCell {...pinMerge(pinCell("group"), "text-xs")}>{r.group}</TableCell>
                 )}
-                <TableCell {...pinMerge(pinCell("code"), "font-medium")}>
-                  {r.itemCode}
-                </TableCell>
+                {on("code") && (
+                  <TableCell {...pinMerge(pinCell("code"), "font-medium")}>
+                    {r.itemCode}
+                  </TableCell>
+                )}
                 {on("description") && (
                   <TableCell {...pinCell("description")}>{r.description}</TableCell>
                 )}
