@@ -5,6 +5,7 @@ import {
 } from "@/shared/lib/pdfBrand";
 import { BODY_TOP, bodyBottom, drawLetterhead, loadLetterhead, type LetterheadAssets } from "./letterhead";
 import { tokensFor } from "./tokens";
+import { inclusionLines, inkIncludedSentence } from "./inclusions";
 import { conditionsFor, render, type Conditions } from "./conditions";
 import { isUsdDealRow, type DealFacts } from "./fieldSpec";
 import { docHeading, paperDate, paperFileBase, paperNo } from "./format";
@@ -256,18 +257,57 @@ export function optionalExtras(d: OcpiDeal): string[] {
  *      it. The default can therefore never overwrite an agreed term; it can only
  *      finish a sentence that would otherwise have no unit in it.
  */
-const DEFAULT_INK_UNIT = "Kgs";
-
 export function includedInkNote(d: OcpiDeal): string | null {
-  if (d.inclInk !== true) return null;
-  const typed = d.inkQtyIncluded?.trim();
-  if (!typed) return null;
-  if (/\bincluded\b/i.test(typed)) return `Note: ${typed}`;
-  // No letters at all ⇒ a bare quantity, so the unit is missing rather than
-  // different. Anything carrying a letter has named its own unit and is left be.
-  const withUnit = /[A-Za-z]/.test(typed) ? typed : `${typed} ${DEFAULT_INK_UNIT}`;
-  const withInk = /\bink\b/i.test(withUnit) ? withUnit : `${withUnit} ink`;
-  return `Note: ${withInk} included in above value.`;
+  // The sentence itself lives in inclusions.ts, shared with the PI.
+  const sentence = inkIncludedSentence(d);
+  return sentence ? `Note: ${sentence}` : null;
+}
+
+/**
+ * Every "Yes" deal inclusion as a line under the price — ink, spare parts,
+ * print heads (client, 20-Oct-2026: what the deal includes must be on the OC
+ * and the PI too, and a "No" must appear nowhere). The centering device is
+ * left out here because it already prints in the composition bullets.
+ */
+export function inclusionNotes(d: OcpiDeal): string[] {
+  return inclusionLines(d)
+    .filter((l) => l.label !== "Centering Device")
+    .map((l) => l.text);
+}
+
+const SALE_CONDITIONS_KEY = "sale_conditions";
+
+/**
+ * The deal's inclusions go INSIDE "SALE CONDITIONS OF THE SUPPLY", right after
+ * "Payment terms:" and before "Insurance:" (client, 20-Oct-2026) — as
+ * "Ink: 50 kgs ink included in above value.", in the clause's own "Label: text"
+ * style.
+ *
+ * ⚠ INSERTED AT PRINT TIME, NOT WRITTEN INTO THE TEMPLATES. 22 machine decks
+ *   carry their own copy of this clause; editing every one (and every future
+ *   one) to add a token would be 22 chances to miss. Anchored on the
+ *   "Payment terms" line (21 of 22), else before "Insurance" (22 of 22), else
+ *   at the end of the clause.
+ */
+function withInclusions(sectionKey: string, body: string, deal: OcpiDeal): string {
+  if (sectionKey !== SALE_CONDITIONS_KEY || body.trim() === "") return body;
+  const add = inclusionLines(deal)
+    .filter((l) => l.label !== "Centering Device")
+    .map((l) => `${l.label}: ${l.text}`);
+  if (add.length === 0) return body;
+  const lines = body.split("\n");
+  const pay = lines.findIndex((l) => /^\s*payment terms?\b/i.test(l));
+  const ins = lines.findIndex((l) => /^\s*insurance\b/i.test(l));
+  const at = pay >= 0 ? pay + 1 : ins >= 0 ? ins : lines.length;
+  lines.splice(at, 0, ...add);
+  return lines.join("\n");
+}
+
+/** True when this deck prints a Sale Conditions clause the inclusions can sit in. */
+function hasSaleConditions(sections: OcpiMachineSection[], tokens: Record<string, string | null>, conditions: Conditions): boolean {
+  return sections.some(
+    (s) => s.key === SALE_CONDITIONS_KEY && render(s.body ?? "", tokens, conditions).text.trim() !== "",
+  );
 }
 
 /**
@@ -504,6 +544,7 @@ export function resolvedOcDocument(input: OcDocInput): Record<string, unknown> {
         promised, which is the one thing a dispute about it would turn on.
     */
     included_ink_note: includedInkNote(deal),
+    inclusion_notes: inclusionNotes(deal),
     /*
       ⚠ FROZEN FOR THE SAME REASON, and only when it prints. The GSTIN on a
         signed contract is the number the buyer's accounts team reconciles the
@@ -523,7 +564,7 @@ export function resolvedOcDocument(input: OcDocInput): Record<string, unknown> {
       .map((s) => ({
         key: s.key,
         title: s.title,
-        body: render(s.body ?? "", tokens, conditions).text,
+        body: withInclusions(s.key, render(s.body ?? "", tokens, conditions).text, deal),
       }))
       .filter((s) => s.body.trim() !== ""),
     /*
@@ -800,13 +841,24 @@ export async function buildOcPdf(input: OcDocInput): Promise<jsPDF> {
       description and above "Machine Value". Below the totals it would read as a
       footnote to the arithmetic instead of a term of the supply.
   */
-  const inkNote = includedInkNote(deal);
-  if (inkNote) {
-    const lines = wrapText(pdf, inkNote, cw, 8.5);
-    y = room(y, lines.length * 11 + 6);
-    for (const l of lines) {
-      text(pdf, l, left, y, { size: 8.5 });
-      y += 11;
+  /*
+    FALLBACK ONLY. The inclusions print inside SALE CONDITIONS, after "Payment
+    terms" (`withInclusions`). A deck with no such clause would otherwise lose
+    them, so there — and only there — they stay here under the price:
+    "Note: 50 Kgs ink included in above value.", or "Note:" then "1) …".
+  */
+  const notes = hasSaleConditions(sections, tokens, conditions) ? [] : inclusionNotes(deal);
+  if (notes.length > 0) {
+    const paras = notes.length === 1
+      ? [`Note: ${notes[0]}`]
+      : ["Note:", ...notes.map((n, i) => `${i + 1}) ${n}`)];
+    for (const para of paras) {
+      const lines = wrapText(pdf, para, cw, 8.5);
+      y = room(y, lines.length * 11 + 2);
+      for (const l of lines) {
+        text(pdf, l, left, y, { size: 8.5 });
+        y += 11;
+      }
     }
     y += 6;
   }
@@ -966,7 +1018,8 @@ export async function buildOcPdf(input: OcDocInput): Promise<jsPDF> {
 
   // ── The machine's own sections, in its own order ─────────────────────────
   for (const sec of sections) {
-    const body = render(sec.body ?? "", tokens, conditions).text;
+    // The deal's inclusions are slotted into SALE CONDITIONS after "Payment terms".
+    const body = withInclusions(sec.key, render(sec.body ?? "", tokens, conditions).text, deal);
     /*
       🔴 A SECTION A CONDITION EMPTIED IS DROPPED WHOLE, HEADING AND ALL (R4).
          The loop used to print the title unconditionally, so a body that

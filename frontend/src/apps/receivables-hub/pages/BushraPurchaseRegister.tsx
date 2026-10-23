@@ -6,6 +6,7 @@
  * Purchase-Type, Ink Type, Group, Category and Colour sit AFTER Amount, as on the Sales Register.
  * Data layer: lib/purchaseRegister.ts; classification: lib/bushraPurchaseRegister.ts.
  */
+import { useBackState } from "@/shared/lib/backState";
 import { useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
@@ -150,7 +151,7 @@ export default function BushraPurchaseRegister() {
   );
 
   const [sel, setSel] = useState<Record<FilterKey, string[]>>(NO_FILTERS);
-  const [search, setSearch] = useState("");
+  const [search, setSearch] = useBackState("BushraPurchaseRegister.search", "");
 
   const searched = useMemo(() => {
     const q = search.trim().toLowerCase();

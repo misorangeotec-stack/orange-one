@@ -16,6 +16,7 @@
  * can never disagree. VALUE IS NET — a return or debit note is a negative line, netted off.
  * Bar/row clicks filter every panel and a blank click lets them go, exactly as on the Sales dashboards.
  */
+import { useBackState } from "@/shared/lib/backState";
 import { useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
@@ -693,7 +694,7 @@ function PurchaseReportTable({ storeId, rows, base, from, to, loading, fmtQ, sel
   setFilter: (k: FilterKey) => (v: string[]) => void;
   onResetDashboard: () => void;
 }) {
-  const [q, setQ] = useState("");
+  const [q, setQ] = useBackState("BushraPurchaseDashboard.q", "");
   /** Column widths the reader drags — header edge, double-click resets, "Reset widths" clears all. */
   const fit = useColumnWidths("tb", COL_IDS, `bushra-purchase-dash-report.${storeId}`);
   const [tsel, setTsel] = useState<Record<TableOnlyKey, string[]>>(NO_TABLE_FILTERS);

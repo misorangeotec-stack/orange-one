@@ -77,6 +77,7 @@ const DATE_LABEL: Record<ShipmentStatus, string> = {
   ETA: "Expected arrival",
   "AT PORT": "Landed on",
   PLANT: "Order Monday",
+  "NEW ORDER": "Ordered on",
 };
 
 export default function InkShipments() {

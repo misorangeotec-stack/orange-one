@@ -69,6 +69,9 @@ const mapTask = (r: any): Task => ({
   notApplicableAt: r.not_applicable_at ?? null,
   isPersonal: r.is_personal ?? false,
   isPeerAssignment: r.is_peer_assignment ?? false,
+  peerClosedAt: r.peer_closed_at ?? null,
+  peerClosedBy: r.peer_closed_by ?? null,
+  peerReopenCount: r.peer_reopen_count ?? 0,
   ...kraFieldsFromRow(r),
   createdAt: r.created_at,
   updatedAt: r.updated_at,
@@ -131,6 +134,7 @@ const mapRecurring = (r: any): RecurringTask => ({
   monthlyDays: r.monthly_days ?? [],
   monthlyNth: r.monthly_nth ?? null,
   monthlyWeekday: r.monthly_weekday ?? null,
+  yearlyMonth: r.yearly_month ?? null,
   assignedTo: r.assigned_to,
   createdBy: r.created_by,
   departmentId: r.department_id,
@@ -139,6 +143,7 @@ const mapRecurring = (r: any): RecurringTask => ({
   locationIds: [], // attached after the fetch from recurring_task_locations
   notifyRequired: r.notify_required ?? false,
   notifyDaysBefore: r.notify_days_before ?? null,
+  kraId: r.kra_id ?? null,
 });
 
 const mapPlan = (r: any): WeeklyPlan => ({

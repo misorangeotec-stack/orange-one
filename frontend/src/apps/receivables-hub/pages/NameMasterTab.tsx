@@ -1,3 +1,4 @@
+import { useBackState } from "@/shared/lib/backState";
 import { useCallback, useMemo, useState } from "react";
 import { Lock, Plus, Search } from "lucide-react";
 import { Button } from "@hub/components/ui/button";
@@ -63,7 +64,7 @@ export default function NameMasterTab({ kind, title, rows, usage, onReload }: {
 }) {
   const { toast } = useToast();
 
-  const [search, setSearch] = useState("");
+  const [search, setSearch] = useBackState("NameMasterTab.search", "");
   const [busy, setBusy] = useState<string | null>(null);
 
   const [addOpen, setAddOpen] = useState(false);

@@ -14,6 +14,8 @@ import { matchesSearch } from "@/shared/lib/search";
 import { formatDate, formatDateTime } from "@/shared/lib/time";
 import { WEEK_START } from "../mock/data";
 import { useTaskStore } from "../mock/store";
+import { useSession } from "../mock/session";
+import { taskCategoryFor, TASK_CATEGORY_FILTER_OPTIONS, type TaskCategoryFilter } from "../lib/kraTasks";
 import { countsTowardMetrics, countsTowardPeerMetrics, isRecurringTask, isPeerTask } from "../mock/selectors";
 import type { Department, Task, TaskStatus } from "../types";
 import { STATUS_FILTER_OPTIONS, RECURRENCE_LABEL, matchesStatusFilter, isOverdueTask, type StatusFilter } from "../types";
@@ -103,7 +105,8 @@ export default function TaskBrowser({
    */
   stickyScope?: StickyScope;
 }) {
-  const { actorById, departmentById, getRecurring } = useTaskStore();
+  const { actorById, departmentById, getRecurring, profileById } = useTaskStore();
+  const { user } = useSession();
   const scope = stickyScope ?? NO_STICKY;
   const [q, setQ] = useStickyState(scope, "q", "");
   const [person, setPerson] = useStickyState(scope, "person", initialFilters?.assignee ?? "all");
@@ -122,6 +125,8 @@ export default function TaskBrowser({
   // Regular (scored) vs "Other" (self-tracking, is_personal) tasks. Seeded to
   // "other" when arriving from the Other-tasks card on the scorecard.
   const [category, setCategory] = useStickyState<"all" | "regular" | "other">(scope, "category", initialFilters?.personal ? "other" : "all");
+  // Task Category (KRA / Others) — not `category` above, which is regular vs personal.
+  const [taskCategory, setTaskCategory] = useStickyState<TaskCategoryFilter>(scope, "taskCategory", "all");
   // Date windows on the two date columns. Not part of the deep-link contract
   // (see lib/taskLink) — plain sticky state, so a scorecard drill-down doesn't
   // start discarding snapshots on their account.
@@ -181,6 +186,7 @@ export default function TaskBrowser({
     setStatuses([]);
     setKind("all");
     setCategory("all");
+    setTaskCategory("all");
     setWeek("all");
     setExactWeek(null);
     setMetricOnly(false);
@@ -200,6 +206,7 @@ export default function TaskBrowser({
       if (metricOnly && !(kind === "peer" ? countsTowardPeerMetrics(t) : countsTowardMetrics(t))) return false;
       if (category === "regular" && t.isPersonal) return false;
       if (category === "other" && !t.isPersonal) return false;
+      if (taskCategory !== "all" && taskCategoryFor(t, user.id, (id) => profileById(id)?.hodIds) !== taskCategory) return false;
       if (person !== "all" && t.assignedTo !== person) return false;
       if (creator !== "all" && t.createdBy !== creator) return false;
       if (dept !== "all" && t.departmentId !== dept) return false;
@@ -218,7 +225,7 @@ export default function TaskBrowser({
       if (!matchesSearch(q, t.title, t.description)) return false;
       return true;
     });
-  }, [tasks, person, creator, dept, statuses, kind, category, week, exactWeek, metricOnly, overdueOnly, assignedRange, dueRange, q]);
+  }, [tasks, person, creator, dept, statuses, kind, category, taskCategory, user.id, profileById, week, exactWeek, metricOnly, overdueOnly, assignedRange, dueRange, q]);
 
   // KPI cards reflect the active filters (not the full list).
   const counts = useMemo(() => {
@@ -246,7 +253,7 @@ export default function TaskBrowser({
     // The ranges go through rangeKey: they're fresh objects on every change, so
     // interpolating them directly would yield a constant "[object Object]" and
     // the page would never reset.
-    resetKey: `${q}|${person}|${creator}|${dept}|${statuses.join(",")}|${kind}|${category}|${week}|${exactWeek ?? ""}|${metricOnly}|${overdueOnly}|${rangeKey(assignedRange)}|${rangeKey(dueRange)}|${sort.key}|${sort.dir}`,
+    resetKey: `${q}|${person}|${creator}|${dept}|${statuses.join(",")}|${kind}|${category}|${taskCategory}|${week}|${exactWeek ?? ""}|${metricOnly}|${overdueOnly}|${rangeKey(assignedRange)}|${rangeKey(dueRange)}|${sort.key}|${sort.dir}`,
     pageState,
   });
 
@@ -318,6 +325,12 @@ export default function TaskBrowser({
       key: "metric",
       label: "Scored tasks only",
       onClear: () => setMetricOnly(false),
+    });
+  if (taskCategory !== "all")
+    activeFilters.push({
+      key: "taskCategory",
+      label: `Category: ${taskCategory === "kra" ? "KRA" : "Others"}`,
+      onClear: () => setTaskCategory("all"),
     });
   if (category !== "all")
     activeFilters.push({
@@ -523,6 +536,15 @@ export default function TaskBrowser({
                 align="right"
                 triggerClassName="py-1.5 px-2.5 text-[12.5px]"
                 options={STATUS_FILTER_OPTIONS.map((s) => ({ value: s.value, label: s.label }))}
+              />
+            ),
+            category: (
+              <Combobox
+                value={taskCategory}
+                onChange={(v) => setTaskCategory((v || "all") as TaskCategoryFilter)}
+                className="w-full"
+                triggerClassName="py-1.5 px-2.5 text-[12.5px]"
+                options={TASK_CATEGORY_FILTER_OPTIONS.map((o) => ({ value: o.value, label: o.label }))}
               />
             ),
           }}

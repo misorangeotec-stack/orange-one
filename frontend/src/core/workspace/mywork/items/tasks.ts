@@ -3,6 +3,7 @@
  */
 import { appName } from "@/apps/appInfo";
 import type { TaskData } from "@/apps/task-management/data/fetchTaskData";
+import { awaitingPeerReview, isPeerReviewerOf } from "@/apps/task-management/lib/peerReview";
 import type { WorkItem } from "../types";
 
 /**
@@ -52,5 +53,38 @@ export function taskWorkItems(data: TaskData, uid: string): WorkItem[] {
       to: `/task-management/tasks/${t.id}`,
       // A task has exactly one assignee, so it is always personal.
       assignment: "direct" as const,
+      // Task Category: given against one of the assignee's KRAs, or an ordinary task.
+      // The assignee may always see their own KRA (useKraTaskAccess).
+      category: t.kraId || t.kraOpen ? "KRA" : "Other",
+    }));
+}
+
+/**
+ * Peer tasks this person GAVE that the assignee has completed and that wait for their
+ * review — close it, or reopen it for rework (lib/peerReview.ts, 20270204120100).
+ *
+ * ⚠ SEPARATE FROM taskWorkItems, AND CALLED ONLY BY THE SCREEN'S PROVIDER (not yet by
+ *   the snapshot email). taskWorkItems is cross-checked against SQL's
+ *   `public.user_snapshot()` count (`tasks_sql`); folding reviews into it would make the
+ *   two disagree. Putting reviews in the mail needs both changed together.
+ *
+ * No due date: a review has no deadline of its own, and a completion date would make
+ * every review look overdue the next day.
+ */
+export function peerReviewWorkItems(data: TaskData, uid: string): WorkItem[] {
+  return data.tasks
+    .filter((t) => awaitingPeerReview(t) && isPeerReviewerOf(t, uid, false))
+    .map((t) => ({
+      id: `tasks:${t.id}:peer-review`,
+      source: "tasks",
+      sourceLabel: appName("task-management"),
+      ref: t.title,
+      detail: t.description || undefined,
+      stage: "Peer review",
+      dueIso: null,
+      to: `/task-management/tasks/${t.id}`,
+      assignment: "direct" as const,
+      isApproval: true,
+      category: "Other",
     }));
 }

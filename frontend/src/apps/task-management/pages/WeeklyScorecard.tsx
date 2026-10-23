@@ -1,3 +1,4 @@
+import { useBackState } from "@/shared/lib/backState";
 import { ScrollableTable } from "@/core/shared/components/ScrollableTable";
 import { FitTh, ResetWidths } from "@/shared/components/ui/ColumnResizer";
 import { useColumnWidths } from "@/shared/lib/useColumnWidths";
@@ -603,7 +604,7 @@ function PendingBucketDrawer({ tasks, name, filter, onFilter, onClose }: {
   tasks: Task[]; name: string; filter: BucketFilter; onFilter: (f: BucketFilter) => void; onClose: () => void;
 }) {
   const { profileById } = useTaskStore();
-  const [q, setQ] = useState("");
+  const [q, setQ] = useBackState("WeeklyScorecard.q", "");
   const [shown, setShown] = useState(false);
   // A task opened INSIDE the panel (the full TaskDetail, from the already-loaded
   // store — no new tab, no app reload). null = the list.
@@ -687,7 +688,7 @@ function PendingBucketDrawer({ tasks, name, filter, onFilter, onClose }: {
       header: "Status",
       cell: (t) => (
         <div className="flex flex-wrap items-center gap-1">
-          <StatusChip status={t.status} />
+          <StatusChip status={t.status} peer={t} />
           {isPushedAhead(t) && (
             <span className="inline-flex items-center rounded-pill px-2 py-1 text-[10.5px] font-semibold whitespace-nowrap bg-orange-soft text-orange" title="Shifted by the assignee into a later week">
               Pushed ahead

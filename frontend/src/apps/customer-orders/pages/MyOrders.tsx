@@ -1,3 +1,4 @@
+import { useBackState } from "@/shared/lib/backState";
 import { useMemo, useState } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
@@ -89,7 +90,7 @@ export default function MyOrders() {
   const [searchParams, setSearchParams] = useSearchParams();
   const folder = (searchParams.get("folder") as Folder | null) ?? "all";
   const setFolder = (f: Folder) => setSearchParams(f === "all" ? {} : { folder: f }, { replace: true });
-  const [q, setQ] = useState("");
+  const [q, setQ] = useBackState("MyOrders.q", "");
 
   const { data: orders, isLoading, error } = useQuery({
     queryKey: ORDERS_QK,

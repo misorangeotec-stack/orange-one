@@ -1,5 +1,7 @@
-import { useState, type ReactNode } from "react";
+import { useMemo, useState, type ReactNode } from "react";
 import { useNavigate } from "react-router-dom";
+import { useQuery } from "@tanstack/react-query";
+import { fetchKras, KRAS_QUERY_KEY } from "@/core/admin/kras";
 import { ScrollableTable } from "@/core/shared/components/ScrollableTable";
 import { FitCell, FitResizer, ResetWidths, thFitStyle } from "@/shared/components/ui/ColumnResizer";
 import { useColumnWidths, type FitTable } from "@/shared/lib/useColumnWidths";
@@ -12,6 +14,9 @@ import { useTaskStore } from "../mock/store";
 import { useSession } from "../mock/session";
 import { isRecurringTask } from "../mock/selectors";
 import { taskDetailPath } from "../lib/taskLink";
+import { taskCategoryFor } from "../lib/kraTasks";
+import { awaitingPeerReview, completedBeforeReview } from "../lib/peerReview";
+import { TextArea } from "@/shared/components/ui/Form";
 import { RECURRENCE_LABEL, isOverdueTask, type Task } from "../types";
 import StatusChip from "./StatusChip";
 import EditTaskModal from "./EditTaskModal";
@@ -27,7 +32,7 @@ export type TaskSort = { key: TaskSortKey; dir: SortDir };
  * of sitting in an anonymous wall of dropdowns above the table. Keys match
  * TaskSortKey; omit one to leave that column's filter cell empty.
  */
-export type TaskFilterCells = Partial<Record<TaskSortKey, ReactNode>>;
+export type TaskFilterCells = Partial<Record<TaskSortKey | "category", ReactNode>>;
 
 export const DEFAULT_TASK_SORT: TaskSort = { key: "dueDate", dir: "asc" };
 
@@ -147,10 +152,28 @@ export default function TaskTable({ tasks, sort, onSort, showDepartment = false,
    */
   emptyMessage?: ReactNode;
 }) {
-  const { actorById, departmentById, getRecurring, canStatusActions, deleteTask, unreadAssignedTaskIds } = useTaskStore();
+  const { actorById, departmentById, getRecurring, canStatusActions, deleteTask, unreadAssignedTaskIds, profileById, reopenPeerTask } = useTaskStore();
   const { user, role } = useSession();
+
+  // Task Category per row, as this viewer may see it (null = a KRA they may not see).
+  const categoryOf = (t: Task) => taskCategoryFor(t, user.id, (id) => profileById(id)?.hodIds);
+  // KRA names only for the rows that show one; org_kras RLS returns just the ones this
+  // user may read (their own and their direct reports').
+  const anyKra = useMemo(() => tasks.some((t) => categoryOf(t) === "kra"), [tasks, user.id, profileById]);
+  const krasQ = useQuery({ queryKey: KRAS_QUERY_KEY, queryFn: fetchKras, enabled: anyKra });
+  const kraNameById = useMemo(() => new Map((krasQ.data ?? []).map((k) => [k.id, k.name])), [krasQ.data]);
   const navigate = useNavigate();
   const [confirmId, setConfirmId] = useState<string | null>(null);
+  // Peer task review: the GIVER re-opens a completed peer task straight from the list
+  // (old completed ones and ones waiting for review). Never the assignee — the
+  // re-open is the giver's call (guard_task_peer_review enforces the same).
+  const [reopenId, setReopenId] = useState<string | null>(null);
+  const [reopenNote, setReopenNote] = useState("");
+  const [reopenBusy, setReopenBusy] = useState(false);
+  const [reopenErr, setReopenErr] = useState("");
+  const canReopenPeerRow = (t: Task) =>
+    canStatusActions && t.isPeerAssignment && t.createdBy === user.id && t.assignedTo !== user.id &&
+    (completedBeforeReview(t) || awaitingPeerReview(t));
   const [deleting, setDeleting] = useState(false);
   // One modal instance for the whole table, driven by an id (like confirmId) —
   // not one per row. EditTaskModal re-prefills on each open.
@@ -209,11 +232,11 @@ export default function TaskTable({ tasks, sort, onSort, showDepartment = false,
    */
   const fit = useColumnWidths("tb", showDepartment ? TASK_COLS : TASK_COLS.filter((c) => c !== "department"));
 
-  const colCount = showDepartment ? 8 : 7;
+  const colCount = showDepartment ? 9 : 8;
   // Three configurations, three minimums — a single value would either crush the
   // search box in the Task cell or give Tagged Tasks (no filter row) horizontal
   // scroll it never had. Tailwind needs literal class names, hence the ternaries.
-  const minWidth = !filterRow ? "min-w-[930px]" : showDepartment ? "min-w-[1210px]" : "min-w-[1060px]";
+  const minWidth = !filterRow ? "min-w-[1040px]" : showDepartment ? "min-w-[1320px]" : "min-w-[1170px]";
 
   return (
     <>
@@ -228,6 +251,7 @@ export default function TaskTable({ tasks, sort, onSort, showDepartment = false,
             <SortTh label="Assigned" sortKey="createdAt" sort={sort} onSort={onSort} className="w-[120px]" fit={fit} />
             <SortTh label="Due" sortKey="dueDate" sort={sort} onSort={onSort} className="w-[120px]" fit={fit} />
             <SortTh label="Status" sortKey="status" sort={sort} onSort={onSort} align="center" className="w-[130px]" fit={fit} />
+            <th className="w-[110px] px-3 py-2.5 text-left font-semibold">Category</th>
             {/* PF-20: the icon appears here only once a column has been dragged. */}
             <th className="w-[90px] text-right pr-2">
               <ResetWidths fit={fit} cols={TASK_COLS} label="" className="inline-flex items-center text-grey-2 hover:text-orange align-middle" />
@@ -252,6 +276,7 @@ export default function TaskTable({ tasks, sort, onSort, showDepartment = false,
               <th className="px-2 py-2 font-normal text-left align-middle">{filterRow.createdAt}</th>
               <th className="px-2 py-2 font-normal text-left align-middle">{filterRow.dueDate}</th>
               <th className="px-2 py-2 font-normal text-left align-middle">{filterRow.status}</th>
+              <th className="px-2 py-2 font-normal text-left align-middle">{filterRow.category}</th>
               <th />
             </tr>
           )}
@@ -419,7 +444,23 @@ export default function TaskTable({ tasks, sort, onSort, showDepartment = false,
                     still genuinely Pending or In Progress underneath. */}
                 <td className="px-3 py-3 align-middle text-center">
                   <div className="flex flex-col items-center gap-1">
-                    <StatusChip status={task.status} notApplicable={task.notApplicable} />
+                    <StatusChip status={task.status} notApplicable={task.notApplicable} peer={task} />
+                    {canReopenPeerRow(task) && (
+                      <button
+                        type="button"
+                        title="Send it back to the HOD with what needs to change"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setReopenNote("");
+                          setReopenErr("");
+                          setReopenId(task.id);
+                        }}
+                        className="inline-flex items-center gap-1 rounded-pill border border-[#f3c2bf] bg-white px-2 py-0.5 text-[10.5px] font-semibold text-[#c0392b] hover:bg-[#FDECEC] whitespace-nowrap"
+                      >
+                        <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round"><path d="M3 2v6h6" /><path d="M3 13a9 9 0 1 0 3-7.7L3 8" /></svg>
+                        Re-open
+                      </button>
+                    )}
                     {overdue && (
                       <span
                         title={`Overdue — was due ${dateLabel(task.dueDate)}`}
@@ -430,6 +471,25 @@ export default function TaskTable({ tasks, sort, onSort, showDepartment = false,
                       </span>
                     )}
                   </div>
+                </td>
+
+                {/* Category — the Task Category it was given under: a KRA, or Others. */}
+                <td className="px-3 py-3 align-middle">
+                  {(() => {
+                    const cat = categoryOf(task);
+                    if (cat === "kra") {
+                      const name = task.kraId ? kraNameById.get(task.kraId) : undefined;
+                      return (
+                        <div className="min-w-0" title={name ? `KRA: ${name}` : "KRA task"}>
+                          <span className="inline-flex items-center text-[10px] font-semibold uppercase tracking-wide text-[#0f7b6c] bg-[#E3F5F1] rounded-pill px-1.5 py-0.5">KRA</span>
+                          {name && <div className="text-[11px] text-grey mt-0.5 truncate">{name}</div>}
+                          {!task.kraId && <div className="text-[11px] text-[#9a6200] mt-0.5 truncate">KRA to be picked</div>}
+                        </div>
+                      );
+                    }
+                    if (cat === "others") return <span className="text-[12.5px] text-grey">Others</span>;
+                    return <span className="text-[12.5px] text-grey-2" title="The category is visible to the assignee and their HOD only">—</span>;
+                  })()}
                 </td>
 
                 {/* Edit + Delete (pending one-offs only) + chevron */}
@@ -499,6 +559,45 @@ export default function TaskTable({ tasks, sort, onSort, showDepartment = false,
       }
     >
       <p className="text-[13px] text-grey">This permanently removes this pending task. This can't be undone.</p>
+    </Modal>
+
+    <Modal
+      open={!!reopenId}
+      onClose={() => setReopenId(null)}
+      title="Re-open task"
+      subtitle={tasks.find((t) => t.id === reopenId)?.title}
+      size="sm"
+      footer={
+        <>
+          <Button variant="ghost" onClick={() => setReopenId(null)} disabled={reopenBusy}>Cancel</Button>
+          <Button
+            disabled={reopenBusy || !reopenId}
+            onClick={async () => {
+              if (!reopenId) return;
+              if (!reopenNote.trim()) {
+                setReopenErr("Write what needs to change before re-opening.");
+                return;
+              }
+              setReopenBusy(true);
+              setReopenErr("");
+              try {
+                await reopenPeerTask(reopenId, reopenNote);
+                setReopenId(null);
+              } catch (e) {
+                setReopenErr((e as Error).message || "Couldn't re-open the task.");
+              } finally {
+                setReopenBusy(false);
+              }
+            }}
+          >
+            {reopenBusy ? "Re-opening…" : "Re-open"}
+          </Button>
+        </>
+      }
+    >
+      <p className="text-[13px] text-grey mb-2">It goes back to {actorById(tasks.find((t) => t.id === reopenId)?.assignedTo ?? null)?.name ?? "the HOD"} as Re-opened, with your note.</p>
+      <TextArea rows={3} value={reopenNote} onChange={(e) => { setReopenNote(e.target.value); setReopenErr(""); }} placeholder="What needs to change (required)" />
+      {reopenErr && <p className="mt-1.5 text-[12px] text-[#d4493f]">{reopenErr}</p>}
     </Modal>
 
     {/* Both edit modals prefill on open, so a single instance serves every row. */}

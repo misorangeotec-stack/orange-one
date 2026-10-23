@@ -3,7 +3,7 @@ import Card from "@/shared/components/ui/Card";
 import QueueTable, { type QueueColumn } from "@/shared/components/ui/QueueTable";
 import KpiRow, { type KpiTile } from "@/shared/components/dashboard/KpiRow";
 import { useTravelStore } from "../../store";
-import { STEPS, stepByKey, type StepKey } from "../../lib/steps";
+import { STEPS, isHiddenStep, stepByKey, type StepKey } from "../../lib/steps";
 import { stepCompletedIso } from "../../lib/queues";
 import type { Trip } from "../../types";
 
@@ -85,7 +85,8 @@ export default function DeskPerformance() {
   const s = useTravelStore();
 
   const rows = useMemo<Row[]>(() => {
-    const queueSteps = STEPS.filter((st) => !st.noQueue);
+    // Hidden steps (new process, 2026-10) are left out for everyone but admins.
+    const queueSteps = STEPS.filter((st) => !st.noQueue && (s.isAdmin || !isHiddenStep(st.key)));
     return queueSteps.map((st) => {
       const key = st.key as StepKey;
       const from = FROM[key];
@@ -113,7 +114,7 @@ export default function DeskPerformance() {
       };
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [s.trips, s.stepSla]);
+  }, [s.trips, s.stepSla, s.isAdmin]);
 
   const closed = s.trips.filter((t) => t.status === "closed");
   const cycles = closed
@@ -122,12 +123,12 @@ export default function DeskPerformance() {
   const cancelled = s.trips.filter((t) => t.status === "cancelled" || t.status === "cancelled_pending_claim");
 
   const tiles: KpiTile[] = [
-    { key: "closed", label: "Trips closed", value: String(closed.length), hint: "Claimed, verified and settled" },
+    { key: "closed", label: "Trips closed", value: String(closed.length), hint: "Closed at booking, or settled (older trips)" },
     {
       key: "cycle",
       label: "Return to settled",
       value: median(cycles) === null ? "—" : `${median(cycles)} days`,
-      hint: "Median, calendar days. Section 12 promises 14 WORKING days",
+      hint: "Older trips only (new trips close at booking). Median, calendar days",
     },
     {
       key: "cancelled",

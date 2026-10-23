@@ -1,3 +1,4 @@
+import BackLink from "@/shared/components/ui/BackLink";
 import { Link, useParams } from "react-router-dom";
 import Card from "@/shared/components/ui/Card";
 import ServiceCheckPanel from "../../components/ServiceCheckPanel";
@@ -65,9 +66,7 @@ export default function ServiceCheckView() {
   return (
     <div className="space-y-5">
       <div>
-        <Link to="/ocpi/queues/service-check" className="text-[13px] font-semibold text-grey-2 hover:text-orange">
-          ← Service Check
-        </Link>
+        <BackLink to="/ocpi/queues/service-check" label="Service Check" className="text-[13px] font-semibold text-grey-2 hover:text-orange" />
         <h1 className="mt-1 text-[22px] font-bold text-navy">{dealRef(deal)}</h1>
         <p className="mt-0.5 text-[13.5px] text-grey-2">{deal.customerName}</p>
       </div>

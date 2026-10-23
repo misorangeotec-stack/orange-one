@@ -37,6 +37,8 @@ import {
   saveLeg as saveLegWrite,
   removeLeg as removeLegWrite,
   completeBooking as completeBookingWrite,
+  cancelBooking as cancelBookingWrite,
+  type CancelBookingInput,
   requestCancellation as requestCancellationWrite,
   processCancellation as processCancellationWrite,
 } from "./data/travelBookingWrites";
@@ -79,7 +81,7 @@ import type {
   TravelCity, TravelPurpose, TravelExpenseCategory, TravelHotel, TravelNamedMaster,
   TravelMasterManager, TravelMasterRequest, TravelRateCard, TravelRate,
   TravelMasterType, TravelRequestableMaster, TravelCategory, CityTier, RateType,
-  TripPassenger, ApprovalMatrix, TripLeg, TripLegInput,
+  TripPassenger, ApprovalMatrix, TripLeg, TripLegInput, TripCancellation,
   ClaimLine, ClaimLineInput, ClaimPreview, DaDay, ActualTravelInput, SettlementInput,
 } from "./types";
 
@@ -163,6 +165,8 @@ interface TravelStoreValue {
   legs: TripLeg[];
   /** This trip's booked legs, in the order they were added. */
   legsOf: (tripId: string) => TripLeg[];
+  /** The booker's cancellations on this trip, oldest first. */
+  cancellationsOf: (tripId: string) => TripCancellation[];
   /**
    * The flat arrays, alongside the per-trip selectors.
    *
@@ -343,6 +347,7 @@ interface TravelStoreValue {
   saveLeg: (tripId: string, input: TripLegInput, legId?: string | null) => Promise<string>;
   removeLeg: (legId: string) => Promise<void>;
   completeBooking: (tripId: string) => Promise<string>;
+  cancelBooking: (tripId: string, input: CancelBookingInput) => Promise<string>;
   requestCancellation: (tripId: string, reason: string) => Promise<void>;
   processCancellation: (
     tripId: string,
@@ -404,6 +409,7 @@ export function TravelStoreProvider({ children }: { children: ReactNode }) {
     const trips = data?.trips ?? [];
     const passengers = data?.passengers ?? [];
     const legs = data?.legs ?? [];
+    const cancellations = data?.cancellations ?? [];
     const claimLines = data?.claimLines ?? [];
     const daDays = data?.daDays ?? [];
     const employeeSettings = data?.employeeSettings ?? [];
@@ -615,6 +621,10 @@ export function TravelStoreProvider({ children }: { children: ReactNode }) {
       legs,
       legsOf: (tripId: string) =>
         legs.filter((x) => x.tripId === tripId).sort((a, b) => a.sortOrder - b.sortOrder),
+      cancellationsOf: (tripId: string) =>
+        cancellations
+          .filter((x) => x.tripId === tripId)
+          .sort((a, b) => a.cancelledAt.localeCompare(b.cancelledAt)),
       claimLines,
       daDays,
       claimLinesOf: (tripId: string) =>
@@ -798,6 +808,11 @@ export function TravelStoreProvider({ children }: { children: ReactNode }) {
       },
       completeBooking: async (tripId) => {
         const st = await completeBookingWrite(tripId);
+        await qc.invalidateQueries({ queryKey: QK });
+        return st;
+      },
+      cancelBooking: async (tripId, input) => {
+        const st = await cancelBookingWrite(tripId, input);
         await qc.invalidateQueries({ queryKey: QK });
         return st;
       },

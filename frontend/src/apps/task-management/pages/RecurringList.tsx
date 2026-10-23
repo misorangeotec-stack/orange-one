@@ -17,7 +17,7 @@ import { formatDate, formatDateTime } from "@/shared/lib/time";
 import { useSession } from "../mock/session";
 import { useTaskStore } from "../mock/store";
 import { exportRecurringToXlsx } from "../lib/exportRecurring";
-import { MONTH_LAST_DAY, RECURRENCE_LABEL, type RecurringTask } from "../types";
+import { MONTH_LAST_DAY, RECURRENCE_LABEL, type RecurrenceType, type RecurringTask } from "../types";
 
 const DOW = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 
@@ -28,18 +28,31 @@ function ordinal(n: number) {
 }
 
 const NTH_WORD = ["", "1st", "2nd", "3rd", "4th", "5th"];
+const MON = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+
+/** "on the 1st Sat" / "on the 5th, last day" — the Monthly day test, shared by Half-yearly / Yearly. */
+function dayInMonthText(r: RecurringTask) {
+  if (r.monthlyWeekday != null && r.monthlyNth != null) {
+    return `on the ${NTH_WORD[r.monthlyNth] ?? r.monthlyNth + "th"} ${DOW[r.monthlyWeekday]}`;
+  }
+  if (!r.monthlyDays.length) return "";
+  return "on the " + r.monthlyDays.map((d) => (d === MONTH_LAST_DAY ? "last day" : ordinal(d))).join(", ");
+}
 
 export function frequencyText(r: RecurringTask) {
   if (r.recurrenceType === "daily") return "Every working day";
   if (r.recurrenceType === "when") return "As and When (Mon–Sat, optional)";
   if (r.recurrenceType === "quarterly") return "Quarterly — 7 days before quarter-end";
   if (r.recurrenceType === "monthly") {
-    if (r.monthlyWeekday != null && r.monthlyNth != null) {
-      return `Every month on the ${NTH_WORD[r.monthlyNth] ?? r.monthlyNth + "th"} ${DOW[r.monthlyWeekday]}`;
-    }
-    if (!r.monthlyDays.length) return "Monthly";
-    const parts = r.monthlyDays.map((d) => (d === MONTH_LAST_DAY ? "last day" : ordinal(d)));
-    return "Every month on the " + parts.join(", ");
+    const day = dayInMonthText(r);
+    return day ? `Every month ${day}` : "Monthly";
+  }
+  if (r.recurrenceType === "yearly" || r.recurrenceType === "half_yearly") {
+    const m = r.yearlyMonth;
+    if (m == null) return RECURRENCE_LABEL[r.recurrenceType];
+    const months = r.recurrenceType === "yearly" ? MON[m - 1] : `${MON[m - 1]} & ${MON[(m + 5) % 12]}`;
+    const day = dayInMonthText(r);
+    return `${r.recurrenceType === "yearly" ? "Yearly" : "Half-yearly"} — ${months}${day ? " " + day : ""}`;
   }
   if (!r.weeklyDays.length) return "Weekly";
   return "Every " + r.weeklyDays.map((d) => DOW[d]).join(", ");
@@ -57,7 +70,7 @@ export default function RecurringList() {
   // filters + sort — sticky, so opening a row's task and coming Back keeps them
   const sticky = useStickyScope("tm:recurring");
   const [q, setQ] = useStickyState(sticky, "q", "");
-  const [type, setType] = useStickyState<"all" | "daily" | "weekly" | "monthly" | "when" | "quarterly">(sticky, "type", "all");
+  const [type, setType] = useStickyState<"all" | RecurrenceType>(sticky, "type", "all");
   const [activeFilter, setActiveFilter] = useStickyState<"all" | "active" | "paused">(sticky, "activeFilter", "all");
   const [person, setPerson] = useStickyState(sticky, "person", "all");
   const [assigner, setAssigner] = useStickyState(sticky, "assigner", "all");
@@ -196,7 +209,7 @@ export default function RecurringList() {
               </div>
               <Combobox
                 value={type}
-                onChange={(v) => setType(v as "all" | "daily" | "weekly" | "monthly" | "when" | "quarterly")}
+                onChange={(v) => setType(v as "all" | RecurrenceType)}
                 className="w-full sm:w-auto sm:min-w-[140px]"
                 options={[
                   { value: "all", label: "All types" },
@@ -205,6 +218,8 @@ export default function RecurringList() {
                   { value: "monthly", label: "Monthly" },
                   { value: "when", label: "As and When" },
                   { value: "quarterly", label: "Quarterly" },
+                  { value: "half_yearly", label: "Half-yearly" },
+                  { value: "yearly", label: "Yearly" },
                 ]}
               />
               <Combobox
@@ -293,6 +308,15 @@ export default function RecurringList() {
                           title="Notification required: the assignee is reminded before each date"
                         >
                           🔔 {r.notifyDaysBefore} {r.notifyDaysBefore === 1 ? "day" : "days"} before
+                        </span>
+                      )}
+                      {/* Like KraBadge: only the assignee and their direct HOD see a KRA. */}
+                      {r.kraId && (r.assignedTo === user.id || !!assignee?.hodIds.includes(user.id)) && (
+                        <span
+                          className="shrink-0 text-[10px] font-semibold uppercase tracking-wide rounded-pill px-1.5 py-0.5 bg-[#E3F5F1] text-[#0f7b6c]"
+                          title="KRA recurring task: every task it generates is a KRA task, reviewed 1-10 by the HOD"
+                        >
+                          KRA
                         </span>
                       )}
                     </div>

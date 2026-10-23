@@ -350,6 +350,12 @@ export interface Trip {
   holdFromStatus: TripStatus | null;
   cancelledAt: string | null;
   cancelReason: string | null;
+  /**
+   * True when the trip closed at the booking step (new process, 2026-10). It
+   * has no claim or settlement, and the booker may still cancel its tickets
+   * with a credit note. False for every trip that took the old route.
+   */
+  closedAtBooking: boolean;
 
   /**
    * ⚠ `edited*`, NOT `updated*`. `updatedAt` is maintained by a trigger that
@@ -770,6 +776,8 @@ export interface TripLeg {
   /** Section 4.1 — business or personal decides whether the charge is reimbursable. */
   cancelReasonKind: "business" | "personal" | null;
   cancelReason: string | null;
+  /** The cancellation (and credit note) that cancelled this leg, if any. */
+  cancellationId: string | null;
   docPath: string | null;
   /**
    * What the extractor read, verbatim.
@@ -785,6 +793,24 @@ export interface TripLeg {
 }
 
 export type LegDirection = "outbound" | "return" | "local";
+
+/**
+ * One cancellation by the booker, on a trip that closed at booking: which
+ * tickets, why, and the credit note that came back for them.
+ */
+export interface TripCancellation {
+  id: string;
+  tripId: string;
+  legIds: string[];
+  /** True when this cancellation took the last ticket, cancelling the trip. */
+  wholeTrip: boolean;
+  reason: string;
+  creditNoteNo: string;
+  creditNoteAmount: number;
+  creditNotePath: string;
+  cancelledBy: string | null;
+  cancelledAt: string;
+}
 
 /** What the booking form sends. Money arrives as text — see travelBookingWrites. */
 export interface TripLegInput {

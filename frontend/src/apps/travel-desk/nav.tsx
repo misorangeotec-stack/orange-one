@@ -46,6 +46,8 @@ export function buildTravelNav(opts: {
   canManageAnyMaster: boolean;
   /** How many master requests are still waiting, for the badge. */
   pendingMasterRequests: number;
+  /** Any old-process trip still waiting on the desk's cancellation decision. */
+  hasCancellationRequests: boolean;
 }): NavItem[] {
   const nav: NavItem[] = [
     { label: "Dashboard", to: B, icon: ic.dashboard, section: "Workspace" },
@@ -76,7 +78,10 @@ export function buildTravelNav(opts: {
     // Cancellations are the booking step's other job, and they need their own
     // destination: unwinding a booking is the opposite work from making one, and
     // it is the urgent one because a refund window closes.
-    if (step === "booking") {
+    //
+    // Since 2026-10 the booker cancels on the trip itself, with the credit note,
+    // so this queue only shows while an older request is still waiting.
+    if (step === "booking" && opts.hasCancellationRequests) {
       nav.push({ label: "Cancellations", to: `${B}/queues/cancellations`, icon: ic.step });
     }
   }
@@ -90,13 +95,20 @@ export function buildTravelNav(opts: {
     // Section 11.2 is unenforceable without this list, so it sits beside the register
     // rather than behind it.
     { label: "Upcoming Travel", to: `${B}/reports/upcoming`, icon: ic.report },
-    { label: "Outstanding Advances", to: `${B}/reports/outstanding-advances`, icon: ic.report },
     { label: "Cancelled Travel", to: `${B}/reports/cancelled`, icon: ic.report },
-    { label: "Policy Exceptions", to: `${B}/reports/exceptions`, icon: ic.report },
-    { label: "GST Input Credit", to: `${B}/reports/gst-itc`, icon: ic.report },
     { label: "Spend Summary", to: `${B}/reports/spend`, icon: ic.report },
     { label: "Desk Performance", to: `${B}/reports/performance`, icon: ic.report },
   );
+
+  // The claim-based reports are not part of the new process (2026-10, there is
+  // no claim). Admins keep them for the older trips that went through one.
+  if (opts.isAdmin) {
+    nav.push(
+      { label: "Outstanding Advances", to: `${B}/reports/outstanding-advances`, icon: ic.report },
+      { label: "Policy Exceptions", to: `${B}/reports/exceptions`, icon: ic.report },
+      { label: "GST Input Credit", to: `${B}/reports/gst-itc`, icon: ic.report },
+    );
+  }
 
   // Master requests is NOT admin-only: anyone with edit access raises one (a
   // city that is not on the list, a hotel nobody has used before) and wants to

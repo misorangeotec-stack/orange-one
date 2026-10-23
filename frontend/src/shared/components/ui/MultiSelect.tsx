@@ -45,6 +45,7 @@ export default function MultiSelect({
   onCreate,
   createLabel = (q) => `Add “${q}”`,
   maxRender,
+  closeOnPick = false,
 }: {
   values: string[];
   onChange: (values: string[]) => void;
@@ -121,6 +122,11 @@ export default function MultiSelect({
    *   the 8,340 matches in a single click.
    */
   maxRender?: number;
+  /**
+   * Close the menu after each pick, like a single-select, so what was picked is
+   * in view straight away. OPT-IN — the filter bars stay open for ticking several.
+   */
+  closeOnPick?: boolean;
 }) {
   const [open, setOpen] = useState(false);
   const [q, setQ] = useState("");
@@ -145,6 +151,10 @@ export default function MultiSelect({
 
   const toggle = (value: string) => {
     onChange(selectedSet.has(value) ? values.filter((v) => v !== value) : [...values, value]);
+    if (closeOnPick) {
+      setOpen(false);
+      setQ("");
+    }
   };
 
   const filtered = useMemo(

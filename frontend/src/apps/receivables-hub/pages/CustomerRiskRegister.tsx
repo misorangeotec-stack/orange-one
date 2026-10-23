@@ -1,3 +1,4 @@
+import { useBackState } from "@/shared/lib/backState";
 import { ScrollableTable } from "@/core/shared/components/ScrollableTable";
 import { useState, useMemo, useEffect, useRef, useLayoutEffect, useCallback, type ReactNode, type CSSProperties } from "react";
 import { useSearchParams } from "react-router-dom";
@@ -682,7 +683,7 @@ export default function CustomerRiskRegister() {
       ? `${path}?saleType=${encodeURIComponent(saleTypes.join(","))}`
       : path;
   const { toast } = useToast();
-  const [search, setSearch] = useState("");
+  const [search, setSearch] = useBackState("CustomerRiskRegister.search", "");
   const [riskLevels, setRiskLevels] = useState<string[]>([]);
   const [agingFilters, setAgingFilters] = useState<string[]>([]);
   const [specialFilter, setSpecialFilter] = useState("all");

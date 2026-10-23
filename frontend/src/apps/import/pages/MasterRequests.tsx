@@ -8,6 +8,7 @@ import Combobox, { type ComboOption } from "@/shared/components/ui/Combobox";
 import { FieldLabel, TextInput, TextArea } from "@/shared/components/ui/Form";
 import { formatDate } from "@/shared/lib/time";
 import RequestMasterModal from "../components/RequestMasterModal";
+import MapVendorItemModal from "../components/MapVendorItemModal";
 import { useImportStore } from "../store";
 import { MASTER_TYPES, type MasterRequest } from "../types";
 import {
@@ -34,6 +35,8 @@ export default function MasterRequests() {
 
   const [tab, setTab] = useState(canReview ? "review" : "mine");
   const [raising, setRaising] = useState(false);
+  const [mappingOpen, setMappingOpen] = useState(false);
+  const [mappedMsg, setMappedMsg] = useState<string | null>(null);
   const [approving, setApproving] = useState<MasterRequest | null>(null);
   const [rejecting, setRejecting] = useState<MasterRequest | null>(null);
   const [values, setValues] = useState<MasterValues>({});
@@ -221,11 +224,21 @@ export default function MasterRequests() {
         {/* Asking for a new master IS a write — it creates a pending row someone
             then has to review. Ungated until now, in every FMS. */}
         {s.canEdit && (
-          <Button size="sm" onClick={() => setRaising(true)}>
-            Request new entry
-          </Button>
+          <div className="flex shrink-0 gap-2">
+            {/* Not a request: mapping an existing item to a vendor is saved
+                straight away, so it has its own button rather than a type in
+                the request picker. */}
+            <Button size="sm" variant="ghost" onClick={() => { setMappedMsg(null); setMappingOpen(true); }}>
+              Map items to a vendor
+            </Button>
+            <Button size="sm" onClick={() => setRaising(true)}>
+              Request new entry
+            </Button>
+          </div>
         )}
       </div>
+
+      {mappedMsg && <p className="text-[12.5px] text-teal">{mappedMsg}</p>}
 
       {canReview && unassigned.length > 0 && (
         <div className="rounded-xl border border-orange/30 bg-orange-soft/40 px-4 py-3 text-[12.5px] text-navy">
@@ -273,6 +286,19 @@ export default function MasterRequests() {
         onClose={() => setRaising(false)}
         masterType={null}
         onRequested={() => setTab("mine")}
+      />
+
+      <MapVendorItemModal
+        open={mappingOpen}
+        onClose={() => setMappingOpen(false)}
+        onMapped={(result, _ids, vendorId) => {
+          const added = result.created + result.reactivated;
+          setMappedMsg(
+            added === 0
+              ? "Those items were already mapped to that vendor."
+              : `Mapped ${added} item${added === 1 ? "" : "s"} to ${s.vendorLabel(vendorId)} — orderable now.`
+          );
+        }}
       />
 
       {/* Approve — edit before adding */}

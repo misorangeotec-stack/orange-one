@@ -259,9 +259,17 @@ export function parkedTrips(trips: Trip[]): Trip[] {
   return trips.filter((t) => t.status === "on_hold");
 }
 
+/**
+ * Has tickets that still stand. Old flow: `booked`. Since 2026-10 a trip closes
+ * at booking, so a `closed` trip that closed there counts too (it becomes
+ * `cancelled` once every ticket is cancelled).
+ */
+export const hasLiveBooking = (t: Trip): boolean =>
+  t.status === "booked" || (t.status === "closed" && t.closedAtBooking);
+
 /** Booked trips that have not left yet — the PRD's "Upcoming Travel". */
 export function upcomingTrips(trips: Trip[], todayIso: string): Trip[] {
   return trips
-    .filter((t) => t.status === "booked" && !!t.plannedDepartureDate && t.plannedDepartureDate >= todayIso)
+    .filter((t) => hasLiveBooking(t) && !!t.plannedDepartureDate && t.plannedDepartureDate >= todayIso)
     .sort((a, b) => (a.plannedDepartureDate ?? "").localeCompare(b.plannedDepartureDate ?? ""));
 }

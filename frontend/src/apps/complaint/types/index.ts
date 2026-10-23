@@ -499,7 +499,7 @@ export interface Designation {
 
 /* ------------------------------ activity + bell --------------------------- */
 
-export type ComplaintEntityType = "request";
+export type ComplaintEntityType = "request" | "credit_note";
 
 export interface ComplaintActivity {
   id: string;

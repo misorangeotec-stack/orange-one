@@ -1,9 +1,12 @@
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type { ComboOption } from "@/shared/components/ui/Combobox";
 import { newUid, type LineGridRow } from "@/shared/components/ui/LineGrid";
 import type { MasterValues } from "../../lib/masterFields";
 import { SHIPMENT_TYPES, type Item, type MasterType, type RequestItem } from "../../types";
 import { useImportStore } from "../../store";
+import {
+  matchCompany, matchItem, normName, type HandoffLine, type OrderHandoff,
+} from "../../../ink-mis/lib/orderHandoff";
 
 /**
  * Everything the New Request and Edit Request screens have in common: the form
@@ -99,8 +102,13 @@ export interface RequestDraft {
   lines: RequestLine[];
 }
 
-export function useRequestForm(opts: { mode: "new" | "edit"; init?: RequestFormInit | null }) {
-  const { mode, init } = opts;
+export function useRequestForm(opts: {
+  mode: "new" | "edit";
+  init?: RequestFormInit | null;
+  /** An order placed on the Ink IMS dashboard (`?ink=` on New Request) — see `ink` below. */
+  handoff?: OrderHandoff | null;
+}) {
+  const { mode, init, handoff } = opts;
   const s = useImportStore();
 
   const [companyId, setCompanyId] = useState("");
@@ -115,6 +123,14 @@ export function useRequestForm(opts: { mode: "new" | "edit"; init?: RequestFormI
   const [err, setErr] = useState<string | null>(null);
   const [requested, setRequested] = useState<string | null>(null);
   const [raise, setRaise] = useState<{ mt: MasterType; prefill: MasterValues } | null>(null);
+  /**
+   * The "Map items to this vendor" modal: open when non-null. `lineUid` is the
+   * row it was opened from (null from the buttons), so a single mapped item can
+   * drop straight into that row.
+   */
+  const [mapping, setMapping] = useState<{ search: string; categoryId: string; lineUid: string | null } | null>(null);
+  /** "Mapped 2 items …", once something has been mapped from this form. */
+  const [mapped, setMapped] = useState<string | null>(null);
 
   /**
    * Seed the form from a saved request exactly ONCE. The store rebuilds
@@ -198,10 +214,56 @@ export function useRequestForm(opts: { mode: "new" | "edit"; init?: RequestFormI
    */
   const onPickVendor = (vid: string) => {
     setVendorId(vid);
-    setLines([makeEmptyLine()]);
+    setLines(handoff ? inkLinesFor(vid) : [makeEmptyLine()]);
+    setMapped(null);
     const v = s.vendorById(vid);
     setCurrency(v?.defaultCurrency || "");
   };
+
+  /**
+   * INK IMS ORDER. The inks arrive by name, not id, and Import items are vendor-scoped — so the
+   * lines are filled when a VENDOR is picked: every ink this vendor supplies (matched by name)
+   * becomes a line with its quantity; the rest stay listed above the form as "not supplied by
+   * this vendor", to be mapped or raised on another vendor's request. Picking another vendor
+   * re-fills from the same list.
+   */
+  const inkLinesFor = (vid: string): RequestLine[] => {
+    if (!handoff) return [makeEmptyLine()];
+    const items = s.itemsForVendor(vid);
+    const out: RequestLine[] = [];
+    for (const l of handoff.lines) {
+      const it = matchItem(l, items);
+      if (!it) continue;
+      // Two inks naming the same purchase item add up on one line — never drop a quantity.
+      const same = out.find((o) => o.itemId === it.id);
+      if (same) same.qty = String(Number(same.qty) + l.qty);
+      else out.push({ ...makeEmptyLine(), categoryId: it.categoryId, itemId: it.id, unit: it.unit, qty: String(l.qty) });
+    }
+    return out.length > 0 ? out : [makeEmptyLine()];
+  };
+  const inkOnForm = (l: HandoffLine) => {
+    const it = vendorId ? matchItem(l, s.itemsForVendor(vendorId)) : undefined;
+    return !!it && lines.some((x) => x.itemId === it.id);
+  };
+
+  /**
+   * Seed an Ink IMS order once: the company from the ink book, and the vendor where every ink
+   * names the same supplier and exactly one vendor carries that name.
+   */
+  const inkSeeded = useRef(false);
+  useEffect(() => {
+    if (!handoff || inkSeeded.current || mode !== "new") return;
+    inkSeeded.current = true;
+    const co = matchCompany(handoff, s.activeCompanies);
+    if (co) setCompanyId(co.id);
+    setNote(`Ink IMS new order (${handoff.companyLabel})`);
+    const suppliers = [...new Set(handoff.lines.map((l) => normName(l.supplier)).filter(Boolean))];
+    if (suppliers.length === 1) {
+      const hits = s.activeVendors.filter((v) => normName(v.name).includes(suppliers[0]));
+      if (hits.length === 1) onPickVendor(hits[0].id);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [handoff]);
 
   /** Picking an item seeds unit; qty defaults to 1 here, never in the blank row. */
   const onPickItem = (line: RequestLine, itemId: string, patch: (n: Partial<RequestLine>) => void) => {
@@ -211,12 +273,61 @@ export function useRequestForm(opts: { mode: "new" | "edit"; init?: RequestFormI
     patch({ itemId, unit: it.unit, qty: line.qty || "1" });
   };
 
-  const raiseItem = (line: RequestLine) => (name: string) => {
-    if (!line.categoryId) {
-      setErr("Pick a category first.");
+  /**
+   * A typed item that is not in the row's list. Almost always the item EXISTS in
+   * the master and is only not mapped to this vendor yet — so this opens the
+   * mapping modal (saved straight away, no approval), not a master request. A
+   * truly new item is still requested, from inside that modal.
+   */
+  const mapItem = (line: RequestLine) => (name: string) => {
+    if (!vendorId) {
+      setErr("Pick the vendor first.");
       return;
     }
-    setRaise({ mt: "item", prefill: { name, category_id: line.categoryId } });
+    setErr(null);
+    setMapping({ search: name, categoryId: line.categoryId, lineUid: line.uid });
+  };
+
+  /** "Map items" from a button, not from a row. */
+  const openMapping = () => {
+    if (!vendorId) {
+      setErr("Pick the vendor first.");
+      return;
+    }
+    setErr(null);
+    setMapping({ search: "", categoryId: "", lineUid: null });
+  };
+
+  /** Still a REQUEST: an item that is not in the Import item master at all. */
+  const raiseNewItem = (name: string, categoryId: string) => {
+    setRaise({ mt: "item", prefill: { name, ...(categoryId ? { category_id: categoryId } : {}) } });
+  };
+
+  /**
+   * After a mapping lands. When exactly one item was mapped from a row that has
+   * no item yet, put it in that row — that is what the person was doing.
+   */
+  const onMapped = (result: { created: number; reactivated: number; skipped: number }, itemIds: string[]) => {
+    const added = result.created + result.reactivated;
+    setMapped(
+      added === 0
+        ? "Those items were already mapped to this vendor."
+        : result.reactivated > 0
+          ? `Mapped ${added} item${added === 1 ? "" : "s"} to this vendor — ${result.reactivated} of them switched back on. Orderable now.`
+          : `Mapped ${added} item${added === 1 ? "" : "s"} to this vendor — orderable now.`
+    );
+    const uid = mapping?.lineUid;
+    if (!uid || itemIds.length !== 1) return;
+    const it = s.itemById(itemIds[0]);
+    if (!it) return;
+    setLines((ls) => {
+      const row = ls.find((l) => l.uid === uid);
+      if (!row || row.itemId) return ls;
+      if (ls.some((l) => l.uid !== uid && l.itemId === it.id)) return ls;
+      return ls.map((l) =>
+        l.uid === uid ? { ...l, categoryId: it.categoryId, itemId: it.id, unit: it.unit, qty: l.qty || "1" } : l
+      );
+    });
   };
 
   const filled = lines.filter((l) => !isLineBlank(l));
@@ -245,10 +356,14 @@ export function useRequestForm(opts: { mode: "new" | "edit"; init?: RequestFormI
     err, setErr,
     requested, setRequested,
     raise, setRaise,
+    mapping, setMapping,
+    mapped,
+    /** The Ink IMS order being raised, and whether each of its inks is on the form now. */
+    ink: handoff ? { handoff, onForm: inkOnForm } : null,
     // options
     companyOptions, vendorOptions, categoryOptions, shipmentOptions, hasVendorItems,
     // behaviour
-    itemOptionsFor, onPickVendor, onPickItem, raiseItem,
+    itemOptionsFor, onPickVendor, onPickItem, mapItem, openMapping, raiseNewItem, onMapped,
     filled, validate,
     /** The fields as a JSON-safe snapshot — what "Save as draft" stores. */
     snapshot: (): RequestDraft => ({ companyId, vendorId, shipmentType, currency, note, lines }),

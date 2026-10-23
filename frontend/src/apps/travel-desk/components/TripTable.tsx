@@ -11,6 +11,7 @@ import { tripDueIso } from "../lib/queues";
 import type { QueueStep } from "../lib/queues";
 import { STATUS_STEP, type Trip } from "../types";
 import StatusPill from "./StatusPill";
+import ExportAttachmentsButton from "./ExportAttachmentsButton";
 
 /**
  * Every trip list in the module — All Trips, My Trips, Drafts and the reports —
@@ -35,6 +36,7 @@ export default function TripTable({
   emptyMessage,
   exportName,
   showDue = true,
+  bulkExport = false,
 }: {
   trips: Trip[];
   rowsLabel?: string;
@@ -43,6 +45,8 @@ export default function TripTable({
   exportName: string;
   /** Off for Drafts — a draft is at no step, so every due cell would be a dash. */
   showDue?: boolean;
+  /** Tick boxes + "Export attachments" for the chosen trips, as one ZIP. */
+  bulkExport?: boolean;
 }) {
   const s = useTravelStore();
   const personById = useOrgPersonById();
@@ -211,6 +215,18 @@ export default function TripTable({
         "Band and travel category are the values FROZEN when the trip was submitted, not the traveller's band today.",
       ]}
       columnPicker={{ storageKey: `travel-trips-${exportName}` }}
+      selectable={
+        bulkExport
+          ? {
+              renderBulkActions: (selected) => (
+                <ExportAttachmentsButton
+                  trips={selected}
+                  label={`Export attachments (${selected.length} ${selected.length === 1 ? "trip" : "trips"})`}
+                />
+              ),
+            }
+          : undefined
+      }
     />
   );
 }
