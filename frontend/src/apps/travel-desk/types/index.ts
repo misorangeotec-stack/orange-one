@@ -406,6 +406,12 @@ export interface TravelConfig {
    * fms_travel_raise_for_people(). Grants the TRAVELLER nothing.
    */
   raiseFor: string[];
+  /**
+   * Queues hidden from the left menu (Settings → Menu queues). Queue step keys,
+   * plus "cancellations" for the old Cancellations queue. `null` = never saved,
+   * which means the default (lib/steps MENU_HIDDEN_DEFAULT).
+   */
+  menuHiddenQueues: string[] | null;
   approvalMatrix: ApprovalMatrix;
   policy: TravelPolicyConfig;
   companyIdentity: { legalName: string; gstin: string; address: string };

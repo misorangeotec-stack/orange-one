@@ -47,8 +47,8 @@ export function buildTravelNav(opts: {
   canManageAnyMaster: boolean;
   /** How many master requests are still waiting, for the badge. */
   pendingMasterRequests: number;
-  /** Any old-process trip still waiting on the desk's cancellation decision. */
-  hasCancellationRequests: boolean;
+  /** The old Cancellations queue — shown only when Settings → Menu queues says so. */
+  showCancellations: boolean;
 }): NavItem[] {
   const nav: NavItem[] = [
     { label: "Dashboard", to: B, icon: ic.dashboard, section: "Workspace" },
@@ -80,9 +80,9 @@ export function buildTravelNav(opts: {
     // destination: unwinding a booking is the opposite work from making one, and
     // it is the urgent one because a refund window closes.
     //
-    // Since 2026-10 the booker cancels on the trip itself, with the credit note,
-    // so this queue only shows while an older request is still waiting.
-    if (step === "booking" && opts.hasCancellationRequests) {
+    // Since 2026-10 cancellations go through the Cancel Trip bucket, so this old
+    // queue is hidden unless Settings → Menu queues shows it.
+    if (step === "booking" && opts.showCancellations) {
       nav.push({ label: "Cancellations", to: `${B}/queues/cancellations`, icon: ic.step });
     }
   }
