@@ -65,6 +65,10 @@ export const setCoordinators = (userIds: string[]): Promise<void> =>
 export const setRaiseFor = (userIds: string[]): Promise<void> =>
   setConfig("raise_for", { user_ids: userIds });
 
+/** Queues hidden from the left menu (Settings → Menu queues). Admin only, by RLS. */
+export const setMenuHiddenQueues = (keys: string[]): Promise<void> =>
+  setConfig("menu_hidden_queues", { keys });
+
 /**
  * The per-step due-date map.
  *

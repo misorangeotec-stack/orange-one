@@ -633,6 +633,7 @@ export async function fetchTravelData(): Promise<TravelData> {
     stepSla: (cfg.get("step_sla") as Record<string, unknown> | undefined) ?? null,
     processCoordinators: (cfg.get("process_coordinators")?.user_ids as string[] | undefined) ?? [],
     raiseFor: (cfg.get("raise_for")?.user_ids as string[] | undefined) ?? [],
+    menuHiddenQueues: (cfg.get("menu_hidden_queues")?.keys as string[] | undefined) ?? null,
     approvalMatrix: mapMatrix(cfg.get("approval_matrix")),
     policy: mapPolicy(cfg.get("policy")),
     reassignPoolDepartmentIds: (cfg.get("reassign_pool")?.department_ids as string[] | undefined) ?? [],
