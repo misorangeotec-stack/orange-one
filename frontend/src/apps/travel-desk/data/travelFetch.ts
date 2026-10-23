@@ -450,6 +450,10 @@ function mapTrip(r: any): Trip {
     cancelledAt: r.cancelled_at ?? null,
     cancelReason: r.cancel_reason ?? null,
     closedAtBooking: r.closed_at_booking === true,
+    cancelRequestedAt: r.cancel_requested_at ?? null,
+    cancelRequestedBy: r.cancel_requested_by ?? null,
+    cancelDoneAt: r.cancel_done_at ?? null,
+    cancelDoneBy: r.cancel_done_by ?? null,
 
     editedAt: r.edited_at ?? null,
     editedBy: r.edited_by ?? null,
@@ -497,11 +501,14 @@ const mapCancellation = (r: any): TripCancellation => ({
   legIds: (r.leg_ids ?? []) as string[],
   wholeTrip: r.whole_trip === true,
   reason: r.reason ?? "",
-  creditNoteNo: r.credit_note_no ?? "",
-  creditNoteAmount: Number(r.credit_note_amount ?? 0),
-  creditNotePath: r.credit_note_path ?? "",
+  status: r.status === "requested" ? "requested" : "completed",
+  requestedBy: r.requested_by ?? null,
+  requestedAt: r.requested_at ?? r.cancelled_at,
+  creditNoteNo: r.credit_note_no ?? null,
+  creditNoteAmount: r.credit_note_amount === null || r.credit_note_amount === undefined ? null : Number(r.credit_note_amount),
+  creditNotePath: r.credit_note_path ?? null,
   cancelledBy: r.cancelled_by ?? null,
-  cancelledAt: r.cancelled_at,
+  cancelledAt: r.cancelled_at ?? null,
 });
 
 const mapClaimLine = (r: any): ClaimLine => ({

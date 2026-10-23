@@ -38,6 +38,7 @@ const RAIL: { key: string; label: string; step: StepKey | null }[] = [
   { key: "claim_review",      label: "Claim Approval",   step: "claim_review" },
   { key: "finance_review",    label: "Finance",          step: "finance_review" },
   { key: "settlement",        label: "Settlement",       step: "settlement" },
+  { key: "cancel_trip",       label: "Cancel Trip",      step: "cancel_trip" },
   { key: "closed",            label: "Closed",           step: null },
 ];
 
@@ -50,9 +51,12 @@ const RAIL: { key: string; label: string; step: StepKey | null }[] = [
  *   trip that asked for one.
  */
 function railFor(t: Trip): typeof RAIL {
+  // ⚠ CANCEL TRIP APPEARS ONLY ONCE "Cancel booking" HAS BEEN CLICKED, and then
+  //   stays — waiting while the credit note is owed, done once it is filed.
+  const rail = RAIL.filter((r) => r.step !== "cancel_trip" || t.cancelRequestedAt !== null);
   const legacy = t.bkAt !== null && !t.closedAtBooking;
-  if (legacy) return RAIL;
-  return RAIL.filter(
+  if (legacy) return rail;
+  return rail.filter(
     (r) => !r.step || !isHiddenStep(r.step) || (r.step === "advance" && t.advanceRequested),
   );
 }

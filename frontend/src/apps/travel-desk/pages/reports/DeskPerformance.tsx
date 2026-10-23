@@ -79,6 +79,7 @@ const FROM: Record<string, { label: string; at: (t: Trip) => string | null }> = 
   claim_review: { label: "Claim filed", at: (t) => t.clAt },
   finance_review: { label: "Manager approved the claim", at: (t) => t.crAt },
   settlement: { label: "Manager approved the claim", at: (t) => t.crAt },
+  cancel_trip: { label: "Cancellation asked for", at: (t) => t.cancelRequestedAt },
 };
 
 export default function DeskPerformance() {

@@ -184,10 +184,26 @@ export async function completeBooking(tripId: string): Promise<string> {
   return data as string;
 }
 
-export interface CancelBookingInput {
-  /** The tickets to cancel — one, several, or every one still live (the whole trip). */
-  legIds: string[];
-  reason: string;
+/**
+ * Step 1 of a cancellation (since 2026-10-23): the raiser chooses the ticket(s)
+ * and gives the reason. Nothing is cancelled yet — the trip goes to
+ * `cancel_pending` and waits in the Cancel Trip bucket. Returns the request id.
+ */
+export async function requestCancelBooking(
+  tripId: string,
+  legIds: string[],
+  reason: string,
+): Promise<string> {
+  const { data, error } = await db.rpc("fms_travel_request_cancel_booking", {
+    p_trip: tripId,
+    p_leg_ids: legIds,
+    p_reason: reason,
+  });
+  if (error) throw new Error(error.message);
+  return data as string;
+}
+
+export interface CreditNoteInput {
   creditNoteNo: string;
   creditNoteAmount: number;
   /** Already uploaded to the trip's `cancellation` slot. */
@@ -195,15 +211,16 @@ export interface CancelBookingInput {
 }
 
 /**
- * The booker cancels tickets on a trip that closed at booking. Reason and the
- * credit note (file, number, amount) are all mandatory; the RPC refuses
- * without them. Returns the trip's new status — `cancelled` once no ticket is left.
+ * Step 2: the Cancel Trip owner files the credit note — file, number and amount,
+ * all mandatory. The tickets are cancelled then. Returns the trip's new status:
+ * `closed` (tickets left) or `cancelled` (none left).
  */
-export async function cancelBooking(tripId: string, input: CancelBookingInput): Promise<string> {
-  const { data, error } = await db.rpc("fms_travel_cancel_booking", {
-    p_trip: tripId,
-    p_leg_ids: input.legIds,
-    p_reason: input.reason,
+export async function completeCancelBooking(
+  cancellationId: string,
+  input: CreditNoteInput,
+): Promise<string> {
+  const { data, error } = await db.rpc("fms_travel_complete_cancel_booking", {
+    p_cancellation: cancellationId,
     p_cn_no: input.creditNoteNo,
     p_cn_amount: input.creditNoteAmount,
     p_cn_path: input.creditNotePath,

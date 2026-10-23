@@ -56,6 +56,8 @@ export type TripStatus =
    *   outstanding advance, out of every queue and every report in the module.
    */
   | "cancelled_pending_claim"
+  /** A booked-and-closed trip whose cancellation was asked for; waits at Cancel Trip. */
+  | "cancel_pending"
   | "awaiting_claim_review"
   | "awaiting_finance_review"
   | "awaiting_settlement"
@@ -81,6 +83,7 @@ export const OPEN_STATUSES: TripStatus[] = [
   "booked",
   "cancellation_requested",
   "cancelled_pending_claim",
+  "cancel_pending",
   "awaiting_claim_review",
   "awaiting_finance_review",
   "awaiting_settlement",
@@ -114,6 +117,8 @@ export const STATUS_STEP: Partial<Record<TripStatus, StepKey>> = {
   awaiting_claim_review: "claim_review",
   awaiting_finance_review: "finance_review",
   awaiting_settlement: "settlement",
+  // The raiser asked for it; the Cancel Trip owner owes the credit note.
+  cancel_pending: "cancel_trip",
 };
 
 /**
@@ -356,6 +361,11 @@ export interface Trip {
    * with a credit note. False for every trip that took the old route.
    */
   closedAtBooking: boolean;
+  /** The latest cancellation: when it was asked for / completed, and by whom. */
+  cancelRequestedAt: string | null;
+  cancelRequestedBy: string | null;
+  cancelDoneAt: string | null;
+  cancelDoneBy: string | null;
 
   /**
    * ⚠ `edited*`, NOT `updated*`. `updatedAt` is maintained by a trigger that
@@ -802,14 +812,18 @@ export interface TripCancellation {
   id: string;
   tripId: string;
   legIds: string[];
-  /** True when this cancellation took the last ticket, cancelling the trip. */
+  /** True when this cancellation takes the last ticket, cancelling the trip. */
   wholeTrip: boolean;
   reason: string;
-  creditNoteNo: string;
-  creditNoteAmount: number;
-  creditNotePath: string;
+  /** `requested` by the raiser; `completed` once the Cancel Trip owner files the credit note. */
+  status: "requested" | "completed";
+  requestedBy: string | null;
+  requestedAt: string;
+  creditNoteNo: string | null;
+  creditNoteAmount: number | null;
+  creditNotePath: string | null;
   cancelledBy: string | null;
-  cancelledAt: string;
+  cancelledAt: string | null;
 }
 
 /** What the booking form sends. Money arrives as text — see travelBookingWrites. */

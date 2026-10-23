@@ -37,8 +37,9 @@ import {
   saveLeg as saveLegWrite,
   removeLeg as removeLegWrite,
   completeBooking as completeBookingWrite,
-  cancelBooking as cancelBookingWrite,
-  type CancelBookingInput,
+  requestCancelBooking as requestCancelBookingWrite,
+  completeCancelBooking as completeCancelBookingWrite,
+  type CreditNoteInput,
   requestCancellation as requestCancellationWrite,
   processCancellation as processCancellationWrite,
 } from "./data/travelBookingWrites";
@@ -347,7 +348,8 @@ interface TravelStoreValue {
   saveLeg: (tripId: string, input: TripLegInput, legId?: string | null) => Promise<string>;
   removeLeg: (legId: string) => Promise<void>;
   completeBooking: (tripId: string) => Promise<string>;
-  cancelBooking: (tripId: string, input: CancelBookingInput) => Promise<string>;
+  requestCancelBooking: (tripId: string, legIds: string[], reason: string) => Promise<string>;
+  completeCancelBooking: (cancellationId: string, input: CreditNoteInput) => Promise<string>;
   requestCancellation: (tripId: string, reason: string) => Promise<void>;
   processCancellation: (
     tripId: string,
@@ -624,7 +626,7 @@ export function TravelStoreProvider({ children }: { children: ReactNode }) {
       cancellationsOf: (tripId: string) =>
         cancellations
           .filter((x) => x.tripId === tripId)
-          .sort((a, b) => a.cancelledAt.localeCompare(b.cancelledAt)),
+          .sort((a, b) => a.requestedAt.localeCompare(b.requestedAt)),
       claimLines,
       daDays,
       claimLinesOf: (tripId: string) =>
@@ -811,8 +813,13 @@ export function TravelStoreProvider({ children }: { children: ReactNode }) {
         await qc.invalidateQueries({ queryKey: QK });
         return st;
       },
-      cancelBooking: async (tripId, input) => {
-        const st = await cancelBookingWrite(tripId, input);
+      requestCancelBooking: async (tripId, legIds, reason) => {
+        const id = await requestCancelBookingWrite(tripId, legIds, reason);
+        await qc.invalidateQueries({ queryKey: QK });
+        return id;
+      },
+      completeCancelBooking: async (cancellationId, input) => {
+        const st = await completeCancelBookingWrite(cancellationId, input);
         await qc.invalidateQueries({ queryKey: QK });
         return st;
       },

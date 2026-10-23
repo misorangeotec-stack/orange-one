@@ -44,12 +44,16 @@ export default function TripActions({ trip }: { trip: Trip }) {
   const mine = trip.raisedBy === s.userId || trip.travellerId === s.userId;
   const canPark = s.canEdit && (mine || s.isProcessCoordinator || s.isAdmin);
 
-  const canHold = canPark && isOpen && trip.status !== "draft" && trip.status !== "on_hold";
+  // A cancellation waiting in the Cancel Trip bucket is neither held nor
+  // cancelled from here — it finishes there. Mirrors fms_travel_hold_trip.
+  const pendingCancel = trip.status === "cancel_pending";
+  const canHold =
+    canPark && isOpen && trip.status !== "draft" && trip.status !== "on_hold" && !pendingCancel;
   const canResume = canPark && trip.status === "on_hold";
   // Once tickets are booked only the desk cancels (with the credit note); the
   // traveller's own cancel is for before booking. Mirrors fms_travel_cancel_trip.
   const canCancel =
-    canPark && isOpen && trip.status !== "draft" &&
+    canPark && isOpen && trip.status !== "draft" && !pendingCancel &&
     (trip.bkAt === null || s.isProcessCoordinator || s.isAdmin);
   const canExport = trip.status !== "draft";
 
