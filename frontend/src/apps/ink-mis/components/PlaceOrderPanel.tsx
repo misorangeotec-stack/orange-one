@@ -47,14 +47,12 @@ const COLS: { id: string; label: string; width: number; right?: boolean; title?:
   { id: "description", label: "Description", width: 220 },
   { id: "code", label: "Item code", width: 170 },
   { id: "source", label: "Import / Domestic / Plant", width: 120 },
-  { id: "supplier", label: "Supplier", width: 90 },
   { id: "stock", label: "Stock", width: 80, right: true, title: "Stock in hand now" },
-  { id: "total", label: "Total", width: 80, right: true, title: "Stock + ETA + at port + plant + ETD: everything already arranged" },
   { id: "avg", label: "Avg / month", width: 80, right: true, title: "3-month average consumption per month" },
   { id: "lead", label: "Lead time (months)", width: 75, right: true, title: "Months a replacement takes to arrive" },
   { id: "required", label: "Required", width: 90, right: true, title: "Stock needed for the lead time: avg / month x lead time x safety factor (the Month max level)" },
   { id: "days", label: "Days cover", width: 70, right: true, title: "How many working days the stock in hand lasts" },
-  { id: "suggested", label: "Suggested", width: 85, right: true, title: "Required minus Total" },
+  { id: "suggested", label: "Suggested", width: 85, right: true, title: "Required − stock − anything already arranged (ETA, at port, plant, ETD). Hover a figure for its working." },
   { id: "qty", label: "Qty to order", width: 110, right: true },
   { id: "remove", label: "", width: 34 },
 ];
@@ -397,9 +395,7 @@ export default function PlaceOrderPanel({
                         ))}
                       </select>
                     </td>
-                    <td className="truncate px-2 py-1" title={l.supplier}>{l.supplier}</td>
                     <td className="px-2 py-1 text-right tabular-nums">{fmtQty(l.stock)}</td>
-                    <td className="px-2 py-1 text-right tabular-nums">{fmtQty(l.total)}</td>
                     <td className="px-2 py-1 text-right tabular-nums">{l.monthAvg ? fmtQty(l.monthAvg) : "–"}</td>
                     <td className="px-2 py-1 text-right tabular-nums">{l.leadTime || "–"}</td>
                     <td
@@ -409,7 +405,14 @@ export default function PlaceOrderPanel({
                       {l.required ? fmtQty(l.required) : "–"}
                     </td>
                     <td className="px-2 py-1 text-right tabular-nums">{fmtDays(l.daysCover)}</td>
-                    <td className="px-2 py-1 text-right tabular-nums text-muted-foreground">
+                    <td
+                      className="px-2 py-1 text-right tabular-nums text-muted-foreground"
+                      title={
+                        l.total !== l.stock
+                          ? `Required ${fmtQty(l.required)} − stock ${fmtQty(l.stock)} − already arranged ${fmtQty(l.total - l.stock)} (ETA, at port, plant, ETD)`
+                          : `Required ${fmtQty(l.required)} − stock ${fmtQty(l.stock)}`
+                      }
+                    >
                       {l.suggested ? fmtQty(l.suggested) : "–"}
                     </td>
                     <td className="px-2 py-1 text-right">
@@ -455,7 +458,7 @@ export default function PlaceOrderPanel({
             </datalist>
           </div>
           <p className="text-xs text-muted-foreground">
-            Required = avg / month × lead time × safety factor (the Month max level). Suggested = Required − Total.
+            Required = avg / month × lead time × safety factor (the Month max level). Suggested = Required − stock − anything already arranged (hover a figure for its working).
             Drag a heading's right edge to resize it; double-click the edge to reset. Import / Domestic / Plant comes
             from the Item master; a line where it is not set asks you to choose.
           </p>
