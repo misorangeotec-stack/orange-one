@@ -15,6 +15,9 @@ import AssignmentPanel from "../../components/session/AssignmentPanel";
 import FeedbackPanel from "../../components/session/FeedbackPanel";
 import ReviewPanel from "../../components/session/ReviewPanel";
 import EffectivenessPanel from "../../components/session/EffectivenessPanel";
+import CalendarTrainingPanel from "../../components/calendar/CalendarTrainingPanel";
+import { LD_CALENDAR_ONLY } from "../../lib/mode";
+import { isAttendancePending, isCancelled, isCompleted } from "../../lib/training";
 
 const STATUS_LABEL: Record<string, string> = {
   scheduled: "Scheduled",
@@ -80,6 +83,18 @@ export default function SessionDetail() {
 
   const conducted = !!x.actualStart || x.status === "conducted" || !!x.attendanceClosedAt;
   const attendanceClosed = !!x.attendanceClosedAt;
+  /*
+   * ⚠ A CALENDAR TRAINING (HR's change set of 14-10-2026) HAS NO NOMINATION,
+   *   CONDUCT OR ATTENDANCE STEPS — attendees are put on it when it is added, and
+   *   one Complete pop-up records Present/Absent. Showing the step-by-step panels
+   *   as well would offer two ways to mark the same attendance. Material,
+   *   assignment, feedback and the HR review stay available (decision D7).
+   */
+  const isCalendar = x.source === "calendar";
+  // Calendar-only mode: the four states HR works with, not the 10 pipeline statuses.
+  const statusLabel = LD_CALENDAR_ONLY
+    ? isCancelled(x) ? "Cancelled" : isCompleted(x) ? "Completed" : isAttendancePending(x) ? "Attendance pending" : "Scheduled"
+    : STATUS_LABEL[x.status] ?? x.status;
 
   return (
     <div className="space-y-5">
@@ -88,7 +103,7 @@ export default function SessionDetail() {
           <div className="flex flex-wrap items-center gap-2">
             <h1 className="text-[22px] font-bold text-navy">{x.code ?? "Session"}</h1>
             <span className="rounded-full bg-[#EAF1FE] px-2.5 py-0.5 text-[11.5px] font-semibold text-blue">
-              {STATUS_LABEL[x.status] ?? x.status}
+              {statusLabel}
             </span>
             {iAmOnIt && (
               <span className="rounded-full bg-[#FFF1E8] px-2.5 py-0.5 text-[11.5px] font-semibold text-orange">
@@ -99,7 +114,7 @@ export default function SessionDetail() {
           <p className="text-[14px] text-navy mt-1">{x.title}</p>
         </div>
         <div className="flex gap-2">
-          {req && (
+          {req && !LD_CALENDAR_ONLY && (
             <Link to={`${B}/requests/${req.id}`}>
               <Button variant="ghost">The request</Button>
             </Link>
@@ -108,6 +123,9 @@ export default function SessionDetail() {
         </div>
       </div>
 
+      <CalendarTrainingPanel session={x} />
+
+      {!isCalendar && !LD_CALENDAR_ONLY && (
       <Card className="p-5">
         <div className="grid gap-4 sm:grid-cols-3 lg:grid-cols-5">
           <Fact label="Date">{dmy(x.sessionDate)}</Fact>
@@ -147,17 +165,18 @@ export default function SessionDetail() {
           </p>
         )}
       </Card>
+      )}
 
       {err && <p className="rounded-lg bg-[#FEF2F2] px-3 py-2 text-[13px] text-[#B42318]">{err}</p>}
 
-      <NominationsPanel session={x} nominations={noms} onError={setErr} />
-      <MaterialPanel session={x} onError={setErr} />
-      {(x.readinessConfirmedAt || conducted) && <ConductPanel session={x} onError={setErr} />}
-      {conducted && <AttendancePanel session={x} nominations={noms} onError={setErr} />}
-      {attendanceClosed && <AssignmentPanel session={x} onError={setErr} />}
-      {conducted && <FeedbackPanel session={x} nominations={noms} onError={setErr} />}
-      {attendanceClosed && <ReviewPanel session={x} onError={setErr} />}
-      {attendanceClosed && <EffectivenessPanel session={x} onError={setErr} />}
+      {!LD_CALENDAR_ONLY && !isCalendar && <NominationsPanel session={x} nominations={noms} onError={setErr} />}
+      {!LD_CALENDAR_ONLY && <MaterialPanel session={x} onError={setErr} />}
+      {!LD_CALENDAR_ONLY && !isCalendar && (x.readinessConfirmedAt || conducted) && <ConductPanel session={x} onError={setErr} />}
+      {!LD_CALENDAR_ONLY && !isCalendar && conducted && <AttendancePanel session={x} nominations={noms} onError={setErr} />}
+      {!LD_CALENDAR_ONLY && attendanceClosed && <AssignmentPanel session={x} onError={setErr} />}
+      {!LD_CALENDAR_ONLY && conducted && <FeedbackPanel session={x} nominations={noms} onError={setErr} />}
+      {!LD_CALENDAR_ONLY && attendanceClosed && <ReviewPanel session={x} onError={setErr} />}
+      {!LD_CALENDAR_ONLY && attendanceClosed && !isCalendar && <EffectivenessPanel session={x} onError={setErr} />}
     </div>
   );
 }
