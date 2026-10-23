@@ -270,7 +270,13 @@ export function useRequestForm(opts: {
     const out: RequestLine[] = [];
     for (const l of handoff.lines) {
       const it = matchItem(l, companyItems);
-      if (!it || out.some((o) => o.itemId === it.id)) continue;
+      if (!it) continue;
+      // Two inks naming the same purchase item add up on one line — never drop a quantity.
+      const same = out.find((o) => o.itemId === it.id);
+      if (same) {
+        same.qty = String(Number(same.qty) + l.qty);
+        continue;
+      }
       out.push({ ...makeEmptyLine(), categoryId: categoryFor(it.itemType), itemId: it.id, unit: it.unit, qty: String(l.qty) });
     }
     const prev = inkFilled.current;

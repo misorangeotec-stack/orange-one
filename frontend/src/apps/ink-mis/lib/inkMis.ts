@@ -844,6 +844,12 @@ export interface Shipment {
   company: string;
   note: string;
   lines: ShipmentLine[];
+  /**
+   * NEW ORDER only: the Purchase hand-offs the order was split into (see lib/orderHandoff.ts),
+   * so the column heading can reopen a request that was not raised yet. The hand-off itself lives
+   * in the placing browser's storage; elsewhere this is inert.
+   */
+  handoffs?: { target: "import" | "domestic"; id: string }[];
 }
 
 /** Planning inputs the planner maintains per ink. Tally cannot supply these. */

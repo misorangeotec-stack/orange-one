@@ -1,4 +1,4 @@
-import { Suspense, lazy, useEffect } from "react";
+import { Suspense, lazy, useEffect, useRef } from "react";
 import { createPortal } from "react-dom";
 import { X } from "lucide-react";
 import type { HandoffTarget } from "../lib/orderHandoff";
@@ -29,10 +29,18 @@ export default function RaiseSlider({
   onClose: () => void;
   onSubmitted: (requestId: string) => void;
 }) {
+  const panelRef = useRef<HTMLElement>(null);
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.key !== "Escape") return;
+      // An open dropdown (Combobox / MultiSelect menu) owns Escape — let it through untouched so
+      // it closes just the menu. The Place order dialog underneath ignores it too (Modal checks
+      // for the same marker).
+      if (document.querySelector("[data-portal-menu]")) return;
       e.stopPropagation();
+      // A dialog the form opened inside this panel (Map items, request a master …) is on top:
+      // Escape must not throw away the whole half-filled request. Its own Close button closes it.
+      if (panelRef.current?.querySelector(".fixed.inset-0")) return;
       onClose();
     };
     // Capture phase, so Escape closes this panel and not the dialog underneath.
@@ -47,6 +55,7 @@ export default function RaiseSlider({
     <div className="fixed inset-0 z-[65] flex justify-end">
       <div className="absolute inset-0 bg-black/30" onClick={onClose} aria-hidden />
       <aside
+        ref={panelRef}
         role="dialog"
         aria-label={target === "import" ? "Raise Import request" : "Raise Domestic request"}
         className="relative flex h-full w-full max-w-5xl flex-col bg-background shadow-2xl animate-in slide-in-from-right duration-200"

@@ -61,6 +61,7 @@ const WIDTH_KEY = "ink-mis:order-panel-cols";
 export interface PlacedOrder {
   companyKey: string;
   lines: { itemCode: string; qty: number }[];
+  handoffs: { target: HandoffTarget; id: string }[];
 }
 
 /** Brings Total (stock + ETA + at port + plant + ETD) back up to the month max level. */
@@ -96,6 +97,7 @@ export default function PlaceOrderPanel({
   allRows,
   companyKey,
   onPlace,
+  onRaised,
 }: {
   open: boolean;
   onClose: () => void;
@@ -107,6 +109,8 @@ export default function PlaceOrderPanel({
   companyKey: string | null;
   /** Adds the NEW ORDER column. */
   onPlace: (order: PlacedOrder) => void;
+  /** A Purchase request was raised from here — the sheet re-reads what is left to raise. */
+  onRaised?: () => void;
 }) {
   const [company, setCompany] = useState(companyKey ?? "");
   const [lines, setLines] = useState<OrderLine[]>(() => rows.map((r) => toLine(r, companyKey ?? "")));
@@ -170,12 +174,17 @@ export default function PlaceOrderPanel({
   const patch = (key: string, p: Partial<OrderLine>) =>
     setLines((ls) => ls.map((l) => (l.key === key ? { ...l, ...p } : l)));
 
+  /**
+   * Adds only on a deliberate pick — a suggestion chosen from the list, or Enter on an exact
+   * label. Matching on every keystroke added a shorter label (one ink's description) while the
+   * planner was still typing a longer one.
+   */
   const addInk = (text: string) => {
-    setAdding(text);
     const r = addable.find((x) => label(x) === text);
-    if (!r) return;
+    if (!r) return false;
     setLines((ls) => [...ls, toLine(r, company)]);
     setAdding("");
+    return true;
   };
 
   const filled = lines.filter((l) => Number(l.qty) > 0);
@@ -195,8 +204,6 @@ export default function PlaceOrderPanel({
     if (noSource.length > 0) {
       return setErr(`Choose Import, Domestic or Plant for: ${noSource.map((l) => l.description).join(", ")}.`);
     }
-
-    onPlace({ companyKey: company, lines: filled.map((l) => ({ itemCode: l.itemCode, qty: Number(l.qty) })) });
 
     const book = INK_COMPANIES.find((c) => c.key === company)!;
     const handoffs: { target: HandoffTarget; id: string; count: number }[] = [];
@@ -221,6 +228,12 @@ export default function PlaceOrderPanel({
       writeHandoff(h);
       handoffs.push({ target, id: h.id, count: mine.length });
     }
+    // The column remembers its hand-offs, so its heading can reopen an unraised request later.
+    onPlace({
+      companyKey: company,
+      lines: filled.map((l) => ({ itemCode: l.itemCode, qty: Number(l.qty) })),
+      handoffs: handoffs.map(({ target, id }) => ({ target, id })),
+    });
     setDone({
       count: filled.length,
       qty: totalQty,
@@ -310,6 +323,7 @@ export default function PlaceOrderPanel({
               onSubmitted={(requestId) => {
                 setRaised((r) => ({ ...r, [slider.id]: [...(r[slider.id] ?? []), requestId] }));
                 setSlider(null);
+                onRaised?.();
               }}
             />
           )}
@@ -449,7 +463,17 @@ export default function PlaceOrderPanel({
               className="h-8 max-w-md"
               placeholder="Add an ink — type its description or code"
               value={adding}
-              onChange={(e) => addInk(e.target.value)}
+              onChange={(e) => {
+                // A datalist pick arrives as a replacement (or with no inputType at all), not typing.
+                const kind = (e.nativeEvent as InputEvent).inputType;
+                if ((kind === undefined || kind === "insertReplacementText") && addInk(e.target.value)) return;
+                setAdding(e.target.value);
+              }}
+              onKeyDown={(e) => {
+                if (e.key !== "Enter") return;
+                e.preventDefault();
+                addInk(adding);
+              }}
             />
             <datalist id="ink-order-add">
               {addable.map((r) => (

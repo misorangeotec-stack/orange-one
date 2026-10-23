@@ -53,6 +53,8 @@ import {
 import { ScrollableTable } from "@/core/shared/components/ScrollableTable";
 import { reorderQty } from "../components/ReorderChart";
 import PlaceOrderPanel, { type PlacedOrder } from "../components/PlaceOrderPanel";
+import RaiseSlider from "../components/RaiseSlider";
+import { readHandoff } from "../lib/orderHandoff";
 import MultiSelect from "@/shared/components/ui/MultiSelect";
 import HeaderFilter, { ColumnHead, isFilterActive, type ColumnFilter } from "../components/HeaderFilter";
 import {
@@ -944,8 +946,20 @@ export default function InkMis() {
       company: o.companyKey,
       note: "Placed from the dashboard",
       lines: o.lines.map((l) => ({ id: newId(), itemCode: l.itemCode, qty: l.qty })),
+      handoffs: o.handoffs,
     };
     setShipments((prev) => [...prev, column]);
+  };
+
+  /**
+   * A NEW ORDER column's unraised Purchase requests, reopened from its heading. `raiseTick`
+   * re-reads the hand-offs after a request is raised (they shrink, or go once all are raised).
+   */
+  const [raiseFrom, setRaiseFrom] = useState<{ target: "import" | "domestic"; id: string } | null>(null);
+  const [raiseTick, setRaiseTick] = useState(0);
+  const pendingHandoffs = (s: Shipment) => {
+    void raiseTick;
+    return (s.handoffs ?? []).filter((h) => (readHandoff(h.id)?.lines.length ?? 0) > 0);
   };
 
   const patchColumn = (id: string, patch: Partial<Shipment>) =>
@@ -1059,6 +1073,18 @@ export default function InkMis() {
         <div className="whitespace-nowrap text-[10px] font-normal text-muted-foreground">
           {s.date ? fmtDdMmYy(s.date) : "no date"}
         </div>
+        {s.status === "NEW ORDER" &&
+          pendingHandoffs(s).map((h) => (
+            <button
+              key={h.id}
+              type="button"
+              onClick={() => setRaiseFrom(h)}
+              className="block whitespace-nowrap text-[10px] font-semibold text-primary underline"
+              title="This order's Purchase request is not raised yet — open it"
+            >
+              Raise {h.target === "import" ? "Import" : "Domestic"}
+            </button>
+          ))}
       </>
     );
 
@@ -1487,6 +1513,18 @@ export default function InkMis() {
           allRows={searchedRows}
           companyKey={companyKey}
           onPlace={placeOrder}
+          onRaised={() => setRaiseTick((n) => n + 1)}
+        />
+      )}
+      {raiseFrom && (
+        <RaiseSlider
+          target={raiseFrom.target}
+          inkId={raiseFrom.id}
+          onClose={() => setRaiseFrom(null)}
+          onSubmitted={() => {
+            setRaiseFrom(null);
+            setRaiseTick((n) => n + 1);
+          }}
         />
       )}
 
