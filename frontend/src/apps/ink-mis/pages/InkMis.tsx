@@ -389,7 +389,7 @@ export default function InkMis() {
    * from these narrowed by every filter except its own, which is what stops the planner
    * assembling a combination that matches nothing.
    */
-  const searchedRows: InkRow[] = useMemo(() => {
+  const allSearchedRows: InkRow[] = useMemo(() => {
     const built = positions.map((p) => {
       const base = plans[p.key] ?? plans[p.legacyKey] ?? EMPTY_PLAN;
       // The company tabs use that book's own sales; Combined uses the group's.
@@ -414,6 +414,44 @@ export default function InkMis() {
     // NOT re-sorted here. loadInkPositions already applied the planner's own row order, and
     // sorting again would throw it away. A sort the planner ASKS for is applied below.
   }, [positions, plans, consumption, shipments, thresholds, companyKey, search, isHidden]);
+
+  /**
+   * The source tabs (All · Import · Domestic · Plant) on the ‹ › row above the table. Applied
+   * here, with the search, so the table, the totals line, the four cards and the column-filter
+   * lists all speak for the same source.
+   */
+  const [sourcePick, setSourcePick] = useState<string>("");
+  const sourceCounts = useMemo(() => {
+    const c: Record<string, number> = {};
+    for (const r of allSearchedRows) c[r.source] = (c[r.source] ?? 0) + 1;
+    return c;
+  }, [allSearchedRows]);
+  const searchedRows: InkRow[] = useMemo(
+    () => (sourcePick ? allSearchedRows.filter((r) => r.source === sourcePick) : allSearchedRows),
+    [allSearchedRows, sourcePick],
+  );
+  const sourceTabs = (
+    <div role="tablist" className="inline-flex h-7 items-center rounded-md border border-border bg-muted/40 p-0.5">
+      {[{ value: "", label: "All" }, ...INK_SOURCES].map((t) => {
+        const active = sourcePick === t.value;
+        const n = t.value ? (sourceCounts[t.value] ?? 0) : allSearchedRows.length;
+        return (
+          <button
+            key={t.value || "all"}
+            type="button"
+            role="tab"
+            aria-selected={active}
+            onClick={() => setSourcePick(t.value)}
+            className={`h-6 rounded px-2.5 text-[11px] font-medium ${
+              active ? "bg-background text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground"
+            }`}
+          >
+            {t.label} <span className="tabular-nums opacity-60">{n}</span>
+          </button>
+        );
+      })}
+    </div>
+  );
 
   /**
    * What is on screen: the filters, then the planner's chosen order.
@@ -1574,7 +1612,7 @@ export default function InkMis() {
           open
           onClose={() => setPlaceOpen(false)}
           rows={rows}
-          allRows={searchedRows}
+          allRows={allSearchedRows}
           companyKey={companyKey}
           onPlace={placeOrder}
           onRaised={() => setRaiseTick((n) => n + 1)}
@@ -1616,7 +1654,7 @@ export default function InkMis() {
           "[&_tbody_td]:text-[9pt] [&_tbody_td_*]:text-[9pt]"
         }
       >
-      <ScrollableTable maxHeight="max-h-[calc(100vh-13rem)]" hideHint containScroll>
+      <ScrollableTable maxHeight="max-h-[calc(100vh-13rem)]" hideHint containScroll barLeft={sourceTabs}>
         <Table
           style={{ width: tableWidth, minWidth: tableWidth, maxWidth: "none" }}
           className={
@@ -1911,7 +1949,7 @@ export default function InkMis() {
                 <TableCell colSpan={40} className="py-10 text-center text-muted-foreground">
                   {positions.length === 0 ? (
                     "No numbered items yet. Give an item a number in the item master to show it here."
-                  ) : filtersOn || search.trim() || bandPick ? (
+                  ) : filtersOn || search.trim() || bandPick || sourcePick ? (
                     <span className="inline-flex flex-wrap items-center justify-center gap-2">
                       No ink matches the filters you have set.
                       <Button
@@ -1921,6 +1959,7 @@ export default function InkMis() {
                           clearFilters();
                           setSearch("");
                           setBandPick(null);
+                          setSourcePick("");
                         }}
                       >
                         Clear filters

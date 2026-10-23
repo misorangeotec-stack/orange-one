@@ -24,6 +24,11 @@ interface Props {
    * page, which moves the whole box — sticky headings and all — off the top of the screen.
    */
   containScroll?: boolean;
+  /**
+   * Something small (tabs, a filter) to sit on the LEFT of the ‹ › row, using the line that row
+   * already takes rather than a new one. With it, the row shows even when nothing overflows.
+   */
+  barLeft?: ReactNode;
 }
 
 /**
@@ -36,7 +41,7 @@ interface Props {
  * div, which would otherwise capture horizontal scroll. `[&>div]:!overflow-visible`
  * neutralises that so THIS element is the single scroll container for both axes.
  */
-export function ScrollableTable({ children, className, maxHeight, step = 320, resizeKey, hideControls = false, hideHint = false, containScroll = false }: Props) {
+export function ScrollableTable({ children, className, maxHeight, step = 320, resizeKey, hideControls = false, hideHint = false, containScroll = false, barLeft }: Props) {
   const ref = useRef<HTMLDivElement>(null);
   const [height, setHeight] = usePersistedSize(resizeKey ? `table.${resizeKey}` : undefined);
   const dragFrom = useRef(0);
@@ -84,11 +89,13 @@ export function ScrollableTable({ children, className, maxHeight, step = 320, re
 
   return (
     <div>
-      {overflow && !hideControls && (
+      {((overflow && !hideControls) || barLeft) && (
         <div className="flex items-center justify-end gap-2 mb-1.5">
-          {!hideHint && (
+          {barLeft && <div className="mr-auto flex min-h-7 items-center">{barLeft}</div>}
+          {overflow && !hideControls && !hideHint && !barLeft && (
             <span className="text-[11px] text-muted-foreground mr-auto">Use arrow keys ← ↑ → ↓ (or the buttons) to scroll the table.</span>
           )}
+          {overflow && !hideControls && (<>
           <button
             type="button"
             onClick={() => by(-step, 0)}
@@ -105,6 +112,7 @@ export function ScrollableTable({ children, className, maxHeight, step = 320, re
           >
             <ChevronRight className="h-4 w-4" />
           </button>
+          </>)}
         </div>
       )}
       <div
