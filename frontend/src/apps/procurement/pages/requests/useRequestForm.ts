@@ -9,7 +9,7 @@ import type { MasterType, RequestItem } from "../../types";
 import { asStoredDoc, type SourcingFile } from "../../components/SourcingDocsCapture";
 import { useProcurementStore } from "../../store";
 import {
-  matchCompany, matchItem, normName, type HandoffLine, type OrderHandoff,
+  handoffSheetLabel, matchCompany, matchItem, normName, type HandoffLine, type OrderHandoff,
 } from "../../../ink-mis/lib/orderHandoff";
 
 /**
@@ -253,7 +253,7 @@ export function useRequestForm(opts: {
     inkCompanySeeded.current = true;
     const co = matchCompany(handoff, s.activeCompanies);
     if (co) setCompanyId(co.id);
-    setNote(`Ink IMS new order (${handoff.companyLabel})`);
+    setNote(`${handoffSheetLabel(handoff)} new order (${handoff.companyLabel})`);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [handoff]);
   // The book can land in two steps (working set first, then the full book), so the fill re-runs
@@ -265,7 +265,9 @@ export function useRequestForm(opts: {
       const fits = s.activeCategories.filter(
         (c) => c.itemTypes.length === 0 || (itemType !== null && c.itemTypes.includes(itemType))
       );
-      return (fits.find((c) => /INK/.test(normName(c.name))) ?? fits[0])?.id ?? "";
+      // An Ink IMS order prefers an "ink" category; an RM IMS order a raw-material one.
+      const prefer = handoff.sheet === "rm" ? /RAW|RM/ : /INK/;
+      return (fits.find((c) => prefer.test(normName(c.name))) ?? fits[0])?.id ?? "";
     };
     const out: RequestLine[] = [];
     for (const l of handoff.lines) {

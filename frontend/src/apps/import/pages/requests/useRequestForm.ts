@@ -5,7 +5,7 @@ import type { MasterValues } from "../../lib/masterFields";
 import { SHIPMENT_TYPES, type Item, type MasterType, type RequestItem } from "../../types";
 import { useImportStore } from "../../store";
 import {
-  matchCompany, matchItem, normName, type HandoffLine, type OrderHandoff,
+  handoffSheetLabel, matchCompany, matchItem, normName, type HandoffLine, type OrderHandoff,
 } from "../../../ink-mis/lib/orderHandoff";
 
 /**
@@ -256,7 +256,7 @@ export function useRequestForm(opts: {
     inkSeeded.current = true;
     const co = matchCompany(handoff, s.activeCompanies);
     if (co) setCompanyId(co.id);
-    setNote(`Ink IMS new order (${handoff.companyLabel})`);
+    setNote(`${handoffSheetLabel(handoff)} new order (${handoff.companyLabel})`);
     const suppliers = [...new Set(handoff.lines.map((l) => normName(l.supplier)).filter(Boolean))];
     if (suppliers.length === 1) {
       const hits = s.activeVendors.filter((v) => normName(v.name).includes(suppliers[0]));
