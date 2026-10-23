@@ -110,6 +110,10 @@ export interface StockLot {
    *  the live book has no closing row; 0 when neither has one. */
   value: number;
   godown: string;
+  /** Net qty per godown from the lot's own lines (in − out), before the tie to Tally. A godown
+   *  whose stock came from an opening balance can read negative — ConnectWave has no godown-wise
+   *  opening (see GodownRule). */
+  godowns: Record<string, number>;
   /**
    * PURCHASE / PRODUCTION DATE — yyyy-mm-dd. The lot's first real receipt: the original purchase or
    * production, in another company when this book only received it by job work / material in.
@@ -151,24 +155,76 @@ export interface ExpiryStatus {
   lots: StockLot[];
   noLot: NoLotStock[];
   builtAt: string | null;
-  /** Stock left out because it sits in the Lab or LOOSE INK godown (see HELD_GODOWNS). */
+  /** Stock left out because it sits in a godown that doesn't count (set by applyGodownRule). */
   heldOut?: { qty: number; value: number; lots: number };
+  /** Every godown holding stock of a lot, per company — set by useExpiryStatus for the chooser. */
+  godownsAll?: CompanyGodowns[];
 }
 
 /**
- * Godowns whose stock is NOT counted — the user, 01-10-2026: "I don't want to consider Lab stock,
- * Loose Ink stock". Only Enterprises Surat has them. Ink reaches them on STOCK TRANSFER-LAB
- * vouchers, which ConnectWave stores as a matched pair for the same lot — OUT of Production, IN to
- * Lab — so the lot's company-level balance is unchanged and, without this, lab ink stays counted.
+ * GODOWNS COUNTED — the same rule as Ink IMS (ink-mis/lib/godowns.ts): Enterprises Surat's
+ * saleable ink sits in FINISHED GOODS-SACHIN and HOJIWALA; Production, Lab, LOOSE INK, Warehouse
+ * and job work are not stock to sell, so they are left out (the user, 22-10-2026: "same godowns
+ * wise ink as INK-IMS"; before that, 01-10-2026, only Lab and Loose Ink were left out).
+ * A LIST OF GODOWNS THAT COUNT, per company guid — a godown added in Tally later is left out until
+ * ticked. A company with no list counts every godown. Saved for everyone in
+ * public.ink_expiry_settings (migration 20270211120000); admins change it with "Godowns counted".
  *
- * Per lot: held = Σ in − Σ out on lines whose godown is one of these, clipped to [0, lot qty].
- * Measured 01-10-2026: Lab holds ~14,661 KGS over 853 lots with only 3 lots slightly negative (−3 KGS),
- * so the figure is sound. LOOSE INK goes negative on many lots (loose ink is drawn into production
- * without a matching receipt in that godown) — a negative is treated as nothing held, never added.
- * The big godowns (Production, Hojiwala) are NOT done this way: their opening stock is not in the
- * synced lines, so netting them gives nonsense (Production +5.37 lakh KGS).
+ * Per lot: each godown's net (Σ in − Σ out of the lot's own lines, `StockLot.godowns`); what is
+ * left out is the sum of the POSITIVE nets of godowns not counted, clipped to the lot's qty. A
+ * negative net is treated as nothing there, never added back — a godown whose stock came from an
+ * opening balance can read negative, because ConnectWave has no godown-wise opening.
+ * Checked 22-10-2026 against Tally's batch-wise godown screen (KY REACTIVE INK ORANGE): HOJIWALA /
+ * Lab splits equal per lot; of 930 Enterprises Surat lots only 3 have a godown below zero (all
+ * HOJIWALA). That needs the older years' stock transfers in rpt_batch_line —
+ * `fill_missing_production_lines.py apply-all`; before it, moves made before April 2026 were missing.
+ *
+ * Applied AFTER the read (applyGodownRule), so changing the choice re-reads nothing.
  */
-export const HELD_GODOWNS = /^(LAB|LOOSE INK)$/i;
+export type GodownRule = Record<string, string[]>;
+
+export const DEFAULT_GODOWN_RULE: GodownRule = {
+  "59a6c2d9-0c5a-4fc5-b8c5-3be6fec3289e": ["FINISHED GOODS-SACHIN", "HOJIWALA"],
+};
+
+const GUID_OF: Record<string, string> = Object.fromEntries(Object.entries(COMPANY_SHORT).map(([g, n]) => [n, g]));
+const gKey = (g: string) => g.trim().toUpperCase();
+
+/** The lots with stock in godowns that don't count taken out; `heldOut` = what was taken. */
+export function applyGodownRule(d: ExpiryStatus, rule: GodownRule): ExpiryStatus {
+  const counted = new Map(Object.entries(rule).filter(([, names]) => names.length).map(([g, names]) => [g, new Set(names.map(gKey))]));
+  const heldOut = { qty: 0, value: 0, lots: 0 };
+  const lots: StockLot[] = [];
+  for (const l of d.lots) {
+    const keep = counted.get(GUID_OF[l.company] ?? l.company);
+    const sitting = keep
+      ? Object.entries(l.godowns ?? {}).reduce((s, [g, v]) => s + (!keep.has(gKey(g)) && v > 0 ? v : 0), 0)
+      : 0;
+    const held = Math.min(sitting, l.qty);
+    if (held <= 0.001) { lots.push(l); continue; }
+    const rate = l.qty > 0 ? l.value / l.qty : 0;
+    heldOut.qty += held; heldOut.value += held * rate; heldOut.lots += 1;
+    const q = Math.round((l.qty - held) * 1000) / 1000;
+    if (q > 0.001) lots.push({ ...l, qty: q, value: q * rate });
+  }
+  return { ...d, lots, heldOut };
+}
+
+export interface CompanyGodowns { guid: string; company: string; godowns: { name: string; qty: number }[] }
+
+/** Every godown holding KGS of a lot on the page, per company, with its qty — for the chooser. */
+export function godownsByCompany(d: ExpiryStatus): CompanyGodowns[] {
+  const by = new Map<string, Map<string, number>>();
+  for (const l of d.lots) {
+    const m = by.get(l.company) ?? new Map<string, number>();
+    if (l.uom === "KGS") for (const [g, v] of Object.entries(l.godowns ?? {})) if (v > 0) m.set(g, (m.get(g) ?? 0) + v);
+    by.set(l.company, m);
+  }
+  return [...by].map(([company, m]) => ({
+    guid: GUID_OF[company] ?? company, company,
+    godowns: [...m].map(([name, qty]) => ({ name, qty })).sort((a, b) => b.qty - a.qty),
+  })).sort((a, b) => a.company.localeCompare(b.company));
+}
 
 export interface Line {
   /** 'acct_orange::<guid>' is the live book; '…~<yyyymmdd>' an older-FY archive of the same company. */
@@ -215,13 +271,24 @@ interface DatedRow { company_guid: string; vch_date: string; voucher_no: string 
 
 type Page<T> = PromiseLike<{ data: T[] | null; error: { message: string } | null }>;
 
+/**
+ * A page that hits ConnectWave's ~8 s statement timeout (or a dropped connection) is retried,
+ * up to 3 more times with a growing pause. One slow page out of ~40 used to fail the whole
+ * read: seen 08-10-2026 on Ink Stabilisation's Closing stock page, while the next load worked.
+ */
+const TRANSIENT = /statement timeout|canceling statement|fetch|network|timed? ?out|50[234]/i;
+
 async function readAll<T>(build: (from: number, to: number) => Page<T>): Promise<T[]> {
   const out: T[] = [];
   for (let off = 0; ; off += PAGE) {
-    const { data, error } = await build(off, off + PAGE - 1);
-    if (error) throw new Error(error.message);
-    out.push(...(data ?? []));
-    if ((data ?? []).length < PAGE) return out;
+    let res = await build(off, off + PAGE - 1);
+    for (let attempt = 1; res.error && TRANSIENT.test(res.error.message) && attempt <= 3; attempt++) {
+      await new Promise((r) => setTimeout(r, 1500 * attempt));
+      res = await build(off, off + PAGE - 1);
+    }
+    if (res.error) throw new Error(res.error.message);
+    out.push(...(res.data ?? []));
+    if ((res.data ?? []).length < PAGE) return out;
   }
 }
 
@@ -463,7 +530,7 @@ export async function fetchExpiryStatus(
 
   // 5. Net per lot, remembering each lot's inward slices and last godown.
   interface Acc {
-    guid: string; item: string; lot: string; bal: number; held: number; ins: { d: string; q: number }[]; godown: string; uom: string;
+    guid: string; item: string; lot: string; bal: number; byGodown: Map<string, number>; ins: { d: string; q: number }[]; godown: string; uom: string;
     /** First receipt that is not an internal move or a return. */
     first: { d: string; t: string } | null;
     lastReturn: string | null;
@@ -484,7 +551,7 @@ export async function fetchExpiryStatus(
   const lotAcc = (guid: string, item: string, lot: string) => {
     const k = K(guid, item, lot);
     let a = acc.get(k);
-    if (!a) acc.set(k, (a = { guid, item, lot, bal: 0, held: 0, ins: [], godown: "", uom: "", first: null, lastReturn: null }));
+    if (!a) acc.set(k, (a = { guid, item, lot, bal: 0, byGodown: new Map(), ins: [], godown: "", uom: "", first: null, lastReturn: null }));
     return a;
   };
   for (const x of kept) {
@@ -493,7 +560,10 @@ export async function fetchExpiryStatus(
     const a = lotAcc(x.company_guid, x.stock_item, lot);
     const q = Number(x.qty) || 0;
     a.bal += x.movement === "in" ? q : -q;
-    if (x.godown_name && HELD_GODOWNS.test(x.godown_name.trim())) a.held += x.movement === "in" ? q : -q;
+    if (x.godown_name) {
+      const g = x.godown_name.trim();
+      a.byGodown.set(g, (a.byGodown.get(g) ?? 0) + (x.movement === "in" ? q : -q));
+    }
     if (x.movement === "in") {
       a.ins.push({ d: x.vch_date, q });
       const t = x.voucher_type ?? "";
@@ -531,7 +601,6 @@ export async function fetchExpiryStatus(
   }
   const lots: StockLot[] = [];
   const noLot: NoLotStock[] = [];
-  const heldOut = { qty: 0, value: 0, lots: 0 };
   for (const k of new Set([...closing.keys(), ...byItem.keys()])) {
     const meta = ink.get(k)!;
     const anchor = closing.get(k);
@@ -558,11 +627,8 @@ export async function fetchExpiryStatus(
       }
       have = keep;
     }
-    for (const { a, q: tied } of have) {
-      // Take out what sits in the Lab / LOOSE INK godown; a lot with nothing left drops out.
-      const held = Math.min(Math.max(a.held, 0), tied);
-      if (held > 0.001) { heldOut.qty += held; heldOut.value += held * rate; heldOut.lots += 1; }
-      const q = tied - held;
+    // Stock in godowns that don't count (Lab, Production…) is taken out afterwards — applyGodownRule.
+    for (const { a, q } of have) {
       if (q <= 0.001) continue;
       // Purchase / production date: the lot's origin (any company) if it is no later than this
       // company's own first receipt; else that receipt; else, for a lot whose only "in" lines are
@@ -583,7 +649,9 @@ export async function fetchExpiryStatus(
         company, item: a.item, category: meta.stock_group ?? "", inkCategory: cat.name, inkCategoryFromTally: cat.fromTally,
         mainGroup: meta.primary_group ?? "",
         path: meta.group_path ?? "", lot: a.lot, qty: Math.round(q * 1000) / 1000, uom: a.uom || unit, value: q * rate,
-        godown: a.godown, inward, inwardType: src?.t ?? null, inwardCompany,
+        godown: a.godown,
+        godowns: Object.fromEntries([...a.byGodown].map(([g, v]) => [g, Math.round(v * 1000) / 1000]).filter(([, v]) => Math.abs(v as number) > 0.001)),
+        inward, inwardType: src?.t ?? null, inwardCompany,
         receivedHere, receivedHereType: receivedHere ? own!.t : null,
         returnDate: a.lastReturn ? fromYmd(a.lastReturn) : null, mfd: e?.mfd ?? null, expiry, expiryRaw: e?.raw ?? null, days,
         state: !e ? "missing" : !expiry ? "invalid" : days! < 0 ? "expired" : "updated",
@@ -599,5 +667,5 @@ export async function fetchExpiryStatus(
     a.company.localeCompare(b.company) || a.category.localeCompare(b.category) || a.item.localeCompare(b.item);
   lots.sort((a, b) => order(a, b) || (a.inward ?? "").localeCompare(b.inward ?? "") || a.lot.localeCompare(b.lot));
   noLot.sort(order);
-  return { lots, noLot, builtAt, heldOut };
+  return { lots, noLot, builtAt };
 }
