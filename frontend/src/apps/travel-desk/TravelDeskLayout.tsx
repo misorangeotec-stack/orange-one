@@ -5,9 +5,9 @@ import { roleLabel, useSession } from "@/core/platform/session";
 import { useOrgPersonById } from "@/core/platform/orgPeople";
 import { buildTravelNav } from "./nav";
 import { useTravelStore } from "./store";
-import { STEPS, isHiddenStep } from "./lib/steps";
+import { STEPS, MENU_HIDDEN_DEFAULT } from "./lib/steps";
 import type { QueueStep } from "./lib/queues";
-import { STATUS_STEP, type TravelNotification } from "./types";
+import type { TravelNotification } from "./types";
 
 const B = "/travel-desk";
 
@@ -28,18 +28,19 @@ export default function TravelDeskLayout() {
 
   const queueSteps = STEPS.filter((st) => !st.noQueue).map((st) => st.key as QueueStep);
 
+  // Settings → Menu queues decides which queues the left menu shows. Hidden
+  // ones are only out of the menu: the page, the work and the URL stay.
+  const menuHidden = useMemo(
+    () => new Set(s.config.menuHiddenQueues ?? MENU_HIDDEN_DEFAULT),
+    [s.config.menuHiddenQueues],
+  );
+
   const queues = useMemo(() => {
     const out = {} as Record<QueueStep, boolean>;
-    for (const step of queueSteps) {
-      out[step] =
-        s.canSeeQueue(step) &&
-        // A hidden step's queue (lib/steps HIDDEN_STEPS) shows only while an
-        // older trip is still waiting at it, so that trip can finish.
-        (!isHiddenStep(step) || s.trips.some((t) => STATUS_STEP[t.status] === step));
-    }
+    for (const step of queueSteps) out[step] = s.canSeeQueue(step) && !menuHidden.has(step);
     return out;
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [s]);
+  }, [s, menuHidden]);
 
   const nav = useMemo(
     () =>
@@ -50,10 +51,10 @@ export default function TravelDeskLayout() {
         queues,
         canManageAnyMaster: s.canManageAnyMaster,
         pendingMasterRequests: s.pendingMasterRequests.length,
-        hasCancellationRequests: s.trips.some((t) => t.status === "cancellation_requested"),
+        showCancellations: !menuHidden.has("cancellations"),
       }),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [isAdmin, s.canRaise, s.canSetup, queues, s.canManageAnyMaster, s.pendingMasterRequests, s.trips],
+    [isAdmin, s.canRaise, s.canSetup, queues, s.canManageAnyMaster, s.pendingMasterRequests, menuHidden],
   );
 
   const notifItems: NotificationItem[] = s.notifications.map((n) => {

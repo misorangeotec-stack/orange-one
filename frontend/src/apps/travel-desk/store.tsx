@@ -7,6 +7,7 @@ import {
   markNotificationsRead as markNotificationsReadWrite,
   setCoordinators as setCoordinatorsWrite,
   setRaiseFor as setRaiseForWrite,
+  setMenuHiddenQueues as setMenuHiddenQueuesWrite,
   setStepSla as setStepSlaWrite,
   setStepOwners as setStepOwnersWrite,
   setPolicy as setPolicyWrite,
@@ -119,6 +120,7 @@ const EMPTY_CONFIG: TravelConfig = {
   stepSla: null,
   processCoordinators: [],
   raiseFor: [],
+  menuHiddenQueues: null,
   approvalMatrix: { directorFromBand: 6, managerAlsoForDirectorBands: true },
   policy: {
     maxPassengers: 5,
@@ -251,6 +253,7 @@ interface TravelStoreValue {
   ) => Promise<void>;
   setCoordinators: (userIds: string[]) => Promise<void>;
   setRaiseFor: (userIds: string[]) => Promise<void>;
+  setMenuHiddenQueues: (keys: string[]) => Promise<void>;
   setStepSla: (map: StepSlaMap) => Promise<void>;
   setPolicy: (policy: TravelPolicyConfig) => Promise<void>;
   setCompanyIdentity: (v: { legalName: string; gstin: string; address: string }) => Promise<void>;
@@ -703,6 +706,10 @@ export function TravelStoreProvider({ children }: { children: ReactNode }) {
       // refreshes the list AND the coordinator's picker.
       setRaiseFor: async (userIds) => {
         await setRaiseForWrite(userIds);
+        await qc.invalidateQueries({ queryKey: QK });
+      },
+      setMenuHiddenQueues: async (keys) => {
+        await setMenuHiddenQueuesWrite(keys);
         await qc.invalidateQueries({ queryKey: QK });
       },
       setStepSla: async (map) => {

@@ -143,6 +143,12 @@ export const HIDDEN_STEPS: StepKey[] = ["advance", "claim", "claim_review", "fin
 
 export const isHiddenStep = (key: StepKey): boolean => HIDDEN_STEPS.includes(key);
 
+/**
+ * Menu queues hidden until an admin says otherwise in Settings → Menu queues:
+ * the hidden steps, plus the old "Cancellations" queue (replaced by Cancel Trip).
+ */
+export const MENU_HIDDEN_DEFAULT: string[] = [...HIDDEN_STEPS, "cancellations"];
+
 /** The steps to show: all but the hidden ones, plus any hidden one `inUse` says a trip still waits at. */
 export const shownSteps = (inUse: (key: StepKey) => boolean = () => false): StepDef[] =>
   STEPS.filter((s) => !isHiddenStep(s.key) || inUse(s.key));
