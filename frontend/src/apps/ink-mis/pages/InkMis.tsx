@@ -213,7 +213,7 @@ export default function InkMis() {
   useEffect(() => saveThresholds(thresholds), [thresholds]);
   useEffect(() => saveHolidays(holidays), [holidays]);
 
-  const { data, isLoading, error, refetch, isFetching } = useQuery({
+  const { data, isLoading, error, refetch, isFetching, dataUpdatedAt } = useQuery({
     queryKey: ["inkMis", "positions", fy, overrides, scope, order, lineFields, groupFields, godownChoice],
     queryFn: () =>
       loadInkPositions(
@@ -1153,6 +1153,16 @@ export default function InkMis() {
           ))}
         </div>
         <div className="ml-auto flex flex-wrap items-center gap-1.5 pb-1">
+          {/* Same wording as the other dashboards: when the stock on screen was last read. */}
+          <span className="whitespace-nowrap text-[11px] text-muted-foreground" title="When the stock on this sheet was last read from Tally (ConnectWave)">
+            {isFetching
+              ? "Refreshing…"
+              : `Last refreshed: ${
+                  dataUpdatedAt
+                    ? new Date(dataUpdatedAt).toLocaleString("en-IN", { dateStyle: "medium", timeStyle: "short" })
+                    : "never"
+                }`}
+          </span>
           <Button variant="outline" size="sm" className={BAR_BTN} onClick={() => void refetch()} disabled={isFetching}>
             <RefreshCw className={`${BAR_ICON} ${isFetching ? "animate-spin" : ""}`} /> Refresh
           </Button>
