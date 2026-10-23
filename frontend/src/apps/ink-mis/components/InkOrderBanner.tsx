@@ -1,4 +1,4 @@
-import type { HandoffLine, OrderHandoff } from "../lib/orderHandoff";
+import { handoffNoun, handoffSheetLabel, type HandoffLine, type OrderHandoff } from "../lib/orderHandoff";
 
 /**
  * Shown above a Purchase raise form opened from the Ink IMS "Place order" panel: every ink of the
@@ -19,8 +19,8 @@ export default function InkOrderBanner({
   return (
     <div className="rounded-lg border border-orange-200 bg-orange-50/60 p-3 text-[13px]">
       <div className="font-semibold text-navy">
-        From Ink IMS — new order for {handoff.companyLabel} ({handoff.lines.length} ink
-        {handoff.lines.length === 1 ? "" : "s"})
+        From {handoffSheetLabel(handoff)} — new order for {handoff.companyLabel} ({handoff.lines.length}{" "}
+        {handoffNoun(handoff, handoff.lines.length)})
       </div>
       <ul className="mt-2 grid gap-x-6 gap-y-0.5 sm:grid-cols-2">
         {handoff.lines.map((l) => {
@@ -39,7 +39,7 @@ export default function InkOrderBanner({
       </ul>
       {missing.length > 0 && (
         <p className="mt-2 text-red-700">
-          {missing.length} ink{missing.length === 1 ? " is" : "s are"} not on the form yet — {missingHint}
+          {missing.length} {handoffNoun(handoff, missing.length)} {missing.length === 1 ? "is" : "are"} not on the form yet — {missingHint}
         </p>
       )}
     </div>

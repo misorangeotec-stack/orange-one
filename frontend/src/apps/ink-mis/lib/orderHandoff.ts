@@ -25,6 +25,11 @@ export interface HandoffLine {
 
 export interface OrderHandoff {
   id: string;
+  /**
+   * The IMS sheet the order was placed on. Absent = Ink IMS (every hand-off before RM IMS got
+   * Place order). RM IMS uses this same hand-off, so the purchase forms serve both sheets.
+   */
+  sheet?: "ink" | "rm";
   target: HandoffTarget;
   createdAt: string;
   /** The Ink IMS book the order is for: `InkCompany.key`, Tally company GUID and label. */
@@ -37,6 +42,12 @@ export interface OrderHandoff {
 const keyOf = (id: string) => `ink-mis:order-handoff:${id}`;
 /** Hand-offs older than this are cleared the next time one is written. */
 const MAX_AGE_MS = 14 * 24 * 60 * 60 * 1000;
+
+/** "Ink IMS" / "RM IMS" — where the order came from, for the purchase form's banner and note. */
+export const handoffSheetLabel = (h: Pick<OrderHandoff, "sheet">) => (h.sheet === "rm" ? "RM IMS" : "Ink IMS");
+/** What the sheet calls one line: "ink(s)" on Ink IMS, "item(s)" on RM IMS. */
+export const handoffNoun = (h: Pick<OrderHandoff, "sheet">, n: number) =>
+  `${h.sheet === "rm" ? "item" : "ink"}${n === 1 ? "" : "s"}`;
 
 export function writeHandoff(h: OrderHandoff): void {
   try {

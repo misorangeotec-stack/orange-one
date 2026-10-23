@@ -7,7 +7,7 @@ import RequestForm from "../../components/RequestForm";
 import { useImportStore } from "../../store";
 import { useRequestForm, type RequestDraft } from "./useRequestForm";
 import InkOrderBanner from "../../../ink-mis/components/InkOrderBanner";
-import { keepRemaining, readHandoff } from "../../../ink-mis/lib/orderHandoff";
+import { handoffNoun, keepRemaining, readHandoff } from "../../../ink-mis/lib/orderHandoff";
 
 /**
  * Stage 1 — raise an Import Purchase Request. Import has FIXED vendors, so there
@@ -122,7 +122,7 @@ export default function NewRequest({
           missingHint={
             form.vendorId
               ? "this vendor does not supply them (or the item names differ). Map them to this vendor, or raise another request with their vendor — this link will then offer only what is left."
-              : "pick the vendor and the inks it supplies fill the grid."
+              : `pick the vendor and the ${handoffNoun(form.ink.handoff, 2)} it supplies fill the grid.`
           }
         />
       )}
