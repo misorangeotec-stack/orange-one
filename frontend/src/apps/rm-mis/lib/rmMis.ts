@@ -7,7 +7,8 @@
  *                 see lib/godowns.ts) — what Tally's Godown Summary lists for Warehouse.
  *   MASTER DATA   Code, Description and Category fall back to Bushra Central Master before
  *                 Tally's own values; the planner's item master still wins over both.
- *   CONSUMPTION   production, not sales — STOCK JOURNAL-PRODUCTION lines, used minus returned.
+ *   CONSUMPTION   production, not sales — STOCK JOURNAL-PRODUCTION lines, used minus returned,
+ *                 plus "Journal" outward (cartridges and filters are used up through it).
  *
  * The notes below are Ink IMS's, kept because the rules they explain are the same code.
  *
@@ -816,18 +817,27 @@ export async function loadInkConsumption(
    * RM IS CONSUMED IN PRODUCTION, NOT SOLD. Where Ink IMS reads the Sales Register, this reads the
    * STOCK JOURNAL-PRODUCTION lines: outward is material used, an inward line of the same item is
    * material handed back, and the two net — the same way a sales return nets a sale.
+   *
+   * CARTRIDGES AND FILTERS are used up through the plain "Journal" voucher, not a production
+   * journal (user, 2026-10-23), so its OUTWARD quantity counts as consumption too. Only outward:
+   * a Journal inward is a stock correction, not material handed back. Checked 23-10-2026: since
+   * April every Journal line in Enterprises Surat is a cartridge / filter going out, so no other
+   * item's average moves.
    */
-  type Row = { company_guid: string; stock_item: string; movement: string | null; qty: number | null; vch_date: string };
+  type Row = {
+    company_guid: string; stock_item: string; voucher_type: string | null; movement: string | null;
+    qty: number | null; vch_date: string;
+  };
   const rows: Row[] = [];
   for (const guid of INK_COMPANY_GUIDS) {
     rows.push(
       ...(await pageAll<Row>((lo, hi) =>
         cw
           .from("rpt_batch_line")
-          .select("company_guid,stock_item,movement,qty,vch_date")
+          .select("company_guid,stock_item,voucher_type,movement,qty,vch_date")
           .eq("company_guid", guid)
           .eq("tenant_id", `acct_orange::${guid}`)
-          .eq("voucher_type", "STOCK JOURNAL-PRODUCTION")
+          .in("voucher_type", ["STOCK JOURNAL-PRODUCTION", "Journal"])
           .gte("vch_date", from)
           .lte("vch_date", to)
           // A stable order across pages, or paging repeats and drops lines.
@@ -853,6 +863,7 @@ export async function loadInkConsumption(
     if (!companyKey) continue;
     const code = nameToCode.get(`${companyKey}|${norm(r.stock_item)}`);
     if (!code) continue;
+    if (r.voucher_type === "Journal" && r.movement !== "out") continue;
     const qty = (Number(r.qty) || 0) * (r.movement === "out" ? 1 : -1);
     const month = monthKey(String(r.vch_date));
     const target = month === thisMonth ? current : priorMonths.includes(month) ? prior : null;
