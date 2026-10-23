@@ -54,7 +54,17 @@ export default function CancelledTravel() {
   const kindOf = (t: Trip): "business" | "personal" | null =>
     s.legsOf(t.id).find((l) => l.cancelReasonKind)?.cancelReasonKind ?? null;
 
-  const charges = (t: Trip) => s.legsOf(t.id).reduce((sum, l) => sum + l.netCost, 0);
+  /*
+    ⚠ A TRIP THAT CLOSED AT BOOKING (2026-10) CAN BE PARTLY CANCELLED — one
+      ticket off, the rest still flying. Only its cancelled tickets are charges;
+      counting the kept ones would report a live flight as money lost. Old-flow
+      trips are cancelled whole, so every leg counts as before.
+  */
+  const charges = (t: Trip) =>
+    s
+      .legsOf(t.id)
+      .filter((l) => !t.closedAtBooking || l.cancelledAt)
+      .reduce((sum, l) => sum + l.netCost, 0);
 
   const businessCharges = rows
     .filter((t) => kindOf(t) === "business")

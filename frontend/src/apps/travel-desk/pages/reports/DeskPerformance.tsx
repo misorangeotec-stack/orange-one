@@ -123,12 +123,12 @@ export default function DeskPerformance() {
   const cancelled = s.trips.filter((t) => t.status === "cancelled" || t.status === "cancelled_pending_claim");
 
   const tiles: KpiTile[] = [
-    { key: "closed", label: "Trips closed", value: String(closed.length), hint: "Claimed, verified and settled" },
+    { key: "closed", label: "Trips closed", value: String(closed.length), hint: "Closed at booking, or settled (older trips)" },
     {
       key: "cycle",
       label: "Return to settled",
       value: median(cycles) === null ? "—" : `${median(cycles)} days`,
-      hint: "Median, calendar days. Section 12 promises 14 WORKING days",
+      hint: "Older trips only (new trips close at booking). Median, calendar days",
     },
     {
       key: "cancelled",

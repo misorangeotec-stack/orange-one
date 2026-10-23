@@ -31,6 +31,10 @@ export default function BookingPanel({ trip }: { trip: Trip }) {
   const [kind, setKind] = useState<"business" | "personal">("business");
 
   const canBook = s.canActOn("booking", trip);
+  // Mirrors fms_travel_complete_booking: a trip with an advance (asked for
+  // before 2026-10, or paid) keeps the old flow — booked, then the claim.
+  const keepsClaim =
+    (trip.advancePaidAmount ?? 0) > 0 || (trip.advanceRequested && !trip.advanceSkipped);
   const total = legs.reduce((sum, l) => sum + l.netCost, 0);
 
   const run = async (fn: () => Promise<unknown>, tag: string) => {
@@ -54,8 +58,10 @@ export default function BookingPanel({ trip }: { trip: Trip }) {
         <h2 className={SECTION_HEADING_CLASS}>Booking</h2>
         <p className="mt-1 text-[12.5px] text-grey">
           Record every flight, train, bus, cab and hotel, then mark the trip booked. Uploading the
-          ticket is what shares it with the traveller. Marking it booked closes the trip — there is
-          no expense claim afterwards.
+          ticket is what shares it with the traveller.{" "}
+          {keepsClaim
+            ? "This trip has a travel advance, so after booking it goes to the expense claim to settle it."
+            : "Marking it booked closes the trip — there is no expense claim afterwards."}
         </p>
         {err && <p className="mt-2 break-words text-[12.5px] text-ryg-red">{err}</p>}
         <div className="mt-3 flex flex-wrap items-center gap-3">
@@ -63,7 +69,9 @@ export default function BookingPanel({ trip }: { trip: Trip }) {
             onClick={() => run(() => s.completeBooking(trip.id), "book")}
             disabled={!!busy || legs.length === 0}
           >
-            {busy === "book" ? "Saving…" : `Mark booked and close — ${money(total)}`}
+            {busy === "book"
+              ? "Saving…"
+              : `${keepsClaim ? "Mark booked" : "Mark booked and close"} — ${money(total)}`}
           </Button>
           {legs.length === 0 && (
             <span className="text-[12.5px] text-grey-2">

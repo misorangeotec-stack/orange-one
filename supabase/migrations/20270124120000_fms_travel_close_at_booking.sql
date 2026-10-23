@@ -88,6 +88,7 @@ declare
   v_uid uuid := auth.uid();
   t     record;
   v_n   int;
+  v_adv boolean;
 begin
   if v_uid is null then raise exception 'Not signed in'; end if;
 
@@ -103,6 +104,31 @@ begin
   select count(*) into v_n from public.fms_travel_legs where trip_id = p_trip;
   if v_n = 0 then
     raise exception 'Record what was booked first — a trip cannot be marked booked with nothing on it.';
+  end if;
+
+  /*
+    ⚠ A TRIP WITH AN ADVANCE KEEPS THE OLD FLOW. Requests raised before this
+      migration may have asked for (or been paid) an advance, and an advance is
+      only ever settled through the claim. Closing such a trip here would leave
+      the advance "outstanding" for ever — on the dashboard, in Outstanding
+      Advances, and in the traveller's Employee Exit clearance.
+  */
+  v_adv := coalesce(t.advance_paid_amount, 0) > 0
+           or (coalesce(t.advance_requested, false) and not coalesce(t.advance_skipped, false));
+
+  if v_adv then
+    update public.fms_travel_trips
+       set status = 'booked', current_step = 'claim', closed_at_booking = false,
+           bk_at = now(), bk_by = v_uid
+     where id = p_trip;
+
+    perform public.fms_travel_announce('trip', p_trip, 'trip_booked',
+      coalesce(t.trip_no, 'The trip') || ' is booked — ' || v_n ||
+        case when v_n = 1 then ' booking' else ' bookings' end || ' on file',
+      array_remove(array[t.raised_by, t.traveller_id], null),
+      jsonb_build_object('legs', v_n));
+
+    return 'booked';
   end if;
 
   -- ⚠ CLOSED, NOT `booked`. The claim, finance and settlement steps are no
@@ -122,7 +148,7 @@ begin
 end $$;
 
 comment on function public.fms_travel_complete_booking(uuid) is
-  'Close the booking step AND the trip (new process, 2026-10): no claim or settlement follows. Refuses a trip with no legs on it.';
+  'Close the booking step AND the trip (new process, 2026-10): no claim or settlement follows. A trip with an advance (requested before 2026-10, or paid) keeps the old flow so the advance is settled through the claim. Refuses a trip with no legs on it.';
 grant execute on function public.fms_travel_complete_booking(uuid) to authenticated;
 
 
@@ -254,6 +280,7 @@ end $$;
 
 comment on function public.fms_travel_cancel_booking(uuid, uuid[], text, text, numeric, text) is
   'The booker cancels one or more tickets of a trip that closed at booking. Reason, credit note file, number and amount are all mandatory; the amount is written into the legs'' refund. When no ticket is left the trip becomes cancelled.';
+revoke all on function public.fms_travel_cancel_booking(uuid, uuid[], text, text, numeric, text) from public, anon;
 grant execute on function public.fms_travel_cancel_booking(uuid, uuid[], text, text, numeric, text) to authenticated;
 
 
