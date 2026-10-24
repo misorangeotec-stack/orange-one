@@ -7,6 +7,7 @@ import {
   markNotificationsRead as markNotificationsReadWrite,
   setCoordinators as setCoordinatorsWrite,
   setRaiseFor as setRaiseForWrite,
+  setMenuHiddenQueues as setMenuHiddenQueuesWrite,
   setStepSla as setStepSlaWrite,
   setStepOwners as setStepOwnersWrite,
   setPolicy as setPolicyWrite,
@@ -37,6 +38,9 @@ import {
   saveLeg as saveLegWrite,
   removeLeg as removeLegWrite,
   completeBooking as completeBookingWrite,
+  requestCancelBooking as requestCancelBookingWrite,
+  completeCancelBooking as completeCancelBookingWrite,
+  type CreditNoteInput,
   requestCancellation as requestCancellationWrite,
   processCancellation as processCancellationWrite,
 } from "./data/travelBookingWrites";
@@ -79,7 +83,7 @@ import type {
   TravelCity, TravelPurpose, TravelExpenseCategory, TravelHotel, TravelNamedMaster,
   TravelMasterManager, TravelMasterRequest, TravelRateCard, TravelRate,
   TravelMasterType, TravelRequestableMaster, TravelCategory, CityTier, RateType,
-  TripPassenger, ApprovalMatrix, TripLeg, TripLegInput,
+  TripPassenger, ApprovalMatrix, TripLeg, TripLegInput, TripCancellation,
   ClaimLine, ClaimLineInput, ClaimPreview, DaDay, ActualTravelInput, SettlementInput,
 } from "./types";
 
@@ -116,6 +120,7 @@ const EMPTY_CONFIG: TravelConfig = {
   stepSla: null,
   processCoordinators: [],
   raiseFor: [],
+  menuHiddenQueues: null,
   approvalMatrix: { directorFromBand: 6, managerAlsoForDirectorBands: true },
   policy: {
     maxPassengers: 5,
@@ -163,6 +168,8 @@ interface TravelStoreValue {
   legs: TripLeg[];
   /** This trip's booked legs, in the order they were added. */
   legsOf: (tripId: string) => TripLeg[];
+  /** The booker's cancellations on this trip, oldest first. */
+  cancellationsOf: (tripId: string) => TripCancellation[];
   /**
    * The flat arrays, alongside the per-trip selectors.
    *
@@ -246,6 +253,7 @@ interface TravelStoreValue {
   ) => Promise<void>;
   setCoordinators: (userIds: string[]) => Promise<void>;
   setRaiseFor: (userIds: string[]) => Promise<void>;
+  setMenuHiddenQueues: (keys: string[]) => Promise<void>;
   setStepSla: (map: StepSlaMap) => Promise<void>;
   setPolicy: (policy: TravelPolicyConfig) => Promise<void>;
   setCompanyIdentity: (v: { legalName: string; gstin: string; address: string }) => Promise<void>;
@@ -343,6 +351,8 @@ interface TravelStoreValue {
   saveLeg: (tripId: string, input: TripLegInput, legId?: string | null) => Promise<string>;
   removeLeg: (legId: string) => Promise<void>;
   completeBooking: (tripId: string) => Promise<string>;
+  requestCancelBooking: (tripId: string, legIds: string[], reason: string) => Promise<string>;
+  completeCancelBooking: (cancellationId: string, input: CreditNoteInput) => Promise<string>;
   requestCancellation: (tripId: string, reason: string) => Promise<void>;
   processCancellation: (
     tripId: string,
@@ -404,6 +414,7 @@ export function TravelStoreProvider({ children }: { children: ReactNode }) {
     const trips = data?.trips ?? [];
     const passengers = data?.passengers ?? [];
     const legs = data?.legs ?? [];
+    const cancellations = data?.cancellations ?? [];
     const claimLines = data?.claimLines ?? [];
     const daDays = data?.daDays ?? [];
     const employeeSettings = data?.employeeSettings ?? [];
@@ -615,6 +626,10 @@ export function TravelStoreProvider({ children }: { children: ReactNode }) {
       legs,
       legsOf: (tripId: string) =>
         legs.filter((x) => x.tripId === tripId).sort((a, b) => a.sortOrder - b.sortOrder),
+      cancellationsOf: (tripId: string) =>
+        cancellations
+          .filter((x) => x.tripId === tripId)
+          .sort((a, b) => a.requestedAt.localeCompare(b.requestedAt)),
       claimLines,
       daDays,
       claimLinesOf: (tripId: string) =>
@@ -691,6 +706,10 @@ export function TravelStoreProvider({ children }: { children: ReactNode }) {
       // refreshes the list AND the coordinator's picker.
       setRaiseFor: async (userIds) => {
         await setRaiseForWrite(userIds);
+        await qc.invalidateQueries({ queryKey: QK });
+      },
+      setMenuHiddenQueues: async (keys) => {
+        await setMenuHiddenQueuesWrite(keys);
         await qc.invalidateQueries({ queryKey: QK });
       },
       setStepSla: async (map) => {
@@ -798,6 +817,16 @@ export function TravelStoreProvider({ children }: { children: ReactNode }) {
       },
       completeBooking: async (tripId) => {
         const st = await completeBookingWrite(tripId);
+        await qc.invalidateQueries({ queryKey: QK });
+        return st;
+      },
+      requestCancelBooking: async (tripId, legIds, reason) => {
+        const id = await requestCancelBookingWrite(tripId, legIds, reason);
+        await qc.invalidateQueries({ queryKey: QK });
+        return id;
+      },
+      completeCancelBooking: async (cancellationId, input) => {
+        const st = await completeCancelBookingWrite(cancellationId, input);
         await qc.invalidateQueries({ queryKey: QK });
         return st;
       },

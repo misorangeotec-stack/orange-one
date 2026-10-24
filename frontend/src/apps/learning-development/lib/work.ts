@@ -3,6 +3,7 @@ import { buildQueueEntries, isOpen, stepOf } from "./queues";
 import { STEPS, type StepKey } from "./steps";
 import type { LdData } from "../data/ldFetch";
 import type { TrainingSession } from "../types";
+import { LD_CALENDAR_ONLY } from "./mode";
 
 /**
  * EVERY piece of work this module holds — open and closed, across all three
@@ -648,7 +649,21 @@ export function buildLdWork(data: LdData, sla: StepSlaMap): LdWork {
     }
   }
 
-  return { open, closed };
+  /*
+   * ⚠ CALENDAR TRAININGS HAVE NO PIPELINE STEPS (HR, 14-10-2026). Nominations,
+   *   material, conduct, assignment, feedback and review are not part of them —
+   *   Complete + Present/Absent is the whole flow — so the rules above would
+   *   invent steps nobody can close (found 23-10-2026: Feedback per attendee,
+   *   Session Review / Assign per training, on My Control Center). And while
+   *   calendar-only mode hides every screen where a pipeline step is worked, no
+   *   open step can be acted on, so none is listed.
+   */
+  const calendarIds = new Set(sessions.filter((x) => x.source === "calendar").map((x) => x.id));
+  const notCalendar = (s: LdStepRow) => !(s.sessionId && calendarIds.has(s.sessionId));
+  return {
+    open: LD_CALENDAR_ONLY ? [] : open.filter(notCalendar),
+    closed: closed.filter(notCalendar),
+  };
 }
 
 /** Every open step as the shared queue atom — what the Control Center counts. */

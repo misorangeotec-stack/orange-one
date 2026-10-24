@@ -44,7 +44,7 @@ export default function TripRegister() {
     const totalSpend = rows.reduce((sum, t) => sum + spend(t), 0);
     return [
       { key: "all", label: "Trips on record", value: String(rows.length), hint: "Every status, including drafts" },
-      { key: "closed", label: "Closed", value: String(closed.length), hint: "Claimed and settled" },
+      { key: "closed", label: "Closed", value: String(closed.length), hint: "Closed at booking, or claimed and settled" },
       { key: "people", label: "Travellers", value: String(new Set(rows.map((t) => t.travellerId)).size) },
       {
         key: "spend",

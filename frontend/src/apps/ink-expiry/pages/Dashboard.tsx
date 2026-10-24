@@ -10,6 +10,7 @@ import { appBasePath, appName } from "../../appInfo";
 import { fmtDate, STATE_LABEL, type StockLot } from "../lib/expiry";
 import { useExpiryStatus } from "../lib/useExpiryStatus";
 import FreshnessBar from "../components/FreshnessBar";
+import GodownChooser from "../components/GodownChooser";
 import {
   ActiveFilters, DAYS_LEFT_BANDS, daysLeftBand, QTY_BANDS, qtyBand,
   SortFilterBody, SortFilterHead, TableTools, useSortFilter, type Col,
@@ -177,7 +178,7 @@ function LotTable({ rows, today, scope }: { rows: Row[]; today: string; scope?: 
 }
 
 export default function Dashboard() {
-  const { q, today, progress, asOf, refreshing } = useExpiryStatus();
+  const { q, today, progress, asOf, refreshing, rule } = useExpiryStatus();
   const [measure, setMeasure] = useState<Measure>("qty");
   const [months, setMonths] = useState<string[]>([]);
   const [categories, setCategories] = useState<string[]>([]);
@@ -296,6 +297,7 @@ export default function Dashboard() {
           <Button variant="outline" size="sm" onClick={() => q.refetch()} disabled={q.isFetching}>
             {q.isFetching ? "Loading…" : "Refresh"}
           </Button>
+          {q.data?.godownsAll && <GodownChooser all={q.data.godownsAll} rule={rule} />}
           <Link to={`${appBasePath("ink-expiry")}/status`}
             className="inline-flex h-9 items-center rounded-lg border border-orange/40 px-3 text-[12.5px] font-semibold text-orange hover:bg-orange/5">
             Lot list &amp; accountant export →
@@ -487,8 +489,8 @@ export default function Dashboard() {
 
           <p className="text-[11.5px] text-grey">
             KGS stock only — Tally's ink groups also hold ~1.2 lakh MTR of foil paper and a few PCS items, left out here. Provision ink,
-            dead stock, diff stock and loose ink are excluded everywhere in this app, and so is stock sitting in the Lab and LOOSE INK
-            godowns{q.data?.heldOut?.qty ? ` (${fmtKg(q.data.heldOut.qty)} over ${q.data.heldOut.lots.toLocaleString("en-IN")} lots left out today)` : ""}.
+            dead stock, diff stock and loose ink are excluded everywhere in this app, and so is stock in godowns that don't count
+            under "Godowns counted" — as in Ink IMS, Enterprises Surat counts FINISHED GOODS-SACHIN and HOJIWALA only{q.data?.heldOut?.qty ? ` (${fmtKg(q.data.heldOut.qty)} over ${q.data.heldOut.lots.toLocaleString("en-IN")} lots left out today)` : ""}.
             Value = quantity × each item's Tally closing rate. Category and Group come from Central Masters with your Bushra Central
             Master corrections{lookupQ.isLoading ? " (loading…)" : ""}{notInMaster ? ` — ${notInMaster.toLocaleString("en-IN")} items in view are not in Central Master` : ""}.
             Coverage = share of lot stock whose expiry is entered in Tally.

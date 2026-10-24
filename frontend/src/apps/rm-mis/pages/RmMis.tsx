@@ -42,8 +42,8 @@ import { Link } from "react-router-dom";
 import { appBasePath } from "../../appInfo";
 import { useQuery } from "@tanstack/react-query";
 import {
-  AlertTriangle, Download, ListChecks, Pencil, Plus, RefreshCw, Search, Ship, Trash2, Wand2,
-  Warehouse,
+  AlertTriangle, Archive, CircleCheck, Clock, Download, ListChecks, Pencil, Plus, RefreshCw, RotateCcw,
+  Search, Ship, ShoppingCart, Trash2, Wand2, Warehouse,
 } from "lucide-react";
 import { Button } from "@hub/components/ui/button";
 import { Input } from "@hub/components/ui/input";
@@ -51,7 +51,10 @@ import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from "@hub/components/ui/table";
 import { ScrollableTable } from "@/core/shared/components/ScrollableTable";
-import ReorderChart, { reorderQty } from "../components/ReorderChart";
+import { reorderQty } from "../components/ReorderChart";
+import PlaceOrderPanel, { type PlacedOrder } from "../components/PlaceOrderPanel";
+import RaiseSlider from "../components/RaiseSlider";
+import { readHandoff } from "../lib/orderHandoff";
 import MultiSelect from "@/shared/components/ui/MultiSelect";
 import HeaderFilter, { ColumnHead, isFilterActive, type ColumnFilter } from "../components/HeaderFilter";
 import {
@@ -61,6 +64,8 @@ import {
 import { ResizableHead, useTableColumns } from "../lib/tableColumns";
 import { forgetRawTallyRows, useGodownChoice } from "../lib/godowns";
 import { salesFyOptions } from "@hub/lib/salesReport";
+import { filterOptionLabel } from "@/shared/lib/blankFilter";
+import { colourFromDescription } from "../../bushra-central-master/lib/itemColour";
 import {
   DEFAULT_THRESHOLDS, EMPTY_PLAN, INK_COMPANIES, daysRedFor, deriveInkRow, describeGodownChoice,
   fmtDays, fmtQty,
@@ -93,6 +98,20 @@ const BAND_LABEL: Record<InkBand, string> = {
 };
 
 /** Toolbar sizing: one line of small controls above the sheet. */
+/** "2026-10-12" → "12-10-26": the planner reads dates as dd-mm-yy. Anything else passes through. */
+const fmtDdMmYy = (iso: string) => {
+  const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(iso);
+  return m ? `${m[3]}-${m[2]}-${m[1].slice(2)}` : iso;
+};
+
+/** The always-visible filters above the sheet, in the planner's order. */
+const QUICK_FILTERS = [
+  { id: "group", label: "Group" },
+  { id: "supplier", label: "Supplier name" },
+  { id: "colour", label: "Colour" },
+  { id: "category", label: "Category" },
+];
+
 const BAR_BTN = "h-7 px-2 text-[11px]";
 const BAR_ICON = "mr-1 h-3 w-3";
 
@@ -158,6 +177,26 @@ export default function RmMis() {
       /* private mode: the toggle still works for this visit */
     }
   }, [companiesOpen]);
+  // ETA, Plant and ETD fold the same way: closed, a bucket keeps only its total columns. Starts
+  // open, so nobody loses the consignment columns they are used to seeing.
+  type Bucket = "eta" | "plant" | "etd";
+  const [bucketsOpen, setBucketsOpen] = useState<Record<Bucket, boolean>>(() => {
+    const all = { eta: true, plant: true, etd: true };
+    try {
+      const raw = window.localStorage.getItem("rm-mis:buckets-open");
+      return raw ? { ...all, ...JSON.parse(raw) } : all;
+    } catch {
+      return all;
+    }
+  });
+  useEffect(() => {
+    try {
+      window.localStorage.setItem("rm-mis:buckets-open", JSON.stringify(bucketsOpen));
+    } catch {
+      /* private mode: the toggle still works for this visit */
+    }
+  }, [bucketsOpen]);
+  const toggleBucket = (b: Bucket) => setBucketsOpen((prev) => ({ ...prev, [b]: !prev[b] }));
   // Lines the viewer has hidden from the dashboard, by line key. Remembered per browser, like the
   // Columns picker: it narrows this person's view and never touches the planner's numbering.
   const [hiddenLines, setHiddenLines] = useState<string[]>(() => {
@@ -196,7 +235,7 @@ export default function RmMis() {
   useEffect(() => saveThresholds(thresholds), [thresholds]);
   useEffect(() => saveHolidays(holidays), [holidays]);
 
-  const { data, isLoading, error, refetch, isFetching } = useQuery({
+  const { data, isLoading, error, refetch, isFetching, dataUpdatedAt } = useQuery({
     queryKey: ["rmMis", "positions", fy, overrides, scope, order, lineFields, groupFields, godownChoice],
     queryFn: () =>
       loadInkPositions(
@@ -227,7 +266,6 @@ export default function RmMis() {
         : allPositions.filter((p) => Math.abs(p.stock) >= 0.0005),
     [allPositions, order, anyNumbered],
   );
-  const needsCode = useMemo(() => positions.filter((p) => !p.coded).length, [positions]);
 
   /** The Lines picker: every numbered line, in sheet order; ticked = shown. */
   const hiddenSet = useMemo(() => new Set(hiddenLines), [hiddenLines]);
@@ -317,6 +355,8 @@ export default function RmMis() {
         case "category": return r.category;
         case "source": return sourceLabel(r.source);
         case "supplier": return r.supplier;
+        // Read from the ink's name ("…H-SERIES LIGHT MAGENTA" → Light Magenta), for the Colour filter.
+        case "colour": return colourFromDescription(r.description) ?? "";
         case "m3": return r.plan.threeMonthAvg;
         case "pd": return r.plan.perDayAvg;
         case "lead": return r.plan.leadTime;
@@ -327,6 +367,7 @@ export default function RmMis() {
         case "dailyMax": return r.dailyMaxLevel;
         case "stock": return r.stock;
         case "incoming": return r.incoming;
+        case "stockIncoming": return r.stockIncoming;
         case "plantTotal": return r.plant;
         case "etdTotal": return r.etd;
         case "total": return r.total;
@@ -345,6 +386,7 @@ export default function RmMis() {
     category: "list",
     source: "list",
     supplier: "list",
+    colour: "list",
   };
 
   /**
@@ -354,7 +396,7 @@ export default function RmMis() {
    * from these narrowed by every filter except its own, which is what stops the planner
    * assembling a combination that matches nothing.
    */
-  const searchedRows: InkRow[] = useMemo(() => {
+  const allSearchedRows: InkRow[] = useMemo(() => {
     const built = positions.map((p) => {
       const base = plans[p.key] ?? plans[p.legacyKey] ?? EMPTY_PLAN;
       // The company tabs use that book's own sales; Combined uses the group's.
@@ -381,21 +423,77 @@ export default function RmMis() {
   }, [positions, plans, consumption, shipments, thresholds, companyKey, search, isHidden]);
 
   /**
+   * The source tabs (All · Import · Domestic · Plant) on the ‹ › row above the table. Applied
+   * here, with the search, so the table, the totals line, the four cards and the column-filter
+   * lists all speak for the same source.
+   */
+  const [sourcePick, setSourcePick] = useState<string>("");
+  const sourceCounts = useMemo(() => {
+    const c: Record<string, number> = {};
+    for (const r of allSearchedRows) c[r.source] = (c[r.source] ?? 0) + 1;
+    return c;
+  }, [allSearchedRows]);
+  const searchedRows: InkRow[] = useMemo(
+    () => (sourcePick ? allSearchedRows.filter((r) => r.source === sourcePick) : allSearchedRows),
+    [allSearchedRows, sourcePick],
+  );
+  const sourceTabs = (
+    <div role="tablist" className="inline-flex h-7 items-center rounded-md border border-border bg-muted/40 p-0.5">
+      {[{ value: "", label: "All" }, ...INK_SOURCES].map((t) => {
+        const active = sourcePick === t.value;
+        const n = t.value ? (sourceCounts[t.value] ?? 0) : allSearchedRows.length;
+        return (
+          <button
+            key={t.value || "all"}
+            type="button"
+            role="tab"
+            aria-selected={active}
+            onClick={() => setSourcePick(t.value)}
+            className={`h-6 rounded px-2.5 text-[11px] font-medium ${
+              active ? "bg-background text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground"
+            }`}
+          >
+            {t.label} <span className="tabular-nums opacity-60">{n}</span>
+          </button>
+        );
+      })}
+    </div>
+  );
+
+  /**
    * What is on screen: the filters, then the planner's chosen order.
    *
    * With no sort chosen the rows keep the numbering the item master gave them, which is the
    * order the sheet is read in. One click on the No. heading always returns to it.
    */
-  const rows: InkRow[] = useMemo(
+  const filteredRows: InkRow[] = useMemo(
     () => applySort(rowsPassing(searchedRows, colFilters, cellValue), sort, cellValue),
     [searchedRows, colFilters, sort, cellValue],
   );
 
   /**
+   * The status cards above the table. Clicking one shows only the inks in that colour band (the
+   * Total column's colour); clicking it again shows them all. The cards count AFTER the other
+   * filters and the search, so "18 to order now" is always what clicking will show.
+   */
+  const [bandPick, setBandPick] = useState<InkBand | null>(null);
+  const bandCounts = useMemo(() => {
+    const c: Record<InkBand, number> = { low: 0, mid: 0, normal: 0, excess: 0, none: 0 };
+    for (const r of filteredRows) c[r.band] += 1;
+    return c;
+  }, [filteredRows]);
+  const rows: InkRow[] = useMemo(
+    () => (bandPick ? filteredRows.filter((r) => r.band === bandPick) : filteredRows),
+    [filteredRows, bandPick],
+  );
+
+  /**
    * Consignment columns, one per entry, mirroring the sheet. Scoped to the book in view.
    *
-   * Split in two: shipments first, then the plant's weekly orders, so the sheet reads
-   * left-to-right as bought-in supply and then made-here supply, with a total after each.
+   * Split in three, in the planner's sheet order, each block followed by its own total:
+   * ETA / at port → "ETA + at port", then the plant's weekly orders → "Plant total", then
+   * ETD → "ETD total". ETD used to ride with the ETA block, so a new ETD column landed before
+   * "ETA + at port" and looked like it was counted there.
    */
   const inScope = useMemo(
     () =>
@@ -407,8 +505,16 @@ export default function RmMis() {
         .sort((a, b) => (a.date || "9999").localeCompare(b.date || "9999")),
     [shipments, companyKey],
   );
-  const shipmentCols = useMemo(() => inScope.filter((s) => s.status !== "PLANT"), [inScope]);
+  const shipmentCols = useMemo(
+    () => inScope.filter((s) => s.status === "ETA" || s.status === "AT PORT"),
+    [inScope],
+  );
   const plantCols = useMemo(() => inScope.filter((s) => s.status === "PLANT"), [inScope]);
+  // NEW ORDER (from Place order) is an ETD that is not yet confirmed: same block, same total.
+  const etdCols = useMemo(
+    () => inScope.filter((s) => s.status === "ETD" || s.status === "NEW ORDER"),
+    [inScope],
+  );
 
   const totals = useMemo(
     () =>
@@ -679,12 +785,39 @@ export default function RmMis() {
     }
   }, [freeze]);
   const showCompanyCols = !companyKey && companiesOpen && cols.isVisible("companies");
-  const showShipmentCols = cols.isVisible("shipments");
-  const showPlantCols = cols.isVisible("plant");
+  const showShipmentCols = cols.isVisible("shipments") && bucketsOpen.eta;
+  const showEtdCols = cols.isVisible("shipments") && bucketsOpen.etd;
+  const showPlantCols = cols.isVisible("plant") && bucketsOpen.plant;
+  /**
+   * One bucket's cell in the band row, spanning its consignment columns and its totals. The +/−
+   * shows only when the bucket has consignment columns to fold; with those hidden in the Columns
+   * picker it is just a label.
+   */
+  const bucketHead = (b: Bucket, label: string, span: number, foldable: boolean) => {
+    if (span <= 0) return null;
+    const open = bucketsOpen[b];
+    return (
+      <TableHead colSpan={span} className="border-x text-center">
+        {foldable ? (
+          <button
+            type="button"
+            onClick={() => toggleBucket(b)}
+            className="inline-flex items-center gap-1 text-[9px] font-semibold text-foreground hover:underline"
+            title={open ? `Fold the ${label} columns into their totals` : `Show each ${label} column`}
+          >
+            {open ? `− ${label}` : `+ ${label}`}
+          </button>
+        ) : (
+          <span className="text-[9px] font-semibold text-foreground">{label}</span>
+        )}
+      </TableHead>
+    );
+  };
 
   /**
-   * The planning block, left of the stock columns. Item code is not hideable: without it a row
-   * cannot be identified. Stock and Total are not hideable either — they are the answer.
+   * The planning block, left of the stock columns. Every one of them is in the Columns picker,
+   * Item code included (the planner asked to be able to hide it, 2026-10-23 — Description still
+   * identifies the row). Stock and Total are not hideable — they are the answer.
    */
   /**
    * FROZEN LEAD COLUMNS.
@@ -719,7 +852,7 @@ export default function RmMis() {
     if (id === "source") return 110;
     if (id === "supplier") return 170;
     if (id.startsWith("ship:") || id.startsWith("plant:")) return 110;
-    if (id === "stock" || id === "total" || id === "etdTotal") return 110;
+    if (id === "stock" || id === "total" || id === "etdTotal" || id === "stockIncoming") return 110;
     return 90;
   };
 
@@ -729,7 +862,7 @@ export default function RmMis() {
     // rather than infer it from the position.
     { id: "no", label: "No." },
     { id: "group", label: "Group" },
-    { id: "code", label: "Item code", locked: true },
+    { id: "code", label: "Item code" },
     { id: "description", label: "Description" },
     { id: "remark", label: "Remark" },
     { id: "m3", label: "3-month avg" },
@@ -741,7 +874,7 @@ export default function RmMis() {
     { id: "monthMax", label: "Month max" },
     { id: "dailyMax", label: "Daily max" },
   ];
-  const leadVisible = LEAD_COLS.filter((c) => c.locked || cols.isVisible(c.id));
+  const leadVisible = LEAD_COLS.filter((c) => cols.isVisible(c.id));
 
   /**
    * The columns actually rendered, in order. Mirrors the heading row exactly — if one changes,
@@ -753,15 +886,17 @@ export default function RmMis() {
     ids.push("stock");
     if (showShipmentCols) ids.push(...shipmentCols.map((x) => `ship:${x.id}`));
     if (cols.isVisible("incoming")) ids.push("incoming");
+    if (cols.isVisible("stockIncoming")) ids.push("stockIncoming");
     if (showPlantCols) ids.push(...plantCols.map((x) => `plant:${x.id}`));
     ids.push("plantTotal");
+    if (showEtdCols) ids.push(...etdCols.map((x) => `ship:${x.id}`));
     if (cols.isVisible("etdTotal")) ids.push("etdTotal");
     ids.push("total");
     if (cols.isVisible("category")) ids.push("category");
     if (cols.isVisible("source")) ids.push("source");
     if (cols.isVisible("supplier")) ids.push("supplier");
     return ids;
-  }, [leadVisible, showCompanyCols, showShipmentCols, shipmentCols, showPlantCols, plantCols, cols]);
+  }, [leadVisible, showCompanyCols, showShipmentCols, shipmentCols, showPlantCols, plantCols, showEtdCols, etdCols, cols]);
 
   /**
    * The table is EXACTLY as wide as its columns, set inline.
@@ -838,12 +973,15 @@ export default function RmMis() {
     };
   };
   const on = (id: string) => leadVisible.some((c) => c.id === id);
+  /** The first frozen heading on screen carries the heading-height grab strip. */
+  const handleOn = PINNED.find((id) => on(id));
   const columnOptions = [
-    ...LEAD_COLS.filter((c) => !c.locked).map((c) => ({ value: c.id, label: c.label })),
+    ...LEAD_COLS.map((c) => ({ value: c.id, label: c.label })),
     { value: "companies", label: "Stock by company" },
     { value: "shipments", label: "Consignment columns" },
     { value: "plant", label: "Plant weekly columns" },
     { value: "incoming", label: "ETA + at port" },
+    { value: "stockIncoming", label: "Stock + ETA + at port" },
     { value: "etdTotal", label: "ETD total" },
     { value: "category", label: "Category" },
     { value: "source", label: "Import/Plant" },
@@ -863,9 +1001,24 @@ export default function RmMis() {
 
   useEffect(() => {
     if (!justAdded) return;
-    newColumnRef.current?.scrollIntoView({ behavior: "smooth", inline: "end", block: "nearest" });
+    // A column added into a folded bucket would land out of sight, so its bucket opens first.
+    const added = shipments.find((s) => s.id === justAdded);
+    if (added) {
+      const b: Bucket =
+        added.status === "PLANT" ? "plant" : added.status === "ETA" || added.status === "AT PORT" ? "eta" : "etd";
+      setBucketsOpen((prev) => (prev[b] ? prev : { ...prev, [b]: true }));
+    }
+    // Next tick, so a bucket opened just above has rendered the column before we scroll to it.
+    const s = window.setTimeout(
+      () => newColumnRef.current?.scrollIntoView({ behavior: "smooth", inline: "end", block: "nearest" }),
+      0,
+    );
     const t = window.setTimeout(() => setJustAdded(null), 6000);
-    return () => window.clearTimeout(t);
+    return () => {
+      window.clearTimeout(s);
+      window.clearTimeout(t);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [justAdded]);
 
   const addColumn = (status: ShipmentStatus) => {
@@ -881,6 +1034,39 @@ export default function RmMis() {
     };
     setShipments((prev) => [...prev, column]);
     setJustAdded(column.id);
+  };
+
+  /**
+   * Place order → one NEW ORDER column in the ETD block, landing in the book the order is for.
+   * The panel opens fresh each time (keyed by `placeSeq`) so it always starts from the inks the
+   * card is showing now.
+   */
+  const [placeSeq, setPlaceSeq] = useState(0);
+  const [placeOpen, setPlaceOpen] = useState(false);
+  const placeOrder = (o: PlacedOrder) => {
+    const today = new Date().toISOString().slice(0, 10);
+    const column: Shipment = {
+      ...emptyShipment(),
+      status: "NEW ORDER",
+      reference: "New Order",
+      date: today,
+      company: o.companyKey,
+      note: "Placed from the dashboard",
+      lines: o.lines.map((l) => ({ id: newId(), itemCode: l.itemCode, qty: l.qty })),
+      handoffs: o.handoffs,
+    };
+    setShipments((prev) => [...prev, column]);
+  };
+
+  /**
+   * A NEW ORDER column's unraised Purchase requests, reopened from its heading. `raiseTick`
+   * re-reads the hand-offs after a request is raised (they shrink, or go once all are raised).
+   */
+  const [raiseFrom, setRaiseFrom] = useState<{ target: "import" | "domestic"; id: string } | null>(null);
+  const [raiseTick, setRaiseTick] = useState(0);
+  const pendingHandoffs = (s: Shipment) => {
+    void raiseTick;
+    return (s.handoffs ?? []).filter((h) => (readHandoff(h.id)?.lines.length ?? 0) > 0);
   };
 
   const patchColumn = (id: string, patch: Partial<Shipment>) =>
@@ -991,7 +1177,21 @@ export default function RmMis() {
         <div>
           {colHead(s.reference || "(no ref)", `${s.status === "PLANT" ? "plant" : "ship"}:${s.id}`)}
         </div>
-        <div className="text-[10px] font-normal text-muted-foreground">{s.date || "no date"}</div>
+        <div className="whitespace-nowrap text-[10px] font-normal text-muted-foreground">
+          {s.date ? fmtDdMmYy(s.date) : "no date"}
+        </div>
+        {s.status === "NEW ORDER" &&
+          pendingHandoffs(s).map((h) => (
+            <button
+              key={h.id}
+              type="button"
+              onClick={() => setRaiseFrom(h)}
+              className="block whitespace-nowrap text-[10px] font-semibold text-primary underline"
+              title="This order's Purchase request is not raised yet — open it"
+            >
+              Raise {h.target === "import" ? "Import" : "Domestic"}
+            </button>
+          ))}
       </>
     );
 
@@ -1020,13 +1220,20 @@ export default function RmMis() {
   /* --------------------------------------------------------------------- export */
 
   const exportCsv = () => {
+    const colTitle = (s: (typeof inScope)[number]) =>
+      `${s.status} ${s.reference || "(no ref)"} ${fmtDdMmYy(s.date)}`;
+    const qtyIn = (s: (typeof inScope)[number], itemCode: string) =>
+      s.lines.filter((l) => l.itemCode === itemCode).reduce((t, l) => t + l.qty, 0) || "";
     const head = [
       "No.", "Group", "Item code", "Description", "Remark",
       "3-month avg", "Per day avg", "Lead time", "Safety factor",
       "Days cover", "Days cover with ETA", "Month max level", "Daily max level",
       ...(showCompanyCols ? INK_COMPANIES.map((c) => c.label) : []),
-      "Stock", ...shipmentCols.map((s) => `${s.status} ${s.reference || "(no ref)"} ${s.date}`),
-      "ETD", "ETA + at port", "Plant total", "ETD total", "Total", "Category",
+      "Stock",
+      ...shipmentCols.map(colTitle), "ETA + at port", "Stock + ETA + at port",
+      ...plantCols.map(colTitle), "Plant total",
+      ...etdCols.map(colTitle), "ETD total",
+      "Total", "Category",
       "Import/Plant", "Supplier", "Last Tally purchase", "To order",
     ];
     const body = rows.map((r) => [
@@ -1035,10 +1242,10 @@ export default function RmMis() {
       r.daysCover ?? "", r.daysCoverWithIncoming ?? "", r.monthMaxLevel, r.dailyMaxLevel,
       ...(showCompanyCols ? INK_COMPANIES.map((c) => r.byCompany[c.key] ?? 0) : []),
       r.stock,
-      ...shipmentCols.map((s) =>
-        s.lines.filter((l) => l.itemCode === r.itemCode).reduce((t, l) => t + l.qty, 0) || "",
-      ),
-      r.etd, r.incoming, r.plant, r.etd, r.total, r.category, sourceLabel(r.source),
+      ...shipmentCols.map((s) => qtyIn(s, r.itemCode)), r.incoming, r.stockIncoming,
+      ...plantCols.map((s) => qtyIn(s, r.itemCode)), r.plant,
+      ...etdCols.map((s) => qtyIn(s, r.itemCode)), r.etd,
+      r.total, r.category, sourceLabel(r.source),
       r.supplier, r.supplierTyped ? "" : fmtYmd(r.supplierDate),
       reorderQty(r),
     ]);
@@ -1060,33 +1267,59 @@ export default function RmMis() {
   const tabs = INK_COMPANIES.map((c) => ({ key: c.key, label: c.label }));
 
   return (
-    <div className="space-y-5">
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <div>
-          <h1 className="text-2xl font-semibold">RM IMS</h1>
+    <div className="space-y-2">
+      {/* ONE COMPACT LINE: title, the five tabs and the page buttons. They were three rows of
+          large type above the sheet and pushed it half a screen down; the sheet is the report. */}
+      <div className="flex flex-wrap items-center gap-x-4 gap-y-1 border-b">
+        <h1 className="text-base font-semibold">RM IMS</h1>
+        <div className="flex flex-wrap gap-0.5">
+          {tabs.map((t) => (
+            <button
+              key={t.key}
+              type="button"
+              onClick={() => setTab(t.key)}
+              className={`-mb-px border-b-2 px-2.5 py-1.5 text-[11px] transition-colors ${
+                tab === t.key
+                  ? "border-primary font-semibold text-foreground"
+                  : "border-transparent text-muted-foreground hover:text-foreground"
+              }`}
+            >
+              {t.label}
+            </button>
+          ))}
         </div>
-        <div className="flex flex-wrap items-center gap-2">
-          <Button variant="outline" size="sm" onClick={() => { forgetRawTallyRows(); void refetch(); }} disabled={isFetching}>
-            <RefreshCw className={`mr-2 h-4 w-4 ${isFetching ? "animate-spin" : ""}`} /> Refresh
+        <div className="ml-auto flex flex-wrap items-center gap-1.5 pb-1">
+          {/* Same wording as the other dashboards: when the stock on screen was last read. */}
+          <span className="whitespace-nowrap text-[11px] text-muted-foreground" title="When the stock on this sheet was last read from Tally (ConnectWave)">
+            {isFetching
+              ? "Refreshing…"
+              : `Last refreshed: ${
+                  dataUpdatedAt
+                    ? new Date(dataUpdatedAt).toLocaleString("en-IN", { dateStyle: "medium", timeStyle: "short" })
+                    : "never"
+                }`}
+          </span>
+          <Button variant="outline" size="sm" className={BAR_BTN} onClick={() => { forgetRawTallyRows(); void refetch(); }} disabled={isFetching}>
+            <RefreshCw className={`${BAR_ICON} ${isFetching ? "animate-spin" : ""}`} /> Refresh
           </Button>
-          <Button variant="outline" size="sm" onClick={exportCsv} disabled={!rows.length}>
-            <Download className="mr-2 h-4 w-4" /> Export
+          <Button variant="outline" size="sm" className={BAR_BTN} onClick={exportCsv} disabled={!rows.length}>
+            <Download className={BAR_ICON} /> Export
           </Button>
-          <Button size="sm" variant="secondary" asChild>
+          <Button size="sm" variant="secondary" className={BAR_BTN} asChild>
             <Link to={`${BASE}/items`}>
-              <ListChecks className="mr-2 h-4 w-4" /> Item master
+              <ListChecks className={BAR_ICON} /> Item master
             </Link>
           </Button>
-          <Button size="sm" asChild>
+          <Button size="sm" className={BAR_BTN} asChild>
             <Link to={`${BASE}/pipeline`}>
-              <Ship className="mr-2 h-4 w-4" /> ETD / ETA entry
+              <Ship className={BAR_ICON} /> ETD / ETA entry
             </Link>
           </Button>
         </div>
       </div>
 
       {godownLines.length > 0 && (
-        <div className="flex flex-wrap items-center gap-x-3 gap-y-1 rounded-md border bg-muted/40 px-3 py-2 text-xs">
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-1 rounded-md border bg-muted/40 px-2 py-1 text-[11px]">
           <span className="inline-flex items-center gap-1 font-medium">
             <Warehouse className="h-3.5 w-3.5" /> Stock counts only
           </span>
@@ -1099,41 +1332,56 @@ export default function RmMis() {
         </div>
       )}
 
-      {/* Tabs — combined plus one per book. */}
-      <div className="flex flex-wrap gap-1 border-b">
-        {tabs.map((t) => (
-          <button
-            key={t.key}
-            type="button"
-            onClick={() => setTab(t.key)}
-            className={`-mb-px border-b-2 px-4 py-2 text-sm transition-colors ${
-              tab === t.key
-                ? "border-primary font-semibold text-foreground"
-                : "border-transparent text-muted-foreground hover:text-foreground"
-            }`}
-          >
-            {t.label}
-          </button>
-        ))}
-      </div>
-
-      {/* Summary strip — ONE LINE. Six boxed cards pushed the table below the fold, and the
-          table is the report; these are context, so they read as a single row of figures and
-          wrap only when the window is genuinely narrow. */}
-      <div className="flex flex-wrap items-center gap-x-6 gap-y-2 rounded-md border bg-card px-3 py-2 text-sm">
-        {[
-          { label: "Items", value: String(rows.length) },
-          { label: "Stock", value: fmtQty(totals.stock) },
-          { label: "ETA + at port", value: fmtQty(totals.eta + totals.atPort) },
-          { label: "Plant", value: fmtQty(totals.plant) },
-          { label: "ETD", value: fmtQty(totals.etd) },
-          { label: "Needs ordering", value: String(reorderCount) },
-        ].map((c) => (
-          <span key={c.label} className="whitespace-nowrap">
-            <span className="text-muted-foreground">{c.label} </span>
-            <strong className="tabular-nums">{c.value}</strong>
-          </span>
-        ))}
+      {/* THE FOUR FILTERS THE PLANNER WORKS BY, in plain sight, with the sheet's figures on the
+          same line. Each filter is the same list filter as that column's heading funnel (Colour
+          has no column — it is read from the name), so the two always agree, and Reset clears
+          both. Supplier first narrows the sheet to one supplier's inks, which is how ETD / ETA
+          get updated. */}
+      <div className="flex flex-wrap items-center gap-1.5 text-[11px]">
+        <span className="text-muted-foreground">Filter</span>
+        {QUICK_FILTERS.map(({ id, label }) => {
+          const picked = colFilters[id]?.list ?? [];
+          return (
+            <MultiSelect
+              key={id}
+              values={picked}
+              onChange={(list) => setColFilter(id, { ...colFilters[id], list: list.length ? list : undefined })}
+              options={listOptions(id).map((o) => ({ value: o, label: filterOptionLabel(o) }))}
+              searchable
+              triggerLabel={picked.length ? `${label} (${picked.length})` : label}
+              triggerClassName={`h-7 rounded-md py-0.5 px-2 text-[11px] ${picked.length ? "border-primary text-primary" : ""}`}
+            />
+          );
+        })}
+        <Button
+          variant="outline"
+          size="sm"
+          className={BAR_BTN}
+          onClick={() => {
+            clearFilters();
+            setSearch("");
+            setBandPick(null);
+          }}
+          disabled={!filtersOn && !search.trim() && !bandPick}
+          title="Clear every filter, the search box and the status card"
+        >
+          <RotateCcw className={BAR_ICON} /> Reset filters
+        </Button>
+        <span className="ml-auto flex flex-wrap items-center gap-x-4 gap-y-1">
+          {[
+            { label: "Items", value: String(rows.length) },
+            { label: "Stock", value: fmtQty(totals.stock) },
+            { label: "ETA + at port", value: fmtQty(totals.eta + totals.atPort) },
+            { label: "Plant", value: fmtQty(totals.plant) },
+            { label: "ETD", value: fmtQty(totals.etd) },
+            { label: "Needs ordering", value: String(reorderCount) },
+          ].map((c) => (
+            <span key={c.label} className="whitespace-nowrap">
+              <span className="text-muted-foreground">{c.label} </span>
+              <strong className="tabular-nums">{c.value}</strong>
+            </span>
+          ))}
+        </span>
       </div>
 
       {/* ONE LINE, small type: the toolbar used to wrap onto two rows and push the sheet down.
@@ -1184,11 +1432,6 @@ export default function RmMis() {
           <Wand2 className={BAR_ICON} />
           {consumptionQuery.isFetching ? "Reading the Sales Register…" : "Refresh averages"}
         </Button>
-        {filtersOn && (
-          <Button variant="ghost" size="sm" className={BAR_BTN} onClick={clearFilters}>
-            Clear filters
-          </Button>
-        )}
         <MultiSelect
           values={visibleColumnIds}
           onChange={(v) => cols.setHidden(columnOptions.map((o) => o.value).filter((id) => !v.includes(id)))}
@@ -1297,12 +1540,100 @@ export default function RmMis() {
         </div>
       )}
 
-      {/* The "no item code" warning lives on the item master, where codes are filled
-          (user, 14-10-2026: "required in master, not on dashboard"). */}
+      {/* STATUS CARDS replace the two bar charts (user, 2026-10-22: the charts took too much
+          space). Each card is a colour band of the Total column; click to show only those inks. */}
+      <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+        {(
+          [
+            {
+              band: "low", title: "Order now", Icon: AlertTriangle,
+              note: `Below ${thresholds.low}% of month max. Place orders immediately.`,
+              edge: "border-l-red-500", head: "text-red-700", icon: "bg-red-500",
+            },
+            {
+              band: "mid", title: "Order soon", Icon: Clock,
+              note: `${thresholds.low}–${thresholds.mid}% of month max. Plan orders soon.`,
+              edge: "border-l-amber-500", head: "text-amber-700", icon: "bg-amber-500",
+            },
+            {
+              band: "normal", title: "Coverage OK", Icon: CircleCheck,
+              note: `${thresholds.mid}–${thresholds.excess}% of month max. Sufficient stock.`,
+              edge: "border-l-emerald-600", head: "text-emerald-700", icon: "bg-emerald-600",
+            },
+            {
+              band: "excess", title: "Excess stock", Icon: Archive,
+              note: `${thresholds.excess}% of month max or more. Hold orders.`,
+              edge: "border-l-fuchsia-600", head: "text-fuchsia-700", icon: "bg-fuchsia-600",
+            },
+          ] as const
+        ).map(({ band, title, Icon, note, edge, head, icon }) => {
+          const picked = bandPick === band;
+          return (
+            <button
+              key={band}
+              type="button"
+              onClick={() => setBandPick(picked ? null : band)}
+              aria-pressed={picked}
+              title={picked ? "Show all items again" : `Show only the ${title.toLowerCase()} items`}
+              className={`flex items-start gap-3 rounded-md border border-l-4 bg-card p-3 text-left transition hover:shadow-md ${edge} ${
+                picked ? "shadow-md ring-2 ring-primary" : bandPick ? "opacity-60" : ""
+              }`}
+            >
+              <span className={`mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-white ${icon}`}>
+                <Icon className="h-4 w-4" />
+              </span>
+              <span className="min-w-0">
+                <span className={`block text-xs font-semibold uppercase tracking-wide ${head}`}>{title}</span>
+                <span className="block">
+                  <strong className="text-2xl tabular-nums">{bandCounts[band]}</strong>{" "}
+                  <span className="text-sm text-muted-foreground">items</span>
+                </span>
+                <span className="block text-xs text-muted-foreground">{note}</span>
+              </span>
+            </button>
+          );
+        })}
+      </div>
 
-      {/* Two bar charts, each folded until opened (user, 13-10-2026). */}
-      <ReorderChart rows={rows} by="category" />
-      <ReorderChart rows={rows} by="supplier" />
+      {(bandPick === "low" || bandPick === "mid") && (
+        <div className="-mt-1 flex justify-end">
+          <Button
+            size="sm"
+            className={BAR_BTN}
+            onClick={() => {
+              setPlaceSeq((n) => n + 1);
+              setPlaceOpen(true);
+            }}
+            disabled={rows.length === 0}
+            title="Order these items: quantities go into a NEW ORDER column, Import/Domestic go on to Purchase"
+          >
+            <ShoppingCart className={BAR_ICON} /> Place order
+          </Button>
+        </div>
+      )}
+      {placeOpen && (
+        <PlaceOrderPanel
+          key={placeSeq}
+          open
+          onClose={() => setPlaceOpen(false)}
+          rows={rows}
+          allRows={allSearchedRows}
+          companyKey={companyKey}
+          onPlace={placeOrder}
+          onRaised={() => setRaiseTick((n) => n + 1)}
+        />
+      )}
+      {raiseFrom && (
+        <RaiseSlider
+          target={raiseFrom.target}
+          inkId={raiseFrom.id}
+          onClose={() => setRaiseFrom(null)}
+          onSubmitted={() => {
+            setRaiseFrom(null);
+            setRaiseTick((n) => n + 1);
+          }}
+        />
+      )}
 
       {/*
         THE TABLE SCROLLS IN ITS OWN BOX, not with the page.
@@ -1324,12 +1655,11 @@ export default function RmMis() {
           "[&_tbody_td]:pb-[var(--ink-row-pad)] [&_tbody_td]:pt-[var(--ink-row-pad)] " +
           "[&_thead_th]:pb-[var(--ink-head-pad)] [&_thead_th]:pt-[var(--ink-head-pad)] " +
           "[&_tbody_td]:overflow-hidden [&_tbody_td]:text-ellipsis [&_tbody_td]:whitespace-nowrap " +
-          // Every figure at 9pt (user, 13-10-2026: "header 8, table 9" — Excel points, as on Ink IMS),
-          // including the cells and badges that set their own size.
+          // Every figure at 9pt (12px), including the cells and badges that set their own size.
           "[&_tbody_td]:text-[9pt] [&_tbody_td_*]:text-[9pt]"
         }
       >
-      <ScrollableTable maxHeight="max-h-[calc(100vh-13rem)]" hideHint containScroll>
+      <ScrollableTable maxHeight="max-h-[calc(100vh-13rem)]" hideHint containScroll barLeft={sourceTabs}>
         <Table
           style={{ width: tableWidth, minWidth: tableWidth, maxWidth: "none" }}
           className={
@@ -1346,9 +1676,10 @@ export default function RmMis() {
             ))}
           </colgroup>
           <TableHeader>
-            {!companyKey && cols.isVisible("companies") && (
-              <TableRow className="bg-card hover:bg-card [&>th]:!static">
-                {leadVisible.length > 0 && <TableHead colSpan={leadVisible.length} />}
+            {/* The bucket band: companies, then ETA, Plant and ETD, each folding to its totals. */}
+            <TableRow className="bg-card hover:bg-card [&>th]:!static">
+              {leadVisible.length > 0 && <TableHead colSpan={leadVisible.length} />}
+              {!companyKey && cols.isVisible("companies") ? (
                 <TableHead
                   colSpan={showCompanyCols ? INK_COMPANIES.length + 1 : 1}
                   className="border-x text-center"
@@ -1362,36 +1693,56 @@ export default function RmMis() {
                     {showCompanyCols ? "− All four companies" : "+ All four companies"}
                   </button>
                 </TableHead>
-                <TableHead
-                  colSpan={
-                    (showShipmentCols ? shipmentCols.length : 0) +
-                    (cols.isVisible("incoming") ? 1 : 0) +
-                    (showPlantCols ? plantCols.length : 0) +
-                    2
-                  }
-                />
-              </TableRow>
-            )}
+              ) : (
+                <TableHead colSpan={showCompanyCols ? INK_COMPANIES.length + 1 : 1} />
+              )}
+              {bucketHead(
+                "eta",
+                "ETA",
+                (showShipmentCols ? shipmentCols.length : 0) +
+                  (cols.isVisible("incoming") ? 1 : 0) +
+                  (cols.isVisible("stockIncoming") ? 1 : 0),
+                cols.isVisible("shipments"),
+              )}
+              {bucketHead("plant", "Plant", (showPlantCols ? plantCols.length : 0) + 1, cols.isVisible("plant"))}
+              {bucketHead(
+                "etd",
+                "ETD",
+                (showEtdCols ? etdCols.length : 0) + (cols.isVisible("etdTotal") ? 1 : 0),
+                cols.isVisible("shipments"),
+              )}
+              <TableHead
+                colSpan={
+                  1 +
+                  (cols.isVisible("category") ? 1 : 0) +
+                  (cols.isVisible("source") ? 1 : 0) +
+                  (cols.isVisible("supplier") ? 1 : 0)
+                }
+              />
+            </TableRow>
             <TableRow>
               {on("no") && (
                 <ResizableHead {...pinHead("no")} cols={cols} className="text-right">
                   {colHead("No.", "no")}
-                  {headHandle}
+                  {handleOn === "no" && headHandle}
                 </ResizableHead>
               )}
               {on("group") && (
                 <ResizableHead {...pinHead("group")} cols={cols}>
                   {colHead("Group", "group")}
+                  {handleOn === "group" && headHandle}
                 </ResizableHead>
               )}
-              <ResizableHead {...pinHead("code")} cols={cols}>
-                {colHead("Item code", "code")}
-                {/* Second home for the heading's grab strip, for when No. is hidden. */}
-                {!on("no") && headHandle}
-              </ResizableHead>
+              {on("code") && (
+                <ResizableHead {...pinHead("code")} cols={cols}>
+                  {colHead("Item code", "code")}
+                  {handleOn === "code" && headHandle}
+                </ResizableHead>
+              )}
               {on("description") && (
                 <ResizableHead {...pinHead("description")} cols={cols}>
                   {colHead("Description", "description")}
+                  {handleOn === "description" && headHandle}
                 </ResizableHead>
               )}
               {on("remark") && (
@@ -1471,6 +1822,11 @@ export default function RmMis() {
                   {colHead("ETA + at port", "incoming")}
                 </ResizableHead>
               )}
+              {cols.isVisible("stockIncoming") && (
+                <ResizableHead id="stockIncoming" cols={cols} className="text-right">
+                  {colHead("Stock + ETA + at port", "stockIncoming")}
+                </ResizableHead>
+              )}
               {showPlantCols &&
                 plantCols.map((s) => (
                   <ResizableHead
@@ -1485,6 +1841,17 @@ export default function RmMis() {
               <ResizableHead id="plantTotal" cols={cols} className="text-right">
                 {colHead("Plant total", "plantTotal")}
               </ResizableHead>
+              {showEtdCols &&
+                etdCols.map((s) => (
+                  <ResizableHead
+                    key={s.id}
+                    id={`ship:${s.id}`}
+                    cols={cols}
+                    className={`text-right ${s.id === justAdded ? "bg-primary/15 ring-2 ring-primary" : ""}`}
+                  >
+                    {consignmentHeader(s)}
+                  </ResizableHead>
+                ))}
               {cols.isVisible("etdTotal") && (
                 <ResizableHead id="etdTotal" cols={cols} className="text-right">
                   {colHead("ETD total", "etdTotal")}
@@ -1539,6 +1906,11 @@ export default function RmMis() {
                     {fmtQty(totals.eta + totals.atPort)}
                   </TableCell>
                 )}
+                {cols.isVisible("stockIncoming") && (
+                  <TableCell className="text-right tabular-nums">
+                    {fmtQty(totals.stock + totals.eta + totals.atPort)}
+                  </TableCell>
+                )}
                 {showPlantCols &&
                   plantCols.map((s) => (
                     <TableCell key={s.id} className="text-right tabular-nums">
@@ -1546,6 +1918,12 @@ export default function RmMis() {
                     </TableCell>
                   ))}
                 <TableCell className="text-right tabular-nums">{fmtQty(totals.plant)}</TableCell>
+                {showEtdCols &&
+                  etdCols.map((s) => (
+                    <TableCell key={s.id} className="text-right tabular-nums">
+                      {fmtQty(s.lines.reduce((t, l) => t + l.qty, 0))}
+                    </TableCell>
+                  ))}
                 {cols.isVisible("etdTotal") && (
                   <TableCell className="text-right tabular-nums">{fmtQty(totals.etd)}</TableCell>
                 )}
@@ -1576,7 +1954,7 @@ export default function RmMis() {
                 <TableCell colSpan={40} className="py-10 text-center text-muted-foreground">
                   {positions.length === 0 ? (
                     "No numbered items yet. Give an item a number in the item master to show it here."
-                  ) : filtersOn || search.trim() ? (
+                  ) : filtersOn || search.trim() || bandPick || sourcePick ? (
                     <span className="inline-flex flex-wrap items-center justify-center gap-2">
                       No item matches the filters you have set.
                       <Button
@@ -1585,6 +1963,8 @@ export default function RmMis() {
                         onClick={() => {
                           clearFilters();
                           setSearch("");
+                          setBandPick(null);
+                          setSourcePick("");
                         }}
                       >
                         Clear filters
@@ -1609,9 +1989,11 @@ export default function RmMis() {
                 {on("group") && (
                   <TableCell {...pinMerge(pinCell("group"), "text-xs")}>{r.group}</TableCell>
                 )}
-                <TableCell {...pinMerge(pinCell("code"), "font-medium")}>
-                  {r.itemCode}
-                </TableCell>
+                {on("code") && (
+                  <TableCell {...pinMerge(pinCell("code"), "font-medium")}>
+                    {r.itemCode}
+                  </TableCell>
+                )}
                 {on("description") && (
                   <TableCell {...pinCell("description")}>{r.description}</TableCell>
                 )}
@@ -1699,12 +2081,16 @@ export default function RmMis() {
                 {showShipmentCols && shipmentCols.map((s) => consignmentCell(s, r))}
 
                 {cols.isVisible("incoming") && (
-                  <TableCell className={`text-right tabular-nums ${BAND_CLASS[r.incomingBand]}`}>
-                    {fmtQty(r.incoming)}
+                  <TableCell className="text-right tabular-nums">{fmtQty(r.incoming)}</TableCell>
+                )}
+                {cols.isVisible("stockIncoming") && (
+                  <TableCell className={`text-right tabular-nums ${BAND_CLASS[r.stockIncomingBand]}`}>
+                    {fmtQty(r.stockIncoming)}
                   </TableCell>
                 )}
                 {showPlantCols && plantCols.map((s) => consignmentCell(s, r))}
                 <TableCell className="text-right tabular-nums">{fmtQty(r.plant)}</TableCell>
+                {showEtdCols && etdCols.map((s) => consignmentCell(s, r))}
                 {cols.isVisible("etdTotal") && (
                   <TableCell className="text-right tabular-nums">{fmtQty(r.etd)}</TableCell>
                 )}

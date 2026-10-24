@@ -34,6 +34,8 @@ export interface Company {
   id: string;
   name: string;
   location: string | null;
+  /** Tally company GUID (mst_companies.tally_guid) — Central Masters only; legacy rows have none. */
+  tallyGuid?: string | null;
   active: boolean;
   sortOrder: number;
   createdAt: string;

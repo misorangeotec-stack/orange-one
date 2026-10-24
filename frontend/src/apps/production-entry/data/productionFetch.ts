@@ -121,6 +121,14 @@ export interface ProductionData {
 
 const num = (v: any): number | null => (v === null || v === undefined || v === "" ? null : Number(v));
 
+/** A handover line's picked lots, or undefined on a line saved before the lot picker. */
+const mapHandoverLots = (v: any): { lotNo: string; qty: number | null; seq: number }[] | undefined =>
+  Array.isArray(v)
+    ? v
+        .map((x: any, i: number) => ({ lotNo: String(x?.lot_no ?? ""), qty: num(x?.qty), seq: Number(x?.seq ?? i) || 0 }))
+        .filter((x) => x.lotNo.trim() !== "")
+    : undefined;
+
 const mapMaster = (r: any): NamedMaster => ({ id: r.id, name: r.name, active: r.active, sortOrder: r.sort_order ?? 0 });
 
 const mapCoaParameter = (r: any): CoaParameter => ({
@@ -249,6 +257,7 @@ const mapRequest = (r: any): ProductionRequest => ({
         unitId: l.unit_id ?? null,
         qty: num(l.qty),
         lotNo: l.lot_no ?? null,
+        lots: mapHandoverLots(l.lots),
         isAdditional: !!l.is_additional,
       }))
     : [],
@@ -336,6 +345,7 @@ const mapRequest = (r: any): ProductionRequest => ({
               unitId: l.unit_id ?? null,
               qty: num(l.qty),
               lotNo: l.lot_no ?? null,
+              lots: mapHandoverLots(l.lots),
             }))
           : null,
         mhDone: !!x.mh_done,

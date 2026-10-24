@@ -98,6 +98,7 @@ export default function Reports() {
     void mandatoryStatus().then(setMand).catch(() => setMand([]));
   }, [s.data]);
 
+  const target = s.hoursTarget;
   const hoursColumns: QueueColumn<LearningHoursRow>[] = [
     { key: "name", header: "Employee", cell: (r) => r.employee, filter: { kind: "text", get: (r) => r.employee } },
     {
@@ -118,15 +119,16 @@ export default function Reports() {
     },
     {
       key: "target",
-      header: "Against 10",
+      // The yearly target is a Setup value (24 h from 14-10-2026), not a constant.
+      header: `Against ${target}`,
       cell: (r) =>
-        r.hours >= 10 ? (
+        r.hours >= target ? (
           <span className="text-ryg-green">Met</span>
         ) : (
-          <span className="text-grey-2">{(10 - r.hours).toFixed(1)} short</span>
+          <span className="text-grey-2">{(target - r.hours).toFixed(1)} short</span>
         ),
-      sortValue: (r) => (r.hours >= 10 ? 1 : 0),
-      filter: { kind: "select", get: (r) => (r.hours >= 10 ? "Met" : "Short") },
+      sortValue: (r) => (r.hours >= target ? 1 : 0),
+      filter: { kind: "select", get: (r) => (r.hours >= target ? "Met" : "Short") },
     },
   ];
 

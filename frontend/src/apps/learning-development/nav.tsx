@@ -1,5 +1,6 @@
 import type { NavItem } from "@/shared/components/layout/types";
 import { REQUEST_STEPS, STEPS, type StepKey } from "./lib/steps";
+import { LD_CALENDAR_ONLY } from "./lib/mode";
 
 export const B = "/learning-development";
 
@@ -72,6 +73,13 @@ export function buildLdNav(opts: {
     // For most of the company this is the only L&D screen they will ever open.
     { label: "My Learning", to: `${B}/my-learning`, icon: ic.mine },
   ];
+
+  // Calendar-only mode (lib/mode.ts): the request pipeline is hidden.
+  if (LD_CALENDAR_ONLY) {
+    if (opts.isAdmin) nav.push({ label: "Setup", to: `${B}/settings`, icon: ic.settings, section: "Administration" });
+    nav.push({ label: "My Account", to: "/account", icon: ic.account });
+    return nav;
+  }
 
   if (opts.canRaise) {
     nav.push({ label: "Raise a Training Need", to: `${B}/requests/new`, icon: ic.raise, section: "Actions" });

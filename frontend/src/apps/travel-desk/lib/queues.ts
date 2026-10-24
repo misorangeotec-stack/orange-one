@@ -69,6 +69,8 @@ const ANCHOR_AT: Record<QueueStep, (t: Trip) => string | null> = {
   finance_review: (t) => t.crAt,
   // Section 12 measures the credit from HOD APPROVAL, not from Finance's verification.
   settlement: (t) => t.crAt,
+  // The cancellation being asked for starts this clock (a trigger step).
+  cancel_trip: (t) => t.cancelRequestedAt,
 };
 
 /**
@@ -93,6 +95,7 @@ export function stepCompletedIso(t: Trip, step: StepKey): string | null {
     case "claim_review":       return t.crAt;
     case "finance_review":     return t.frAt;
     case "settlement":         return t.stAt;
+    case "cancel_trip":        return t.cancelDoneAt;
     default:                   return null;
   }
 }
@@ -116,6 +119,7 @@ export function stepActorId(t: Trip, step: StepKey): string | null {
     case "claim_review":       return t.crBy;
     case "finance_review":     return t.frBy;
     case "settlement":         return t.stBy;
+    case "cancel_trip":        return t.cancelDoneBy;
     default:                   return null;
   }
 }
@@ -259,9 +263,17 @@ export function parkedTrips(trips: Trip[]): Trip[] {
   return trips.filter((t) => t.status === "on_hold");
 }
 
+/**
+ * Has tickets that still stand. Old flow: `booked`. Since 2026-10 a trip closes
+ * at booking, so a `closed` trip that closed there counts too (it becomes
+ * `cancelled` once every ticket is cancelled).
+ */
+export const hasLiveBooking = (t: Trip): boolean =>
+  t.status === "booked" || (t.status === "closed" && t.closedAtBooking);
+
 /** Booked trips that have not left yet — the PRD's "Upcoming Travel". */
 export function upcomingTrips(trips: Trip[], todayIso: string): Trip[] {
   return trips
-    .filter((t) => t.status === "booked" && !!t.plannedDepartureDate && t.plannedDepartureDate >= todayIso)
+    .filter((t) => hasLiveBooking(t) && !!t.plannedDepartureDate && t.plannedDepartureDate >= todayIso)
     .sort((a, b) => (a.plannedDepartureDate ?? "").localeCompare(b.plannedDepartureDate ?? ""));
 }

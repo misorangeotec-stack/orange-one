@@ -9,6 +9,8 @@ import { dmy } from "../lib/format";
 import StatusPill from "../components/StatusPill";
 import { REQUEST_STEPS, stepByKey } from "../lib/steps";
 import { isOpen } from "../lib/queues";
+import TrainingDashboard from "../components/calendar/TrainingDashboard";
+import { LD_CALENDAR_ONLY } from "../lib/mode";
 
 function Stat({ label, value, hint }: { label: string; value: string | number; hint?: string }) {
   return (
@@ -64,6 +66,20 @@ export default function Dashboard() {
   ).length;
   const mineCount = s.queueEntries.filter((e) => s.canSeeQueue(e.stepKey)).length;
 
+  if (LD_CALENDAR_ONLY) {
+    return (
+      <div className="space-y-6">
+        <div>
+          <h1 className="text-[22px] font-bold text-navy">Learning &amp; Development</h1>
+          <p className="text-[13.5px] text-grey-2 mt-1">
+            The training calendar, who attended, and everyone's training hours against the yearly target.
+          </p>
+        </div>
+        <TrainingDashboard />
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-6">
       <div className="flex flex-wrap items-start justify-between gap-3">
@@ -105,6 +121,10 @@ export default function Dashboard() {
         </Card>
       )}
 
+      {/* HR's change set of 14-10-2026: the training counts, next three, coverage
+          and hours-against-target sit first — they are what everyone opens this for. */}
+      <TrainingDashboard />
+
       {s.isPipelineStaff && (
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
           <Stat label="On your desk" value={mineCount} hint="Across every step you own" />
@@ -141,27 +161,6 @@ export default function Dashboard() {
       )}
 
       <div className="grid gap-5 lg:grid-cols-2">
-        <Card className="p-5">
-          <div className="flex items-center justify-between">
-            <h2 className="text-[15px] font-semibold text-navy">Coming up</h2>
-            <Link to={`${B}/calendar`} className="text-[13px] font-medium text-orange hover:underline">
-              Full calendar
-            </Link>
-          </div>
-          {upcoming.length === 0 ? (
-            <p className="mt-2 text-[13px] text-grey-2">Nothing scheduled yet.</p>
-          ) : (
-            <ul className="mt-3 space-y-2">
-              {upcoming.map((x) => (
-                <li key={x.id} className="flex items-baseline justify-between gap-3">
-                  <span className="text-[13.5px] text-navy">{x.title}</span>
-                  <span className="shrink-0 text-[12.5px] text-grey-2">{dmy(x.sessionDate)}</span>
-                </li>
-              ))}
-            </ul>
-          )}
-        </Card>
-
         <Card className="p-5">
           <div className="flex items-center justify-between">
             <h2 className="text-[15px] font-semibold text-navy">What you asked for</h2>

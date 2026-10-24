@@ -205,6 +205,18 @@ const mapSession = (r: any): TrainingSession => ({
   actualCost: num(r.actual_cost),
   createdBy: r.created_by,
   createdAt: r.created_at,
+  category: r.category ?? null,
+  source: r.source === "calendar" ? "calendar" : "request",
+  description: r.description ?? null,
+  trainerUserId: r.trainer_user_id ?? null,
+  externalTrainerName: r.external_trainer_name ?? null,
+  cancelledAt: r.cancelled_at ?? null,
+  cancelledBy: r.cancelled_by ?? null,
+  completedAt: r.completed_at ?? null,
+  completedBy: r.completed_by ?? null,
+  mom: r.mom ?? null,
+  inviteMailSentAt: r.invite_mail_sent_at ?? null,
+  cancelMailSentAt: r.cancel_mail_sent_at ?? null,
 });
 
 export const LD_QK = ["learningDevelopmentData"] as const;
@@ -370,6 +382,7 @@ export async function fetchLdData(): Promise<LdData> {
       status: r.status, nominatedBy: r.nominated_by, nominatedAt: r.nominated_at,
       approvedBy: r.approved_by, approvedAt: r.approved_at, rejectReason: r.reject_reason,
       invitedAt: r.invited_at, rsvp: r.rsvp, rsvpAt: r.rsvp_at, declineReason: r.decline_reason,
+      inviteMailedAt: r.invite_mailed_at ?? null,
     })),
     materials: materials.map((r) => ({
       id: r.id, sessionId: r.session_id, title: r.title, kind: r.kind,

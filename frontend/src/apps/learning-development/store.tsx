@@ -118,6 +118,21 @@ interface LdStoreValue {
   /** Is this person an approved nominee on that session? */
   isParticipant: (sessionId: string) => boolean;
 
+  /**
+   * May this person add / upload / edit / cancel / complete calendar trainings?
+   * Admins, process coordinators, and the people named in Setup → Calendar
+   * Managers. Mirrors `fms_ld_can_manage_calendar()`; the server re-checks.
+   */
+  canManageCalendar: boolean;
+  calendarManagerIds: string[];
+  /**
+   * May this person press Complete on this training? A calendar manager, or the
+   * internal trainer of it. Mirrors the first arms of `fms_ld_complete_session`.
+   */
+  canCompleteSession: (sessionId: string) => boolean;
+  /** Yearly training hours every employee must reach (Setup; 24 from 14-10-2026). */
+  hoursTarget: number;
+
   stepOwnerIds: (stepKey: string) => string[];
   approvalRule: ApprovalRule;
   queueEntries: QueueEntry[];
@@ -265,6 +280,19 @@ export function LdStoreProvider({ children }: { children: ReactNode }) {
     const isParticipant = (sessionId: string): boolean =>
       noms.some((n) => n.sessionId === sessionId && n.employeeId === me && n.status === "approved");
 
+    const calendarManagerIds = ((d?.config.calendar_managers?.user_ids ?? []) as string[]);
+    const canManageCalendar = isProcessCoordinator || (!!me && calendarManagerIds.includes(me));
+    const canCompleteSession = (sessionId: string): boolean => {
+      if (!me) return false;
+      if (canManageCalendar) return true;
+      const sess = sessions.find((x) => x.id === sessionId);
+      if (!sess) return false;
+      if (sess.trainerUserId === me) return true;
+      const tr = (d?.trainers ?? []).find((t) => t.id === sess.trainerId);
+      return tr?.trainerType === "internal" && tr.employeeId === me;
+    };
+    const hoursTarget = Number(d?.config.targets?.hours_per_head_year ?? 24) || 24;
+
     const queueEntries = sla ? buildQueueEntries(requests, sla) : [];
 
     /**
@@ -327,6 +355,10 @@ export function LdStoreProvider({ children }: { children: ReactNode }) {
       offersQueue,
       canActOnSession,
       isParticipant,
+      canManageCalendar,
+      calendarManagerIds,
+      canCompleteSession,
+      hoursTarget,
       stepOwnerIds,
       approvalRule: d?.approvalRule ?? { mgmt: "never", aboveAmount: 0 },
       queueEntries,

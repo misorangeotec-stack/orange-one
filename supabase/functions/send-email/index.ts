@@ -412,6 +412,8 @@ interface Composed {
   subject: string; html: string; text: string; replyTo?: string;
   /** Storage objects to attach, resolved to bytes just before sending. */
   files?: { bucket: string; path: string; filename: string; mime: string }[];
+  /** Attachments built in memory (the L&D calendar invite) — no storage round-trip. */
+  inline?: Attachment[];
 }
 
 /**
@@ -1354,6 +1356,17 @@ async function compose(row: Row): Promise<Composed | null> {
     };
   }
 
+  // Learning & Development — the training calendar's Teams-style mails.
+  //   learning-development_training_invite     3 days before (or at once if closer)
+  //   learning-development_training_updated    date / time / link / title changed
+  //   learning-development_training_cancelled  only to people who had the invite
+  // Each carries a calendar invite (.ics) with the SAME UID per training and a
+  // rising SEQUENCE, so Outlook/Teams updates or removes the one entry instead
+  // of stacking copies. Queued by fms_ld_queue_training_mail.
+  if (row.kind.startsWith("learning-development_training_")) {
+    return composeTrainingMail(row);
+  }
+
   // Shared FMS renderer — payload-driven, used by every purchase-family FMS
   // (Import, RM Domestic/procurement, …). The store authors subject/eyebrow/
   // headline/rows/items/note/ctaPath; only the tag + footer wording vary by app.
@@ -1364,10 +1377,11 @@ async function compose(row: Row): Promise<Composed | null> {
     //   anywhere to notice. PF-18 shipped that way. Adding a module here is
     //   part of building it, not a follow-up.
     //
-    // ⚠ travel_ AND learning-development_ ARE STILL MISSING FROM THE DEPLOYED
-    //   COPY (checked 28-09-2026). Both have email switched off, so nothing is
-    //   being lost — but whoever next deploys this file should add them rather
-    //   than discover it when somebody turns a gate on.
+    // ⚠ travel_ IS STILL MISSING FROM THE DEPLOYED COPY (checked 28-09-2026).
+    //   Its email is switched off, so nothing is being lost — but whoever next
+    //   deploys this file should add it rather than discover it when somebody
+    //   turns a gate on. (learning-development_training_* has its own branch
+    //   above since 14-10-2026; it only works once THIS file is redeployed.)
     const isProc = row.kind.startsWith("procurement_");
     const isSampling = row.kind.startsWith("sampling_");
     // ⚠ "office-supplies_" is the FROZEN outbox prefix, not the app's name. The
@@ -1446,6 +1460,151 @@ async function compose(row: Row): Promise<Composed | null> {
   return null;
 }
 
+// ---- L&D training mails ---------------------------------------------------
+const TEAMS = "#5B5FC7";
+
+/** "2026-10-28" + "10:00" in IST → iCalendar UTC stamp "20261028T043000Z". */
+function istToIcsUtc(date: string, hhmm: string): string {
+  const [y, m, d] = date.slice(0, 10).split("-").map(Number);
+  const [hh, mm] = (hhmm || "00:00").split(":").map(Number);
+  const t = new Date(Date.UTC(y, m - 1, d, hh, mm) - 330 * 60_000); // IST = UTC+05:30, no DST
+  return t.toISOString().replace(/[-:]/g, "").replace(/\.\d{3}/, "");
+}
+const icsText = (s: string) =>
+  s.replace(/\\/g, "\\\\").replace(/;/g, "\\;").replace(/,/g, "\\,").replace(/\r?\n/g, "\\n");
+/** RFC 5545 lines are folded at 75 octets; continuation lines start with a space. */
+function icsFold(line: string): string {
+  const out: string[] = [];
+  let cur = "";
+  for (const ch of line) {
+    if (new TextEncoder().encode(cur + ch).length > 74) { out.push(cur); cur = " " + ch; }
+    else cur += ch;
+  }
+  out.push(cur);
+  return out.join("\r\n");
+}
+
+function buildTrainingIcs(p: Record<string, unknown>, to: string, toName: string, cancelled: boolean): string {
+  const s = (k: string) => (p[k] == null ? "" : String(p[k]));
+  const date = s("date");
+  const desc = [
+    s("description"),
+    s("trainer") ? `Trainer: ${s("trainer")}` : "",
+    s("teams_link") ? `Join Microsoft Teams Meeting: ${s("teams_link")}` : "",
+  ].filter(Boolean).join("\n\n");
+  const lines = [
+    "BEGIN:VCALENDAR",
+    "PRODID:-//Orange O Tec//Orange One Hub//EN",
+    "VERSION:2.0",
+    "CALSCALE:GREGORIAN",
+    `METHOD:${cancelled ? "CANCEL" : "REQUEST"}`,
+    "BEGIN:VEVENT",
+    `UID:ld-${s("session_id")}@orangeonehub`,
+    `SEQUENCE:${Number(p.sequence ?? 0)}`,
+    `DTSTAMP:${new Date().toISOString().replace(/[-:]/g, "").replace(/\.\d{3}/, "")}`,
+    `DTSTART:${istToIcsUtc(date, s("start"))}`,
+    `DTEND:${istToIcsUtc(date, s("end"))}`,
+    `SUMMARY:${icsText((cancelled ? "Cancelled: " : "") + s("title"))}`,
+    `DESCRIPTION:${icsText(desc)}`,
+    "LOCATION:Microsoft Teams Meeting",
+    s("teams_link") ? `URL:${s("teams_link")}` : "",
+    `ORGANIZER;CN=${icsText(s("organiser") || "Orange One Hub")}:mailto:${GMAIL_SENDER}`,
+    `ATTENDEE;CN=${icsText(toName || to)};ROLE=REQ-PARTICIPANT;PARTSTAT=NEEDS-ACTION;RSVP=FALSE:mailto:${to}`,
+    `STATUS:${cancelled ? "CANCELLED" : "CONFIRMED"}`,
+    "TRANSP:OPAQUE",
+    "BEGIN:VALARM",
+    "TRIGGER:-PT15M",
+    "ACTION:DISPLAY",
+    "DESCRIPTION:Reminder",
+    "END:VALARM",
+    "END:VEVENT",
+    "END:VCALENDAR",
+  ].filter(Boolean);
+  return lines.map(icsFold).join("\r\n") + "\r\n";
+}
+
+function composeTrainingMail(row: Row): Composed {
+  const p = row.payload ?? {};
+  const s = (k: string) => (p[k] == null ? "" : String(p[k]));
+  const kind = row.kind.replace("learning-development_training_", "");
+  const cancelled = kind === "cancelled";
+  const updated = kind === "updated";
+  const title = s("title");
+  const date = ddmmyyyy(s("date"));
+  const when = `${date} · ${s("start")}–${s("end")} IST`;
+  const hours = p.hours != null ? `${Number(p.hours).toFixed(Number(p.hours) % 1 ? 1 : 0)} hour(s)` : "";
+  const cat = s("category") === "external" ? "External training" : s("category") === "internal" ? "Internal training" : "Training";
+  const link = s("teams_link");
+  const portal = s("path") ? `${APP_BASE_URL}${s("path")}` : "";
+
+  const subject = cancelled
+    ? `Cancelled: ${title} — ${date}`
+    : updated
+    ? `Updated: ${title} — ${date} ${s("start")}`
+    : `Training invitation: ${title} — ${date} ${s("start")}`;
+  const eyebrow = cancelled ? "Training cancelled" : updated ? "Training updated" : "Training invitation";
+
+  // The Teams link is optional (HR, 14-10-2026) — added later, it arrives as an "Updated" mail.
+  const joinBlock = cancelled ? "" : !link
+    ? noteBox("Microsoft Teams meeting", "The Teams joining link will be shared with you before the training.")
+    : `
+  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin:0 0 22px;border-top:1px solid ${LINE};border-bottom:1px solid ${LINE};">
+    <tr><td style="padding:18px 0 6px;font-family:${FONT};font-size:18px;font-weight:700;color:${NAVY};">Microsoft Teams meeting</td></tr>
+    <tr><td style="padding:0 0 6px;font-family:${FONT};font-size:13px;color:${GREY};">Join on your computer, mobile app or room device</td></tr>
+    <tr><td style="padding:6px 0 18px;">
+      <table role="presentation" cellpadding="0" cellspacing="0"><tr>
+        <td align="center" bgcolor="${TEAMS}" style="border-radius:6px;background:${TEAMS};">
+          <a href="${esc(link)}" target="_blank" style="display:inline-block;padding:12px 26px;font-family:${FONT};font-size:15px;font-weight:700;color:#ffffff;text-decoration:none;border-radius:6px;">Join the meeting now</a>
+        </td>
+      </tr></table>
+      <div style="padding-top:10px;font-family:${FONT};font-size:12px;color:${GREY2};word-break:break-all;">${esc(link)}</div>
+    </td></tr>
+  </table>`;
+
+  const inner =
+    (cancelled
+      ? `<p style="font-family:${FONT};font-size:14.5px;line-height:1.6;color:${NAVY};margin:0 0 18px;">This training has been <b>cancelled</b>. It has been removed from your calendar — you do not need to attend.</p>`
+      : updated
+      ? `<p style="font-family:${FONT};font-size:14.5px;line-height:1.6;color:${NAVY};margin:0 0 18px;">The details of this training have <b>changed</b>. Please note the new date, time or link below — your calendar has been updated.</p>`
+      : `<p style="font-family:${FONT};font-size:14.5px;line-height:1.6;color:${NAVY};margin:0 0 18px;">You are invited to attend the training below. It has been added to your calendar.</p>`) +
+    (cancelled && s("reason") ? noteBox("Reason", s("reason")) : "") +
+    detailRows([
+      { label: "When", value: when },
+      ...(hours ? [{ label: "Duration", value: hours }] : []),
+      { label: "Category", value: cat },
+      ...(s("trainer") ? [{ label: "Trainer", value: s("trainer") }] : []),
+      ...(s("organiser") ? [{ label: "Organiser", value: s("organiser") }] : []),
+      ...(s("code") ? [{ label: "Reference", value: s("code") }] : []),
+    ]) +
+    (!cancelled && s("description") ? noteBox("About this training", s("description")) : "") +
+    joinBlock +
+    (!cancelled && portal
+      ? `<p style="font-family:${FONT};font-size:13px;color:${GREY};margin:0;">Material and attendance: <a href="${esc(portal)}" style="color:${ORANGE};">open it in Orange One</a></p>`
+      : "");
+
+  const ics = buildTrainingIcs(p, row.to_email ?? "", row.to_name ?? "", cancelled);
+  return {
+    subject,
+    html: emailShell({
+      eyebrow, headline: cancelled ? `Cancelled: ${title}` : title, inner,
+      tag: "Learning & Development",
+      footer: `<b style="color:${GREY};">Orange One Hub</b> &middot; Learning &amp; Development.<br>You're receiving this because you are an attendee of this training.`,
+    }),
+    text: [
+      eyebrow, title, when, hours, cat,
+      s("trainer") ? `Trainer: ${s("trainer")}` : "",
+      cancelled && s("reason") ? `Reason: ${s("reason")}` : "",
+      !cancelled && link ? `Join Microsoft Teams meeting: ${link}` : "",
+    ].filter(Boolean).join("\n"),
+    replyTo: s("organiser_email") || undefined,
+    inline: [{
+      filename: cancelled ? "cancel.ics" : "invite.ics",
+      mime: `text/calendar; charset=UTF-8; method=${cancelled ? "CANCEL" : "REQUEST"}`,
+      b64: bytesToB64(new TextEncoder().encode(ics)),
+    }],
+  };
+}
+
 // ---- outbox row lifecycle -------------------------------------------------
 async function claim(row: Row): Promise<boolean> {
   const { data } = await admin.from("email_outbox").update({ status: "sending" })
@@ -1469,7 +1628,9 @@ async function sendOne(token: string, row: Row) {
   try {
     // Files are fetched here, not in compose(), so a storage hiccup is a retryable
     // send failure rather than an "unknown kind" skip.
-    const { attachments, html, text } = await resolveAttachments(c);
+    const resolved = await resolveAttachments(c);
+    const { html, text } = resolved;
+    const attachments = [...resolved.attachments, ...(c.inline ?? [])];
     await gmailSend(token, buildRaw(row.to_email, c.replyTo, c.subject, text, html, attachments));
     await markSent(row, c.subject);
   } catch (e) {
