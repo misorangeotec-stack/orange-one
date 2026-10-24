@@ -11,8 +11,9 @@
  * ─── WHAT IS TALLY'S AND WHAT IS THE PLANNER'S ───────────────────────────────────────────
  *
  * The four stock columns and the consumption figure come from Tally through ConnectWave and
- * cannot be edited here. Everything else on the row — the averages, lead time, safety factor
- * and every consignment — is the planner's own. The column header group says which is which,
+ * cannot be edited here, and neither can the two averages, which come from the Sales Register.
+ * Everything else on the row — lead time, safety factor and every consignment — is the
+ * planner's own. The column header group says which is which,
  * because a planner who mistakes a typed number for a Tally number will trust it too much.
  *
  * ─── THE FORMULAS, TAKEN FROM THE SHEET ──────────────────────────────────────────────────
@@ -26,8 +27,7 @@
  * All five were reproduced from the planner's own figures before this screen was written, so
  * the numbers here should match the sheet cell for cell given the same inputs.
  *
- * BOTH AVERAGES COME FROM THE SALES REGISTER, filled by a button rather than recomputed on
- * every render, so a planner's override for a launch or a one-off run survives. The rule and
+ * BOTH AVERAGES COME FROM THE SALES REGISTER and are read-only — no planner override. The rule and
  * the evidence for it are in lib/inkMis.ts — in short, branch and related sales are the group
  * moving ink to itself and must be excluded, and the per-day divisor is working days ELAPSED
  * this month, not the whole month. Per-day is NOT the three-month average over ninety.
@@ -287,8 +287,8 @@ export default function InkMis() {
    * They used to appear only after pressing a button, which is why the columns sat empty: the
    * report never asked on its own, and a press made before the stock had loaded filled nothing.
    *
-   * A number the planner types still wins, and is flagged as typed (see InkPlan.manual). Clearing
-   * the box hands that ink back to the live figure.
+   * They are READ-ONLY. Both come from the Sales Register, so nobody types over them — a typed
+   * figure left behind by the older editable boxes (InkPlan.manual) is ignored.
    *
    * Needs the stock load first — the register carries item NAMES, and the name-to-line bridge is
    * built from the stock rows — hence `enabled`.
@@ -303,16 +303,6 @@ export default function InkMis() {
   });
   const consumption = consumptionQuery.data;
   const workingDays = workingDaysElapsed(new Date(), new Set(holidays));
-  const typedCount = Object.values(plans).filter(
-    (p) => p.manual?.threeMonthAvg || p.manual?.perDayAvg,
-  ).length;
-
-  const clearTypedAverages = () =>
-    setPlans((prev) => {
-      const next: Record<string, InkPlan> = {};
-      for (const [k, p] of Object.entries(prev)) next[k] = { ...p, manual: {} };
-      return next;
-    });
 
   /* ------------------------------------------------------------------ the rows */
 
@@ -397,8 +387,8 @@ export default function InkMis() {
       const src = companyKey ? live?.byCompany[companyKey] : live;
       const plan: InkPlan = {
         ...base,
-        threeMonthAvg: base.manual?.threeMonthAvg ? base.threeMonthAvg : (src?.threeMonthAvg ?? 0),
-        perDayAvg: base.manual?.perDayAvg ? base.perDayAvg : (src?.perDayAvg ?? 0),
+        threeMonthAvg: src?.threeMonthAvg ?? 0,
+        perDayAvg: src?.perDayAvg ?? 0,
       };
       return deriveInkRow(p, plan, shipments, thresholds, companyKey);
     });
@@ -1087,21 +1077,6 @@ export default function InkMis() {
   const setPlan = (code: string, patch: Partial<InkPlan>) =>
     setPlans((prev) => ({ ...prev, [code]: { ...(prev[code] ?? EMPTY_PLAN), ...patch } }));
 
-  /** Typing an average marks it typed; emptying the box gives the ink back to the live figure. */
-  const setAverage = (code: string, field: "threeMonthAvg" | "perDayAvg", raw: string) =>
-    setPlans((prev) => {
-      const cur = prev[code] ?? EMPTY_PLAN;
-      const typed = raw.trim() !== "";
-      return {
-        ...prev,
-        [code]: {
-          ...cur,
-          [field]: typed ? Number(raw) || 0 : 0,
-          manual: { ...cur.manual, [field]: typed },
-        },
-      };
-    });
-
   /** Props for a pinned HEADING: its id, its measured offset, and the cell to measure. */
   const pinHead = (id: string) => ({
     id,
@@ -1510,22 +1485,12 @@ export default function InkMis() {
 
       {/* The standing explanation of how the averages are worked out has gone: it said the same
           thing on every visit and cost a band across the page. What is left appears only when it
-          changes what the planner should believe — a failure, or their own typed figures sitting
-          on top of the live ones. The rule itself lives on the two column headings and in
-          lib/inkMis.ts. */}
-      {(consumptionQuery.isError || typedCount > 0) && (
-        <div className="flex flex-wrap items-center gap-x-4 gap-y-1 rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-900">
-          {consumptionQuery.isError && (
-            <span>
-              Could not read the Sales Register:{" "}
-              {consumptionQuery.error instanceof Error ? consumptionQuery.error.message : "unknown error"}
-            </span>
-          )}
-          {typedCount > 0 && (
-            <button type="button" className="font-semibold underline" onClick={clearTypedAverages}>
-              {typedCount} ink{typedCount === 1 ? " has" : "s have"} typed averages — use live figures
-            </button>
-          )}
+          changes what the planner should believe — a failure to read the register. The rule itself
+          lives on the two column headings and in lib/inkMis.ts. */}
+      {consumptionQuery.isError && (
+        <div className="rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-900">
+          Could not read the Sales Register:{" "}
+          {consumptionQuery.error instanceof Error ? consumptionQuery.error.message : "unknown error"}
         </div>
       )}
 
@@ -2006,11 +1971,17 @@ export default function InkMis() {
                   </TableCell>
                 )}
 
-                {/* Planner inputs — the four editable cells. */}
+                {/* The two averages come from the Sales Register — shown, never edited. */}
+                {on("m3") && (
+                  <TableCell className="text-right tabular-nums">{fmtDays(r.plan.threeMonthAvg || null)}</TableCell>
+                )}
+                {on("pd") && (
+                  <TableCell className="text-right tabular-nums">{fmtDays(r.plan.perDayAvg || null)}</TableCell>
+                )}
+
+                {/* Planner inputs — lead time and safety, in a box sized for a short number. */}
                 {(
                   [
-                    ["m3", "threeMonthAvg", r.plan.threeMonthAvg],
-                    ["pd", "perDayAvg", r.plan.perDayAvg],
                     ["lead", "leadTime", r.plan.leadTime],
                     ["safety", "safetyFactor", r.plan.safetyFactor],
                   ] as [string, keyof InkPlan, number][]
@@ -2022,13 +1993,9 @@ export default function InkMis() {
                         <Input
                           type="number"
                           inputMode="decimal"
-                          className="h-8 w-20 text-right"
+                          className="ml-auto h-7 w-14 px-1.5 text-right"
                           value={value || ""}
-                          onChange={(e) =>
-                            field === "threeMonthAvg" || field === "perDayAvg"
-                              ? setAverage(r.key, field, e.target.value)
-                              : setPlan(r.key, { [field]: Number(e.target.value) || 0 })
-                          }
+                          onChange={(e) => setPlan(r.key, { [field]: Number(e.target.value) || 0 })}
                         />
                       ) : (
                         fmtDays(value || null)
