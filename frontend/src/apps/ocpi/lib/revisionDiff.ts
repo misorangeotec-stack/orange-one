@@ -89,6 +89,8 @@ export function diffPayloads(
       key === "customer_id" ||
       key === "company_id" ||
       key === "location_id" ||
+      // Routing, not content: it picks the approver and prints nowhere.
+      key === "approval_location" ||
       key === "salesperson_user_id"
     )
       continue;

@@ -186,7 +186,9 @@ export default function MapCustomerCompanyModal({
     const own = customer ? s.customers.find((c) => c.id === customer)?.companyId ?? null : null;
     const already = new Set(
       customer
-        ? s.customerCompanies.filter((m) => m.active && m.customerId === customer).map((m) => m.companyId)
+        /* Person-made rows only: a cron-derived link does not bill (see
+           mappedBookSets), and the RPC claims it when ticked here. */
+        ? s.customerCompanies.filter((m) => m.active && m.createdBy && m.customerId === customer).map((m) => m.companyId)
         : [],
     );
     return s

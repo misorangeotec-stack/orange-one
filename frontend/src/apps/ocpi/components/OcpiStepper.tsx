@@ -235,7 +235,9 @@ export default function OcpiStepper({ deal, fit }: { deal: OcpiDeal; fit?: boole
         people:
           actor && !isDone
             ? [actor]
-            : (s.ownersOf(st.step).map(name).filter(Boolean) as string[]),
+            : ((st.step === "quotation_approval" ? s.approversFor(deal) : s.ownersOf(st.step))
+                .map(name)
+                .filter(Boolean) as string[]),
         doneBy: actor && isDone ? [actor] : undefined,
         hasStep: true,
         note: isDone && doneAt ? dmy(doneAt) : undefined,
@@ -245,7 +247,7 @@ export default function OcpiStepper({ deal, fit }: { deal: OcpiDeal; fit?: boole
     // result), so it is deliberately not a dependency — including it would make
     // this memo run every render and defeat the point.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [deal, stages, active, finished, s.stepOwners]);
+  }, [deal, stages, active, finished, s.stepOwners, s.approvalLocations]);
 
   return (
     <div className="space-y-2.5">

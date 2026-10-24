@@ -25,10 +25,14 @@ export default function QuotationApprovalQueue() {
   const s = useOcpiStore();
   const [deciding, setDeciding] = useState<OcpiDeal | null>(null);
 
+  // An approver sees the quotations that are theirs to approve — with approval
+  // by location, a Surat approver is not shown Noida's. Coordinators and
+  // viewers keep the whole list.
+  const seesAll = s.isProcessCoordinator || s.isViewer;
   const rows = useMemo(() => {
     const ids = new Set(s.entries.filter((e) => e.stepKey === "quotation_approval").map((e) => e.dealId));
-    return s.deals.filter((d) => ids.has(d.id));
-  }, [s.entries, s.deals]);
+    return s.deals.filter((d) => ids.has(d.id) && (seesAll || s.approversFor(d).includes(s.userId)));
+  }, [s.entries, s.deals, seesAll, s.approversFor, s.userId]);
 
   const machineName = (id: string | null) => (id ? s.machineById(id)?.name ?? "" : "");
 
@@ -70,6 +74,13 @@ export default function QuotationApprovalQueue() {
         cell: (d) => d.salespersonName ?? "",
         sortValue: (d) => d.salespersonName ?? "",
         filter: { kind: "select", get: (d) => d.salespersonName ?? "" },
+      },
+      {
+        key: "location",
+        header: "Location",
+        cell: (d) => d.approvalLocation ?? "—",
+        sortValue: (d) => d.approvalLocation ?? "",
+        filter: { kind: "select", get: (d) => d.approvalLocation ?? "Not set" },
       },
       {
         key: "value",

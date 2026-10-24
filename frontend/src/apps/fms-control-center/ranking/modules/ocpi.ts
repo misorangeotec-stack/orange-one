@@ -73,7 +73,7 @@ const ownedEntries = perDataset((data: OcpiRankData) => {
   const byId = new Map(data.deals.map((d) => [d.id, d]));
   return buildQueueEntries(data.deals, sla).map((e) => {
     const deal = byId.get(e.dealId)!;
-    return { e, deal, owners: new Set(ocpiStepOwnerIds(deal, e.stepKey, data.stepOwners, (u) => data.editors.has(u))) };
+    return { e, deal, owners: new Set(ocpiStepOwnerIds(deal, e.stepKey, data.stepOwners, (u) => data.editors.has(u), data.approvalLocations)) };
   });
 });
 

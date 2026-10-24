@@ -991,6 +991,11 @@ export default function QuotationForm({
     return opts;
   }, [masters?.companies, s.companyProfiles, draft.companyId]);
 
+  const approvalLocationOptions = useMemo(
+    () => s.approvalLocations.filter((l) => l.active).map((l) => ({ value: l.name, label: l.name })),
+    [s.approvalLocations],
+  );
+
   const defaultEntityName = useMemo(() => {
     const d = s.companyProfiles.find((p) => p.isDefault && p.active);
     return d?.legalName ?? null;
@@ -1356,6 +1361,23 @@ export default function QuotationForm({
             )}
           </div>
         </div>
+
+        {/* Approval by location — decides who approves, prints nowhere. Blank
+            sends it to the ordinary Approve Quotation list (Setup › Who does what). */}
+        {approvalLocationOptions.length > 0 && (
+          <div className="grid gap-3 sm:grid-cols-2">
+            <FieldLabel label="Location" hint="decides who approves this quotation">
+              <Combobox
+                value={draft.approvalLocation}
+                onChange={(v) => patch({ approvalLocation: v })}
+                options={approvalLocationOptions}
+                placeholder="Surat or Noida"
+                clearable
+                disabled={disabled}
+              />
+            </FieldLabel>
+          </div>
+        )}
       </Card>
 
       <Card className="space-y-4 p-5">
