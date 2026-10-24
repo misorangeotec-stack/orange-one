@@ -34,7 +34,7 @@
 --
 -- Reuses public.is_admin(uuid) and public.set_updated_at().
 --
--- Reversal: 20270217120000_fund_flow_rollback.sql
+-- Reversal: 20270219120000_fund_flow_rollback.sql
 -- ===========================================================================
 
 
@@ -121,6 +121,9 @@ create table if not exists public.fund_flow_month (
   -- is last month's rate, shown as provisional; the plan cannot be approved on a provisional rate.
   rate_fixed_at      timestamptz,
   rate_fixed_by      uuid references auth.users on delete set null,
+  -- Customer Collections target = this share of the total due in the Customer Collection report
+  -- (user, 24-Oct-2026: 55% by default, changeable). A new month starts with last month's share.
+  collection_pct     numeric(6,4) not null default 0.55 check (collection_pct > 0 and collection_pct <= 1),
   -- NULL = take the Daily Report bank total for the last day of the previous month.
   opening_override   numeric(18,2),
   opening_reason     text,
@@ -548,6 +551,7 @@ declare
   v_prev  date := (p_month - interval '1 month')::date;
   v_rate  numeric := 95;
   v_prev_closed boolean := false;
+  v_pct   numeric;
   v_carry int := 0;
   v_copy  int := 0;
   r       record;
@@ -571,10 +575,10 @@ begin
     raise exception 'Fund Flow for % opens on %', to_char(p_month, 'Mon-YY'), to_char(w.opens_on, 'DD-Mon-YYYY');
   end if;
 
-  select std_rate, status = 'closed' into v_rate, v_prev_closed from public.fund_flow_month where month = v_prev;
+  select std_rate, status = 'closed', collection_pct into v_rate, v_prev_closed, v_pct from public.fund_flow_month where month = v_prev;
   v_prev_closed := coalesce(v_prev_closed, false);
-  insert into public.fund_flow_month (month, std_rate, created_by, updated_by)
-  values (p_month, coalesce(v_rate, 95), v_uid, v_uid);
+  insert into public.fund_flow_month (month, std_rate, collection_pct, created_by, updated_by)
+  values (p_month, coalesce(v_rate, 95), coalesce(v_pct, 0.55), v_uid, v_uid);
 
   for r in
     select l.*, v.carry_unit, v.paid_unit
@@ -1063,6 +1067,25 @@ begin
   return n;
 end $fn$;
 
+-- The Customer Collections share of due (editor or CFO, while the month can be edited). Logged.
+create or replace function public.ff_set_collection_pct(p_month date, p_pct numeric)
+returns void
+language plpgsql
+security definer
+set search_path = public
+as $fn$
+declare
+  v_uid uuid := auth.uid();
+  v_old numeric;
+begin
+  perform public.ff_assert_can_edit(p_month, v_uid);
+  if p_pct is null or p_pct <= 0 or p_pct > 1 then raise exception 'the collection %% must be above 0 and at most 100'; end if;
+  select collection_pct into v_old from public.fund_flow_month where month = p_month for update;
+  update public.fund_flow_month set collection_pct = p_pct, updated_by = v_uid where month = p_month;
+  insert into public.fund_flow_log (month, action, old_row, new_row, by_user)
+  values (p_month, 'collection_pct', jsonb_build_object('collection_pct', v_old), jsonb_build_object('collection_pct', p_pct), v_uid);
+end $fn$;
+
 create or replace function public.ff_set_month(p_month date, p_std_rate numeric, p_opening numeric, p_reason text)
 returns void
 language plpgsql
@@ -1206,7 +1229,8 @@ begin
   return v;
 end $fn$;
 
-create or replace function public.ff_notify(p_users uuid[], p_subject text, p_points text[], p_actor uuid default null)
+create or replace function public.ff_notify(p_users uuid[], p_subject text, p_points text[], p_actor uuid default null,
+                                            p_link text default '/reports/finance-fund-flow')
 returns integer
 language plpgsql
 security definer
@@ -1223,7 +1247,7 @@ begin
     -- Isolated: a notice can never undo the Fund Flow write that caused it.
     begin
       insert into public.notifications (user_id, type, actor_id, message, link)
-      values (u, 'fund_flow', p_actor, p_subject, '/reports/finance-fund-flow');
+      values (u, 'fund_flow', p_actor, p_subject, p_link);
       n := n + 1;
     exception when others then null;
     end;
@@ -1235,7 +1259,7 @@ begin
         values ('fund_flow_notice', u, v_to, p_actor,
                 jsonb_build_object('subject', p_subject, 'headline', p_subject,
                                    'bullets', to_jsonb(coalesce(p_points, '{}'::text[])),
-                                   'link', '/reports/finance-fund-flow'));
+                                   'link', p_link));
       exception when others then null;
       end;
     end if;
@@ -1334,7 +1358,7 @@ begin
     case g.action when 'add' then 'added' when 'edit' then 'changed' when 'delete' then 'deleted'
                   when 'delete_request' then 'asked to remove' when 'approve' then 'approved'
                   when 'reject' then 'did not approve' when 'unapprove' then 'took back the approval of' when 'delete_approved' then 'removed'
-                  when 'month' then 'changed the rate / opening' when 'reopen' then 'reopened the month'
+                  when 'month' then 'changed the rate / opening' when 'collection_pct' then 'changed the collection % of due' when 'reopen' then 'reopened the month'
                   when 'plan_approved' then 'approved the plan' when 'final_approved' then 'gave the final approval'
                   else g.action end,
     case when r ? 'head' then ' ' || replace(r ->> 'head', '_', ' ') else '' end,
@@ -1365,7 +1389,9 @@ begin
   select * into m from public.fund_flow_month where month = p_month;
   if not found then return null; end if;
   v_open := coalesce(m.opening_override, (public.ff_bank_position((p_month - 1)::date) ->> 'total_inr')::numeric, 0);
-  select coalesce(sum(paid_inr) filter (where head in ('machine_advance', 'collection', 'refund')), 0),
+  -- Received: Customer Collections + Refunds. A machine advance received is already inside
+  -- Customer Collections (the Customer Collection report), so it is not added again.
+  select coalesce(sum(paid_inr) filter (where head in ('collection', 'refund')), 0),
          coalesce(sum(paid_inr) filter (where head not in ('machine_advance', 'collection', 'refund')), 0)
     into v_rec, v_pay from public.v_fund_flow_line where month = p_month;
   v_bank := public.ff_bank_position(p_as_of);
@@ -1523,8 +1549,76 @@ begin
   raise exception 'unknown slot %', p_slot;
 end $fn$;
 
+-- DAILY REPORT BANK BALANCES — the chase (user, 24-Oct-2026). The bank balances on the Daily
+-- Report are typed by the team each evening; the Fund Flow's "balance as on today" is that figure.
+-- If yesterday's (the last working day's) balances are not all entered by 10:30 AM IST, remind the
+-- Daily Report team (edit access), the CFO and Dimple (bank alert) — bell with a pop-up on opening
+-- the hub, and email — and again every 15 minutes until done. From the 4th reminder (after 3 went
+-- unanswered) the Directors are told too. Once entered, the open reminders are cleared.
+-- Runs from pg_cron every 15 minutes, 10:30 to 19:15 IST, Monday to Saturday; holidays skipped.
+create or replace function public.ff_bank_chase(p_now timestamptz default now())
+returns jsonb
+language plpgsql
+security definer
+set search_path = public
+as $fn$
+declare
+  v_ist     timestamp := (p_now at time zone 'UTC') + interval '5 hours 30 minutes';
+  v_today   date := v_ist::date;
+  v_for     date;
+  v_missing text;
+  v_key     text;
+  v_n       int;
+  v_team    uuid[];
+  v_to      uuid[];
+  v_link    text := '/daily-report/bank-balances';
+begin
+  if auth.uid() is not null and not public.is_admin(auth.uid()) then raise exception 'Not authorized'; end if;
+  if v_ist::time < time '10:30' then return jsonb_build_object('skipped', 'before 10:30'); end if;
+  if public.ff_prev_working_day(v_today) <> v_today then return jsonb_build_object('skipped', 'not a working day'); end if;
+  v_for := public.ff_prev_working_day(v_today - 1);
+  v_key := 'bankchase:' || v_today;
+
+  select string_agg(coalesce(a.short_label, a.id::text), ', ' order by a.sort_order, a.short_label) into v_missing
+    from public.daily_report_bank_accounts a
+   where a.active
+     and not exists (select 1 from public.daily_report_bank_balances b
+                      where b.bank_account_id = a.id and b.balance_date = v_for);
+
+  if v_missing is null then
+    -- All entered: close today's open reminders so the pop-up stops.
+    update public.notifications set read_at = now()
+     where type::text = 'fund_flow' and link = v_link and read_at is null and created_at >= v_today::timestamp - interval '5 hours 30 minutes';
+    return jsonb_build_object('for', v_for, 'missing', null);
+  end if;
+
+  insert into public.fund_flow_notice_sent (key, info) values (v_key, jsonb_build_object('n', 0))
+    on conflict (key) do nothing;
+  update public.fund_flow_notice_sent set info = jsonb_build_object('n', coalesce((info ->> 'n')::int, 0) + 1), sent_at = now()
+   where key = v_key returning (info ->> 'n')::int into v_n;
+
+  begin
+    execute 'select array(select user_id from public.app_access where app_id = ''daily-report'' and access_level = ''edit'')' into v_team;
+  exception when others then v_team := '{}';
+  end;
+  v_to := coalesce(v_team, '{}') || array(select public.ff_users('cfo'))
+          || array(select id from public.profiles where fund_flow_bank_alert);
+  if v_n >= 4 then v_to := v_to || array(select public.ff_users('director')); end if;
+
+  perform public.ff_notify(v_to,
+    format('%sDaily Report bank balance for %s not entered (reminder %s)',
+           case when v_n >= 4 then 'ESCALATED: ' else '' end, to_char(v_for, 'DD-Mon'), v_n),
+    array[format('Not entered: %s.', v_missing),
+          'Please enter the closing balances in Daily Report > Bank balances. The Fund Flow''s balance as on today and its difference depend on it.',
+          case when v_n >= 4 then 'Three reminders have gone unanswered, so the Directors are now copied.'
+               else 'You will be reminded every 15 minutes until it is done; after 3 reminders the Directors are told.' end],
+    null, v_link);
+  return jsonb_build_object('for', v_for, 'missing', v_missing, 'reminder', v_n);
+end $fn$;
+
 revoke all on function public.ff_notify_run(text, timestamptz) from public, anon, authenticated;
-revoke all on function public.ff_notify(uuid[], text, text[], uuid) from public, anon, authenticated;
+revoke all on function public.ff_notify(uuid[], text, text[], uuid, text) from public, anon, authenticated;
+revoke all on function public.ff_bank_chase(timestamptz) from public, anon, authenticated;
 revoke all on function public.ff_notify_once(text, uuid[], text, text[]) from public, anon, authenticated;
 
 -- Schedules (cron is UTC). Only where pg_cron is installed (the Hub DB); re-runnable by name.
@@ -1535,6 +1629,8 @@ begin
     perform cron.schedule('fund-flow-morning',   '0 4 * * *',   $$select public.ff_notify_run('morning');$$);    -- 09:30 IST
     perform cron.schedule('fund-flow-digest-4pm', '30 10 * * *', $$select public.ff_notify_run('digest');$$);    -- 16:00 IST
     perform cron.schedule('fund-flow-digest-7pm', '30 13 * * *', $$select public.ff_notify_run('digest');$$);    -- 19:00 IST
+    -- Every 15 minutes 10:30 to 19:15 IST (05:00 to 13:45 UTC), Monday to Saturday.
+    perform cron.schedule('fund-flow-bank-chase', '*/15 5-13 * * 1-6', $$select public.ff_bank_chase();$$);
   end if;
 end $cron$;
 
@@ -1594,7 +1690,7 @@ begin
     'public.ff_set_month(date, numeric, numeric, text)', 'public.ff_bank_position(date)',
     'public.ff_month_window(date)', 'public.ff_today()', 'public.ff_is_carry_head(text)',
     'public.ff_line_values(public.fund_flow_line, numeric, boolean)', 'public.ff_approve_plan(date)',
-    'public.ff_final_approve(date, text)', 'public.ff_bank_check(date, date)'] loop
+    'public.ff_final_approve(date, text)', 'public.ff_bank_check(date, date)', 'public.ff_set_collection_pct(date, numeric)'] loop
     execute format('revoke execute on function %s from public, anon', f);
     execute format('grant execute on function %s to authenticated', f);
   end loop;

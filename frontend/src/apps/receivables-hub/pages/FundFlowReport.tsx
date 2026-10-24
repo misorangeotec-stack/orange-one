@@ -28,7 +28,7 @@ import {
   openingDate, planBridge, summarise, todayIst, type FfHead, type Fig, type PlanBridge,
 } from "@hub/lib/fundFlowCalc";
 import {
-  FF_KEY, approveLines, approvePlan, closeMonth, fetchRole, finalApprove, housekeep, openMonth, reopenMonth, saveLines, setMonth, useFfRemoved,
+  FF_KEY, approveLines, approvePlan, closeMonth, fetchRole, finalApprove, housekeep, setCollectionPct, openMonth, reopenMonth, saveLines, setMonth, useFfRemoved,
   useBankPosition, useFfLines, useFfLog, useFfMonths, type FfDecision, type FfLine, type FfMonth, type FfSaveItem,
 } from "@hub/lib/fundFlow";
 import { parseFundFlowPack, type ImportResult } from "@hub/lib/fundFlowImport";
@@ -44,7 +44,7 @@ import { KIND_LABEL, planChanges } from "@hub/lib/fundFlowPlan";
  * opening balance, payments by head, receipts, closing — every line Budgeted / Approved / Paid /
  * Balance / Achieved %, and the same 12-sheet Excel pack (with live formulas) on Download.
  *
- * Rules (user, 24-Oct-2026), enforced in the database (migration 20270217120000_fund_flow.sql) —
+ * Rules (user, 24-Oct-2026), enforced in the database (migration 20270219120000_fund_flow.sql) —
  * the page only hides what a user cannot do:
  *   - a month opens 2 days before the previous month ends and closes on the 2nd of the next
  *     month (3rd when the 2nd is a Sunday); outside that it is read-only unless the CFO reopens it
@@ -55,7 +55,7 @@ import { KIND_LABEL, planChanges } from "@hub/lib/fundFlowPlan";
  *     Salesperson Collection Report; the opening balance is the Daily Report bank total
  */
 
-type Tab = "mgmt" | "summary" | "approval" | "notapproved" | "plan" | FfHead | "tax" | "collections" | "log";
+type Tab = "mgmt" | "approval" | "notapproved" | "plan" | FfHead | "tax" | "collections" | "log";
 
 const usdCalcs: CalcDef[] = [
   { key: "binr", label: "INR Budgeted", value: (v) => v.budgetInr },
@@ -407,7 +407,6 @@ export default function FundFlowReport() {
           <Tabs key={month} value={tab} onValueChange={(v) => goTab(v as Tab)}>
             <TabsList className="flex flex-wrap h-auto justify-start">
               <TabsTrigger value="mgmt">Management Summary</TabsTrigger>
-              <TabsTrigger value="summary">Fund Flow Summary</TabsTrigger>
               <TabsTrigger value="approval">For CFO approval{pending.length ? ` (${pending.length})` : ""}</TabsTrigger>
               <TabsTrigger value="notapproved">Not approved{notApproved.length ? ` (${notApproved.length})` : ""}</TabsTrigger>
               <TabsTrigger value="plan">Changes after plan</TabsTrigger>
@@ -429,10 +428,6 @@ export default function FundFlowReport() {
               <ManagementSummary m={m} sum={sum} lines={lines} removed={removedQ.data ?? []} opening={opening}
                 bankMemo={bankMemoQ.data?.total_inr ?? null} memoIso={memoIso!}
                 bankGaps={bankMemoQ.data ? (bankMemoQ.data.accounts.filter((a) => a.missing || a.stale).map((a) => a.label).join(", ") || null) : null} prevSum={prevSum} prevM={prevM} />
-            </TabsContent>
-            <TabsContent value="summary" className="space-y-3">
-              <QuickPosition sum={sum} bank={bankMemoQ.data?.total_inr ?? null} bankIso={memoIso} />
-              <SummaryTable sum={sum} label={monthLong(m.month)} />
             </TabsContent>
             <TabsContent value="approval">
               <ApprovalQueue m={m} pending={pending} isCfo={isCfo} editable={editable} saving={saving} onApprove={onApprove} />
@@ -463,7 +458,7 @@ export default function FundFlowReport() {
             </TabsContent>
             <TabsContent value="collections">
               <CollectionsTab month={m} lines={lines} rate={rate} editable={editable} isCfo={isCfo} saving={saving} onSave={onSave} onApprove={onApprove}
-                opening={opening} />
+                opening={opening} onSetPct={(pct) => run(`Collection target set to ${Math.round(pct * 1000) / 10}% of due`, () => setCollectionPct(m.month, pct))} />
             </TabsContent>
             <TabsContent value="log"><ChangeLog month={m.month} /></TabsContent>
           </Tabs>
@@ -517,7 +512,9 @@ export default function FundFlowReport() {
  * Total Collection, Closing; Budgeted (the approved figure) / Paid / Balance / %; then the bank
  * balance as on today against the paid-basis closing, and the difference in red.
  */
-function QuickPosition({ sum, bank, bankIso }: { sum: ReturnType<typeof summarise>; bank: number | null; bankIso: string | null }) {
+function QuickPosition({ sum, bank, bankIso, gaps }: {
+  sum: ReturnType<typeof summarise>; bank: number | null; bankIso: string | null; gaps?: string | null;
+}) {
   const num = (x: number | null | undefined) => (x == null ? "" : fmtInr(x));
   const closingBal = sum.opening + sum.totalCollection.balance - sum.totalPayment.balance;
   const diff = bank == null ? null : sum.closingPaid - bank;
@@ -525,7 +522,7 @@ function QuickPosition({ sum, bank, bankIso }: { sum: ReturnType<typeof summaris
   const rows: { label: string; b: number | null; p: number | null; bal: number | null; pct?: number | null; bold?: boolean }[] = [
     { label: "Opening Balance", b: sum.opening, p: sum.opening, bal: sum.opening },
     { label: "Total Payment", b: sum.totalPayment.approved, p: sum.totalPayment.paid, bal: sum.totalPayment.balance, pct: sum.totalPayment.achieved },
-    { label: "Total Collection", b: sum.totalCollection.approved, p: sum.totalCollection.paid, bal: sum.totalCollection.balance, pct: sum.totalCollection.achieved },
+    { label: "Total Collection (target incl. Machine Advances; received from Customer Collection)", b: sum.totalCollection.approved, p: sum.totalCollection.paid, bal: sum.totalCollection.balance, pct: sum.totalCollection.achieved },
     { label: "Closing Balance", b: sum.closingBudget, p: sum.closingPaid, bal: closingBal, bold: true },
   ];
   return (
@@ -548,9 +545,17 @@ function QuickPosition({ sum, bank, bankIso }: { sum: ReturnType<typeof summaris
             </tr>
           ))}
           <tr className="border-t border-border/60 font-semibold">
-            <td className="py-1.5 px-3">Balance as on {bankIso ? shortDate(bankIso) : "today"} <span className="font-normal text-muted-foreground">(Daily Report)</span></td>
+            <td className="py-1.5 px-3">
+              Balance as on {bankIso ? shortDate(bankIso) : "today"} <span className="font-normal text-muted-foreground">(opening — bank balances on the Daily Report)</span>
+              {(!bank || gaps) && (
+                <div className="font-normal text-[11px] text-red-700">
+                  {!bank ? "Zero / not entered. " : ""}{gaps ? `Not entered: ${gaps}. ` : ""}
+                  Dimple / CFO enter it in <a className="underline" href="/daily-report/bank-balances">Daily Report → Bank balances</a> by 10:30 AM.
+                </div>
+              )}
+            </td>
             <td className={cell} />
-            <td className={cn(cell, !bank && "bg-red-200 text-red-800 dark:bg-red-900/40")}>{bank == null ? "not entered" : num(bank)}</td>
+            <td className={cn(cell, (!bank || gaps) && "bg-red-200 text-red-800 dark:bg-red-900/40")}>{bank == null ? "not entered" : num(bank)}</td>
             <td className={cell} /><td className={cell} />
           </tr>
           <tr className="border-t border-border/60 font-semibold">
@@ -625,18 +630,6 @@ function SummaryTable({ sum, label }: { sum: ReturnType<typeof summarise>; label
   );
 }
 
-function Tile({ label, value, sub, tone, subTone, alert }: {
-  label: string; value: string; sub?: string; tone?: "bad" | "good"; subTone?: "bad"; alert?: boolean;
-}) {
-  return (
-    <Card className={cn("p-3 space-y-0.5", alert && "border-red-500 bg-red-50")}>
-      <div className="text-[11px] text-muted-foreground">{label}</div>
-      <div className={cn("text-base font-semibold font-mono tabular-nums", tone === "bad" && "text-destructive", tone === "good" && "text-emerald-700")}>{value}</div>
-      {sub && <div className={cn("text-[11px]", subTone === "bad" ? "text-destructive font-semibold" : "text-muted-foreground")}>{sub}</div>}
-    </Card>
-  );
-}
-
 function MiniTable({ title, rows, empty }: { title: string; rows: { a: string; b?: string; v: number; v2?: number }[]; empty: string }) {
   return (
     <Card className="p-3">
@@ -677,25 +670,7 @@ function ManagementSummary({ m, sum, lines, removed, opening, bankMemo, bankGaps
   const col = sum.byHead.collection;
   return (
     <div className="space-y-3">
-      <QuickPosition sum={sum} bank={bankMemo} bankIso={memoIso} />
-      <div className="grid gap-2 grid-cols-2 md:grid-cols-4 xl:grid-cols-6">
-        <Tile label="Opening balance" value={fmtCr(opening)} />
-        <Tile label="Total payment (approved)" value={fmtCr(sum.totalPayment.approved)} sub={`paid ${fmtCr(sum.totalPayment.paid)} · ${fmtPct(sum.totalPayment.achieved)}`} />
-        <Tile label="Total collection (target)" value={fmtCr(sum.totalCollection.approved)} sub={`received ${fmtCr(sum.totalCollection.paid)} · ${fmtPct(sum.totalCollection.achieved)}`} />
-        <Tile label="Closing (approved basis)" value={fmtCr(sum.closingBudget)} tone={sum.closingBudget < 0 ? "bad" : undefined} />
-        <Tile label="Closing (paid basis)" value={fmtCr(sum.closingPaid)} />
-        {/* Red when the bank is zero / not entered, or does not agree with the paid-basis closing
-            (user, 24-Oct-2026). The same check is emailed each morning to the CFO and Dimple. */}
-        <Tile label={`Bank balance ${shortDate(memoIso)} (Daily Report)`} value={bankMemo == null ? "—" : fmtCr(bankMemo)}
-          tone={!bankMemo || bankGaps ? "bad" : undefined}
-          alert={!bankMemo || Boolean(bankGaps) || (bankMemo != null && Math.abs(sum.closingPaid - bankMemo) >= 1)}
-          sub={bankMemo == null ? "No Daily Report entry" : [
-            !bankMemo ? "ZERO on the Daily Report" : "",
-            bankGaps ? `not entered: ${bankGaps}` : "",
-            `paid-basis closing less bank ₹${fmtInr(sum.closingPaid - bankMemo)}`,
-          ].filter(Boolean).join(" · ")}
-          subTone={!bankMemo || bankGaps || Math.abs(sum.closingPaid - (bankMemo ?? 0)) >= 1 ? "bad" : undefined} />
-      </div>
+      <QuickPosition sum={sum} bank={bankMemo} bankIso={memoIso} gaps={bankGaps} />
       <div className="flex flex-wrap gap-2 text-xs">
         {unapproved > 0 && <Badge variant="outline" className="border-amber-500 text-amber-700">{unapproved} line(s) not yet approved by the CFO</Badge>}
         {changed.length > 0 && <Badge variant="destructive">{changed.length} line(s) changed after approval</Badge>}
@@ -1008,8 +983,10 @@ function VendorPull({ month, lines, onClose, onAdd }: {
     return otherHeadNames.some((ws) => ws.every((w) => name.includes(` ${w} `) || name.replace(/\s+/g, "").includes(w)));
   };
   const vendors = (q.data?.vendors ?? []).filter((v) => (showOther || !isOtherHead(v)) && (!search || v.ledger.toLowerCase().includes(search.toLowerCase())));
+  // Ticked by default: vendors with bills more than 30 days past due (user, 24-Oct-2026), except
+  // suppliers on other heads and 180+ day dues (old disputes — tick by hand if they will be paid).
   const defaultTicked = useMemo(() => new Set((q.data?.vendors ?? [])
-    .filter((v) => !listed.has(key(v)) && !isOtherHead(v) && ageBucket(v.oldestDays) !== "180+").map(key)),
+    .filter((v) => !listed.has(key(v)) && !isOtherHead(v) && v.dueOver30 > 0.5 && ageBucket(v.oldestDays) !== "180+").map(key)),
   // eslint-disable-next-line react-hooks/exhaustive-deps
   [q.data, listed]);
   const sel = ticked ?? defaultTicked;
@@ -1017,9 +994,9 @@ function VendorPull({ month, lines, onClose, onAdd }: {
 
   const add = () => onAdd(chosen.map((v, i) => ({
     id: null, head: "other_vendor", currency: "INR", line_type: "Other Vendor", party: v.ledger,
-    company: v.book.company, location: v.book.location, amt_budget: Math.round(v.due),
+    company: v.book.company, location: v.book.location, amt_budget: Math.round(v.dueOver30 > 0.5 ? v.dueOver30 : v.due),
     tally_company_guid: v.book.companyGuid, tally_ledger: v.ledger, tally_due_inr: v.due, tally_due_as_at: q.data!.readAt,
-    remarks: `${v.bills.length} bill(s) due by ${shortDate(end)}; oldest ${v.oldestDays} days`, sort_order: 5000 + i,
+    remarks: `${v.bills.length} bill(s) due by ${shortDate(end)} (₹${fmtInr(v.due)}); budget = over 30 days ₹${fmtInr(v.dueOver30)}; oldest ${v.oldestDays} days`, sort_order: 5000 + i,
   })));
 
   return (
@@ -1028,8 +1005,9 @@ function VendorPull({ month, lines, onClose, onAdd }: {
         <DialogHeader>
           <DialogTitle>Vendors with bills due by {shortDate(end)} — from Tally</DialogTitle>
           <DialogDescription>
-            Sundry Creditors, all companies, from the nightly payables snapshot. Tick the vendors to budget; each becomes an Other Vendor line with
-            the due amount as its budget (editable). Bills over 180 days and suppliers already on Import / Advances / Duty start unticked.
+            Sundry Creditors, all companies, from the nightly payables snapshot (our own Orange O Tec, Enterprises, Colorix and branch accounts are left out). Ticked: vendors with
+            bills more than 30 days past due; each becomes an Other Vendor line budgeted at that over-30-days amount (editable). Dues of 30 days
+            or less, bills over 180 days and suppliers already on Import / Advances / Duty start unticked.
           </DialogDescription>
         </DialogHeader>
         {q.isLoading && <div className="text-sm text-muted-foreground py-6">Reading Tally…</div>}
@@ -1048,7 +1026,7 @@ function VendorPull({ month, lines, onClose, onAdd }: {
               <Table>
                 <TableHeader>
                   <TableRow className="bg-muted">
-                    {["", "Company", "Vendor", "Bills", "Oldest due", "Age", "Due (INR)", "On account", "Advance"].map((h) => <TableHead key={h} className="h-8 text-xs">{h}</TableHead>)}
+                    {["", "Company", "Vendor", "Bills", "Oldest due", "Age", "Due (INR)", "Over 30 days (INR)", "On account", "Advance"].map((h) => <TableHead key={h} className="h-8 text-xs">{h}</TableHead>)}
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -1065,19 +1043,20 @@ function VendorPull({ month, lines, onClose, onAdd }: {
                         <TableCell className="py-1 text-xs">{v.oldestDue.slice(6, 8)}-{v.oldestDue.slice(4, 6)}-{v.oldestDue.slice(0, 4)}</TableCell>
                         <TableCell className="py-1 text-xs"><Badge variant={ageBucket(v.oldestDays) === "180+" ? "destructive" : "outline"} className="text-[10px]">{ageBucket(v.oldestDays)}</Badge></TableCell>
                         <TableCell className="py-1 text-xs text-right font-mono tabular-nums">{fmtInr(v.due)}</TableCell>
+                        <TableCell className="py-1 text-xs text-right font-mono tabular-nums font-semibold">{v.dueOver30 > 0.5 ? fmtInr(v.dueOver30) : "—"}</TableCell>
                         <TableCell className="py-1 text-xs text-right font-mono tabular-nums text-muted-foreground">{v.onAccount ? fmtInr(v.onAccount) : ""}</TableCell>
                         <TableCell className="py-1 text-xs text-right font-mono tabular-nums text-muted-foreground">{v.advance ? fmtInr(v.advance) : ""}</TableCell>
                       </TableRow>
                     );
                   })}
-                  {vendors.length === 0 && <TableRow><TableCell colSpan={9} className="text-center text-xs text-muted-foreground py-6">No vendor matches.</TableCell></TableRow>}
+                  {vendors.length === 0 && <TableRow><TableCell colSpan={10} className="text-center text-xs text-muted-foreground py-6">No vendor matches.</TableCell></TableRow>}
                 </TableBody>
               </Table>
             </div>
           </div>
         )}
         <DialogFooter>
-          <span className="mr-auto self-center text-xs text-muted-foreground">{chosen.length} vendor(s) · ₹{fmtInr(chosen.reduce((s, v) => s + v.due, 0))}</span>
+          <span className="mr-auto self-center text-xs text-muted-foreground">{chosen.length} vendor(s) · budget ₹{fmtInr(chosen.reduce((s, v) => s + (v.dueOver30 > 0.5 ? v.dueOver30 : v.due), 0))}</span>
           <Button variant="ghost" onClick={onClose}>Cancel</Button>
           <Button disabled={!chosen.length} onClick={add}>Add {chosen.length} line(s)</Button>
         </DialogFooter>
@@ -1088,9 +1067,10 @@ function VendorPull({ month, lines, onClose, onAdd }: {
 
 /* ======================================================== collections == */
 
-function CollectionsTab({ month, lines, rate, editable, isCfo, saving, onSave, onApprove, opening }: {
+function CollectionsTab({ month, lines, rate, editable, isCfo, saving, onSave, onApprove, opening, onSetPct }: {
   month: FfMonth; lines: FfLine[]; rate: number; editable: boolean; isCfo: boolean; saving: boolean;
   onSave: (i: FfSaveItem[]) => Promise<void>; onApprove: (i: FfDecision[]) => Promise<void>; opening: number;
+  onSetPct: (pct: number) => Promise<void>;
 }) {
   const label = monthLabel(month.month);
   const locked = Boolean(month.plan_approved_at);
@@ -1109,29 +1089,39 @@ function CollectionsTab({ month, lines, rate, editable, isCfo, saving, onSave, o
   const col = lines.filter((l) => l.head === "collection");
   const line = col[0];
   // Customer Collections takes the Customer Collection (Salesperson Collection Report) figures
-  // ONLY — nothing typed, no override (user, 24-Oct-2026). While the month is open they are kept in
-  // step automatically; a closed month keeps the figures it closed with.
+  // ONLY (user, 24-Oct-2026). TARGET = the month's share of the report's total due — 55% unless
+  // changed (the Excel pack's rule) — RECEIVED and DUE as the report has them. While the month is
+  // open they are kept in step automatically; a closed month keeps the figures it closed with.
+  const pct = month.collection_pct ?? 0.55;
   const canSync = editable && !scoped && inFy && !loading && Boolean(link);
+  const targetOf = (due: number) => Math.round(due * pct);
   const differs = Boolean(link && (!line
-    || Math.abs((line.amt_budget ?? 0) - Math.round(link.total.target)) > 1
+    || Math.abs((line.amt_budget ?? 0) - targetOf(link.total.due)) > 1
     || Math.abs((line.amt_paid ?? 0) - Math.round(link.total.received)) > 1
     || Math.abs((line.total_due ?? 0) - Math.round(link.total.due)) > 1));
-  const synced = useRef(false);
+  // One save per distinct set of figures, so a figure that moves later is saved again, but a save
+  // in flight is never repeated.
+  const synced = useRef("");
   useEffect(() => {
-    if (!canSync || !differs || synced.current || saving || !link) return;
-    synced.current = true;
+    if (!canSync || !differs || saving || !link) return;
+    const sig = [targetOf(link.total.due), link.total.received, link.total.due].map(Math.round).join("|");
+    if (synced.current === sig) return;
+    synced.current = sig;
     const t = link.total;
     void onSave([{
       ...(line ? { id: line.id, expected_updated_at: line.updated_at } : { id: null, head: "collection", currency: "INR", line_type: "Customer Collections", sort_order: 0 }),
-      amt_budget: Math.round(t.target), amt_paid: Math.round(t.received), total_due: Math.round(t.due),
+      amt_budget: targetOf(t.due), amt_paid: Math.round(t.received), total_due: Math.round(t.due),
       link_target_inr: t.target, link_received_inr: t.received, link_due_inr: t.due, link_as_at: new Date().toISOString(), paid_source: "linked",
-      override_reason: null, remarks: `Customer Collection (Salesperson Collection Report) ${label}, ${link.customers} customers`,
+      override_reason: null,
+      remarks: `Target ${Math.round(pct * 1000) / 10}% of due; Customer Collection (Salesperson Collection Report) ${label}, ${link.customers} customers`,
     }]);
-  }, [canSync, differs, saving, link, line, label, onSave]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [canSync, differs, saving, link, line, label, onSave, pct]);
+  const [pctText, setPctText] = useState("");
 
   const v = line ? lineValues(line, rate, line.plan_locked) : null;
   const live = canSync && link;
-  const fig = live ? { target: link!.total.target, received: link!.total.received, due: link!.total.due }
+  const fig = live ? { target: targetOf(link!.total.due), received: link!.total.received, due: link!.total.due }
     : line ? { target: v!.approvedInr, received: v!.paidInr, due: line.total_due ?? line.link_due_inr ?? 0 } : null;
   return (
     <div className="space-y-3">
@@ -1146,7 +1136,22 @@ function CollectionsTab({ month, lines, rate, editable, isCfo, saving, onSave, o
         {fig ? (
           <div className="grid gap-3 md:grid-cols-2 text-xs">
             <div className="space-y-1">
-              <div>Target (planned) <span className="font-mono">₹{fmtInr(fig.target)}</span></div>
+              <div className="flex flex-wrap items-center gap-1.5">
+                Target <span className="font-mono font-semibold">₹{fmtInr(fig.target)}</span>
+                <span className="text-muted-foreground">= {Math.round(pct * 1000) / 10}% of total due</span>
+                {editable && (
+                  <span className="inline-flex items-center gap-1">
+                    <Input className="h-6 w-16 px-1 text-xs text-right" inputMode="decimal" placeholder={String(Math.round(pct * 1000) / 10)}
+                      value={pctText} onChange={(e) => setPctText(e.target.value)} />%
+                    <Button size="sm" variant="outline" className="h-6 px-2 text-[11px]"
+                      disabled={saving || !(Number(pctText) > 0 && Number(pctText) <= 100)}
+                      onClick={() => { void onSetPct(Number(pctText) / 100).then(() => setPctText("")); synced.current = ""; }}>Change %</Button>
+                  </span>
+                )}
+              </div>
+              {live && link!.total.target > 0 && (
+                <div className="text-muted-foreground">For reference: Collection Plan target ₹{fmtInr(link!.total.target)}</div>
+              )}
               <div>Received <span className="font-mono">₹{fmtInr(fig.received)}</span> · {fmtPct(fig.target ? fig.received / fig.target : null)}</div>
               <div>Balance to collect <span className="font-mono">₹{fmtInr(Math.max(0, fig.target - fig.received))}</span></div>
               <div>Total due <span className="font-mono">₹{fmtInr(fig.due)}</span>{live ? ` · ${link!.customers} customers` : ""}</div>
@@ -1154,11 +1159,12 @@ function CollectionsTab({ month, lines, rate, editable, isCfo, saving, onSave, o
             </div>
             {live && (
               <table className="w-full self-start">
-                <thead><tr className="text-muted-foreground"><th className="text-left font-normal">Company</th><th className="text-right font-normal">Target</th><th className="text-right font-normal">Received</th></tr></thead>
+                <thead><tr className="text-muted-foreground"><th className="text-left font-normal">Company</th><th className="text-right font-normal">Due</th><th className="text-right font-normal">Target ({Math.round(pct * 1000) / 10}%)</th><th className="text-right font-normal">Received</th></tr></thead>
                 <tbody>{link!.byCompany.map((c) => (
                   <tr key={c.company} className="border-t border-border/60">
                     <td className="py-0.5 pr-2">{c.company}</td>
-                    <td className="py-0.5 text-right font-mono">₹{fmtInr(c.fig.target)}</td>
+                    <td className="py-0.5 text-right font-mono">₹{fmtInr(c.fig.due)}</td>
+                    <td className="py-0.5 text-right font-mono">₹{fmtInr(targetOf(c.fig.due))}</td>
                     <td className="py-0.5 text-right font-mono">₹{fmtInr(c.fig.received)}</td>
                   </tr>
                 ))}</tbody>

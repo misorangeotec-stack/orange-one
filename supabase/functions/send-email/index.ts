@@ -546,7 +546,7 @@ async function compose(row: Row): Promise<Composed | null> {
     };
   }
   // ---- Budgeted Fund Flow: reminders and change alerts ----------------------
-  // Queued by ff_notify (migration 20270217120000_fund_flow.sql): month opening / closing, the
+  // Queued by ff_notify (migration 20270219120000_fund_flow.sql): month opening / closing, the
   // Saturday follow-up, the 4 PM / 7 PM change summary, CFO plan approval -> Directors, the
   // Directors' approval -> CFO, a reopen. Only while the 'fund-flow' email switch is on.
   // `fund_flow_` is not in the module-prefix list below, so without this branch it would be

@@ -1,5 +1,5 @@
 -- ===========================================================================
--- ROLLBACK of 20270217120000_fund_flow.sql
+-- ROLLBACK of 20270219120000_fund_flow.sql
 --
 -- DESTROYS EVERY FUND FLOW LINE, APPROVAL AND THE CHANGE LOG. The budget figures were
 -- typed by the accounts team and approved by the CFO; they exist nowhere else once the
@@ -21,7 +21,7 @@ do $cron$
 begin
   if exists (select 1 from pg_extension where extname = 'pg_cron') then
     perform cron.unschedule(j) from unnest(array['fund-flow-housekeep', 'fund-flow-morning',
-      'fund-flow-digest-4pm', 'fund-flow-digest-7pm']) j
+      'fund-flow-digest-4pm', 'fund-flow-digest-7pm', 'fund-flow-bank-chase']) j
      where exists (select 1 from cron.job where jobname = j);
   end if;
 end $cron$;
@@ -36,11 +36,13 @@ drop function if exists public.ff_notify_run(text, timestamptz);
 drop function if exists public.ff_log_line(public.fund_flow_log);
 drop function if exists public.ff_amt(text);
 drop function if exists public.ff_bank_check(date, date);
+drop function if exists public.ff_set_collection_pct(date, numeric);
 drop trigger if exists fund_flow_log_by_name on public.fund_flow_log;
 drop function if exists public.ff_log_by_name();
 drop function if exists public.ff_notify_once(text, uuid[], text, text[]);
 drop function if exists public.ff_month_points(date);
-drop function if exists public.ff_notify(uuid[], text, text[], uuid);
+drop function if exists public.ff_bank_chase(timestamptz);
+drop function if exists public.ff_notify(uuid[], text, text[], uuid, text);
 drop function if exists public.ff_prev_working_day(date);
 drop function if exists public.ff_editor_names();
 drop function if exists public.ff_users(text);

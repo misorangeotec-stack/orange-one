@@ -352,7 +352,7 @@ export async function fetchMyNotifications(userId: string): Promise<Notification
   const out: any[] = []; // eslint-disable-line @typescript-eslint/no-explicit-any
   const BASE = "id,user_id,type,task_id,activity_id,actor_id,read_at,created_at,tasks(title)";
   // The reminder columns arrive with migration 20270106120100 and message/link (Fund Flow
-  // notices) with 20270217120000. Until each has run the wider select errors, so step down one
+  // notices) with 20270219120000. Until each has run the wider select errors, so step down one
   // select at a time and the bell never breaks.
   const SELECTS = [`${BASE},recurring_task_id,reminder_date,recurring_tasks(title),message,link`,
     `${BASE},recurring_task_id,reminder_date,recurring_tasks(title)`, BASE];

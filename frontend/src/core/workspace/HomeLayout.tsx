@@ -7,6 +7,7 @@ import { appBasePath } from "@/apps/appInfo";
 import { buildHomeNav } from "./homeNav";
 import { useTaskNotifications } from "./useTaskNotifications";
 import RecurringReminderPopup from "./RecurringReminderPopup";
+import BankBalanceReminderPopup from "./BankBalanceReminderPopup";
 
 /**
  * The portal shell for `/home`.
@@ -66,6 +67,8 @@ export default function HomeLayout() {
       />
       {/* Recurring-task reminders pop up on opening the hub until the task is done. */}
       <RecurringReminderPopup />
+      {/* Daily Report bank balances not entered by 10:30 AM (Fund Flow chase). */}
+      <BankBalanceReminderPopup />
     </>
   );
 }

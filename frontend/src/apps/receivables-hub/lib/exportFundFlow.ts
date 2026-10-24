@@ -401,10 +401,12 @@ export function buildFundFlowWorkbook(input: FundFlowExportInput): XLSX.WorkBook
     s.put(7, 6, [linkNote, ...col.map((l) => l.override_reason ? `Target override: ${l.override_reason}` : "").filter(Boolean)].filter(Boolean).join("; "));
     const rv = sumAll.byHead.refund;
     s.put(8, 0, "Refunds / Compensation"); s.put(8, 2, rv.approved, INR); s.put(8, 3, rv.paid, INR); s.put(8, 4, f("C8-D8", rv.balance, INR)); s.put(8, 5, ach("D8", "C8", rv.paid, rv.approved));
-    s.put(10, 0, "TOTAL COLLECTION (Advance + Customer Collections + Refunds)", undefined, S_TOTAL);
+    // Target: Advance + Customer Collections + Refunds. Received: Customer Collections + Refunds
+    // only — advance money received is already inside Customer Collections' received.
+    s.put(10, 0, "TOTAL COLLECTION (target incl. Machine Advances; received excl. them)", undefined, S_TOTAL);
     s.put(10, 2, f("C6+C7+C8", sumAll.totalCollection.approved, INR), INR, S_TOTAL);
-    s.put(10, 3, f("D6+D7+D8", sumAll.totalCollection.paid, INR), INR, S_TOTAL);
-    s.put(10, 4, f("E6+E7+E8", sumAll.totalCollection.balance, INR), INR, S_TOTAL);
+    s.put(10, 3, f("D7+D8", sumAll.totalCollection.paid, INR), INR, S_TOTAL);
+    s.put(10, 4, f("C10-D10", sumAll.totalCollection.balance, INR), INR, S_TOTAL);
     s.put(10, 5, ach("D10", "C10", sumAll.totalCollection.paid, sumAll.totalCollection.approved), PCT, S_TOTAL);
     s.band(10, 7, S_TOTAL);
     if (input.bankMemo) {
@@ -465,12 +467,16 @@ export function buildFundFlowWorkbook(input: FundFlowExportInput): XLSX.WorkBook
       s.put(row, 3, f(`Collections!D${src}`, fig.paid, INR)); s.put(row, 4, f(`Collections!E${src}`, fig.balance, INR));
       s.put(row, 5, ach(`D${row}`, `C${row}`, fig.paid, fig.approved));
     };
-    rowLink(28, HEAD_META.machine_advance.label, "6", B.machine_advance);
+    rowLink(28, `${HEAD_META.machine_advance.label} (received is inside Customer Collections)`, "6", B.machine_advance);
     rowLink(29, `Customer Collections (${label.slice(0, 3)}-${label.slice(-2)} targeted)`, "7", B.collection);
     rowLink(30, HEAD_META.refund.label, "8", B.refund);
     s.put(31, 0, "TOTAL COLLECTION", undefined, S_TOTAL);
     const tc = sumAll.totalCollection;
-    for (const [c, col, v] of [[1, "B", tc.approved], [2, "C", tc.approved], [3, "D", tc.paid], [4, "E", tc.balance]] as const) s.put(31, c, f(`SUM(${col}28:${col}30)`, v, INR), INR, S_TOTAL);
+    // Target includes Machine Advances; received does not (already in Customer Collections).
+    s.put(31, 1, f("SUM(B28:B30)", tc.approved, INR), INR, S_TOTAL);
+    s.put(31, 2, f("SUM(C28:C30)", tc.approved, INR), INR, S_TOTAL);
+    s.put(31, 3, f("D29+D30", tc.paid, INR), INR, S_TOTAL);
+    s.put(31, 4, f("C31-D31", tc.balance, INR), INR, S_TOTAL);
     s.put(31, 5, ach("D31", "C31", tc.paid, tc.approved), PCT, S_TOTAL);
     s.band(31, 6, S_TOTAL);
     s.put(33, 0, "CLOSING BALANCE (Opening + Collection - Payment)", undefined, S_TOTAL);

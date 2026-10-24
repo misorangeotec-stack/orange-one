@@ -34,6 +34,8 @@ export interface VendorDue {
   bills: VendorBill[];
   /** Σ pending of bills due on or before the month end. */
   due: number;
+  /** Σ pending of the bills more than 30 days past due at the month end — what is budgeted. */
+  dueOver30: number;
   /** Oldest due date among those bills, yyyymmdd. */
   oldestDue: string;
   /** Days past due of the oldest bill, at the month end. */
@@ -109,6 +111,12 @@ const daysBetween = (a: string, b: string) => {
  * A bill with no due date is treated as due on its bill date (Tally's own default when a ledger
  * carries no credit period).
  */
+/**
+ * Our own group: Orange O Tec Pvt Ltd / Enterprises, Colorix, and branch / division accounts —
+ * inter-company and inter-branch balances, not vendor payments (user, 24-Oct-2026).
+ */
+const GROUP_COMPANY = /ORANGE\s*-?\s*O\s*-?\s*TEC|COLORIX|\bBRANCH(ES)?\b|\bDIVISIONS?\b/i;
+
 export async function loadVendorsDue(monthIso: string, monthEndIso: string): Promise<VendorDueResult> {
   const fy = fyOfMonth(monthIso);
   const books = await loadBooks(fy);
@@ -136,11 +144,15 @@ export async function loadVendorsDue(monthIso: string, monthEndIso: string): Pro
         byLedger.set(b.ledger, list);
       }
       for (const [ledger, bills] of byLedger) {
+        // Our own group companies are inter-company balances, not vendor payments: never listed
+        // (user, 24-Oct-2026: "remove Orange O Tec and Enterprises", then Colorix and branches too).
+        if (GROUP_COMPANY.test(ledger)) continue;
         const oldest = bills.map((x) => x.dueDate || x.billDate).sort()[0];
         const p = party.get(ledger);
         vendors.push({
           book, ledger, bills,
           due: bills.reduce((s, x) => s + x.pending, 0),
+          dueOver30: bills.filter((x) => daysBetween(x.dueDate || x.billDate, end) > 30).reduce((s, x) => s + x.pending, 0),
           oldestDue: oldest, oldestDays: daysBetween(oldest, end),
           advance: p?.advance ?? 0, onAccount: p?.on_account ?? 0,
         });

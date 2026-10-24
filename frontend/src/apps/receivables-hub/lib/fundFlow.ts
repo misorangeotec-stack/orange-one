@@ -2,7 +2,7 @@
  * fundFlow.ts — Fund Flow reads and writes against the Hub database.
  *
  * Tables: fund_flow_month, fund_flow_line (read through v_fund_flow_line, which adds the rupee
- * figures), fund_flow_log. Migration: supabase/migrations/20270217120000_fund_flow.sql.
+ * figures), fund_flow_log. Migration: supabase/migrations/20270219120000_fund_flow.sql.
  *
  * WRITES ONLY THROUGH THE ff_* RPCs. The tables carry no write policy, so the month window, the
  * CFO-only approval and the stale-write check cannot be bypassed by a client talking to PostgREST
@@ -51,6 +51,8 @@ export interface FfMonth {
   plan_approved_at: string | null;
   /** Set once the rate is entered; from then the month's std rate cannot change. Null = provisional. */
   rate_fixed_at: string | null;
+  /** Customer Collections target = this share of the report's total due (0.55 = 55%). */
+  collection_pct: number;
   /** A Director's final approval, given after the CFO approved the plan. */
   final_approved_at: string | null;
   final_approved_by: string | null;
@@ -179,7 +181,7 @@ export async function fetchRole(uid: string): Promise<FfRole> {
 export async function fetchMonths(): Promise<FfMonth[]> {
   const { data, error } = await supabase.from("fund_flow_month").select("*").order("month", { ascending: false });
   if (error) throw new Error(error.message);
-  return (data ?? []).map((m: Record<string, unknown>) => ({ ...(m as unknown as FfMonth), std_rate: Number(m.std_rate), opening_override: num(m.opening_override) }));
+  return (data ?? []).map((m: Record<string, unknown>) => ({ ...(m as unknown as FfMonth), std_rate: Number(m.std_rate), collection_pct: Number(m.collection_pct ?? 0.55), opening_override: num(m.opening_override) }));
 }
 
 export async function fetchLines(month: string): Promise<FfLine[]> {
@@ -269,6 +271,10 @@ export const approveLines = (month: string, items: FfDecision[]) =>
 
 /** CFO: approve the month's plan. After this every addition, edit and delete waits for the CFO. */
 export const approvePlan = (month: string) => rpc<number>("ff_approve_plan", { p_month: month });
+
+/** Editor / CFO: the Customer Collections share of due (0 < pct <= 1). Logged. */
+export const setCollectionPct = (month: string, pct: number) =>
+  rpc<void>("ff_set_collection_pct", { p_month: month, p_pct: pct });
 
 /** A Director: the final approval of the month's budget, after the CFO. */
 export const finalApprove = (month: string, note: string | null) =>

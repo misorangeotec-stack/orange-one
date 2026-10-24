@@ -3,7 +3,7 @@
  *
  * The page, the summary tabs and the Excel export all call these, so the three can never
  * disagree. It is the mirror of the SQL routine `public.ff_line_values` (migration
- * 20270217120000_fund_flow.sql); change one and the other must change with it.
+ * 20270219120000_fund_flow.sql); change one and the other must change with it.
  *
  * The formulas are the ones the Excel pack "Budgeted Fund Flow Summary.xlsx" uses
  * (PL and BS\FUND FLOW\build_budgeted_fund_flow_summary.py), checked line by line:
@@ -233,7 +233,13 @@ export function summarise(
   const subB = sumFigs([byHead.customs_duty, byHead.emi, byHead.other_vendor]);
   const subC = sumFigs([byHead.tds, byHead.gst]);
   const totalPayment = sumFigs([subA, subB, subC, byHead.investment, byHead.fixed_expense]);
-  const totalCollection = sumFigs([byHead.machine_advance, byHead.collection, byHead.refund]);
+  // Approved / target includes Machine Advances; RECEIVED does not, because the money received
+  // against a machine advance is already inside Customer Collections' received (it comes from the
+  // Customer Collection report) — counting it again would double it (user, 24-Oct-2026).
+  const totalCollection = finish({
+    ...sumFigs([byHead.machine_advance, byHead.collection, byHead.refund]),
+    paid: byHead.collection.paid + byHead.refund.paid,
+  });
   return {
     byHead, subA, subB, subC, totalPayment, totalCollection, opening,
     closingBudget: opening + totalCollection.approved - totalPayment.approved,
