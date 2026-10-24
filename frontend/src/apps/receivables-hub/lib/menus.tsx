@@ -8,6 +8,7 @@ import {
   FileText,
   PackageOpen,
   PhoneCall,
+  ClipboardList,
   UserCheck,
   HandCoins,
   Settings as SettingsIcon,
@@ -104,6 +105,9 @@ export const RECEIVABLES_MENUS: ReceivablesMenu[] = [
   { key: "alerts", title: "Alerts", url: `${BASE}/alerts`, icon: Bell },
   { key: "risk-register", title: "Risk Register", url: `${BASE}/risk-register`, icon: ShieldAlert },
   { key: "followups", title: "Follow-ups", url: `${BASE}/followups`, icon: PhoneCall },
+  // One page for the collection team: the Salesperson Collection totals, the aging card and the
+  // follow-up worklist together (21-10-2026). Same data scope as Follow-ups — see pages/CollectionDesk.
+  { key: "collection-desk", title: "Collection Desk", url: `${BASE}/collection-desk`, icon: ClipboardList },
   // Customer Onboarding used to hang here as a sub-menu. It became its own
   // top-level app on 29-07-2026 (apps/customer-onboarding/) and now carries its
   // own sidebar, so listing it here too would put one module in two menus with
