@@ -48,6 +48,13 @@ import {
 } from "./lib/queues";
 import { DEFAULT_STEP_SLA, type StepSlaMap } from "./lib/sla";
 import type { StepKey } from "./lib/steps";
+import {
+  OWNER_COMPANY_SCOPE_KEY,
+  ownerCoversCompany,
+  serializeStepCompanyScopes,
+  type OwnerCompanyScope,
+  type StepCompanyScopes,
+} from "@/shared/lib/fmsOwners";
 import type {
   ActivityEntry, Asset, AssetCategory, AssetLocation, AssetNotification, AssetReading,
   AssetSchedule, AssetMasterType, Company, Department, Designation, MasterManager, MasterRequest,
@@ -55,6 +62,7 @@ import type {
 } from "./types";
 
 const QK = ASSET_QK;
+const EMPTY_SCOPES: StepCompanyScopes = {};
 
 interface AssetStoreValue {
   isLoading: boolean;
@@ -89,6 +97,14 @@ interface AssetStoreValue {
   /** May this person see the step's queue at all — nav link, route, page. */
   canSeeQueue: (step: QueueStep) => boolean;
   isStepOwner: (stepKey: StepKey) => boolean;
+  /**
+   * Is a row of this step at this company in MY queue? A step owner limited to
+   * some companies (Setup → Step Owners → Companies) sees only those. Admins,
+   * coordinators and anyone who does not own the step (view-only) see them all.
+   */
+  seesCompanyAt: (stepKey: StepKey, companyId: string | null) => boolean;
+  /** A job's company — its asset's (jobs carry none of their own). */
+  jobCompanyId: (job: ServiceJob) => string | null;
   stepOwnerFor: (stepKey: StepKey) => StepOwner | undefined;
   ownerNamesFor: (stepKey: StepKey) => string[];
   personName: (id: string | null) => string;
@@ -175,6 +191,10 @@ interface AssetStoreValue {
     input: { departmentIds: string[]; designationId: string | null; employeeIds: string[] },
   ) => Promise<void>;
   setConfig: (key: string, value: Record<string, unknown>) => Promise<void>;
+  /** Company-wise owners, per step. See shared/lib/fmsOwners. */
+  ownerCompanyScopes: StepCompanyScopes;
+  /** Save one step's per-owner companies (the other steps are kept). */
+  setOwnerCompanyScope: (stepKey: string, scope: OwnerCompanyScope) => Promise<void>;
   insertMaster: (mt: AssetMasterType, input: MasterInput) => Promise<void>;
   updateMaster: (mt: AssetMasterType, id: string, input: MasterInput) => Promise<void>;
   setMasterActive: (mt: AssetMasterType, id: string, active: boolean) => Promise<void>;
@@ -236,6 +256,7 @@ export function AssetStoreProvider({ children }: { children: ReactNode }) {
   const processCoordinatorIds = data?.config.processCoordinatorIds ?? [];
   const stepSla = data?.config.stepSla ?? DEFAULT_STEP_SLA;
   const reminderLadder = data?.config.reminderLadder ?? DEFAULT_REMINDER_LADDER;
+  const ownerCompanyScopes = data?.config.ownerCompanyScopes ?? EMPTY_SCOPES;
 
   const value = useMemo<AssetStoreValue>(() => {
     const uid = userId ?? "";
@@ -277,6 +298,14 @@ export function AssetStoreProvider({ children }: { children: ReactNode }) {
     };
 
     const assetById = (id: string) => assets.find((a) => a.id === id);
+    const jobCompanyId = (j: ServiceJob): string | null => assetById(j.assetId)?.companyId ?? null;
+
+    const seesCompanyAt = (stepKey: StepKey, companyId: string | null): boolean => {
+      if (isAdmin || isProcessCoordinator) return true;
+      const row = stepOwnerFor(stepKey);
+      if (!row?.employeeIds.includes(uid)) return true;
+      return ownerCoversCompany(row.companyScope, uid, companyId);
+    };
 
     /**
      * Mirrors fms_asset_can_act(step, job, uid): admin / coordinator / step owner
@@ -362,11 +391,23 @@ export function AssetStoreProvider({ children }: { children: ReactNode }) {
      * ⚠ NOT the number the Control Center shows. It reads `queueEntries` directly
      *   and must keep counting everyone's work.
      */
+    /**
+     * Company-wise owners: a job outside the owner's companies leaves their queue.
+     * The custodian arm is NOT narrowed — their own asset is theirs whatever its
+     * company.
+     */
+    const seesJobAt = (step: QueueStep, j: ServiceJob): boolean => {
+      if (seesCompanyAt(step, jobCompanyId(j))) return true;
+      if (step === "verify_close") return false;
+      const custodian = assetById(j.assetId)?.custodianUserId;
+      return !!custodian && custodian === uid;
+    };
+
     const myQueue = (step: QueueStep) =>
       queueEntries
         .filter((e) => e.stepKey === step)
         .map((e) => ({ job: jobById(e.jobId) as ServiceJob, dueIso: e.dueIso }))
-        .filter((x) => !!x.job && canActOn(step, x.job));
+        .filter((x) => !!x.job && canActOn(step, x.job) && seesJobAt(step, x.job));
 
     /**
      * May this person see the step's QUEUE at all — the nav link, the route, the page?
@@ -434,6 +475,8 @@ export function AssetStoreProvider({ children }: { children: ReactNode }) {
       canActOn,
       canSeeQueue,
       isStepOwner,
+      seesCompanyAt,
+      jobCompanyId,
       stepOwnerFor,
       ownerNamesFor,
       personName,
@@ -562,6 +605,14 @@ export function AssetStoreProvider({ children }: { children: ReactNode }) {
         await setConfigWrite(key, value);
         await invalidate();
       },
+      ownerCompanyScopes,
+      setOwnerCompanyScope: async (stepKey, scope) => {
+        await setConfigWrite(
+          OWNER_COMPANY_SCOPE_KEY,
+          serializeStepCompanyScopes({ ...ownerCompanyScopes, [stepKey]: scope }),
+        );
+        await invalidate();
+      },
       insertMaster: async (mt, input) => {
         await insertMasterWrite(mt, input);
         await invalidate();
@@ -599,6 +650,7 @@ export function AssetStoreProvider({ children }: { children: ReactNode }) {
     stepOwners, designations, departments, scheduleTypes, categories, locations, vendors,
     makes, companies, conditions, usageUnits, costHeads, masterManagers, masterRequests,
     assets, jobs, readings, activity, notifications, processCoordinatorIds, stepSla, reminderLadder,
+    ownerCompanyScopes,
   ]);
 
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;

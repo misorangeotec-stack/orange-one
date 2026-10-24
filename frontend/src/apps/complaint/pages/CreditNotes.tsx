@@ -34,13 +34,17 @@ export default function CreditNotes() {
     setParams(next, { replace: true });
   };
 
-  const pending = useMemo(() => s.creditNotes.filter((c) => c.status === "awaiting_cn_tally"), [s.creditNotes]);
+  // A Tally desk owner limited to some companies sees only theirs.
+  const pending = useMemo(
+    () => s.creditNotes.filter((c) => c.status === "awaiting_cn_tally" && s.seesCompanyAt("cn_tally", c.companyId)),
+    [s],
+  );
   const completed = useMemo(
     () =>
       s.creditNotes
-        .filter((c) => c.status === "closed")
+        .filter((c) => c.status === "closed" && s.seesCompanyAt("cn_tally", c.companyId))
         .sort((a, b) => (b.tallyAt ?? "").localeCompare(a.tallyAt ?? "")),
-    [s.creditNotes],
+    [s],
   );
 
   const mayEnter = s.canEdit && s.canActOnCn("cn_tally");

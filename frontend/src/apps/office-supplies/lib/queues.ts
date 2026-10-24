@@ -27,6 +27,8 @@ export function supplySnapshotFrom(data: { requests: SupplyRequest[]; stepSla: S
 export interface QueueEntry extends QueueEntryBase<StepKey> {
   entityType: "request";
   departmentId: string;
+  /** The request's company — company-wise step owners see only theirs (shared/lib/fmsOwners). */
+  companyId: string | null;
   requestId: string;
   /**
    * Whoever THIS STEP's approval has been handed to, or null while it still sits
@@ -285,6 +287,7 @@ export function buildHeldEntries(snap: SupplySnapshot): QueueEntry[] {
       ref: r.reqNo,
       dueIso: supplyDueIso(snap, r, step),
       departmentId: r.departmentId,
+      companyId: r.companyId ?? null,
       requestId: r.id,
       assignedApproverId: holderForStep(r, step),
     });
@@ -305,6 +308,7 @@ export function buildQueueEntries(snap: SupplySnapshot): QueueEntry[] {
       ref: r.reqNo,
       dueIso: supplyDueIso(snap, r, step),
       departmentId: r.departmentId,
+      companyId: r.companyId ?? null,
       requestId: r.id,
       assignedApproverId: holderForStep(r, step),
     });

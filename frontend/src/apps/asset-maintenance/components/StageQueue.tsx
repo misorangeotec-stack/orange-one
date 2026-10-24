@@ -41,7 +41,11 @@ export default function StageQueue({ stepKey }: { stepKey: QueueStep }) {
   const cfg = STEP_CONFIG[stepKey];
 
   const pending = s.myQueue(stepKey);
-  const completedAll = s.completedFor(stepKey);
+  // A company-wise owner sees only their companies' entries — plus whatever they
+  // recorded themselves, so their own work never vanishes from under them.
+  const completedAll = s
+    .completedFor(stepKey)
+    .filter((e) => e.actorId === s.userId || s.seesCompanyAt(stepKey, s.jobCompanyId(e.row)));
   const stage = useStageMode<StageEntry<ServiceJob>>(completedAll, s.userId);
   const acting = useEntryModal<ServiceJob>();
 

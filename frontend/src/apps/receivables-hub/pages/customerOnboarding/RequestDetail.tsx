@@ -162,7 +162,8 @@ export default function RequestDetail() {
             <p className="text-xs text-muted-foreground mt-4 text-center">
               Currently with <span className="font-medium text-foreground">{stepTitle(openStepKey)}</span>
               {(() => {
-                const owners = s.stepOwnerIds(openStepKey).map(s.personName).filter(Boolean);
+                // Only the owners who cover this request's company.
+                const owners = s.stepOwnerIds(openStepKey, r.companyId).map(s.personName).filter(Boolean);
                 return owners.length ? <> — {owners.join(", ")}</> : null;
               })()}
             </p>

@@ -5,6 +5,8 @@ import Modal from "@/shared/components/ui/Modal";
 import MultiSelect, { type MultiOption } from "@/shared/components/ui/MultiSelect";
 import { FieldLabel } from "@/shared/components/ui/Form";
 import { ScrollableTable } from "@/core/shared/components/ScrollableTable";
+import { OwnerCompanyScopeFields, ownerNamesWithScope, pruneScope, type ScopeCompany } from "@/shared/components/ui/OwnerCompanyScope";
+import type { OwnerCompanyScope } from "@/shared/lib/fmsOwners";
 import { useComplaintStore } from "../../store";
 import { CN_STEPS, MANAGEMENT_OWNER_KEYS, STEPS, type StepKey } from "../../lib/steps";
 
@@ -29,6 +31,10 @@ import { CN_STEPS, MANAGEMENT_OWNER_KEYS, STEPS, type StepKey } from "../../lib/
  * There is no source split here (contrast Sampling's Domestic/Export): the raw-
  * material branch runs DIFFERENT steps from the finished-good one, but each step
  * is still one desk with one owner list, so this table needs no notion of it.
+ *
+ * Each owner can be limited to some companies: they stay owners of the step,
+ * they just get dues only for their companies' complaints (shared/lib/fmsOwners).
+ * Not offered on `raise` — it has no queue, so there is nothing to narrow.
  */
 
 /**
@@ -80,8 +86,15 @@ export default function StepOwnersSection() {
   const [editing, setEditing] = useState<OwnerRow | null>(null);
   const [deptIds, setDeptIds] = useState<string[]>([]);
   const [empIds, setEmpIds] = useState<string[]>([]);
+  const [scope, setScope] = useState<OwnerCompanyScope>({});
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
+
+  // Central Masters companies, already active-only and alias-labelled.
+  const scopeCompanies: ScopeCompany[] = useMemo(
+    () => s.companies.map((c) => ({ id: c.id, label: c.name })),
+    [s.companies],
+  );
 
   const deptOptions: MultiOption[] = useMemo(
     () => s.orgDepartments.map((d) => ({ value: d.id, label: d.name })),
@@ -124,6 +137,8 @@ export default function StepOwnersSection() {
   const open = (row: OwnerRow) => {
     setDeptIds(idsOf(row, "departmentIds"));
     setEmpIds(idsOf(row, "employeeIds"));
+    // The management row's keys are saved together, so the first one speaks for all.
+    setScope(s.ownerCompanyScopes[row.keys[0]] ?? {});
     setErr(null);
     setEditing(row);
   };
@@ -136,6 +151,7 @@ export default function StepOwnersSection() {
       await s.saveStepOwners(
         editing.keys.map((stepKey) => ({ stepKey, departmentIds: deptIds, designationId: null, employeeIds: empIds })),
       );
+      if (editing.id !== "raise") await s.setOwnerCompanyScope(editing.keys, pruneScope(scope, empIds));
       setEditing(null);
     } catch (e) {
       setErr((e as Error).message);
@@ -182,7 +198,9 @@ export default function StepOwnersSection() {
                   </td>
                   <td className="px-4 py-3">
                     {ids.length ? (
-                      <span className="text-ink">{ids.map(nameOf).join(", ")}</span>
+                      <span className="text-ink">
+                        {ownerNamesWithScope(ids, s.ownerFor(row.keys[0])?.companyScope, nameOf, scopeCompanies).join(", ")}
+                      </span>
                     ) : (
                       <span className="text-grey-2">
                         {row.id === "raise" ? "Anyone with the module" : "Not assigned"}
@@ -223,6 +241,15 @@ export default function StepOwnersSection() {
               placeholder="Select people"
             />
           </FieldLabel>
+          {editing?.id !== "raise" && (
+            <OwnerCompanyScopeFields
+              employeeIds={empIds}
+              personName={nameOf}
+              companies={scopeCompanies}
+              value={scope}
+              onChange={setScope}
+            />
+          )}
           {err && <p className="text-[12.5px] text-ryg-red">{err}</p>}
           <div className="flex items-center gap-3">
             <Button size="sm" onClick={save} disabled={busy}>

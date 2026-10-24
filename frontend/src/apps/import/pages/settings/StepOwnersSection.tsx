@@ -8,6 +8,8 @@ import { ScrollableTable } from "@/core/shared/components/ScrollableTable";
 import { FitCell } from "@/shared/components/ui/ColumnResizer";
 import { FIT } from "@/shared/lib/tableLook";
 import { useColumnWidths } from "@/shared/lib/useColumnWidths";
+import { OwnerCompanyScopeFields, ownerNamesWithScope, pruneScope, type ScopeCompany } from "@/shared/components/ui/OwnerCompanyScope";
+import type { OwnerCompanyScope } from "@/shared/lib/fmsOwners";
 import { useImportStore } from "../../store";
 import { STEPS, type StepKey } from "../../lib/steps";
 
@@ -16,6 +18,11 @@ import { STEPS, type StepKey } from "../../lib/steps";
  * Employees drawn from them — a step can be co-owned across departments. Every
  * selected employee may action the step and all are notified. Designation is not
  * chosen here; it follows from the employee and is shown beside their name.
+ *
+ * Each owner can be limited to some companies: one store user for Enterprise,
+ * another for O-tec. They stay owners of the step; they just get dues only for
+ * their companies' requisitions and POs. Approval routes by the Approvers
+ * matrix, not by these owners, so it gets no company picker.
  */
 export default function StepOwnersSection() {
   const s = useImportStore();
@@ -24,8 +31,18 @@ export default function StepOwnersSection() {
   const [editing, setEditing] = useState<StepKey | null>(null);
   const [deptIds, setDeptIds] = useState<string[]>([]);
   const [empIds, setEmpIds] = useState<string[]>([]);
+  const [scope, setScope] = useState<OwnerCompanyScope>({});
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
+
+  const scopeCompanies: ScopeCompany[] = useMemo(
+    () => s.companies.filter((c) => c.active).map((c) => ({ id: c.id, label: s.companyLabel(c.id) })),
+    [s]
+  );
+  const personName = (id: string) => s.profileById(id)?.name ?? "Unknown";
+  /** Steps whose owners actually receive the work — the ones a company scope can narrow. */
+  const scopable = (stepKey: StepKey | null) =>
+    !!stepKey && stepKey !== "approval" && !STEPS.find((st) => st.key === stepKey)?.noQueue;
 
   const deptOptions: MultiOption[] = useMemo(
     () => s.departments.map((d) => ({ value: d.id, label: d.name })),
@@ -53,6 +70,7 @@ export default function StepOwnersSection() {
     const cur = s.stepOwnerFor(stepKey);
     setDeptIds(cur?.departmentIds ?? []);
     setEmpIds(cur?.employeeIds ?? []);
+    setScope(s.ownerCompanyScopes[stepKey] ?? {});
     setErr(null);
     setEditing(stepKey);
   };
@@ -68,6 +86,7 @@ export default function StepOwnersSection() {
         designationId: null,
         employeeIds: empIds,
       });
+      if (scopable(editing)) await s.setOwnerCompanyScope(editing, pruneScope(scope, empIds));
       setEditing(null);
     } catch (e) {
       setErr((e as Error).message);
@@ -93,7 +112,7 @@ export default function StepOwnersSection() {
           <tbody {...fit.tbodyProps}>
             {STEPS.map((st) => {
               const owner = s.stepOwnerFor(st.key);
-              const names = (owner?.employeeIds ?? []).map((id) => s.profileById(id)?.name ?? "Unknown");
+              const names = ownerNamesWithScope(owner?.employeeIds ?? [], owner?.companyScope, personName, scopeCompanies);
               return (
                 <tr key={st.key} className="border-b border-line/70 last:border-0 hover:bg-page/60">
                   <td className="px-4 py-3 whitespace-nowrap">
@@ -150,6 +169,15 @@ export default function StepOwnersSection() {
                 : `${empIds.length} of ${peopleOptions.length} selected · every owner can action this step.`}
             </span>
           </FieldLabel>
+          {scopable(editing) && (
+            <OwnerCompanyScopeFields
+              employeeIds={empIds}
+              personName={personName}
+              companies={scopeCompanies}
+              value={scope}
+              onChange={setScope}
+            />
+          )}
           {err && <p className="text-[12.5px] text-ryg-red">{err}</p>}
         </div>
       </Modal>

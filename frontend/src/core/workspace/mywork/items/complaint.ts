@@ -6,7 +6,9 @@
  * Ownership mirrors the store's `canActOn` (apps/complaint/store.tsx) and SQL
  * `fms_complaint_can_act`: the step's owners, plus ONE per-request arm — the
  * person management assigned an RM-import complaint to (`rmAssigneeId`) owns its
- * `assignee` step. Admins see every complaint, as "team".
+ * `assignee` step. Admins see every complaint, as "team". A step owner limited
+ * to some companies (Setup → Step Owners → Companies) gets only those companies'
+ * complaints and compensations — the record's company goes to isMineByStepOwners.
  *
  * ⚠ COORDINATORS ARE NOT GIVEN EVERY REQUEST. A coordinator CAN act on anything,
  *   but that is a power, not an assignment — the same line every other file here
@@ -36,7 +38,7 @@ export function complaintWorkItems(data: ComplaintData, uid: string, isAdmin: bo
   const snap = complaintSnapshotFrom({ requests: data.requests, stepSla: data.config.stepSla });
 
   const mine = (step: string, r: ComplaintRequest | undefined): boolean =>
-    isMineByStepOwners(step, uid, owners) || (step === "assignee" && !!r && r.rmAssigneeId === uid);
+    isMineByStepOwners(step, uid, owners, r?.companyId) || (step === "assignee" && !!r && r.rmAssigneeId === uid);
 
   const live = buildQueueEntries(snap).map((e) => ({ e, held: false }));
   // A held complaint resumes at the step its pre-hold status maps to.
@@ -58,7 +60,7 @@ export function complaintWorkItems(data: ComplaintData, uid: string, isAdmin: bo
     const step =
       c.status === "awaiting_cn_approval" ? "cn_approval" : c.status === "awaiting_cn_tally" ? "cn_tally" : null;
     if (!step) return [];
-    const isMine = isMineByStepOwners(step, uid, owners);
+    const isMine = isMineByStepOwners(step, uid, owners, c.companyId);
     if (!isAdmin && !isMine) return [];
     return [{
       id: `${SOURCE}:cn:${c.id}:${step}`,

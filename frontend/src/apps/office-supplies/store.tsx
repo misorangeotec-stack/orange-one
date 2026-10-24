@@ -59,6 +59,14 @@ import {
 import { DEFAULT_STEP_SLA, type StepSlaMap } from "./lib/sla";
 import { masterTypeLabel } from "./lib/masterFields";
 import type { StepKey } from "./lib/steps";
+import {
+  OWNER_COMPANY_SCOPE_KEY,
+  ownerCoversCompany,
+  scopeOwnerIds,
+  serializeStepCompanyScopes,
+  type OwnerCompanyScope,
+  type StepCompanyScopes,
+} from "@/shared/lib/fmsOwners";
 import type {
   Category,
   Company,
@@ -77,6 +85,7 @@ import type {
 } from "./types";
 
 const QK = SUPPLIES_QK;
+const EMPTY_SCOPES: StepCompanyScopes = {};
 
 const FULFILMENT_STEPS: StepKey[] = ["second_approval", "handover"];
 
@@ -145,6 +154,13 @@ interface SuppliesStoreValue {
   canActOn: (stepKey: StepKey, r: SupplyRequest) => boolean;
   /** May this person see the step's queue at all — nav link, route, page. */
   canSeeQueue: (stepKey: StepKey) => boolean;
+  /**
+   * Is a row of this step at this company in MY queue? A step owner limited to
+   * some companies (Setup → Step Owners → Companies) sees only those. Admins,
+   * coordinators and anyone who does not own the step (HODs, holders, view-only)
+   * see them all.
+   */
+  seesCompanyAt: (stepKey: StepKey, companyId: string | null) => boolean;
 
   // master governance
   masterManagers: SupplyMasterManager[];
@@ -244,6 +260,10 @@ interface SuppliesStoreValue {
 
   // config writes
   setStepOwner: (stepKey: StepKey, input: StepOwnerInput) => Promise<void>;
+  /** Company-wise owners, per step. See shared/lib/fmsOwners. */
+  ownerCompanyScopes: StepCompanyScopes;
+  /** Save one step's per-owner companies (the other steps are kept). */
+  setOwnerCompanyScope: (stepKey: StepKey, scope: OwnerCompanyScope) => Promise<void>;
   setStepSla: (map: StepSlaMap) => Promise<void>;
   setCoordinators: (userIds: string[]) => Promise<void>;
   setRequesters: (userIds: string[]) => Promise<void>;
@@ -305,6 +325,7 @@ export function SuppliesStoreProvider({ children }: { children: ReactNode }) {
   const stepSla = data?.config.stepSla ?? DEFAULT_STEP_SLA;
   const reassignPoolDepartmentIds = data?.config.reassignPoolDepartmentIds ?? [];
   const reassignPoolUserIds = data?.config.reassignPoolUserIds ?? [];
+  const ownerCompanyScopes = data?.config.ownerCompanyScopes ?? EMPTY_SCOPES;
 
   const value = useMemo<SuppliesStoreValue>(() => {
     const uid = userId ?? "";
@@ -312,6 +333,14 @@ export function SuppliesStoreProvider({ children }: { children: ReactNode }) {
 
     const stepOwnerFor = (stepKey: StepKey) => stepOwners.find((o) => o.stepKey === stepKey);
     const ownerIdsOf = (stepKey: StepKey): string[] => stepOwnerFor(stepKey)?.employeeIds ?? [];
+    /**
+     * Who to tell about a step for one request — the owners who cover its
+     * company (an Enterprise-only owner is not told about an O-tec request).
+     */
+    const ownerIdsAt = (stepKey: StepKey, r: SupplyRequest): string[] => {
+      const row = stepOwnerFor(stepKey);
+      return scopeOwnerIds(row?.employeeIds ?? [], row?.companyScope, r.companyId);
+    };
 
     const isStepOwner = (stepKey: StepKey): boolean =>
       isAdmin || stepOwners.some((o) => o.stepKey === stepKey && o.employeeIds.includes(uid));
@@ -320,6 +349,13 @@ export function SuppliesStoreProvider({ children }: { children: ReactNode }) {
       isAdmin || stepOwners.some((o) => FULFILMENT_STEPS.includes(o.stepKey as StepKey) && o.employeeIds.includes(uid));
 
     const isProcessCoordinator = isAdmin || processCoordinatorIds.includes(uid);
+
+    const seesCompanyAt = (stepKey: StepKey, companyId: string | null): boolean => {
+      if (isProcessCoordinator) return true;
+      const row = stepOwnerFor(stepKey);
+      if (!row?.employeeIds.includes(uid)) return true;
+      return ownerCoversCompany(row.companyScope, uid, companyId);
+    };
 
     /**
      * A "View only" grant on this module is a READ-THE-WHOLE-MODULE grant: every
@@ -587,7 +623,8 @@ export function SuppliesStoreProvider({ children }: { children: ReactNode }) {
     const stepIsMine = (stepKey: StepKey, r: SupplyRequest): boolean => {
       if (stepKey === "first_approval" && r.assignedApproverId) return r.assignedApproverId === uid;
       if (stepKey === "second_approval" && r.secondAssignedApproverId) return r.secondAssignedApproverId === uid;
-      return canActOn(stepKey, r);
+      // Company-wise owners narrow the step-owner arm only; a holder is above.
+      return canActOn(stepKey, r) && seesCompanyAt(stepKey, r.companyId);
     };
 
     const myQueue = (stepKey: StepKey): QueueEntry[] =>
@@ -608,7 +645,8 @@ export function SuppliesStoreProvider({ children }: { children: ReactNode }) {
         return hod ? [hod] : [];
       }
       if (e.stepKey === "second_approval" && e.assignedApproverId) return [e.assignedApproverId];
-      return ownerIdsOf(e.stepKey);
+      const row = stepOwnerFor(e.stepKey);
+      return scopeOwnerIds(row?.employeeIds ?? [], row?.companyScope, e.companyId);
     };
 
     const byOrder = <T extends { active: boolean; sortOrder: number; name: string }>(rows: T[]): T[] =>
@@ -655,6 +693,7 @@ export function SuppliesStoreProvider({ children }: { children: ReactNode }) {
       hodDepartmentIds,
       canActOn,
       canSeeQueue,
+      seesCompanyAt,
       holderOfRequest,
       canReassignRequest,
       reassignCandidates,
@@ -777,7 +816,7 @@ export function SuppliesStoreProvider({ children }: { children: ReactNode }) {
             ? `${r.reqNo} passed first approval — it now needs the second (Management) approval.`
             : `${r.reqNo} was not approved${remarks ? `: ${remarks}` : "."}`,
           recipients: approve
-            ? ownerIdsOf("second_approval")
+            ? ownerIdsAt("second_approval", r)
             : [r.raisedBy, r.requestedForUserId].filter((x): x is string => !!x),
         });
         await invalidate();
@@ -792,7 +831,7 @@ export function SuppliesStoreProvider({ children }: { children: ReactNode }) {
             ? `${r.reqNo} is approved and ready for handover.`
             : `${r.reqNo} was not approved${remarks ? `: ${remarks}` : "."}`,
           recipients: approve
-            ? ownerIdsOf("handover")
+            ? ownerIdsAt("handover", r)
             : [r.raisedBy, r.requestedForUserId].filter((x): x is string => !!x),
         });
         await invalidate();
@@ -839,7 +878,7 @@ export function SuppliesStoreProvider({ children }: { children: ReactNode }) {
           // On a hand-back nobody in particular owns it, so tell the default
           // owners it is theirs again — the HOD, or the Management step owners.
           recipients: returned
-            ? (step === "second_approval" ? ownerIdsOf("second_approval") : hod ? [hod] : [])
+            ? (step === "second_approval" ? ownerIdsAt("second_approval", request) : hod ? [hod] : [])
             : [approverId as string],
           // ⚠ Unlike Import and Purchase, the CARD is built server-side by
           //   fms_supplies_email_payload — this meta only tells it which of the
@@ -879,6 +918,14 @@ export function SuppliesStoreProvider({ children }: { children: ReactNode }) {
 
       setStepOwner: async (stepKey, input) => {
         await setStepOwnerWrite(stepKey, input);
+        await invalidate();
+      },
+      ownerCompanyScopes,
+      setOwnerCompanyScope: async (stepKey, scope) => {
+        await setConfigWrite(
+          OWNER_COMPANY_SCOPE_KEY,
+          serializeStepCompanyScopes({ ...ownerCompanyScopes, [stepKey]: scope }),
+        );
         await invalidate();
       },
       setStepSla: async (map) => {
@@ -952,7 +999,7 @@ export function SuppliesStoreProvider({ children }: { children: ReactNode }) {
     // Load-bearing and invisible to tsc, exactly like orgPeople below: without
     // these the memo keeps handing out the pool it was built with, so Setup Save
     // never confirms after a successful write and reassignCandidates goes stale.
-    reassignPoolDepartmentIds, reassignPoolUserIds,
+    reassignPoolDepartmentIds, reassignPoolUserIds, ownerCompanyScopes,
     // Load-bearing, and tsc cannot catch its absence: personName closes over
     // orgPeople, so without this the names stay "Unknown user" until some other
     // dep happens to change.

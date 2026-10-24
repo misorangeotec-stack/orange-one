@@ -1,10 +1,12 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import Card from "@/shared/components/ui/Card";
 import Button from "@/shared/components/ui/Button";
 import Modal from "@/shared/components/ui/Modal";
 import MultiSelect from "@/shared/components/ui/MultiSelect";
 import { FieldLabel } from "@/shared/components/ui/Form";
 import { useDirectory } from "@/core/platform/store";
+import { OwnerCompanyScopeFields, ownerNamesWithScope, pruneScope, type ScopeCompany } from "@/shared/components/ui/OwnerCompanyScope";
+import type { OwnerCompanyScope } from "@/shared/lib/fmsOwners";
 import { useAssetStore } from "../../store";
 import { STEPS, type StepKey } from "../../lib/steps";
 
@@ -18,6 +20,10 @@ import { STEPS, type StepKey } from "../../lib/steps";
  *
  * `service_due` may be owned too: leaving it empty lets any granted user add an
  * asset and raise a job by hand; setting owners restricts that to them.
+ *
+ * Each owner can be limited to some companies: Bharat Singh → Enterprise,
+ * Gorakh Pawar → O-tec. They stay owners of the step; they just get queue rows
+ * and My Work items only for jobs on their companies' assets.
  */
 export default function StepOwnersSection() {
   const s = useAssetStore();
@@ -25,13 +31,21 @@ export default function StepOwnersSection() {
   const [editing, setEditing] = useState<StepKey | null>(null);
   const [depts, setDepts] = useState<string[]>([]);
   const [people, setPeople] = useState<string[]>([]);
+  const [scope, setScope] = useState<OwnerCompanyScope>({});
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  // The module's own Companies master (assets point at it), active ones only.
+  const scopeCompanies: ScopeCompany[] = useMemo(
+    () => s.activeOf(s.companies).map((c) => ({ id: c.id, label: c.name })),
+    [s]
+  );
 
   const open = (key: StepKey) => {
     const cur = s.stepOwnerFor(key);
     setDepts(cur?.departmentIds ?? []);
     setPeople(cur?.employeeIds ?? []);
+    setScope(s.ownerCompanyScopes[key] ?? {});
     setError(null);
     setEditing(key);
   };
@@ -41,6 +55,7 @@ export default function StepOwnersSection() {
     setBusy(true); setError(null);
     try {
       await s.setStepOwner(editing, { departmentIds: depts, designationId: null, employeeIds: people });
+      await s.setOwnerCompanyScope(editing, pruneScope(scope, people));
       setEditing(null);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Could not save.");
@@ -98,7 +113,14 @@ export default function StepOwnersSection() {
           </thead>
           <tbody>
             {STEPS.map((st) => {
-              const names = s.ownerNamesFor(st.key);
+              const owner = s.stepOwnerFor(st.key);
+              // Same people ownerNamesFor lists (unreadable ids dropped), plus their companies.
+              const names = ownerNamesWithScope(
+                (owner?.employeeIds ?? []).filter((id) => s.personName(id) !== "Unknown user"),
+                owner?.companyScope,
+                s.personName,
+                scopeCompanies,
+              );
               return (
                 <tr key={st.key} className="border-b border-line/70">
                   <td className="py-2 pr-3">
@@ -162,6 +184,13 @@ export default function StepOwnersSection() {
               searchable
             />
           </FieldLabel>
+          <OwnerCompanyScopeFields
+            employeeIds={people}
+            personName={s.personName}
+            companies={scopeCompanies}
+            value={scope}
+            onChange={setScope}
+          />
           {error && <p className="text-[13px] font-medium text-ryg-red">{error}</p>}
         </div>
       </Modal>

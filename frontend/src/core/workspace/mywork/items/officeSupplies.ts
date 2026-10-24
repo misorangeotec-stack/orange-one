@@ -10,6 +10,10 @@
  *   to fms_supplies_departments.hod_user_id and only to them — so an HOD's
  *   pending approvals were silently absent from both My Work and the daily
  *   snapshot email. `mine` below mirrors the store's `canActOn` instead.
+ *
+ * Company-wise owners (Setup → Step Owners → Companies) narrow the step-owner
+ * arm to the owners who cover the request's company. The HOD and a holder the
+ * approval was handed to are not step owners, so they are untouched.
  */
 import { appName } from "@/apps/appInfo";
 import type { SuppliesData } from "@/apps/office-supplies/data/suppliesFetch";
@@ -40,11 +44,11 @@ export function officeSuppliesWorkItems(
    *   move and nothing has actually been passed on. `assignedApproverId` rides on
    *   the queue entry for exactly this reason; see lib/queues.ts.
    */
-  const mine = (stepKey: string, departmentId: string, holderId: string | null): boolean => {
+  const mine = (e: { stepKey: string; departmentId: string; assignedApproverId: string | null; companyId: string | null }): boolean => {
     // The entry carries the holder of ITS OWN step, so this covers both approvals.
-    if (holderId) return holderId === uid;
-    if (stepKey !== "first_approval") return isMineByStepOwners(stepKey, uid, owners);
-    return myHodDepartmentIds.has(departmentId);
+    if (e.assignedApproverId) return e.assignedApproverId === uid;
+    if (e.stepKey !== "first_approval") return isMineByStepOwners(e.stepKey, uid, owners, e.companyId);
+    return myHodDepartmentIds.has(e.departmentId);
   };
 
   const snap = supplySnapshotFrom({ requests: data.requests, stepSla: data.config.stepSla });
@@ -66,7 +70,7 @@ export function officeSuppliesWorkItems(
   ];
 
   return entries
-    .filter(({ e }) => isAdmin || mine(e.stepKey, e.departmentId, e.assignedApproverId))
+    .filter(({ e }) => isAdmin || mine(e))
     .map(({ e, held }) => ({
       id: `office-supplies:${e.requestId}:${e.stepKey}`,
       source: "office-supplies",
@@ -75,7 +79,7 @@ export function officeSuppliesWorkItems(
       stage: stepByKey(e.stepKey)?.short,
       dueIso: e.dueIso,
       to: requestHref(e.requestId),
-      assignment: mine(e.stepKey, e.departmentId, e.assignedApproverId) ? ("direct" as const) : ("team" as const),
+      assignment: mine(e) ? ("direct" as const) : ("team" as const),
       isApproval: APPROVAL_STEPS.has(e.stepKey),
       ...(held ? { isHeld: true, holdReason: reasonById.get(e.requestId) ?? null } : {}),
     }));

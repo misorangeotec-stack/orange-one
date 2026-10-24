@@ -48,7 +48,12 @@ export default function StepQueue({ step }: { step: StepKey }) {
     [s, step],
   );
 
-  const completed = useMemo(() => s.completedFor(step), [s, step]);
+  // Same company narrowing as Pending (myQueue) — an owner limited to some
+  // companies sees only their companies' history here. The Dashboard keeps all.
+  const completed = useMemo(
+    () => s.completedFor(step).filter((e) => s.seesCompanyAt(step, e.row.companyId)),
+    [s, step],
+  );
 
   /** The columns both tabs share — a queue and its history describe the same thing. */
   const base: QueueColumn<ComplaintRequest>[] = [

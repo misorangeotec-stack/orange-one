@@ -37,8 +37,11 @@ export default function CustomerOnboardingHome() {
     );
   }
 
-  // Work owed by this user, across every step they own.
-  const mine = s.queueEntries.filter((e) => s.canActOn(e.stepKey, e.request));
+  // Work owed by this user, across every step they own — and, for an owner
+  // limited to some companies, only those companies' requests.
+  const mine = s.queueEntries.filter(
+    (e) => s.canActOn(e.stepKey, e.request) && s.seesCompanyAt(e.stepKey, e.request.companyId),
+  );
   const mineOverdue = mine.filter((e) => e.dueIso && e.dueIso < today).length;
 
   const drafts = s.myDrafts;
@@ -117,7 +120,8 @@ export default function CustomerOnboardingHome() {
       {/* ── Where the pipeline stands ─────────────────────────────────── */}
       <div className="grid gap-4 grid-cols-2 lg:grid-cols-4">
         {OWNED_STEPS.map((key) => {
-          const entries = s.queueFor(key);
+          // Same narrowing as the queue the card links to, so the two numbers agree.
+          const entries = s.queueFor(key).filter((e) => s.seesCompanyAt(key, e.request.companyId));
           const overdue = entries.filter((e) => e.dueIso && e.dueIso < today).length;
           const step = STEPS.find((x) => x.key === key)!;
           return (

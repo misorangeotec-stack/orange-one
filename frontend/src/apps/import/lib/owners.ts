@@ -17,6 +17,7 @@
 import type { ApprovalBand, RequestItem, StepOwner } from "../types";
 import type { StepKey } from "./steps";
 import type { QueueEntry } from "./queues";
+import { scopeOwnerIds } from "@/shared/lib/fmsOwners";
 
 /**
  * Whoever this set of lines has been handed to, or null if it still sits with
@@ -45,7 +46,11 @@ export interface OwnerResolver {
   /** The approver for this amount via the active matrix bands (null if none covers it). */
   approverForAmount: (amount: number) => string | null;
   stepOwnerFor: (stepKey: string) => StepOwner | undefined;
-  stepOwnerIds: (stepKey: string) => string[];
+  /**
+   * Owners of a step. With a company, only those who cover it (Setup → Step
+   * Owners → Companies); without, the whole team.
+   */
+  stepOwnerIds: (stepKey: string, companyId?: string | null) => string[];
   /** Every user who owns this work-item. Empty means unassigned. */
   ownerIdsOf: (e: QueueEntry) => string[];
   /** Whoever this requisition has been handed to while it awaits a decision. */
@@ -69,7 +74,10 @@ export function ownerResolver(data: OwnerSnapshot): OwnerResolver {
   const stepOwnerFor = (stepKey: string): StepOwner | undefined =>
     data.stepOwners.find((o) => o.stepKey === stepKey);
 
-  const stepOwnerIds = (stepKey: string): string[] => stepOwnerFor(stepKey)?.employeeIds ?? [];
+  const stepOwnerIds = (stepKey: string, companyId?: string | null): string[] => {
+    const row = stepOwnerFor(stepKey);
+    return scopeOwnerIds(row?.employeeIds ?? [], row?.companyScope, companyId);
+  };
 
   /** Handed over to whom, judged on the lines still awaiting a decision. */
   const holderOfRequest = (requestId: string): string | null =>
@@ -87,10 +95,11 @@ export function ownerResolver(data: OwnerSnapshot): OwnerResolver {
    * queues, their My Work list, and their line on the daily snapshot mail.
    *
    * An approval entry is request-scoped, so `entityId` IS the request id
-   * (lib/queues.ts builds it that way).
+   * (lib/queues.ts builds it that way). Step owners are narrowed to those who
+   * cover the entry's company; the approvers are not.
    */
   const ownerIdsOf = (e: QueueEntry): string[] => {
-    if (e.stepKey !== ("approval" as StepKey)) return stepOwnerIds(e.stepKey);
+    if (e.stepKey !== ("approval" as StepKey)) return stepOwnerIds(e.stepKey, e.companyId);
     const holder = holderOfRequest(e.entityId);
     return holder ? [holder] : activeApproverIds();
   };

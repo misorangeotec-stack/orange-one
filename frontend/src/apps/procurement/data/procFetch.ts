@@ -1,5 +1,6 @@
 import { supabase } from "@/core/platform/supabase";
 import { resolveStepSla, type StepSlaMap } from "../lib/sla";
+import { OWNER_COMPANY_SCOPE_KEY, parseStepCompanyScopes, withCompanyScopes, type StepCompanyScopes } from "@/shared/lib/fmsOwners";
 import type {
   Company,
   Category,
@@ -367,6 +368,10 @@ export interface ProcConfig {
   reassignPoolDepartmentIds: string[];
   /** Everyone who may be handed a requisition awaiting approval. The authority. */
   reassignPoolUserIds: string[];
+  /** Company-wise step owners (Setup → Step Owners). See shared/lib/fmsOwners. */
+  ownerCompanyScopes: StepCompanyScopes;
+  /** Per-owner categories, same shape (Purchase Domestic only). */
+  ownerCategoryScopes: StepCompanyScopes;
 }
 
 /**
@@ -481,6 +486,9 @@ const mapDesignation = (r: any): Designation => ({
   name: r.name,
   active: r.active,
 });
+
+/** Config key for Purchase's per-owner categories — same `{ steps }` shape as the company scope. */
+export const OWNER_CATEGORY_SCOPE_KEY = "owner_category_scope";
 
 const mapStepOwner = (r: any): StepOwner => {
   const ids = (r.department_ids ?? []) as string[];
@@ -886,6 +894,8 @@ export async function fetchProcurementData(): Promise<ProcurementData> {
     stepSla: resolveStepSla(configByKey.get("step_sla")),
     reassignPoolDepartmentIds: (configByKey.get("reassign_pool")?.department_ids ?? []) as string[],
     reassignPoolUserIds: (configByKey.get("reassign_pool")?.user_ids ?? []) as string[],
+    ownerCompanyScopes: parseStepCompanyScopes(configByKey.get(OWNER_COMPANY_SCOPE_KEY)),
+    ownerCategoryScopes: parseStepCompanyScopes(configByKey.get(OWNER_CATEGORY_SCOPE_KEY)),
   };
 
   /*
@@ -933,7 +943,9 @@ export async function fetchProcurementData(): Promise<ProcurementData> {
     masterRequests: masterReqs.map(mapMasterRequest),
     poCancelRequests: poCancelReqs.map(mapPoCancelRequest),
     designations: designations.map(mapDesignation),
-    stepOwners: stepOwners.map(mapStepOwner),
+    stepOwners: withCompanyScopes(stepOwners.map(mapStepOwner), config.ownerCompanyScopes).map((o) =>
+      config.ownerCategoryScopes[o.stepKey] ? { ...o, categoryScope: config.ownerCategoryScopes[o.stepKey] } : o
+    ),
     approvalBands: bands.map(mapApprovalBand),
     config,
     requests: requests.map(mapRequest),

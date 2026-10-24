@@ -15,13 +15,17 @@
  *
  * `isMineBySampling` mirrors that SQL, minus the admin / coordinator short-circuits.
  * Every per-request arm the SQL has must be here, or the same bug returns.
+ *
+ * Company-wise owners (Setup → Step Owners → Companies) narrow the STEP-OWNER arms
+ * only, to the owners who cover the request's company. The per-request arms are
+ * untouched: whoever is named on a request owns it whatever its company.
  */
 import { appName } from "@/apps/appInfo";
 import type { SamplingData } from "@/apps/sampling/data/samplingFetch";
 import { buildHeldEntries, buildQueueEntries, samplingSnapshotFrom } from "@/apps/sampling/lib/queues";
 import { isSourceScoped, stepByKey } from "@/apps/sampling/lib/steps";
 import { confirmerSourceOf, outwardSourceOf } from "@/apps/sampling/lib/format";
-import { isMineByStepOwners, type StepOwnerRow } from "@/shared/lib/fmsOwners";
+import { isMineByStepOwners, ownerCoversCompany, type StepOwnerRow } from "@/shared/lib/fmsOwners";
 import type {
   Confirmer as SamplingConfirmer,
   SamplingRequest,
@@ -47,12 +51,13 @@ const isMineBySampling = (
         (o) =>
           o.stepKey === stepKey &&
           o.source === outwardSourceOf(r.receiveVia) &&
-          o.employeeIds.includes(uid),
+          o.employeeIds.includes(uid) &&
+          ownerCoversCompany(o.companyScope, uid, r.companyId),
       )
     ) {
       return true;
     }
-  } else if (isMineByStepOwners(stepKey, uid, owners)) {
+  } else if (isMineByStepOwners(stepKey, uid, owners, r?.companyId)) {
     return true;
   }
   if (!r) return false;

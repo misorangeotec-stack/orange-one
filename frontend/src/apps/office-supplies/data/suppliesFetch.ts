@@ -1,5 +1,6 @@
 import { supabase } from "@/core/platform/supabase";
 import { resolveStepSla, type StepSlaMap } from "../lib/sla";
+import { OWNER_COMPANY_SCOPE_KEY, parseStepCompanyScopes, withCompanyScopes, type StepCompanyScopes } from "@/shared/lib/fmsOwners";
 import type {
   Category,
   Company,
@@ -80,6 +81,8 @@ export interface SuppliesConfig {
   reassignPoolDepartmentIds: string[];
   /** Everyone who may be handed a request awaiting FIRST approval. The authority. */
   reassignPoolUserIds: string[];
+  /** Company-wise step owners (Setup → Step Owners). See shared/lib/fmsOwners. */
+  ownerCompanyScopes: StepCompanyScopes;
 }
 
 /** The react-query key. Keyed on the REAL session user id, shared with the adapter. */
@@ -284,10 +287,11 @@ export async function fetchSuppliesData(): Promise<SuppliesData> {
     stepSla: resolveStepSla(byKey.get("step_sla")),
     reassignPoolDepartmentIds: (byKey.get("reassign_pool")?.department_ids ?? []) as string[],
     reassignPoolUserIds: (byKey.get("reassign_pool")?.user_ids ?? []) as string[],
+    ownerCompanyScopes: parseStepCompanyScopes(byKey.get(OWNER_COMPANY_SCOPE_KEY)),
   };
 
   return {
-    stepOwners: stepOwners.map(mapStepOwner),
+    stepOwners: withCompanyScopes(stepOwners.map(mapStepOwner), config.ownerCompanyScopes),
     designations: designations.map(mapDesignation),
     config,
     companies: companies.map(mapCompany),

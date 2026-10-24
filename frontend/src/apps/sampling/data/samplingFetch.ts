@@ -3,6 +3,8 @@ import { supabase } from "@/core/platform/supabase";
 // calls through an untyped alias (the row mappers below already treat rows as any).
 const db = supabase as any;
 import { resolveStepSla, type StepSlaMap } from "../lib/sla";
+import { OWNER_COMPANY_SCOPE_KEY, parseStepCompanyScopes, withCompanyScopes, type StepCompanyScopes } from "@/shared/lib/fmsOwners";
+import { sourceScopeKey } from "../lib/steps";
 import type {
   Collector,
   Company,
@@ -67,6 +69,11 @@ async function fetchAll(table: Tbl, orderBy = "created_at"): Promise<any[]> {
 export interface SamplingConfig {
   processCoordinatorIds: string[];
   stepSla: StepSlaMap;
+  /**
+   * Company-wise step owners (Setup → Step Owners). See shared/lib/fmsOwners. A
+   * source-split step keeps one scope per source, under `sourceScopeKey`.
+   */
+  ownerCompanyScopes: StepCompanyScopes;
 }
 
 /** The react-query key. Keyed on the REAL session user id, shared with the adapter. */
@@ -349,11 +356,18 @@ export async function fetchSamplingData(): Promise<SamplingData> {
   const config: SamplingConfig = {
     processCoordinatorIds: (byKey.get("process_coordinators")?.user_ids ?? []) as string[],
     stepSla: resolveStepSla(byKey.get("step_sla")),
+    ownerCompanyScopes: parseStepCompanyScopes(byKey.get(OWNER_COMPANY_SCOPE_KEY)),
   };
+  const scopes = config.ownerCompanyScopes;
 
   return {
-    stepOwners: stepOwners.map(mapStepOwner),
-    stepSourceOwners: stepSourceOwners.map(mapStepSourceOwner),
+    stepOwners: withCompanyScopes(stepOwners.map(mapStepOwner), scopes),
+    // Domestic and Export owners of one step are different people, so each row
+    // reads its own source's scope rather than the step's.
+    stepSourceOwners: stepSourceOwners.map(mapStepSourceOwner).map((o) => {
+      const companyScope = scopes[sourceScopeKey(o.stepKey, o.source)];
+      return companyScope ? { ...o, companyScope } : o;
+    }),
     designations: designations.map(mapDesignation),
     config,
     companies: companies.map(mapCompany),

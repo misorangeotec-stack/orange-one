@@ -20,9 +20,10 @@
  *   place that rule is expressed; the store imports it too, so the queue, My Work,
  *   the daily snapshot mail and the Approve button cannot drift apart.
  */
-import type { ApprovalBand, RequestItem, StepOwner } from "../types";
+import type { ApprovalBand, PoItem, RequestItem, StepOwner } from "../types";
 import type { StepKey } from "./steps";
 import type { QueueEntry } from "./queues";
+import { ownerCoversCompany, type OwnerCompanyScope } from "@/shared/lib/fmsOwners";
 
 /**
  * Whoever this set of lines has been handed to, or null if it still sits with
@@ -45,7 +46,39 @@ export interface OwnerSnapshot {
   stepOwners: StepOwner[];
   approvalBands: ApprovalBand[];
   requestItems: RequestItem[];
+  /**
+   * Read only for the per-owner CATEGORY scope: a PO's categories come from its
+   * lines (poItem → requisition line), a line without one falls back to its
+   * requisition's header. Leave out and category scopes are ignored.
+   */
+  poItems?: PoItem[];
+  requests?: { id: string; categoryId: string | null }[];
 }
+
+/**
+ * Does this owner cover a record with these categories? Purchase Domestic only
+ * (Setup → Step Owners → Categories): no list = every category, and a record
+ * with no category is everybody's. A mixed PO is theirs if ANY line is.
+ */
+export const ownerCoversCategories = (
+  scope: OwnerCompanyScope | undefined,
+  userId: string,
+  categoryIds: string[] | null | undefined,
+): boolean => {
+  const list = scope?.[userId];
+  if (!list?.length || !categoryIds?.length) return true;
+  return categoryIds.some((c) => list.includes(c));
+};
+
+/** Company AND category — the two per-owner scopes a Purchase step owner can have. */
+export const ownerCoversRecord = (
+  row: StepOwner | undefined,
+  userId: string,
+  companyId: string | null | undefined,
+  categoryIds: string[] | null | undefined,
+): boolean =>
+  ownerCoversCompany(row?.companyScope, userId, companyId) &&
+  ownerCoversCategories(row?.categoryScope, userId, categoryIds);
 
 export interface OwnerResolver {
   /**
@@ -55,7 +88,13 @@ export interface OwnerResolver {
    */
   approversForAmount: (amount: number) => string[];
   stepOwnerFor: (stepKey: string) => StepOwner | undefined;
-  stepOwnerIds: (stepKey: string) => string[];
+  /**
+   * Owners of a step. With a company (and categories), only those who cover
+   * them (Setup → Step Owners → Companies / Categories); without, the whole team.
+   */
+  stepOwnerIds: (stepKey: string, companyId?: string | null, categoryIds?: string[] | null) => string[];
+  /** The categories a queue entry buys under — what the category scope is matched on. */
+  categoryIdsOf: (e: Pick<QueueEntry, "entityType" | "entityId">) => string[];
   /** Every user who owns this work-item. Empty means unassigned. */
   ownerIdsOf: (e: QueueEntry) => string[];
   /** Whoever this requisition has been handed to while it awaits a decision. */
@@ -104,7 +143,38 @@ export function ownerResolver(data: OwnerSnapshot): OwnerResolver {
   const stepOwnerFor = (stepKey: string): StepOwner | undefined =>
     data.stepOwners.find((o) => o.stepKey === stepKey);
 
-  const stepOwnerIds = (stepKey: string): string[] => stepOwnerFor(stepKey)?.employeeIds ?? [];
+  const stepOwnerIds = (stepKey: string, companyId?: string | null, categoryIds?: string[] | null): string[] => {
+    const row = stepOwnerFor(stepKey);
+    return (row?.employeeIds ?? []).filter((id) => ownerCoversRecord(row, id, companyId, categoryIds));
+  };
+
+  const headerCategory = new Map((data.requests ?? []).map((r) => [r.id, r.categoryId]));
+  const lineCategory = (l: RequestItem | undefined): string | null =>
+    l ? l.categoryId ?? headerCategory.get(l.requestId) ?? null : null;
+  const poLines = new Map<string, string[]>();
+  for (const pi of data.poItems ?? []) {
+    const list = poLines.get(pi.poId);
+    if (list) list.push(pi.requestItemId);
+    else poLines.set(pi.poId, [pi.requestItemId]);
+  }
+  const categoryIdsOf = (e: Pick<QueueEntry, "entityType" | "entityId">): string[] => {
+    const lines =
+      e.entityType === "line"
+        ? [lineById.get(e.entityId)]
+        : e.entityType === "request"
+          ? linesByRequest.get(e.entityId) ?? []
+          : (poLines.get(e.entityId) ?? []).map((id) => lineById.get(id));
+    const cats = new Set<string>();
+    for (const l of lines) {
+      const c = lineCategory(l);
+      if (c) cats.add(c);
+    }
+    if (cats.size === 0 && e.entityType === "request") {
+      const c = headerCategory.get(e.entityId);
+      if (c) cats.add(c);
+    }
+    return [...cats];
+  };
 
   /**
    * The band for what these lines are worth — UNLESS the requisition has been
@@ -134,7 +204,8 @@ export function ownerResolver(data: OwnerSnapshot): OwnerResolver {
 
   /**
    * Every step reads its owners from `step_owners`, except `approval` — there the
-   * owner depends on the entry's value (the approval matrix band).
+   * owner depends on the entry's value (the approval matrix band). Step owners
+   * are narrowed to those who cover the entry's company; the band is not.
    */
   const ownerIdsOf = (e: QueueEntry): string[] => {
     if (e.stepKey === ("approval" as StepKey)) {
@@ -146,7 +217,7 @@ export function ownerResolver(data: OwnerSnapshot): OwnerResolver {
             e.value ?? 0
           );
     }
-    return stepOwnerIds(e.stepKey);
+    return stepOwnerIds(e.stepKey, e.companyId, categoryIdsOf(e));
   };
 
   const isMine = (e: QueueEntry, userId: string): boolean => ownerIdsOf(e).includes(userId);
@@ -155,6 +226,7 @@ export function ownerResolver(data: OwnerSnapshot): OwnerResolver {
     approversForAmount,
     stepOwnerFor,
     stepOwnerIds,
+    categoryIdsOf,
     ownerIdsOf,
     holderOfRequest,
     isMine,

@@ -5,6 +5,7 @@ import { supabase } from "@/core/platform/supabase";
 // below already treat rows as any.
 const db = supabase as any;
 import { resolveStepSla, type StepSlaMap } from "../lib/sla";
+import { OWNER_COMPANY_SCOPE_KEY, parseStepCompanyScopes, withCompanyScopes, type StepCompanyScopes } from "@/shared/lib/fmsOwners";
 import { mapCreditNote, mapCreditNoteDoc } from "./creditNotes";
 import type { CreditNote, CreditNoteDoc } from "../types/creditNote";
 import type {
@@ -110,6 +111,8 @@ export interface ComplaintConfig {
   stepSla: StepSlaMap;
   /** Credit notes above this value need approving. Defaulted, never assumed present. */
   approvalThreshold: number;
+  /** Company-wise step owners (Setup → Step Owners). See shared/lib/fmsOwners. */
+  ownerCompanyScopes: StepCompanyScopes;
 }
 
 /** The react-query key. Keyed on the REAL session user id, shared with the adapter. */
@@ -413,10 +416,13 @@ export async function fetchComplaintData(): Promise<ComplaintData> {
     processCoordinatorIds: (byKey.get("process_coordinators")?.user_ids ?? []) as string[],
     stepSla: resolveStepSla(byKey.get("step_sla")),
     approvalThreshold: Number(byKey.get("approval")?.credit_note_threshold ?? 25000),
+    ownerCompanyScopes: parseStepCompanyScopes(byKey.get(OWNER_COMPANY_SCOPE_KEY)),
   };
 
   return {
-    stepOwners: stepOwners.map(mapStepOwner),
+    // Each owner row carries its company scope, so My Work and the 9am mail
+    // (which read this snapshot, not the store) narrow the same way.
+    stepOwners: withCompanyScopes(stepOwners.map(mapStepOwner), config.ownerCompanyScopes),
     designations: designations.map(mapDesignation),
     config,
     natures: natures.map(mapNature),
