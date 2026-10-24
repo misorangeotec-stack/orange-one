@@ -1206,11 +1206,17 @@ export function DispatchStoreProvider({ children }: { children: ReactNode }) {
      *   `fms_dispatch_assert_customer_of_company` tests `pc.active`, so an
      *   inactive pair offered here would be a name the picker shows and the save
      *   refuses.
+     *
+     * ⚠ AND ONLY ROWS A PERSON MADE (createdBy). The cron links a ledger into
+     *   every book holding one of the same name, so counting its rows put the
+     *   OTHER book's "SHREEJI PRINTS PVT LTD" beside the billing book's own —
+     *   389 duplicates, 543 orders on the wrong ledger (24-10-2026). The guard
+     *   tests `pc.created_by is not null` too; see migration 20270218120000.
      */
     const mappedBookSets = (() => {
       const seen = new Map<string, Set<string>>();
       for (const m of customerCompanies) {
-        if (!m.active) continue;
+        if (!m.active || !m.createdBy) continue;
         const set = seen.get(m.companyId);
         if (set) set.add(m.customerId);
         else seen.set(m.companyId, new Set([m.customerId]));
@@ -1410,8 +1416,9 @@ export function DispatchStoreProvider({ children }: { children: ReactNode }) {
           //
           //   The database agrees with this line, and it has to:
           //   fms_dispatch_assert_customer_of_company accepts an active
-          //   mst_party_companies row too. Widening one without the other is
-          //   how a user fills a whole order and is thrown out at save.
+          //   mst_party_companies row that a PERSON made — never the cron's
+          //   same-name links (see mappedBookSets). Widening one without the
+          //   other is how a user fills a whole order and is thrown out at save.
           || mapped?.has(c.id)
           || c.id === includeId);
       },
