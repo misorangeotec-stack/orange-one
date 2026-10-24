@@ -29,6 +29,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { AlertTriangle, Save, Undo2, Warehouse } from "lucide-react";
 import { Button } from "@hub/components/ui/button";
+import { useSession } from "@/core/platform/session";
 import { INK_COMPANIES, fmtQty } from "../lib/rmMis";
 import { getConnectwaveSupabase } from "@hub/lib/connectwaveSupabase";
 import {
@@ -60,6 +61,8 @@ export default function RmGodowns() {
   const [choice, setChoice] = useState<GodownChoice>(() => loadGodownChoice());
   const [savedChoice, setSavedChoice] = useState<GodownChoice>(() => loadGodownChoice());
   const dirty = godownChoiceSig(choice) !== godownChoiceSig(savedChoice);
+  /** The board is locked: everyone sees it, only an admin changes it (user, 24-10-2026). */
+  const { isAdmin } = useSession();
 
   const qc = useQueryClient();
   const save = () => {
@@ -191,6 +194,10 @@ export default function RmGodowns() {
     <div className="space-y-5">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <h1 className="text-2xl font-semibold">Godowns</h1>
+        {!isAdmin && (
+          <span className="text-xs text-muted-foreground">Locked — only an admin can change the godowns.</span>
+        )}
+        {isAdmin && (
         <div className="flex items-center gap-2">
           {dirty && (
             <span className="rounded bg-amber-100 px-2 py-1 text-xs font-medium text-amber-900">
@@ -206,6 +213,7 @@ export default function RmGodowns() {
             <Save className="mr-2 h-4 w-4" /> Save
           </Button>
         </div>
+        )}
       </div>
 
       {data && (
@@ -258,7 +266,7 @@ export default function RmGodowns() {
                 <span className="text-xs text-muted-foreground">
                   {chosen.length ? `${chosen.length} ticked` : "whole book"}
                 </span>
-                {chosen.length > 0 && (
+                {chosen.length > 0 && isAdmin && (
                   <Button
                     size="sm"
                     variant="ghost"
@@ -287,6 +295,7 @@ export default function RmGodowns() {
                       <input
                         type="checkbox"
                         checked={chosen.includes(wholeGroupKey(g.group))}
+                        disabled={!isAdmin}
                         onChange={() => toggle(c.key, wholeGroupKey(g.group))}
                       />
                       <span className="flex-1 truncate" title={g.group}>
@@ -319,6 +328,7 @@ export default function RmGodowns() {
                           <input
                             type="checkbox"
                             checked={chosen.includes(g)}
+                            disabled={!isAdmin}
                             onChange={() => toggle(c.key, g)}
                           />
                           <button
@@ -350,7 +360,7 @@ export default function RmGodowns() {
                                 <input
                                   type="checkbox"
                                   checked={chosen.includes(godownGroupKey(g, group))}
-                                  disabled={chosen.includes(g)}
+                                  disabled={!isAdmin || chosen.includes(g)}
                                   onChange={() => toggle(c.key, godownGroupKey(g, group), g)}
                                 />
                                 <span className="flex-1 truncate" title={group}>
