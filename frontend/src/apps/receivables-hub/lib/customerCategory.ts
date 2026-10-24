@@ -78,6 +78,7 @@
  */
 
 import "./customerCategory.augment";
+import { MARK_LABEL, markTypesOf, type MarkType } from "./markType";
 
 import {
   pctOf,
@@ -106,7 +107,7 @@ import type { ConsolidatedCustomer, Customer, SaleType } from "./types";
  */
 const UNCATEGORIZED = "Uncategorized";
 
-/** The category tokens a customer matches against (handles groups + blanks). */
+/** The TIER tokens a customer matches against (handles groups + blanks). Never Red Mark / Legal. */
 export function customerCategoryTokens(
   c: { category?: string; categories?: string[] },
 ): string[] {
@@ -115,14 +116,44 @@ export function customerCategoryTokens(
   return [UNCATEGORIZED];
 }
 
-/** True when the customer matches the selected categories ([] = no filter). */
+const MARK_TOKENS = new Set(Object.values(MARK_LABEL));
+
+/** Marked Legal and nothing else — the customers the default Category selection hides. */
+export function isLegalOnly(c: { markType?: MarkType; markTypes?: MarkType[] }): boolean {
+  const own = markTypesOf(c);
+  return own.length > 0 && own.every((m) => m === "legal");
+}
+
+/**
+ * True when the customer matches the selected categories ([] = no filter).
+ *
+ * The dropdown holds two kinds of option — the tiers (A … E, AA, Uncategorized) and the Red Mark +
+ * Legal master ("Red Mark", "Legal") — and they combine like this (user, 21-10-2026):
+ *
+ *   • Only Red Mark / Legal ticked → just those customers, whatever their tier.
+ *   • Any tier ticked → the customer's tier must be ticked, AND a marked customer's mark must be
+ *     ticked too. So "everything except Legal" HIDES the legal customers, and "Select all" (every
+ *     tier + both marks) is everybody.
+ *
+ *   • Nothing ticked (every page's default) → everybody except Legal.
+ *
+ * ⚠ A list of tiers with NO mark ticked therefore hides every Red Mark and Legal customer. A preset
+ *   list that should show everybody but Legal must carry "Red Mark" — see DEFAULT_CATEGORIES.
+ */
 export function matchesCategory(
-  c: { category?: string; categories?: string[] },
+  c: { category?: string; categories?: string[]; markType?: MarkType; markTypes?: MarkType[] },
   selected: string[],
 ): boolean {
-  if (!selected.length) return true;
-  const set = new Set(selected);
-  return customerCategoryTokens(c).some((t) => set.has(t));
+  // NOTHING TICKED = THE DEFAULT = everybody EXCEPT Legal (user, 22-10-2026): legal customers stay
+  // off every report and the Dashboard day to day, and come back only when Legal is ticked. The
+  // dropdown draws this state as "every box ticked but Legal".
+  if (!selected.length) return !isLegalOnly(c);
+  const tiers = new Set(selected.filter((v) => !MARK_TOKENS.has(v)));
+  const marks = new Set(selected.filter((v) => MARK_TOKENS.has(v)));
+  const own = markTypesOf(c).map((m) => MARK_LABEL[m]);
+  if (tiers.size === 0) return own.some((m) => marks.has(m));
+  if (!customerCategoryTokens(c).some((t) => tiers.has(t))) return false;
+  return own.length === 0 || own.some((m) => marks.has(m));
 }
 
 export const EPS = 0.5;

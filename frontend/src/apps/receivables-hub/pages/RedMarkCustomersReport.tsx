@@ -1,4 +1,5 @@
 import { useBackState } from "@/shared/lib/backState";
+import { MARK_LABEL } from "@hub/lib/markType";
 import { useCallback, useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import * as XLSX from "xlsx-js-style";
@@ -39,7 +40,8 @@ import { ColumnFilter, SortHead } from "@hub/components/gridColumns";
 import { useColumnGrid, type GridColumn } from "@hub/lib/useColumnGrid";
 
 /**
- * Red Mark Customers — the report management reads (RC-12).
+ * Red Mark + Legal Customers — the report management reads (RC-12). Since 21-10-2026 every row has
+ * a Type, Red Mark or Legal: one packet, filterable by Type here and by Category everywhere else.
  *
  * It answers three questions the master alone cannot: how much is stuck, whether they are paying
  * (three months of receipts, rolling), and — the one that is a control rather than a statistic —
@@ -118,6 +120,8 @@ interface RmRow extends ClearFields {
   salesPerson: string;
   collectionTeam: string;
   category: string;
+  /** "Red Mark" | "Legal" — the row's type on the master. */
+  type: string;
   company: string;
   location: string;
   outstanding: number;
@@ -237,6 +241,7 @@ function RedMarkCustomersInner() {
         salesPerson: c.salesPerson || "",
         collectionTeam: c.collectionTeam || "",
         category: c.category || "",
+        type: MARK_LABEL[m.mark_type] ?? MARK_LABEL.redmark,
         company: c.company,
         location: c.location,
         outstanding: c.outstanding,
@@ -266,6 +271,7 @@ function RedMarkCustomersInner() {
     { key: "company", value: (r) => r.company },
     { key: "location", value: (r) => r.location },
     { key: "category", value: (r) => r.category },
+    { key: "type", value: (r) => r.type },
     // Money and day counts: sorted on the NUMBER, and no filter — every value is its own, so the
     // dropdown would only restate the table.
     { key: "outstanding", value: (r) => fmt(r.outstanding), sortValue: (r) => r.outstanding, filter: false },
@@ -302,6 +308,8 @@ function RedMarkCustomersInner() {
   const grid = useColumnGrid(allRows, columns, prefilter);
   const filteredRows = grid.rows;
   const counts = useMemo(() => countByClearView(allRows), [allRows]);
+  const legalUncleared = useMemo(
+    () => allRows.filter((r) => !r.cleared && r.type === MARK_LABEL.legal).length, [allRows]);
 
   const totalOutstanding = filteredRows.reduce((s, r) => s + r.outstanding, 0);
   const totalDue = filteredRows.reduce((s, r) => s + r.due, 0);
@@ -377,7 +385,7 @@ function RedMarkCustomersInner() {
 
   const exportXlsx = () => {
     const header = [
-      "Customer", "Sales Person", "Collection Team", "Company", "Location", "Category",
+      "Customer", "Sales Person", "Collection Team", "Company", "Location", "Category", "Type",
       `Outstanding as on ${asOnLabel}`, `Due as on ${asOnLabel}`, "Max OD Days",
       `Received ${months[0]}`, `Received ${months[1]}`, `Received ${months[2]}`,
       "Received (3 mo)", "Bounced cheques CHQ.R (3 mo)", "Received ÷ Due %",
@@ -387,7 +395,7 @@ function RedMarkCustomersInner() {
     const viewLabel = clearView === "all" ? "All cases"
       : clearView === "cleared" ? "Cleared cases only" : "Uncleared cases only";
     const aoa: (string | number)[][] = [
-      [`Red Mark Customers — as on ${asOnLabel} (${viewLabel}) — ${fyLabel}`],
+      [`Red Mark + Legal Customers — as on ${asOnLabel} (${viewLabel}) — ${fyLabel}`],
       [
         "Outstanding and Due are the live Tally snapshot as on the date above; there is no back-dating. " +
         "Received is GROSS receipt vouchers plus manual Other Payments for the three months shown, and " +
@@ -397,19 +405,19 @@ function RedMarkCustomersInner() {
       [],
       header,
       ...filteredRows.map((r) => [
-        r.customer, r.salesPerson || "—", r.collectionTeam || "—", r.company, r.location, r.category,
+        r.customer, r.salesPerson || "—", r.collectionTeam || "—", r.company, r.location, r.category, r.type,
         Math.round(r.outstanding), Math.round(r.due), r.maxOverdueDays,
         Math.round(r.received[0]), Math.round(r.received[1]), Math.round(r.received[2]),
         Math.round(r.receivedTotal), Math.round(r.bounced),
         pctOf(r) === null ? "—" : Math.round(pctOf(r)!),
         Math.round(r.sales[0]), Math.round(r.sales[1]), Math.round(r.sales[2]),
         r.billedThisMonth ? "YES" : "",
-        r.cleared ? "Cleared" : "Red Mark",
+        r.cleared ? "Cleared" : r.type,
         r.cleared_at ? formatDateDMY(r.cleared_at.slice(0, 10)) : "",
         r.cleared_by ?? "", r.clear_note ?? "", r.reason,
       ]),
       [
-        "", "", "", "", "", "Total",
+        "", "", "", "", "", "Total", "",
         Math.round(totalOutstanding), Math.round(totalDue), "",
         "", "", "", Math.round(totalReceived), "", "", "", "", "",
         `${billedCount} billed`, "", "", "", "", "",
@@ -417,7 +425,7 @@ function RedMarkCustomersInner() {
     ];
     const ws = XLSX.utils.aoa_to_sheet(aoa);
     ws["!cols"] = [
-      { wch: 34 }, { wch: 16 }, { wch: 14 }, { wch: 14 }, { wch: 12 }, { wch: 10 },
+      { wch: 34 }, { wch: 16 }, { wch: 14 }, { wch: 14 }, { wch: 12 }, { wch: 10 }, { wch: 10 },
       { wch: 14 }, { wch: 14 }, { wch: 11 },
       { wch: 13 }, { wch: 13 }, { wch: 13 }, { wch: 14 }, { wch: 16 }, { wch: 14 },
       { wch: 13 }, { wch: 13 }, { wch: 13 },
@@ -427,12 +435,12 @@ function RedMarkCustomersInner() {
     styleRow(ws, 3, header.length, HEADER_STYLE);          // column header
     styleRow(ws, aoa.length - 1, header.length, GRAND_TOTAL_STYLE);
     const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, ws, "Red Mark Customers");
+    XLSX.utils.book_append_sheet(wb, ws, "Red Mark + Legal");
     XLSX.writeFile(wb, `red-mark-customers-${asOfIso || "today"}.xlsx`);
   };
 
   if (loading) {
-    return <div className="p-6 text-sm text-muted-foreground">Loading Red Mark customers…</div>;
+    return <div className="p-6 text-sm text-muted-foreground">Loading Red Mark + Legal customers…</div>;
   }
   if (error) {
     return <div className="p-6 text-sm text-destructive">Failed to load: {error}</div>;
@@ -454,10 +462,11 @@ function RedMarkCustomersInner() {
       <div className="flex items-start justify-between gap-4 flex-wrap">
         <div>
           <h1 className="text-2xl font-bold text-foreground flex items-center gap-2">
-            <ShieldAlert className="h-6 w-6 text-destructive" /> Red Mark Customers
+            <ShieldAlert className="h-6 w-6 text-destructive" /> Red Mark + Legal Customers
           </h1>
           <p className="text-sm text-muted-foreground mt-1">
-            Customers hand-flagged as Red Mark (managed in Masters → Red Mark), with their live
+            Customers hand-flagged as Red Mark or Legal (managed in Settings → Masters → Red Mark +
+            Legal; filter by the Type column), with their live
             outstanding, three months of receipts, and what we have billed them.{" "}
             <span className="font-medium text-foreground">As on {asOnLabel}</span> — the live Tally
             snapshot; figures cannot be back-dated. One row per customer per company.
@@ -471,7 +480,10 @@ function RedMarkCustomersInner() {
       {/* Summary strip */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
         {[
-          { label: "Red Mark Customers", value: String(counts.uncleared), sub: "uncleared cases" },
+          {
+            label: "Red Mark + Legal", value: String(counts.uncleared),
+            sub: `uncleared · ${legalUncleared} Legal, ${counts.uncleared - legalUncleared} Red Mark`,
+          },
           { label: "Total Outstanding", value: fmt(totalOutstanding), sub: `as on ${asOnLabel}, rows shown` },
           { label: "Total Due", value: fmt(totalDue), sub: "overdue as on " + asOnLabel },
         ].map((s) => (
@@ -556,13 +568,13 @@ function RedMarkCustomersInner() {
               */}
               <Table resizeKey="red-mark-customers" className="text-xs">
                 <TableHeader>
-                  {/* Group row. Column count: 1 + 5 + 3 + 5 + 1 + 3 + 4 = 22.
+                  {/* Group row. Column count: 1 + 6 + 3 + 5 + 1 + 3 + 4 = 23.
                       The balances carry their date IN THE HEADER, not just in the page intro: a
                       screenshot or a scrolled table loses the intro, and "Due" with no date on it is
                       the column people were misreading. */}
                   <TableRow className="bg-muted hover:bg-muted border-b-0">
                     <TableHead className={`${TH} ${STICKY_HEAD} h-6`} />
-                    <TableHead className={`${TH} h-6`} colSpan={5} />
+                    <TableHead className={`${TH} h-6`} colSpan={6} />
                     <TableHead
                       className={`${TH} h-6 text-center text-foreground border-x border-border`}
                       colSpan={3}
@@ -586,6 +598,7 @@ function RedMarkCustomersInner() {
                     <SortHead label="Company" className={TH} dir={grid.sortDir("company")} onToggle={() => grid.toggleSort("company")} />
                     <SortHead label="Location" className={TH} dir={grid.sortDir("location")} onToggle={() => grid.toggleSort("location")} />
                     <SortHead label="Cat." className={TH} dir={grid.sortDir("category")} onToggle={() => grid.toggleSort("category")} />
+                    <SortHead label="Type" className={TH} dir={grid.sortDir("type")} onToggle={() => grid.toggleSort("type")} />
                     <SortHead label="Outstanding" className={`${TH} text-right border-l border-border`} dir={grid.sortDir("outstanding")} onToggle={() => grid.toggleSort("outstanding")} />
                     <SortHead label="Due" className={`${TH} text-right`} dir={grid.sortDir("due")} onToggle={() => grid.toggleSort("due")} />
                     <SortHead label="Max OD" className={`${TH} text-right`} dir={grid.sortDir("maxOd")} onToggle={() => grid.toggleSort("maxOd")} />
@@ -603,7 +616,7 @@ function RedMarkCustomersInner() {
                     <SortHead label="Reason" className={TH} dir={grid.sortDir("reason")} onToggle={() => grid.toggleSort("reason")} />
                     <TableHead className={`${TH} text-right`}>Actions</TableHead>
                   </TableRow>
-                  {/* Filter row. 1 + 5 + 9 + 3 + 1 + 1 + 1 + 1 = 22. */}
+                  {/* Filter row. 1 + 6 + 9 + 3 + 1 + 1 + 1 + 1 = 23. */}
                   <TableRow className="bg-muted hover:bg-muted">
                     <TableHead className={`${TH} ${STICKY_HEAD} py-1`}>{filterCell("customer")}</TableHead>
                     <TableHead className={`${TH} py-1`}>{filterCell("salesPerson")}</TableHead>
@@ -611,6 +624,7 @@ function RedMarkCustomersInner() {
                     <TableHead className={`${TH} py-1`}>{filterCell("company")}</TableHead>
                     <TableHead className={`${TH} py-1`}>{filterCell("location")}</TableHead>
                     <TableHead className={`${TH} py-1`}>{filterCell("category")}</TableHead>
+                    <TableHead className={`${TH} py-1`}>{filterCell("type")}</TableHead>
                     {/* Money columns carry no filter: every value is unique, so a dropdown would only
                         restate the table. They still sort. */}
                     <TableHead className={`${TH} py-1`} colSpan={9} />
@@ -639,6 +653,13 @@ function RedMarkCustomersInner() {
                         <TableCell className={`${TD} text-muted-foreground`}>{r.company}</TableCell>
                         <TableCell className={`${TD} text-muted-foreground`}>{r.location}</TableCell>
                         <TableCell className={`${TD} text-muted-foreground`}>{r.category || "—"}</TableCell>
+                        <TableCell className={TD}>
+                          <span className={`inline-flex rounded-full border px-1.5 py-0.5 text-[10px] font-medium ${
+                            r.type === MARK_LABEL.legal
+                              ? "border-violet-600/30 bg-violet-600/10 text-violet-700 dark:text-violet-300"
+                              : "border-destructive/30 bg-destructive/10 text-destructive"
+                          }`}>{r.type}</span>
+                        </TableCell>
                         <TableCell className={`${TD} ${NUM} font-semibold border-l border-border`} title={`Everything owed as on ${asOnLabel}, including bills not yet due`}>{fmt(r.outstanding)}</TableCell>
                         <TableCell className={`${TD} ${NUM} ${r.due > 0 ? "text-destructive font-semibold" : "text-muted-foreground"}`} title={`Bills already past their due date as on ${asOnLabel}`}>{fmt(r.due)}</TableCell>
                         <TableCell className={`${TD} ${NUM} text-muted-foreground`}>{r.maxOverdueDays > 0 ? r.maxOverdueDays : "—"}</TableCell>
@@ -713,10 +734,10 @@ function RedMarkCustomersInner() {
                     <TableRow>
                       {/* Keep the table standing: the header, the sort toggles and the filter row
                           are the only way back from a filter that matches nothing. */}
-                      <TableCell colSpan={22} className="text-center text-sm text-muted-foreground py-10">
+                      <TableCell colSpan={23} className="text-center text-sm text-muted-foreground py-10">
                         <div className="flex flex-col items-center gap-2">
                           <span>
-                            No Red Mark customers match the current filters
+                            No Red Mark or Legal customers match the current filters
                             {clearView !== "all" ? ` in the ${clearView} view` : ""}.
                           </span>
                           <Button size="sm" variant="outline" onClick={clearFiltersAll}>Clear filters</Button>

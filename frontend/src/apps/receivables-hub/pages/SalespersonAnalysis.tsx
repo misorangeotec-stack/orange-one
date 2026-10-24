@@ -284,9 +284,8 @@ export default function SalespersonAnalysis() {
     if (riskLevels.length > 0) {
       d = d.filter((r) => riskLevels.includes(r.risk));
     }
-    if (categories.length > 0) {
-      d = d.filter((r) => matchesCategory(r, categories));
-    }
+    // Always applied: an empty selection is the default, which hides Legal customers.
+    d = d.filter((r) => matchesCategory(r, categories));
     if (agingFilters.length > 0) {
       const bkMap: Record<string, keyof AgingBuckets> = {
         "0-30": "0_30", "31-60": "31_60", "61-90": "61_90",

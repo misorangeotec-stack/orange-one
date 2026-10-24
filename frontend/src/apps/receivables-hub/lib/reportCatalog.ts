@@ -700,8 +700,8 @@ export const REPORTS: ReportEntry[] = [
   {
     id: "red-mark-customers",
     scoping: "party-client",
-    title: "Red Mark Customers",
-    purpose: "The hand-flagged Red Mark list (managed in Masters), with live outstanding and overdue.",
+    title: "Red Mark + Legal Customers",
+    purpose: "The hand-flagged Red Mark and Legal list (managed in Masters), with live outstanding and overdue.",
     category: "customers",
     path: "reports/red-mark",
     icon: ShieldAlert,

@@ -227,7 +227,10 @@ export const DEFAULT_SALE_TYPES: readonly string[] = ["ink", "paper", "spare_par
  * Category default: every tier EXCEPT "AA" (internal). AA is not a real customer relationship, so
  * it does not belong on a collections call-list by default.
  */
-export const DEFAULT_CATEGORIES: readonly string[] = ["A", "B", "C", "D", "E", "Uncategorized"];
+// "Red Mark" is in the default: unticking a mark HIDES those customers (see matchesCategory), so a
+// default without it would drop every red-marked customer. "Legal" is deliberately NOT — legal
+// customers stay off the collection lists (and the scheduled mails) unless someone ticks Legal.
+export const DEFAULT_CATEGORIES: readonly string[] = ["A", "B", "C", "D", "E", "Uncategorized", "Red Mark"];
 
 /**
  * The period the report opens on.

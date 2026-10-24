@@ -1,4 +1,5 @@
 import { useBackState } from "@/shared/lib/backState";
+import { markTypesOf, type MarkType } from "@hub/lib/markType";
 import { useMemo, useState } from "react";
 import * as XLSX from "xlsx-js-style";
 import { allocLabel } from "@hub/lib/allocation";
@@ -59,6 +60,8 @@ interface OpRow {
   collectionTeam: string;
   category: string;
   categories?: string[];
+  /** Red Mark / Legal — joins the Category filter. */
+  markTypes?: MarkType[];
   company: string;
   location: string;
   alloc: "Against Invoice" | "On Account";
@@ -99,6 +102,7 @@ export default function OtherPaymentsReport() {
           salesPerson: c.salesPerson || "—",
           collectionTeam: c.collectionTeam || "",
           category: c.category || "",
+          markTypes: markTypesOf(c),
           company: c.company,
           location: c.location,
           alloc: allocLabel(t.type, t.refInvoice),

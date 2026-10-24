@@ -15,6 +15,7 @@
  * re-import fails the muster-write validation. See `Other Payments` (raw yyyy-mm-dd date, raw
  * AGST REF / ON ACCOUNT allocation codes).
  */
+import { MARK_LABEL, parseMarkType } from "./markType";
 import type { ExportColumn } from "@/shared/lib/exportXlsx";
 import { readBool } from "@/shared/lib/importXlsx";
 import {
@@ -359,13 +360,13 @@ export function redMarkIo(snapByGuid: Map<string, SnapRow>, knownSalespersons: S
   const company = (r: RedMarkRow) => snapByGuid.get(r.ledger_id)?.company ?? r.company ?? "";
   const location = (r: RedMarkRow) => snapByGuid.get(r.ledger_id)?.location ?? r.location ?? "";
   return {
-    fileName: "Master_Red_Mark",
-    sheetName: "Red Mark",
-    title: "Red Mark master",
+    fileName: "Master_Red_Mark_Legal",
+    sheetName: "Red Mark + Legal",
+    title: "Red Mark + Legal master",
     notes: [
       DO_NOT_EDIT_KEY,
       UPDATE_ONLY_NOTE,
-      "Editable columns: Salesperson, Reason, Checked, and Cleared (with Clear note).",
+      "Editable columns: Type (Red Mark or Legal), Salesperson, Reason, Checked, and Cleared (with Clear note).",
       "Import cannot add or remove a Red Mark, and cannot REOPEN a cleared case — only edit details " +
       "and clear settled ones. Reopen on screen instead: a sheet exported before somebody cleared a " +
       "case still says \"No\" against it, and reopening from that would silently undo their work.",
@@ -380,6 +381,7 @@ export function redMarkIo(snapByGuid: Map<string, SnapRow>, knownSalespersons: S
       { header: "Customer", width: 30, value: name },
       { header: "Company", width: 16, value: company },
       { header: "Location", width: 12, value: location },
+      { header: "Type", width: 11, value: (r) => MARK_LABEL[r.mark_type] },
       { header: "Salesperson", width: 22, value: (r) => r.salesperson ?? "" },
       { header: "Reason", width: 30, value: (r) => r.reason ?? "" },
       { header: "Checked", width: 10, value: (r) => yesNo(r.checked) },
@@ -403,6 +405,13 @@ export function redMarkIo(snapByGuid: Map<string, SnapRow>, knownSalespersons: S
         const checked = readBool(rec["Checked"]);
         const badSp = offMaster(salesperson, knownSalespersons, "Salesperson");
         if (badSp) { plan.invalid.push({ label, reason: badSp }); continue; }
+        // Type: a blank cell — or a sheet from before the column existed — keeps the current type.
+        const typeCell = cell(rec["Type"]);
+        const markType = typeCell === null ? cur.mark_type : parseMarkType(typeCell);
+        if (!markType) {
+          plan.invalid.push({ label, reason: `Type "${typeCell}" must be Red Mark or Legal.` });
+          continue;
+        }
 
         // ⚠ "column absent" IS NOT "cell left empty", and the difference decides whether a sheet can
         //   un-clear a case. parseXlsxRows reads with defval:"" so every column in the FILE appears
@@ -440,20 +449,21 @@ export function redMarkIo(snapByGuid: Map<string, SnapRow>, knownSalespersons: S
         const dSp = salesperson !== (cur.salesperson ?? null);
         const dRs = reason !== (cur.reason ?? null);
         const dChk = checked !== cur.checked;
-        if (!dSp && !dRs && !dChk && !doClear) { plan.unchanged++; continue; }
+        const dTy = markType !== cur.mark_type;
+        if (!dSp && !dRs && !dChk && !dTy && !doClear) { plan.unchanged++; continue; }
         plan.changes.push({
           key,
           label: name(cur) || label,
           fields: changedFields([
-            ["Salesperson", dSp], ["Reason", dRs], ["Checked", dChk], ["Cleared", doClear],
+            ["Type", dTy], ["Salesperson", dSp], ["Reason", dRs], ["Checked", dChk], ["Cleared", doClear],
           ]),
           // Two writes, because they are two different doors: the metadata goes through
           // update_redmark (admin / Settings full access) and the clear through clear_redmark, which
           // has its own rule. Details first, so a refused clear does not silently drop an edit that
           // was allowed.
           save: async () => {
-            if (dSp || dRs || dChk) {
-              await saveRedMark({ ledger_id: key, salesperson, reason, checked });
+            if (dSp || dRs || dChk || dTy) {
+              await saveRedMark({ ledger_id: key, salesperson, reason, checked, mark_type: markType });
             }
             if (doClear) await clearRedMark(key, clearNote as string);
           },
