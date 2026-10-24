@@ -166,7 +166,7 @@ const COLS = {
    *   `source` earns its place: the Masters column marks the hand-added ones,
    *   and it is the only way to tell a person's decision from a derived row.
    */
-  partyCompanies: "id,active,sort_order,created_at,party_id,company_id,source",
+  partyCompanies: "id,active,sort_order,created_at,party_id,company_id,source,created_by",
   parties: "id,name,active,sort_order,created_at,company_id,code,location,gstin,contact_name,phone,email",
   items: "id,name,active,sort_order,created_at,code,unit_id,hsn_code,company_id,item_type",
   units: "id,name,created_at",
@@ -879,6 +879,7 @@ export async function fetchDispatchMasters(): Promise<DispatchMasters> {
       .map((r: any): CustomerCompany => ({
         ...mapMaster(r), name: "",
         customerId: r.party_id, companyId: r.company_id, source: r.source ?? "portal",
+        createdBy: r.created_by ?? null,
       })),
 
   };

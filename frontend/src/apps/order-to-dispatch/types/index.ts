@@ -182,12 +182,13 @@ export interface CustomerItem extends NamedMaster {
  * firm we trade with from two books is two party rows. This table is ours, and
  * it says a book may bill a customer whose ledger is filed elsewhere.
  *
- * ⚠ IT USED TO BE A FINDER AND IS NOW A PERMISSION, deliberately (OD-5, decided
- *   07-09-2026). `fms_dispatch_assert_customer_of_company` accepts an active row
- *   here, so what the picker offers and what the database will save are the same
- *   set. Read supabase/migrations/20261119120000_od5_map_party_company.sql
- *   before narrowing either one — this gate has been widened, narrowed and
- *   widened again, and every argument is on disk.
+ * ⚠ A PERMISSION ONLY WHEN A PERSON MADE IT (`createdBy` set, 24-10-2026).
+ *   OD-5 (07-09-2026) let every active row bill; the cron-derived rows then put
+ *   other books' same-name ledgers in the picker — 389 duplicates. Now
+ *   `fms_dispatch_assert_customer_of_company` and `customersForCompany` both
+ *   accept only rows with created_by. Read
+ *   supabase/migrations/20270218120000_o2d_customer_picker_own_book.sql before
+ *   widening either one again.
  *
  * ⚠ `source` has THREE values, not two: 'tally' derived from a same-named ledger
  *   in that book, 'order_history' seeded from an order the company actually
@@ -201,6 +202,8 @@ export interface CustomerCompany extends NamedMaster {
   customerId: string;
   companyId: string;
   source: string;
+  /** Who mapped it. Null = derived by mst_refresh_party_companies(), not billable. */
+  createdBy: string | null;
 }
 
 /* -------------------------------------------------------------------------- */
