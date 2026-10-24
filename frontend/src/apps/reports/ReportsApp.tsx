@@ -48,6 +48,7 @@ import ReceivablesMasterReport from "@hub/pages/ReceivablesMasterReport";
 import PayablesMasterReport from "@hub/pages/PayablesMasterReport";
 import IncomeMasterReport from "@hub/pages/IncomeMasterReport";
 import ExpenseMasterReport from "@hub/pages/ExpenseMasterReport";
+import ExpenseCfoReport from "@hub/pages/ExpenseCfoReport";
 import SalesGainReport from "@hub/pages/SalesGainReport";
 import SalesDashboard from "@hub/pages/SalesDashboard";
 import PurchaseDashboard from "@hub/pages/PurchaseDashboard";
@@ -153,6 +154,10 @@ function ReportRoutes() {
                   (Direct/Indirect Expenses + Purchase Accounts, debit-positive); own company + FY
                   pickers. */}
               <Route path="finance-expense" element={<ExpenseMasterReport />} />
+              {/* Finance → CFO EXP — the CFO expense workbook, from the hub's own expense_cfo_*
+                  tables (filled by tools/expense_cfo_loader.py and proved against Tally's TB).
+                  Own month + company filters. */}
+              <Route path="finance-expense-cfo" element={<ExpenseCfoReport />} />
               {/* Finance → Sales Gain — margin on the sales book, over the rpt_sales_gain_* snapshot.
                   Gain is DERIVED (Tally stores no cost): cost is priced per item from that item's own
                   VALUATIONMETHOD, so a configured standard price is never mistaken for a cost. Own

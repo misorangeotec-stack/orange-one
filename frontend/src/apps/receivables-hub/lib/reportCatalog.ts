@@ -424,6 +424,19 @@ export const REPORTS: ReportEntry[] = [
     keywords: ["expense", "cost", "overheads", "direct expenses", "indirect expenses", "purchase accounts", "P&L", "profit and loss"],
   },
   {
+    id: "finance-expense-cfo",
+    // All 5 companies in one book; the lines are nominal-account postings with no customer.
+    scoping: "none",
+    title: "CFO EXP",
+    purpose: "The CFO expense workbook: month-wise by group, vendor and company, audit flags, MoM variance and its nature, tied to Tally's Trial Balance. Downloads as linked PDF + Excel.",
+    category: "finance",
+    path: "reports/finance-expense-cfo",
+    icon: Wallet,
+    source: "tally",
+    status: "live",
+    keywords: ["expense", "cfo", "expense sheet", "audit flag", "variance", "month on month", "vendor", "pareto", "trial balance", "direct expenses", "indirect expenses"],
+  },
+  {
     id: "finance-sales-gain",
     // rpt_sales_gain_report has NO p_parties despite rpt_sales_gain_voucher carrying both party
     // and a native salesperson column, and its KPI / geography / product panels are company
