@@ -32,10 +32,19 @@ import {
   type ApprovalRules, type CustomerActivity, type CustomerNotification,
   type CustomerRequest, type GstState, type StepOwner,
 } from "./types";
+import {
+  OWNER_COMPANY_SCOPE_KEY,
+  ownerCoversCompany,
+  scopeOwnerIds,
+  serializeStepCompanyScopes,
+  type OwnerCompanyScope,
+  type StepCompanyScopes,
+} from "@/shared/lib/fmsOwners";
 
 const EMPTY: CustomerSnapshot = {
   requests: [], companies: [], stepOwners: [], gstStates: [], activity: [], notifications: [],
   stepSla: DEFAULT_STEP_SLA, approvalRules: DEFAULT_APPROVAL_RULES, coordinatorIds: [],
+  ownerCompanyScopes: {},
 };
 
 interface CustomerStore {
@@ -89,6 +98,13 @@ interface CustomerStore {
   /** The configured list, for the Settings picker. Admins are coordinators implicitly. */
   coordinatorIds: string[];
   isStepOwner: (step: StepKey) => boolean;
+  /**
+   * Is a request of this step at this company in MY queue? A step owner limited
+   * to some companies (Setup → Step owners → Companies) sees only those.
+   * Coordinators, admins and anyone who does not own the step (view-only) see
+   * them all. Narrows buckets only — `canActOn` (the SQL mirror) is untouched.
+   */
+  seesCompanyAt: (step: StepKey, companyId: string | null) => boolean;
   isAnyStepOwner: boolean;
   canRaise: boolean;
   canActOn: (step: StepKey, r: CustomerRequest) => boolean;
@@ -96,7 +112,15 @@ interface CustomerStore {
   canSeeQueue: (step: StepKey) => boolean;
 
   stepOwnerFor: (step: StepKey) => StepOwner | undefined;
-  stepOwnerIds: (step: StepKey) => string[];
+  /**
+   * Owners of a step. With a company, only those who cover it; without, the
+   * whole team (Setup, "is this person an owner at all").
+   */
+  stepOwnerIds: (step: StepKey, companyId?: string | null) => string[];
+  /** Company-wise owners, per step. See shared/lib/fmsOwners. */
+  ownerCompanyScopes: StepCompanyScopes;
+  /** Save one step's per-owner companies (the other steps are kept). Refreshes. */
+  setOwnerCompanyScope: (step: StepKey, scope: OwnerCompanyScope) => Promise<void>;
   personName: (id: string | null | undefined) => string;
 
   queueEntries: CustomerQueueEntry[];
@@ -160,8 +184,18 @@ export function CustomerOnboardingProvider({ children }: { children: ReactNode }
     const peopleById = new Map((orgPeople ?? []).map((p: { id: string; name: string }) => [p.id, p.name]));
 
     const isCoordinator = isAdmin || (uid ? snap.coordinatorIds.includes(uid) : false);
-    const stepOwnerIds = (step: StepKey): string[] => ownerByStep.get(step)?.employeeIds ?? [];
+    const stepOwnerIds = (step: StepKey, companyId?: string | null): string[] => {
+      const row = ownerByStep.get(step);
+      return scopeOwnerIds(row?.employeeIds ?? [], row?.companyScope, companyId);
+    };
     const isStepOwner = (step: StepKey): boolean => !!uid && stepOwnerIds(step).includes(uid);
+
+    const seesCompanyAt = (step: StepKey, companyId: string | null): boolean => {
+      if (isCoordinator || !uid) return true;
+      const row = ownerByStep.get(step);
+      if (!row?.employeeIds.includes(uid)) return true;
+      return ownerCoversCompany(row.companyScope, uid, companyId);
+    };
 
     // A 'submission' owner list, when non-empty, restricts who may raise.
     // No list at all = anyone with hub access may raise one.
@@ -236,6 +270,7 @@ export function CustomerOnboardingProvider({ children }: { children: ReactNode }
       isCoordinator,
       coordinatorIds: snap.coordinatorIds,
       isStepOwner,
+      seesCompanyAt,
       isAnyStepOwner: OWNED_STEPS.some((s) => isStepOwner(s)),
       canRaise,
       canActOn,
@@ -243,6 +278,14 @@ export function CustomerOnboardingProvider({ children }: { children: ReactNode }
 
       stepOwnerFor: (step) => ownerByStep.get(step),
       stepOwnerIds,
+      ownerCompanyScopes: snap.ownerCompanyScopes,
+      setOwnerCompanyScope: async (step, scope) => {
+        await writes.setConfig(
+          OWNER_COMPANY_SCOPE_KEY,
+          serializeStepCompanyScopes({ ...snap.ownerCompanyScopes, [step]: scope }),
+        );
+        await invalidate();
+      },
       personName: (id) => (id ? (peopleById.get(id) ?? "Unknown user") : "—"),
 
       queueEntries,

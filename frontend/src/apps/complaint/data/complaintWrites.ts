@@ -1,4 +1,5 @@
 import { supabase } from "@/core/platform/supabase";
+import { OWNER_COMPANY_SCOPE_KEY } from "@/shared/lib/fmsOwners";
 // fms_complaint_* tables/RPCs are not in the generated Database types; route
 // through an untyped alias.
 const db = supabase as any;
@@ -400,6 +401,9 @@ export const saveProcessCoordinators = (userIds: string[]) =>
   saveConfig("process_coordinators", { user_ids: userIds });
 
 export const saveStepSla = (map: Record<string, unknown>) => saveConfig("step_sla", map);
+
+/** Company-wise step owners — the whole `{ steps: … }` value, see shared/lib/fmsOwners. */
+export const saveOwnerCompanyScopes = (value: unknown) => saveConfig(OWNER_COMPANY_SCOPE_KEY, value);
 
 /**
  * The credit-note approval threshold.

@@ -26,6 +26,7 @@ import {
   type CustomerRequest, type GstState, type StepOwner,
 } from "@hub/lib/customerOnboarding/types";
 import { DEFAULT_STEP_SLA, resolveStepSla, type StepSlaMap } from "@hub/lib/customerOnboarding/sla";
+import { OWNER_COMPANY_SCOPE_KEY, parseStepCompanyScopes, withCompanyScopes, type StepCompanyScopes } from "@/shared/lib/fmsOwners";
 
 const db = supabase as any;
 
@@ -229,6 +230,8 @@ export interface CustomerSnapshot {
   stepSla: StepSlaMap;
   approvalRules: ApprovalRules;
   coordinatorIds: string[];
+  /** Company-wise step owners (Setup → Step owners). See shared/lib/fmsOwners. */
+  ownerCompanyScopes: StepCompanyScopes;
 }
 
 /**
@@ -262,16 +265,20 @@ export async function fetchCustomerData(): Promise<CustomerSnapshot> {
 
   const coordRaw = byKey.get("process_coordinators") ?? {};
   const coordinatorIds: string[] = Array.isArray(coordRaw.user_ids) ? coordRaw.user_ids : [];
+  const ownerCompanyScopes = parseStepCompanyScopes(byKey.get(OWNER_COMPANY_SCOPE_KEY));
 
   return {
     requests: requests.map(mapRequest),
     companies,
-    stepOwners: stepOwners.map(mapStepOwner),
+    // Each owner row carries its company scope, so My Work and the 9am mail
+    // (which read this snapshot, not the store) narrow the same way.
+    stepOwners: withCompanyScopes(stepOwners.map(mapStepOwner), ownerCompanyScopes),
     gstStates: gstStates.map(mapGstState),
     activity: activity.map(mapActivity),
     notifications: notifications.map(mapNotification),
     stepSla: resolveStepSla(byKey.get("step_sla")) ?? DEFAULT_STEP_SLA,
     approvalRules,
     coordinatorIds,
+    ownerCompanyScopes,
   };
 }

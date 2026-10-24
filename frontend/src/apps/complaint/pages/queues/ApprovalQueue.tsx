@@ -63,6 +63,7 @@ export default function ApprovalQueue() {
 
   // Pending follows the complaint rule (`myQueue` = can act); Completed is
   // also open to view-only readers, as the complaint history is.
+  // Both narrow to the owner's companies (Setup → Step Owners → Companies).
   const actsOnCn = s.canActOnCn("cn_approval");
   const seesCn = actsOnCn || s.isModuleViewer;
 
@@ -74,17 +75,26 @@ export default function ApprovalQueue() {
         .filter((r): r is NonNullable<typeof r> => !!r)
         .map((r) => complaintRow(r, st)),
     );
-    const cns = actsOnCn ? s.creditNotes.filter((c) => c.status === "awaiting_cn_approval").map(cnRow) : [];
+    const cns = actsOnCn
+      ? s.creditNotes
+          .filter((c) => c.status === "awaiting_cn_approval" && s.seesCompanyAt("cn_approval", c.companyId))
+          .map(cnRow)
+      : [];
     return [...complaints, ...cns];
   }, [s, actsOnCn]);
 
   /** Completed rows, each with WHEN management acted — for the sort and the footer. */
   const completed = useMemo(() => {
     const complaints = MANAGEMENT_STEPS.flatMap((st) =>
-      s.completedFor(st).map((e) => ({ row: complaintRow(e.row, st), atIso: e.atIso, lockReason: e.lockReason ?? null })),
+      s
+        .completedFor(st)
+        .filter((e) => s.seesCompanyAt(st, e.row.companyId))
+        .map((e) => ({ row: complaintRow(e.row, st), atIso: e.atIso, lockReason: e.lockReason ?? null })),
     );
     const cns = seesCn
-      ? s.creditNotes.filter((c) => c.aprAt).map((c) => ({ row: cnRow(c), atIso: c.aprAt as string, lockReason: null }))
+      ? s.creditNotes
+          .filter((c) => c.aprAt && s.seesCompanyAt("cn_approval", c.companyId))
+          .map((c) => ({ row: cnRow(c), atIso: c.aprAt as string, lockReason: null }))
       : [];
     return [...complaints, ...cns].sort((a, b) => b.atIso.localeCompare(a.atIso));
   }, [s, seesCn]);

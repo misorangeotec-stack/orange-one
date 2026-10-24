@@ -5,6 +5,7 @@ import { supabase } from "@/core/platform/supabase";
 const db = supabase as any;
 
 import { resolveStepSla, type StepSlaMap } from "../lib/sla";
+import { OWNER_COMPANY_SCOPE_KEY, parseStepCompanyScopes, withCompanyScopes, type StepCompanyScopes } from "@/shared/lib/fmsOwners";
 import type {
   ActivityEntry, Asset, AssetCategory, AssetLocation, AssetNotification, AssetReading,
   AssetSchedule, Company, Department, Designation, FrequencyUnit, JobStatus, MasterManager,
@@ -78,6 +79,8 @@ export interface AssetConfig {
    * fms_asset_send_reminders; surfaced here so Setup can show and edit it.
    */
   reminderLadder: number[];
+  /** Company-wise step owners (Setup → Step Owners). A job's company is its asset's. See shared/lib/fmsOwners. */
+  ownerCompanyScopes: StepCompanyScopes;
 }
 
 export const DEFAULT_REMINDER_LADDER = [45, 30, 15, 7, 1];
@@ -291,6 +294,7 @@ export async function fetchAssetData(): Promise<AssetData> {
     reminderLadder: Array.isArray(ladderRaw) && ladderRaw.length
       ? ladderRaw.map(Number).filter((n: number) => Number.isFinite(n) && n > 0).sort((a: number, b: number) => b - a)
       : DEFAULT_REMINDER_LADDER,
+    ownerCompanyScopes: parseStepCompanyScopes(byKey.get(OWNER_COMPANY_SCOPE_KEY)),
   };
 
   const schedulesByAsset = new Map<string, AssetSchedule[]>();
@@ -302,10 +306,14 @@ export async function fetchAssetData(): Promise<AssetData> {
   }
 
   return {
-    stepOwners: stepOwnerRows.map((r: any) => ({
-      id: r.id, stepKey: r.step_key, departmentIds: arr(r.department_ids),
-      designationId: str(r.designation_id), employeeIds: arr(r.employee_ids),
-    })),
+    // The scope rides on the owner rows so My Work (and the 9am mail) see it too.
+    stepOwners: withCompanyScopes(
+      stepOwnerRows.map((r: any): StepOwner => ({
+        id: r.id, stepKey: r.step_key, departmentIds: arr(r.department_ids),
+        designationId: str(r.designation_id), employeeIds: arr(r.employee_ids),
+      })),
+      config.ownerCompanyScopes,
+    ),
     designations: designationRows.map((r: any) => ({ id: r.id, name: r.name })),
     departments: departmentRows.map((r: any) => ({ id: r.id, name: r.name })),
     config,

@@ -97,8 +97,8 @@ export default function ControlCenter() {
   // them without mounting this store. Memoised on the arrays they read.
   const linkOf = useMemo(() => linkResolver(s.requestItems), [s.requestItems]);
   const { ownerIdsOf } = useMemo(
-    () => ownerResolver({ stepOwners: s.stepOwners, approvalBands: s.approvalBands, requestItems: s.requestItems }),
-    [s.stepOwners, s.approvalBands, s.requestItems]
+    () => ownerResolver({ stepOwners: s.stepOwners, approvalBands: s.approvalBands, requestItems: s.requestItems, poItems: s.poItems, requests: s.requests }),
+    [s.stepOwners, s.approvalBands, s.requestItems, s.poItems, s.requests]
   );
 
   const ownerNames = (e: QueueEntry): string => {

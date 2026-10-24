@@ -45,6 +45,7 @@ const numFmt = (n: number) => n.toLocaleString("en-IN");
  * `completed` config this renders exactly the queue it always did.
  */
 function StepQueuePage<E>({
+  stepKey,
   title,
   subtitle,
   filter,
@@ -54,6 +55,8 @@ function StepQueuePage<E>({
   rowClassName,
   completed,
 }: {
+  /** Whose queue this is — rows outside the owner's companies are left out. */
+  stepKey: StepKey;
   title: string;
   subtitle: string;
   filter: (po: PurchaseOrder) => boolean;
@@ -88,16 +91,22 @@ function StepQueuePage<E>({
   const { user } = useEffectiveIdentity();
   const [mode, setMode] = useState<StageMode>("pending");
   const [scope, setScope] = useState<StageScope>("mine");
-  const rows = useMemo(() => s.pos.filter(filter).sort((a, b) => a.createdAt.localeCompare(b.createdAt)), [s.pos, filter]);
+  const rows = useMemo(
+    () =>
+      s.pos
+        .filter((p) => filter(p) && s.seesCompanyAt(stepKey, p.companyId))
+        .sort((a, b) => a.createdAt.localeCompare(b.createdAt)),
+    [s, filter, stepKey],
+  );
 
   // Owner scoping lives HERE, not in lib/queues.ts: those predicates stay
   // user-agnostic so the Control Center can count everyone's work. Newest first —
   // "what did I just do" is the question this tab answers.
   const completedRows = useMemo(() => {
-    const all = completed?.entries ?? [];
+    const all = (completed?.entries ?? []).filter((e) => s.seesCompanyAt(stepKey, e.companyId ?? null));
     const mine = scope === "mine" ? all.filter((e) => e.actorId === user.id) : all;
     return mine.slice().sort((a, b) => b.atIso.localeCompare(a.atIso));
-  }, [completed?.entries, scope, user.id]);
+  }, [completed?.entries, scope, user.id, s, stepKey]);
 
   const vendorName = (p: PurchaseOrder) => s.vendorById(p.vendorId)?.name ?? "—";
   const companyName = (id: string) => s.companyById(id)?.name ?? "—";
@@ -316,6 +325,7 @@ export function SharePoQueue() {
       <StepQueuePage<PurchaseOrder>
         title="Share PO Stage"
         subtitle="POs to send to the vendor — confirm the dispatch date, then mark shared."
+        stepKey="share_po"
         filter={(p) => poInSharePo(s.importIndex, p)}
         renderAction={(p) => <ActionButton label="Share PO" onClick={() => setSharePo(p)} />}
         completed={{
@@ -356,6 +366,7 @@ export function CollectPiQueue() {
       <StepQueuePage<Pi>
         title="Collect PI Stage"
         subtitle="Shared POs awaiting the vendor's proforma invoice. Record its number and attach the document."
+        stepKey="collect_pi"
         filter={(p) => poInCollectPi(s.importIndex, p)}
         completed={{
           entries: s.completedPiEntries,
@@ -439,6 +450,7 @@ export function FollowUpQueue() {
       <StepQueuePage<Followup>
         title="Follow-up Stage"
         subtitle="POs awaiting dispatch — chase the vendor and record dispatch."
+        stepKey="follow_up"
         filter={(p) => poInFollowUp(s.importIndex, p)}
         hideDue
         rowClassName={dispatchOverdue}
@@ -561,6 +573,7 @@ export function InwardQueue() {
       <StepQueuePage<Grn>
         title="Inward Stage"
         subtitle="POs with goods still to be received — a partially-received PO stays here until every line lands."
+        stepKey="inward"
         filter={(p) => poInInward(s.importIndex, p)}
         hideDue
         completed={{
@@ -616,6 +629,7 @@ export function TallyQueue() {
       <StepQueuePage<TallyBooking>
         title="Tally Stage"
         subtitle="POs with a goods receipt — partial or full — still to be booked in Tally. One invoice per receipt."
+        stepKey="tally"
         filter={(p) => poInTally(s.importIndex, p)}
         completed={{
           entries: s.completedTallyEntries,
@@ -742,6 +756,7 @@ export function QcQueue() {
       <StepQueuePage<QcInspection>
         title="QC Inspection"
         subtitle="Receipts booked in Tally awaiting a quality check. Only Raw Material is inspected — every other purchase ends at Tally."
+        stepKey="qc_inspection"
         filter={(p) => poInQc(s.importIndex, p)}
         completed={{
           entries: s.completedQcEntries,
@@ -799,6 +814,7 @@ export function PurchaseReturnQueue() {
       <StepQueuePage<QcInspection>
         title="Purchase Return Entry (Tally)"
         subtitle="QC rejected this material — book the purchase return in Tally. The Tally reference and the document are both required."
+        stepKey="purchase_return"
         filter={(p) => poInPurchaseReturn(s.importIndex, p)}
         completed={{
           entries: s.completedPurchaseReturnEntries,
@@ -856,6 +872,7 @@ export function GateOutwardQueue() {
       <StepQueuePage<QcInspection>
         title="Gate Register Outward"
         subtitle="Returned material waiting to leave the premises. Recording the gate outward closes the process."
+        stepKey="gate_outward"
         filter={(p) => poInGateOutward(s.importIndex, p)}
         completed={{
           entries: s.completedGateOutwardEntries,

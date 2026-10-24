@@ -56,7 +56,12 @@ export default function RequestQueue({
   // This app has no sandbox/personas, so the real session user IS the effective
   // one — hence useSession rather than useEffectiveIdentity, and no scopeNote on
   // the tabs below.
-  const completedEntries = s.completedFor(stepKey);
+  // Same company scope as the pending side — an owner limited to Enterprise
+  // does not get O-tec's completed rows either.
+  const completedEntries = useMemo(
+    () => s.completedFor(stepKey).filter((e) => s.seesCompanyAt(stepKey, e.row.companyId)),
+    [s, stepKey],
+  );
   const stage = useStageMode(completedEntries, session.user?.id ?? "");
 
   const today = todayLocalIso();

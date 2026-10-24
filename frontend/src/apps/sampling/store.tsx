@@ -102,7 +102,15 @@ import {
 } from "./lib/queues";
 import { confirmerSourceOf, outwardSourceOf } from "./lib/format";
 import { DEFAULT_STEP_SLA, type StepSlaMap } from "./lib/sla";
-import { isSourceScoped, type StepKey } from "./lib/steps";
+import { isSourceScoped, sourceScopeKey, type StepKey } from "./lib/steps";
+import {
+  OWNER_COMPANY_SCOPE_KEY,
+  ownerCoversCompany,
+  scopeOwnerIds,
+  serializeStepCompanyScopes,
+  type OwnerCompanyScope,
+  type StepCompanyScopes,
+} from "@/shared/lib/fmsOwners";
 import type {
   Collector,
   Company,
@@ -123,6 +131,7 @@ import type {
 } from "./types";
 
 const QK = SAMPLING_QK;
+const EMPTY_SCOPES: StepCompanyScopes = {};
 
 interface SamplingStoreValue {
   isLoading: boolean;
@@ -191,6 +200,13 @@ interface SamplingStoreValue {
   canActOn: (stepKey: StepKey, r: SamplingRequest) => boolean;
   /** May this person see the step's queue at all — nav link, route, page. */
   canSeeQueue: (stepKey: StepKey) => boolean;
+  /**
+   * Is this request's row of this step in MY queue? A step owner limited to some
+   * companies (Setup → Step Owners → Companies) sees only those. Admins,
+   * coordinators, anyone named on the request and anyone who does not own the
+   * step (view-only) see it regardless.
+   */
+  seesCompanyAt: (stepKey: StepKey, r: SamplingRequest) => boolean;
 
   // master governance
   masterManagers: SamplingMasterManager[];
@@ -281,6 +297,10 @@ interface SamplingStoreValue {
   // config writes
   setStepOwner: (stepKey: StepKey, input: StepOwnerInput) => Promise<void>;
   setStepSourceOwner: (stepKey: StepKey, source: SamplingSource, input: StepOwnerInput) => Promise<void>;
+  /** Company-wise owners, keyed by `sourceScopeKey`. See shared/lib/fmsOwners. */
+  ownerCompanyScopes: StepCompanyScopes;
+  /** Save one owner row's per-owner companies (every other row is kept). */
+  setOwnerCompanyScope: (stepKey: StepKey, source: SamplingSource | null, scope: OwnerCompanyScope) => Promise<void>;
   setStepSla: (map: StepSlaMap) => Promise<void>;
   setCoordinators: (userIds: string[]) => Promise<void>;
 
@@ -333,6 +353,7 @@ export function SamplingStoreProvider({ children }: { children: ReactNode }) {
   const notifications = data?.notifications ?? [];
   const processCoordinatorIds = data?.config.processCoordinatorIds ?? [];
   const stepSla = data?.config.stepSla ?? DEFAULT_STEP_SLA;
+  const ownerCompanyScopes = data?.config.ownerCompanyScopes ?? EMPTY_SCOPES;
 
   const value = useMemo<SamplingStoreValue>(() => {
     const uid = userId ?? "";
@@ -404,9 +425,10 @@ export function SamplingStoreProvider({ children }: { children: ReactNode }) {
     // looks right, and would authorize a Domestic owner on an Export row here
     // while the server refuses it — the button enables and the save throws.
     const canActOn = (stepKey: StepKey, r: SamplingRequest): boolean =>
-      isAdmin ||
-      isProcessCoordinator ||
-      isStepOwnerForRequest(stepKey, r) ||
+      isAdmin || isProcessCoordinator || isStepOwnerForRequest(stepKey, r) || isNamedOn(stepKey, r);
+
+    /** The per-request arms of canActOn — the people named ON the request for this step. */
+    const isNamedOn = (stepKey: StepKey, r: SamplingRequest): boolean =>
       (stepKey === "sample_collect" && !!r.collectorId && r.collectorId === uid) ||
       (stepKey === "sample_received" && !!r.handoverRecipientId && r.handoverRecipientId === uid) ||
       // Whoever received the sample is the one who sends it on to the lab.
@@ -424,6 +446,15 @@ export function SamplingStoreProvider({ children }: { children: ReactNode }) {
       // to the confirm_receipt source owners, never a replacement.
       (stepKey === "confirm_receipt" &&
         confirmers.some((c) => c.active && c.userId === uid && c.source === confirmerSourceOf(r.receiveVia)));
+
+    // Narrows the step-owner arm only — it never takes a row from someone named
+    // on the request, and it never authorizes (canActOn stays the server's mirror).
+    const seesCompanyAt = (stepKey: StepKey, r: SamplingRequest): boolean => {
+      if (isAdmin || isProcessCoordinator || isNamedOn(stepKey, r)) return true;
+      const row = ownersFor(stepKey, r);
+      if (!row?.employeeIds.includes(uid)) return true;
+      return ownerCoversCompany(row.companyScope, uid, r.companyId);
+    };
 
     const personName = (id: string | null): string => {
       if (!id) return "—";
@@ -506,7 +537,7 @@ export function SamplingStoreProvider({ children }: { children: ReactNode }) {
       queueEntries.filter((e) => {
         if (e.stepKey !== stepKey) return false;
         const r = requestMap.get(e.requestId);
-        return r ? canActOn(stepKey, r) : false;
+        return r ? canActOn(stepKey, r) && seesCompanyAt(stepKey, r) : false;
       });
 
     /*
@@ -549,9 +580,13 @@ export function SamplingStoreProvider({ children }: { children: ReactNode }) {
     };
 
     // Resolves through the request, so a source-scoped step reports the owners
-    // who actually cover that dispatch rather than the (inert) legacy row.
-    const queueOwnerIds = (e: QueueEntry): string[] =>
-      ownersFor(e.stepKey, requestMap.get(e.requestId) ?? null)?.employeeIds ?? [];
+    // who actually cover that dispatch rather than the (inert) legacy row — and
+    // only those who cover the request's company.
+    const queueOwnerIds = (e: QueueEntry): string[] => {
+      const r = requestMap.get(e.requestId) ?? null;
+      const row = ownersFor(e.stepKey, r);
+      return scopeOwnerIds(row?.employeeIds ?? [], row?.companyScope, r?.companyId);
+    };
 
     const byOrder = <T extends { active: boolean; sortOrder: number; name: string }>(rows: T[]): T[] =>
       rows.filter((r) => r.active).sort((a, b) => a.sortOrder - b.sortOrder || a.name.localeCompare(b.name));
@@ -596,6 +631,7 @@ export function SamplingStoreProvider({ children }: { children: ReactNode }) {
       isStepOwner,
       canActOn,
       canSeeQueue,
+      seesCompanyAt,
 
       masterManagers,
       managerIdsFor,
@@ -787,6 +823,14 @@ export function SamplingStoreProvider({ children }: { children: ReactNode }) {
         await setStepSourceOwnerWrite(stepKey, source, input);
         await invalidate();
       },
+      ownerCompanyScopes,
+      setOwnerCompanyScope: async (stepKey, source, scope) => {
+        await setConfigWrite(
+          OWNER_COMPANY_SCOPE_KEY,
+          serializeStepCompanyScopes({ ...ownerCompanyScopes, [sourceScopeKey(stepKey, source)]: scope }),
+        );
+        await invalidate();
+      },
       setStepSla: async (map) => {
         await setConfigWrite("step_sla", map as unknown as Record<string, unknown>);
         await invalidate();
@@ -851,7 +895,7 @@ export function SamplingStoreProvider({ children }: { children: ReactNode }) {
     // for stepSourceOwners: canActOn reads it, so leaving it out means a Setup
     // owner edit doesn't take effect until an unrelated re-memo.
     isLoading, error, dir, userId, isAdmin, designations, companies, collectors, recipients, senders, confirmers, resultRecipients, masterManagers, requests, activity,
-    notifications, stepOwners, stepSourceOwners, processCoordinatorIds, stepSla, queryClient,
+    notifications, stepOwners, stepSourceOwners, processCoordinatorIds, stepSla, ownerCompanyScopes, queryClient,
     // personName closes over orgPeople; without this the names stay "Unknown user".
     orgPeople,
   ]);

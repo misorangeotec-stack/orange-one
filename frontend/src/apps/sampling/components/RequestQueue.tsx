@@ -71,7 +71,12 @@ export default function RequestQueue({
   const [acting, setActing] = useState<SamplingRequest | null>(null);
   const editing = useEntryModal<SamplingRequest>();
 
-  const completedEntries = s.completedFor(stepKey);
+  // Same company scope as the pending side — an owner limited to Enterprise
+  // does not get O-tec's completed rows either.
+  const completedEntries = useMemo(
+    () => s.completedFor(stepKey).filter((e) => s.seesCompanyAt(stepKey, e.row)),
+    [s, stepKey],
+  );
   const stage = useStageMode(completedEntries, session.user?.id ?? "");
 
   const today = todayLocalIso();

@@ -8,6 +8,10 @@
  * know about: the ASSET'S CUSTODIAN. That mirrors `fms_asset_can_act`, so the person
  * who actually takes the car to the garage sees it — without it, the most likely
  * doer of the work is the one person who never gets told.
+ *
+ * Company-wise owners: a job's company is its ASSET's, so a step owner limited to
+ * some companies only gets jobs on those companies' assets. The custodian arm is
+ * not narrowed.
  */
 import { appName } from "@/apps/appInfo";
 import type { AssetData } from "@/apps/asset-maintenance/data/assetFetch";
@@ -29,6 +33,13 @@ export function assetWorkItems(data: AssetData, uid: string, isAdmin: boolean): 
     return !!custodian && custodian === uid;
   };
 
+  const companyOf = (jobId: string): string | null => {
+    const job = jobById.get(jobId);
+    return (job ? assetById.get(job.assetId)?.companyId : null) ?? null;
+  };
+  const isMineByStep = (stepKey: string, jobId: string): boolean =>
+    isMineByStepOwners(stepKey, uid, owners, companyOf(jobId));
+
   const snap = assetSnapshotFrom({
     jobs: data.jobs,
     stepSla: data.config.stepSla,
@@ -44,7 +55,7 @@ export function assetWorkItems(data: AssetData, uid: string, isAdmin: boolean): 
   ];
 
   return entries
-    .filter(({ e }) => isAdmin || isMineByStepOwners(e.stepKey, uid, owners) || isMyAsset(e.stepKey, e.jobId))
+    .filter(({ e }) => isAdmin || isMineByStep(e.stepKey, e.jobId) || isMyAsset(e.stepKey, e.jobId))
     .map(({ e, held }) => {
       const job = jobById.get(e.jobId);
       const asset = job ? assetById.get(job.assetId) : undefined;
@@ -58,7 +69,7 @@ export function assetWorkItems(data: AssetData, uid: string, isAdmin: boolean): 
         dueIso: e.dueIso,
         to: `/asset-maintenance/jobs/${e.jobId}`,
         assignment:
-          isMineByStepOwners(e.stepKey, uid, owners) || isMyAsset(e.stepKey, e.jobId)
+          isMineByStep(e.stepKey, e.jobId) || isMyAsset(e.stepKey, e.jobId)
             ? ("direct" as const)
             : ("team" as const),
         isApproval: false,

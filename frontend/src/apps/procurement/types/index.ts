@@ -154,6 +154,10 @@ export interface StepOwner {
   designationId: string | null;
   /** The owners. Authorization derives from this list alone. */
   employeeIds: string[];
+  /** userId → companies that owner covers (narrows their bucket only). See shared/lib/fmsOwners. */
+  companyScope?: Record<string, string[]>;
+  /** userId → categories that owner covers (Purchase Domestic only). Same rule. */
+  categoryScope?: Record<string, string[]>;
 }
 
 export interface ApprovalBand {

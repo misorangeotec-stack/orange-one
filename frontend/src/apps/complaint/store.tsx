@@ -46,6 +46,13 @@ import type {
   StepOwner,
 } from "./types";
 import type { StepSlaMap } from "./lib/sla";
+import {
+  ownerCoversCompany,
+  scopeOwnerIds,
+  serializeStepCompanyScopes,
+  type OwnerCompanyScope,
+  type StepCompanyScopes,
+} from "@/shared/lib/fmsOwners";
 
 const APP_ID = "complaint";
 
@@ -103,6 +110,13 @@ interface ComplaintStoreValue {
   isProcessCoordinator: boolean;
   /** NAV VISIBILITY ONLY — never authorization; use canActOn for that. */
   isStepOwner: (stepKey: StepKey) => boolean;
+  /**
+   * Is a row of this step at this company in MY queue? A step owner limited to
+   * some companies (Setup → Step Owners → Companies) sees only those. Admins,
+   * coordinators and anyone who does not own the step (view-only) see them all.
+   * Narrows buckets only — `canActOn` (the SQL mirror) is untouched.
+   */
+  seesCompanyAt: (stepKey: StepKey, companyId: string | null) => boolean;
   /** ⚠ MIRRORS the SQL `fms_complaint_can_act(step, req, uid)`. Keep them in step. */
   canActOn: (stepKey: StepKey, r: ComplaintRequest) => boolean;
   canSeeQueue: (stepKey: StepKey) => boolean;
@@ -175,6 +189,13 @@ interface ComplaintStoreValue {
   saveStepOwners: (inputs: W.StepOwnerInput[]) => Promise<void>;
   saveProcessCoordinators: (userIds: string[]) => Promise<void>;
   saveStepSla: (map: Record<string, unknown>) => Promise<void>;
+  /** Company-wise owners, per step. See shared/lib/fmsOwners. */
+  ownerCompanyScopes: StepCompanyScopes;
+  /**
+   * Save the per-owner companies of these steps (the other steps are kept).
+   * Several keys for the Management row, which staffs four steps at once.
+   */
+  setOwnerCompanyScope: (stepKeys: string[], scope: OwnerCompanyScope) => Promise<void>;
   saveApprovalThreshold: (threshold: number) => Promise<void>;
   /** The credit-note value above which approval is required. */
   approvalThreshold: number;
@@ -210,7 +231,7 @@ const Ctx = createContext<ComplaintStoreValue | null>(null);
 const EMPTY_DATA: ComplaintData = {
   stepOwners: [],
   designations: [],
-  config: { processCoordinatorIds: [], stepSla: {} as StepSlaMap, approvalThreshold: 25000 },
+  config: { processCoordinatorIds: [], stepSla: {} as StepSlaMap, approvalThreshold: 25000, ownerCompanyScopes: {} },
   natures: [],
   rootCauses: [],
   masterManagers: [],
@@ -276,7 +297,7 @@ export function ComplaintStoreProvider({ children }: { children: ReactNode }) {
       creditNotes,
       creditNoteDocs,
     } = d;
-    const { processCoordinatorIds, stepSla, approvalThreshold } = config;
+    const { processCoordinatorIds, stepSla, approvalThreshold, ownerCompanyScopes } = config;
 
     /* ------------------------------ capabilities ---------------------------- */
 
@@ -291,6 +312,13 @@ export function ComplaintStoreProvider({ children }: { children: ReactNode }) {
       isAdmin || (ownerFor(stepKey)?.employeeIds.includes(uid) ?? false);
 
     const isProcessCoordinator = isAdmin || processCoordinatorIds.includes(uid);
+
+    const seesCompanyAt = (stepKey: StepKey, companyId: string | null): boolean => {
+      if (isProcessCoordinator) return true;
+      const row = ownerFor(stepKey);
+      if (!row?.employeeIds.includes(uid)) return true;
+      return ownerCoversCompany(row.companyScope, uid, companyId);
+    };
     const isModuleViewer = session.isModuleViewer(APP_ID);
     const canMonitor = isModuleViewer || isProcessCoordinator;
     const canEdit = session.canEditModule(APP_ID);
@@ -374,7 +402,9 @@ export function ComplaintStoreProvider({ children }: { children: ReactNode }) {
       queueEntries.filter((e) => {
         if (e.stepKey !== stepKey) return false;
         const r = requestMap.get(e.requestId);
-        return r ? canActOn(stepKey, r) : false;
+        // Company-wise owners: another company's complaint is not in my bucket,
+        // even though the server would still let me act on it.
+        return r ? canActOn(stepKey, r) && seesCompanyAt(stepKey, r.companyId) : false;
       });
 
 
@@ -403,7 +433,11 @@ export function ComplaintStoreProvider({ children }: { children: ReactNode }) {
       myQueue(stepKey).length > 0 ||
       (stepKey === "assignee" && everAssignee);
 
-    const queueOwnerIds = (e: QueueEntry): string[] => ownerFor(e.stepKey)?.employeeIds ?? [];
+    // Narrowed to the owners who cover the complaint's company.
+    const queueOwnerIds = (e: QueueEntry): string[] => {
+      const row = ownerFor(e.stepKey);
+      return scopeOwnerIds(row?.employeeIds ?? [], row?.companyScope, requestMap.get(e.requestId)?.companyId);
+    };
 
     /* ------------------------- customer credit notes ------------------------ */
 
@@ -468,6 +502,7 @@ export function ComplaintStoreProvider({ children }: { children: ReactNode }) {
       isModuleViewer,
       isProcessCoordinator,
       isStepOwner,
+      seesCompanyAt,
       canActOn,
       canSeeQueue,
       canMonitor,
@@ -520,6 +555,12 @@ export function ComplaintStoreProvider({ children }: { children: ReactNode }) {
       saveStepOwners: w(W.saveStepOwners),
       saveProcessCoordinators: w(W.saveProcessCoordinators),
       saveStepSla: w(W.saveStepSla),
+      ownerCompanyScopes,
+      setOwnerCompanyScope: w(async (stepKeys: string[], scope: OwnerCompanyScope) => {
+        const next = { ...ownerCompanyScopes };
+        for (const k of stepKeys) next[k] = scope;
+        await W.saveOwnerCompanyScopes(serializeStepCompanyScopes(next));
+      }),
       saveApprovalThreshold: w(W.saveApprovalThreshold),
       approvalThreshold,
       requestNewMaster: w(W.requestNewMaster),

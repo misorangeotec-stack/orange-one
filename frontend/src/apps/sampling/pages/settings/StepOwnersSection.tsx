@@ -8,8 +8,10 @@ import { ScrollableTable } from "@/core/shared/components/ScrollableTable";
 import { FitCell } from "@/shared/components/ui/ColumnResizer";
 import { FIT } from "@/shared/lib/tableLook";
 import { useColumnWidths } from "@/shared/lib/useColumnWidths";
+import { OwnerCompanyScopeFields, ownerNamesWithScope, pruneScope, type ScopeCompany } from "@/shared/components/ui/OwnerCompanyScope";
+import type { OwnerCompanyScope } from "@/shared/lib/fmsOwners";
 import { useSamplingStore } from "../../store";
-import { STEPS, branchLabelsOf, isSourceScoped, type StepDef, type StepKey } from "../../lib/steps";
+import { STEPS, branchLabelsOf, isSourceScoped, sourceScopeKey, type StepDef, type StepKey } from "../../lib/steps";
 import { SAMPLING_SOURCES, SAMPLING_SOURCE_LABEL, type SamplingSource } from "../../types";
 
 /**
@@ -25,6 +27,10 @@ import { SAMPLING_SOURCES, SAMPLING_SOURCE_LABEL, type SamplingSource } from "..
  *
  * `result_handover` is single-rowed on purpose: its actor is already chosen per
  * request ("Result handover to"), so a source split would be redundant.
+ *
+ * Each owner can be limited to some companies: they stay owners of the step (so
+ * the server still lets them act) but get dues only for their companies'
+ * requests. A Domestic and an Export row keep separate company scopes.
  */
 type OwnerRow = { st: StepDef; source: SamplingSource | null };
 
@@ -35,6 +41,7 @@ export default function StepOwnersSection() {
   const [editing, setEditing] = useState<{ stepKey: StepKey; source: SamplingSource | null } | null>(null);
   const [deptIds, setDeptIds] = useState<string[]>([]);
   const [empIds, setEmpIds] = useState<string[]>([]);
+  const [scope, setScope] = useState<OwnerCompanyScope>({});
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
 
@@ -47,6 +54,12 @@ export default function StepOwnersSection() {
       ),
     [],
   );
+
+  const scopeCompanies: ScopeCompany[] = useMemo(
+    () => s.activeCompanies.map((c) => ({ id: c.id, label: c.name })),
+    [s.activeCompanies],
+  );
+  const personName = (id: string) => s.profileById(id)?.name ?? "Unknown";
 
   const deptOptions: MultiOption[] = useMemo(
     () => s.orgDepartments.map((d) => ({ value: d.id, label: d.name })),
@@ -76,6 +89,7 @@ export default function StepOwnersSection() {
     const cur = ownerOf(stepKey, source);
     setDeptIds(cur?.departmentIds ?? []);
     setEmpIds(cur?.employeeIds ?? []);
+    setScope(s.ownerCompanyScopes[sourceScopeKey(stepKey, source)] ?? {});
     setErr(null);
     setEditing({ stepKey, source });
   };
@@ -88,6 +102,7 @@ export default function StepOwnersSection() {
       const input = { departmentIds: deptIds, designationId: null, employeeIds: empIds };
       if (editing.source) await s.setStepSourceOwner(editing.stepKey, editing.source, input);
       else await s.setStepOwner(editing.stepKey, input);
+      await s.setOwnerCompanyScope(editing.stepKey, editing.source, pruneScope(scope, empIds));
       setEditing(null);
     } catch (e) {
       setErr((e as Error).message);
@@ -117,7 +132,7 @@ export default function StepOwnersSection() {
             <tbody {...fit.tbodyProps}>
               {ownerRows.map(({ st, source }) => {
                 const owner = ownerOf(st.key, source);
-                const names = (owner?.employeeIds ?? []).map((id) => s.profileById(id)?.name ?? "Unknown");
+                const names = ownerNamesWithScope(owner?.employeeIds ?? [], owner?.companyScope, personName, scopeCompanies);
                 return (
                   <tr key={`${st.key}:${source ?? ""}`} className="border-b border-line/70 last:border-0 hover:bg-page/60">
                     <td className="px-4 py-3 whitespace-nowrap">
@@ -179,6 +194,13 @@ export default function StepOwnersSection() {
           <FieldLabel label="Employees" hint="select one or more">
             <MultiSelect values={empIds} onChange={setEmpIds} options={peopleOptions} placeholder="Select owners" />
           </FieldLabel>
+          <OwnerCompanyScopeFields
+            employeeIds={empIds}
+            personName={personName}
+            companies={scopeCompanies}
+            value={scope}
+            onChange={setScope}
+          />
           {err && <p className="text-[12.5px] text-ryg-red">{err}</p>}
         </div>
       </Modal>

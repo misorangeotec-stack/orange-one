@@ -44,6 +44,15 @@ import type {
 import { STEPS, type StepKey } from "./lib/steps";
 import { makeImportEmail } from "./lib/emailMeta";
 import { ownerResolver, holderOfLines } from "./lib/owners";
+import {
+  OWNER_COMPANY_SCOPE_KEY,
+  ownerCoversCompany,
+  serializeStepCompanyScopes,
+  type OwnerCompanyScope,
+  type StepCompanyScopes,
+} from "@/shared/lib/fmsOwners";
+
+const EMPTY_SCOPES: StepCompanyScopes = {};
 import { masterTypeLabel } from "./lib/masterFields";
 import {
   buildImportIndex,
@@ -428,6 +437,12 @@ interface ImportStoreValue {
   /** Visibility half of isProcessCoordinator — the Control Center nav link and route. */
   canMonitor: boolean;
   isStepOwner: (stepKey: StepKey) => boolean;
+  /**
+   * Is a row of this step at this company in MY queue? A step owner limited to
+   * some companies (Setup → Step Owners → Companies) sees only those. Admins,
+   * coordinators and anyone who does not own the step (view-only) see them all.
+   */
+  seesCompanyAt: (stepKey: StepKey, companyId: string | null) => boolean;
   canSource: boolean;
   canGeneratePo: boolean;
   /**
@@ -620,6 +635,10 @@ interface ImportStoreValue {
 
   // mutations — config
   setStepOwner: (stepKey: string, input: StepOwnerInput) => Promise<void>;
+  /** Company-wise owners, per step. See shared/lib/fmsOwners. */
+  ownerCompanyScopes: StepCompanyScopes;
+  /** Save one step's per-owner companies (the other steps are kept). */
+  setOwnerCompanyScope: (stepKey: string, scope: OwnerCompanyScope) => Promise<void>;
   createApprovalBand: (input: ApprovalBandInput) => Promise<string>;
   editApprovalBand: (id: string, input: ApprovalBandInput) => Promise<void>;
   removeApprovalBand: (id: string) => Promise<void>;
@@ -671,6 +690,7 @@ export function ImportStoreProvider({ children }: { children: ReactNode }) {
   const reassignPoolDepartmentIds = data?.config.reassignPoolDepartmentIds ?? [];
   const reassignPoolUserIds = data?.config.reassignPoolUserIds ?? [];
   const stepSla = data?.config.stepSla ?? DEFAULT_STEP_SLA;
+  const ownerCompanyScopes = data?.config.ownerCompanyScopes ?? EMPTY_SCOPES;
   const requests = data?.requests ?? [];
   const requestItems = data?.requestItems ?? [];
   const quotations = data?.quotations ?? [];
@@ -698,7 +718,7 @@ export function ImportStoreProvider({ children }: { children: ReactNode }) {
     const snapshot: ImportSnapshot = {
       requests, requestItems, pos, poItems, pis, piItems, grns, grnItems, tallyBookings,
       qcInspections, qcItems, categories, payments, followups, activity,
-      config: { processCoordinatorIds, stepSla, reassignPoolDepartmentIds, reassignPoolUserIds },
+      config: { processCoordinatorIds, stepSla, reassignPoolDepartmentIds, reassignPoolUserIds, ownerCompanyScopes },
     };
     const importIndex = buildImportIndex(snapshot);
     const byName = <T extends { name: string; sortOrder: number }>(a: T, b: T) =>
@@ -766,6 +786,13 @@ export function ImportStoreProvider({ children }: { children: ReactNode }) {
      * the visibility half the nav and RequireCap read.
      */
     const canSeeStep = (stepKey: StepKey): boolean => isModuleViewer || isStepOwner(stepKey);
+
+    const seesCompanyAt = (stepKey: StepKey, companyId: string | null): boolean => {
+      if (isAdmin || processCoordinatorIds.includes(user.id)) return true;
+      const row = stepOwners.find((o) => o.stepKey === stepKey);
+      if (!row?.employeeIds.includes(user.id)) return true;
+      return ownerCoversCompany(row.companyScope, user.id, companyId);
+    };
 
     // Resolves against the org-wide list, not `dir.profileById`: the directory is
     // RLS-scoped, so a cross-department colleague would render blank. Null actors
@@ -938,8 +965,24 @@ export function ImportStoreProvider({ children }: { children: ReactNode }) {
       items.find((i) => i.id === itemId)?.name ?? "Unknown item";
 
     // --- notification fan-out helpers ---
-    const ownerIdsOf = (stepKey: StepKey): string[] =>
-      stepOwners.find((o) => o.stepKey === stepKey)?.employeeIds ?? [];
+    /**
+     * Who to tell about a step. Pass where the work is (a PO, a requisition, a
+     * line, or the company itself for a record not yet in the snapshot) and the
+     * owners are narrowed to those who cover its company — an Enterprise-only
+     * owner is not told about an O-tec GRN. Without it, the whole team.
+     */
+    const ownerIdsOf = (
+      stepKey: StepKey,
+      at?: { poId?: string | null; requestId?: string | null; lineId?: string | null; companyId?: string | null },
+    ): string[] => {
+      const requestId = at?.requestId ?? (at?.lineId ? requestItems.find((l) => l.id === at.lineId)?.requestId : null);
+      const companyId =
+        at?.companyId ??
+        (at?.poId ? pos.find((p) => p.id === at.poId)?.companyId : null) ??
+        (requestId ? requests.find((r) => r.id === requestId)?.companyId : null) ??
+        null;
+      return owners.stepOwnerIds(stepKey, companyId);
+    };
     const requesterOfLine = (lineId: string): string[] => {
       const line = requestItems.find((l) => l.id === lineId);
       const req = line ? requests.find((r) => r.id === line.requestId) : undefined;
@@ -1089,7 +1132,9 @@ export function ImportStoreProvider({ children }: { children: ReactNode }) {
       itemLabel,
       importIndex,
       queueEntries: buildQueueEntries(snapshot, importIndex),
-      sourcingQueue: requestItems.filter(lineInSourcing),
+      sourcingQueue: requestItems.filter(
+        (l) => lineInSourcing(l) && seesCompanyAt("sourcing", importIndex.requestById.get(l.requestId)?.companyId ?? null)
+      ),
       // The ONE owner-scoped queue: an approver sees only the lines they may act
       // on. The unfiltered predicate stays in lib/queues.ts for the Control Center.
       approvalQueue: requestItems.filter((l) => lineInApproval(l) && canApproveLine(l)),
@@ -1098,7 +1143,9 @@ export function ImportStoreProvider({ children }: { children: ReactNode }) {
       ),
       dueIsoForApprovalRequest: (r) => requestApprovalDueIso(snapshot, itemsByGroupId.get(r.id) ?? []),
       poPool: requestItems.filter(lineInPoDesk),
-      poRequestQueue: requests.filter((r) => (itemsByGroupId.get(r.id) ?? []).some(lineInPoDesk)),
+      poRequestQueue: requests.filter(
+        (r) => (itemsByGroupId.get(r.id) ?? []).some(lineInPoDesk) && seesCompanyAt("po", r.companyId)
+      ),
       poDeskLinesForRequest: (requestId) => poDeskLinesOf(itemsByGroupId.get(requestId) ?? []),
       poDeskTotalForRequest: (requestId) =>
         poDeskLinesOf(itemsByGroupId.get(requestId) ?? []).reduce((sum, l) => sum + (l.lineValue ?? 0), 0),
@@ -1124,6 +1171,7 @@ export function ImportStoreProvider({ children }: { children: ReactNode }) {
       completedPoGenEntries: completedPoGenEntries(snapshot),
       personName,
       isStepOwner,
+      seesCompanyAt,
       canSource: canEdit && isStepOwner("sourcing"),
       canGeneratePo: canEdit && isStepOwner("po"),
       // The exact client mirror of fms_import_cancel_line's authz. isStepOwner
@@ -1260,7 +1308,7 @@ export function ImportStoreProvider({ children }: { children: ReactNode }) {
               input.decision === "override"
                 ? `An approved line (vendor overridden) is ready for PO generation${input.reason ? ` — ${input.reason}` : ""}`
                 : "An approved line is ready for PO generation",
-            recipients: ownerIdsOf("po"),
+            recipients: ownerIdsOf("po", { lineId: input.requestItemId }),
             meta: email.approved({ kind: "line", requestItemId: input.requestItemId }, input.decision === "override" ? input.reason : null),
           });
         } else if (input.decision === "reject") {
@@ -1294,7 +1342,7 @@ export function ImportStoreProvider({ children }: { children: ReactNode }) {
             entityId: input.requestId,
             type: "approved",
             text: "An approved requisition is ready for PO generation",
-            recipients: ownerIdsOf("po"),
+            recipients: ownerIdsOf("po", { requestId: input.requestId }),
             meta: email.approved({ kind: "request", requestId: input.requestId }),
           });
         } else if (input.decision === "reject") {
@@ -1351,7 +1399,7 @@ export function ImportStoreProvider({ children }: { children: ReactNode }) {
           entityId: id,
           type: "po_generated",
           text: "A new PO is ready to share with the vendor",
-          recipients: ownerIdsOf("share_po"),
+          recipients: ownerIdsOf("share_po", { companyId: input.companyId }),
           // Built from the INPUT, never from `pos`: the PO was created a
           // millisecond ago and `invalidate()` has not run, so the store snapshot
           // in this closure does not contain it yet.
@@ -1428,7 +1476,7 @@ export function ImportStoreProvider({ children }: { children: ReactNode }) {
           text: `PO cancelled — ${reason}`,
           recipients: [
             ...(req?.requestedBy ? [req.requestedBy] : []),
-            ...ownerIdsOf("share_po"),
+            ...ownerIdsOf("share_po", { poId }),
           ],
           meta: email.poCancelled(poId, reason),
         });
@@ -1460,7 +1508,7 @@ export function ImportStoreProvider({ children }: { children: ReactNode }) {
           // stretch when Import had no PI step this pointed at `follow_up`; the
           // rule is and was "notify whoever owns the stage the PO lands on".)
           text: "PO shared with the vendor — collect the vendor's PI",
-          recipients: ownerIdsOf("collect_pi"),
+          recipients: ownerIdsOf("collect_pi", { poId }),
           // The Tally PO number and the document name are no longer passed in —
           // they belong to the PO stage. poShared() reads them off the store row,
           // which is safe: this runs BEFORE invalidate(), on a pre-share snapshot
@@ -1476,7 +1524,7 @@ export function ImportStoreProvider({ children }: { children: ReactNode }) {
           entityId: input.poId,
           type: "pi_collected",
           text: "The vendor's PI was collected — follow up on dispatch",
-          recipients: ownerIdsOf("follow_up"),
+          recipients: ownerIdsOf("follow_up", { poId: input.poId }),
           meta: email.piCollected(input),
         });
         await invalidate();
@@ -1502,7 +1550,7 @@ export function ImportStoreProvider({ children }: { children: ReactNode }) {
             input.kind === "advance"
               ? "Advance paid — follow up on dispatch"
               : "An installment payment was recorded",
-          recipients: input.kind === "advance" ? ownerIdsOf("follow_up") : [],
+          recipients: input.kind === "advance" ? ownerIdsOf("follow_up", { poId: input.poId }) : [],
           meta: input.kind === "advance" ? email.advancePaid(input) : undefined,
         });
         await invalidate();
@@ -1516,7 +1564,7 @@ export function ImportStoreProvider({ children }: { children: ReactNode }) {
             entityId: input.poId,
             type: "dispatched",
             text: "Goods dispatched — expect inward (GRN)",
-            recipients: ownerIdsOf("inward"),
+            recipients: ownerIdsOf("inward", { poId: input.poId }),
             meta: email.dispatched(input),
           });
         }
@@ -1529,7 +1577,7 @@ export function ImportStoreProvider({ children }: { children: ReactNode }) {
           entityId: input.poId,
           type: "grn_recorded",
           text: "Goods received (GRN) — book the entry in Tally",
-          recipients: ownerIdsOf("tally"),
+          recipients: ownerIdsOf("tally", { poId: input.poId }),
           meta: email.grnRecorded(input),
         });
         await invalidate();
@@ -1547,7 +1595,7 @@ export function ImportStoreProvider({ children }: { children: ReactNode }) {
             entityId: input.poId,
             type: "tally_booked",
             text: "Booked in Tally — the receipt is ready for QC inspection",
-            recipients: ownerIdsOf("qc_inspection"),
+            recipients: ownerIdsOf("qc_inspection", { poId: input.poId }),
             meta: email.tallyBooked({ poId: input.poId, tallyPiNo: input.tallyPiNo }),
           });
         }
@@ -1568,7 +1616,7 @@ export function ImportStoreProvider({ children }: { children: ReactNode }) {
             ? "QC rejected material — book the purchase return in Tally"
             : "QC approved — the purchase order is closed",
           // An approval ends the flow, so there is no downstream owner to tell.
-          recipients: rejected.length > 0 ? ownerIdsOf("purchase_return") : [],
+          recipients: rejected.length > 0 ? ownerIdsOf("purchase_return", { poId: input.poId }) : [],
           meta: email.qcRecorded({ poId: input.poId, rejectedCount: rejected.length, remarks: input.remarks ?? null }),
         });
         await invalidate();
@@ -1585,7 +1633,7 @@ export function ImportStoreProvider({ children }: { children: ReactNode }) {
           entityId: input.poId,
           type: "purchase_return_entered",
           text: "Purchase return booked in Tally — gate the material out",
-          recipients: ownerIdsOf("gate_outward"),
+          recipients: ownerIdsOf("gate_outward", { poId: input.poId }),
           meta: email.purchaseReturnEntered({ poId: input.poId, tallyRef: input.tallyRef }),
         });
         await invalidate();
@@ -1785,6 +1833,14 @@ export function ImportStoreProvider({ children }: { children: ReactNode }) {
         await setStepOwnerWrite(stepKey, input);
         await invalidate();
       },
+      ownerCompanyScopes,
+      setOwnerCompanyScope: async (stepKey, scope) => {
+        await setConfigWrite(
+          OWNER_COMPANY_SCOPE_KEY,
+          serializeStepCompanyScopes({ ...ownerCompanyScopes, [stepKey]: scope }),
+        );
+        await invalidate();
+      },
       createApprovalBand: async (input) => {
         const id = await insertApprovalBand(input);
         await invalidate();
@@ -1833,6 +1889,7 @@ export function ImportStoreProvider({ children }: { children: ReactNode }) {
     // after a successful write, and reassignCandidates goes stale.
     reassignPoolDepartmentIds,
     reassignPoolUserIds,
+    ownerCompanyScopes,
     requests,
     requestItems,
     quotations,

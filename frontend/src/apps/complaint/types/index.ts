@@ -489,6 +489,8 @@ export interface StepOwner {
   departmentIds: string[];
   designationId: string | null;
   employeeIds: string[];
+  /** userId → companies that owner covers (narrows their bucket only). See shared/lib/fmsOwners. */
+  companyScope?: Record<string, string[]>;
 }
 
 export interface Designation {

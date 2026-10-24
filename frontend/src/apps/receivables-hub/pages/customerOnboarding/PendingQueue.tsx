@@ -63,8 +63,16 @@ export default function PendingQueue() {
   // one they may not own.
   const step: StepKey = isStepKey(raw) ? raw : (visible[0] ?? "accounts_verification");
 
-  const pending = useMemo(() => s.queueFor(step).map((e) => e.request), [s, step]);
-  const completed = useMemo(() => s.completedFor(step), [s, step]);
+  // An owner limited to some companies sees only those companies' requests,
+  // pending and completed alike (Setup → Step owners → Companies).
+  const pending = useMemo(
+    () => s.queueFor(step).map((e) => e.request).filter((r) => s.seesCompanyAt(step, r.companyId)),
+    [s, step],
+  );
+  const completed = useMemo(
+    () => s.completedFor(step).filter((r) => s.seesCompanyAt(step, r.companyId)),
+    [s, step],
+  );
 
   /** Correct a step already recorded — shown only when the server would allow it. */
   const colCorrect: RequestColumn<CustomerRequest> = {
@@ -149,7 +157,7 @@ export default function PendingQueue() {
         {/* Only the reader's own queues. Showing all four with live counts would
             put back, one line lower, exactly what the sidebar stopped leaking. */}
         {visible.map((k) => {
-          const n = s.queueFor(k).length;
+          const n = s.queueFor(k).filter((e) => s.seesCompanyAt(k, e.request.companyId)).length;
           const on = k === step;
           return (
             <Button

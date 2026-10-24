@@ -8,7 +8,10 @@ import { ScrollableTable } from "@/core/shared/components/ScrollableTable";
 import { FitCell } from "@/shared/components/ui/ColumnResizer";
 import { FIT } from "@/shared/lib/tableLook";
 import { useColumnWidths } from "@/shared/lib/useColumnWidths";
+import { OwnerCompanyScopeFields, ownerNamesWithScope, pruneScope, type ScopeCompany } from "@/shared/components/ui/OwnerCompanyScope";
+import type { OwnerCompanyScope } from "@/shared/lib/fmsOwners";
 import { useProcurementStore } from "../../store";
+import type { StepOwner } from "../../types";
 import { STEPS, type StepKey } from "../../lib/steps";
 
 /**
@@ -16,6 +19,10 @@ import { STEPS, type StepKey } from "../../lib/steps";
  * Employees drawn from them — a step can be co-owned across departments. Every
  * selected employee may action the step and all are notified. Designation is not
  * chosen here; it follows from the employee and is shown beside their name.
+ *
+ * Each owner can be limited to some companies (like O2D's per-location owners):
+ * Bharat Singh → Enterprise, Gorakh Pawar → O-tec. They stay owners of the step;
+ * they just get dues only for their companies' requisitions and POs.
  */
 export default function StepOwnersSection() {
   const s = useProcurementStore();
@@ -24,8 +31,31 @@ export default function StepOwnersSection() {
   const [editing, setEditing] = useState<StepKey | null>(null);
   const [deptIds, setDeptIds] = useState<string[]>([]);
   const [empIds, setEmpIds] = useState<string[]>([]);
+  const [scope, setScope] = useState<OwnerCompanyScope>({});
+  const [catScope, setCatScope] = useState<OwnerCompanyScope>({});
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
+
+  const scopeCompanies: ScopeCompany[] = useMemo(
+    () => s.companies.filter((c) => c.active).map((c) => ({ id: c.id, label: s.companyLabel(c.id) })),
+    [s]
+  );
+  /** Purchase Domestic only: an owner can also be limited to some categories (Neha → expense heads). */
+  const scopeCategories: ScopeCompany[] = useMemo(
+    () => s.categories.filter((c) => c.active).map((c) => ({ id: c.id, label: c.name })),
+    [s.categories]
+  );
+  const personName = (id: string) => s.profileById(id)?.name ?? "Unknown";
+  /** "Neha (Enterprise Surat · FIXED ASSET, OTHER PURCHASE)" — both scopes in one cell. */
+  const ownerLabel = (owner: StepOwner | undefined) => {
+    const ids = owner?.employeeIds ?? [];
+    const byCompany = ownerNamesWithScope(ids, owner?.companyScope, () => "", scopeCompanies);
+    const byCategory = ownerNamesWithScope(ids, owner?.categoryScope, () => "", scopeCategories);
+    return ids.map((id, i) => {
+      const parts = [byCompany[i], byCategory[i]].map((t) => t.replace(/^ \((.*)\)$/, "$1")).filter(Boolean);
+      return parts.length ? `${personName(id)} (${parts.join(" · ")})` : personName(id);
+    });
+  };
 
   const deptOptions: MultiOption[] = useMemo(
     () => s.departments.map((d) => ({ value: d.id, label: d.name })),
@@ -53,6 +83,8 @@ export default function StepOwnersSection() {
     const cur = s.stepOwnerFor(stepKey);
     setDeptIds(cur?.departmentIds ?? []);
     setEmpIds(cur?.employeeIds ?? []);
+    setScope(s.ownerCompanyScopes[stepKey] ?? {});
+    setCatScope(s.ownerCategoryScopes[stepKey] ?? {});
     setErr(null);
     setEditing(stepKey);
   };
@@ -68,6 +100,8 @@ export default function StepOwnersSection() {
         designationId: null,
         employeeIds: empIds,
       });
+      await s.setOwnerCompanyScope(editing, pruneScope(scope, empIds));
+      await s.setOwnerCategoryScope(editing, pruneScope(catScope, empIds));
       setEditing(null);
     } catch (e) {
       setErr((e as Error).message);
@@ -93,7 +127,7 @@ export default function StepOwnersSection() {
           <tbody {...fit.tbodyProps}>
             {STEPS.map((st) => {
               const owner = s.stepOwnerFor(st.key);
-              const names = (owner?.employeeIds ?? []).map((id) => s.profileById(id)?.name ?? "Unknown");
+              const names = ownerLabel(owner);
               return (
                 <tr key={st.key} className="border-b border-line/70 last:border-0 hover:bg-page/60">
                   <td className="px-4 py-3 whitespace-nowrap">
@@ -150,6 +184,23 @@ export default function StepOwnersSection() {
                 : `${empIds.length} of ${peopleOptions.length} selected · every owner can action this step.`}
             </span>
           </FieldLabel>
+          <OwnerCompanyScopeFields
+            employeeIds={empIds}
+            personName={personName}
+            companies={scopeCompanies}
+            value={scope}
+            onChange={setScope}
+          />
+          <OwnerCompanyScopeFields
+            employeeIds={empIds}
+            personName={personName}
+            companies={scopeCategories}
+            value={catScope}
+            onChange={setCatScope}
+            label="Categories"
+            allLabel="All categories"
+            note="Combined with Companies: e.g. Neha → Enterprise + the expense categories she books. A PO with several categories goes to an owner if any of its lines is theirs."
+          />
           {err && <p className="text-[12.5px] text-ryg-red">{err}</p>}
         </div>
       </Modal>

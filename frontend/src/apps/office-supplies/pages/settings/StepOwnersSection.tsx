@@ -5,6 +5,8 @@ import Modal from "@/shared/components/ui/Modal";
 import MultiSelect, { type MultiOption } from "@/shared/components/ui/MultiSelect";
 import { FieldLabel } from "@/shared/components/ui/Form";
 import { ScrollableTable } from "@/core/shared/components/ScrollableTable";
+import { OwnerCompanyScopeFields, ownerNamesWithScope, pruneScope, type ScopeCompany } from "@/shared/components/ui/OwnerCompanyScope";
+import type { OwnerCompanyScope } from "@/shared/lib/fmsOwners";
 import { useSuppliesStore } from "../../store";
 import { STEPS, type StepKey } from "../../lib/steps";
 
@@ -17,12 +19,17 @@ import { STEPS, type StepKey } from "../../lib/steps";
  *                      name in that list could read EVERY request in EVERY
  *                      department — which is exactly how one department's HOD
  *                      ended up seeing another's requests. The list is gone.
+ *
+ * Each owner can be limited to some companies: they stay owners of the step (so
+ * the server still lets them act) but get dues only for their companies'
+ * requests. Scoped by company alone, not by the request's location.
  */
 export default function StepOwnersSection() {
   const s = useSuppliesStore();
   const [editing, setEditing] = useState<StepKey | null>(null);
   const [deptIds, setDeptIds] = useState<string[]>([]);
   const [empIds, setEmpIds] = useState<string[]>([]);
+  const [scope, setScope] = useState<OwnerCompanyScope>({});
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
 
@@ -34,6 +41,11 @@ export default function StepOwnersSection() {
   const deptsWithoutHod = useMemo(
     () => s.activeDepartments.filter((d) => !d.hodUserId),
     [s.activeDepartments],
+  );
+
+  const scopeCompanies: ScopeCompany[] = useMemo(
+    () => s.activeCompanies.map((c) => ({ id: c.id, label: c.name })),
+    [s.activeCompanies],
   );
 
   const deptOptions: MultiOption[] = useMemo(
@@ -70,6 +82,7 @@ export default function StepOwnersSection() {
     const cur = s.stepOwnerFor(stepKey);
     setDeptIds(cur?.departmentIds ?? []);
     setEmpIds(cur?.employeeIds ?? []);
+    setScope(s.ownerCompanyScopes[stepKey] ?? {});
     setErr(null);
     setEditing(stepKey);
   };
@@ -80,6 +93,7 @@ export default function StepOwnersSection() {
     setErr(null);
     try {
       await s.setStepOwner(editing, { departmentIds: deptIds, designationId: null, employeeIds: empIds });
+      await s.setOwnerCompanyScope(editing, pruneScope(scope, empIds));
       setEditing(null);
     } catch (e) {
       setErr((e as Error).message);
@@ -122,7 +136,7 @@ export default function StepOwnersSection() {
             <tbody>
               {assignableSteps.map((st) => {
                 const owner = s.stepOwnerFor(st.key);
-                const names = (owner?.employeeIds ?? []).map((id) => s.personName(id));
+                const names = ownerNamesWithScope(owner?.employeeIds ?? [], owner?.companyScope, s.personName, scopeCompanies);
                 return (
                   <tr key={st.key} className="border-b border-line/70 last:border-0 hover:bg-page/60">
                     <td className="px-4 py-3 whitespace-nowrap">
@@ -169,6 +183,13 @@ export default function StepOwnersSection() {
           <FieldLabel label="Employees" hint="select one or more">
             <MultiSelect values={empIds} onChange={setEmpIds} options={peopleOptions} placeholder="Select owners" />
           </FieldLabel>
+          <OwnerCompanyScopeFields
+            employeeIds={empIds}
+            personName={s.personName}
+            companies={scopeCompanies}
+            value={scope}
+            onChange={setScope}
+          />
           {err && <p className="text-[12.5px] text-ryg-red">{err}</p>}
         </div>
       </Modal>

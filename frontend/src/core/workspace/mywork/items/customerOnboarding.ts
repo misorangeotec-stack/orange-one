@@ -7,7 +7,8 @@
  * SQL `fms_customer_can_act`:
  *   - `submission` (a request bounced back for rework) is the RAISER's — no step
  *     owner configuration covers it;
- *   - every other step is its step owners';
+ *   - every other step is its step owners' — narrowed, for an owner limited to
+ *     some companies (Setup → Step owners → Companies), to those companies;
  *   - admins see every request, as "team".
  *
  * ⚠ COORDINATORS ARE NOT GIVEN EVERY REQUEST. A coordinator CAN act on anything,
@@ -42,7 +43,7 @@ export function customerOnboardingWorkItems(
   const owners = data.stepOwners as StepOwnerRow[];
 
   const mine = (step: string, r: CustomerRequest): boolean =>
-    step === "submission" ? r.raisedBy === uid : isMineByStepOwners(step, uid, owners);
+    step === "submission" ? r.raisedBy === uid : isMineByStepOwners(step, uid, owners, r.companyId);
 
   const live = buildQueueEntries(data.requests, data.stepSla).map((e) => ({
     step: e.stepKey as string,

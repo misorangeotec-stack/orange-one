@@ -14,8 +14,13 @@
  * `submission` is listed too, but it means something different: leave it EMPTY
  * and anyone with hub access may raise a customer (the normal case). Filling it
  * in restricts raising to those people.
+ *
+ * Each owner of a back-office step can be limited to some companies: they stay
+ * owners (the database check is unchanged), they just get dues, queue rows and
+ * My Work items only for their companies' requests (shared/lib/fmsOwners). Not
+ * offered on `submission` — it has no queue, so there is nothing to narrow.
  */
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Loader2, Save, Users } from "lucide-react";
 import { Button } from "@hub/components/ui/button";
 import { Card, CardContent } from "@hub/components/ui/card";
@@ -28,6 +33,9 @@ import { PeopleMultiSelect, useOrgPeople } from "@hub/components/customerOnboard
 import { useCustomerAction, useCustomerStore } from "@hub/lib/customerOnboarding/store";
 import { STEPS, type StepKey } from "@hub/lib/customerOnboarding/steps";
 import { useDirectory } from "@/core/platform/store";
+import { companyDisplayName } from "@/core/platform/liveMasters";
+import { OwnerCompanyScopeFields, ownerNamesWithScope, pruneScope, type ScopeCompany } from "@/shared/components/ui/OwnerCompanyScope";
+import type { OwnerCompanyScope } from "@/shared/lib/fmsOwners";
 
 const ALL_DEPTS = "__all__";
 
@@ -41,7 +49,17 @@ function StepRow({ step, title, blurb }: { step: StepKey; title: string; blurb: 
   const owner = s.stepOwnerFor(step);
   const [dept, setDept] = useState<string>(owner?.departmentIds[0] ?? ALL_DEPTS);
   const [ids, setIds] = useState<string[]>(owner?.employeeIds ?? []);
+  const savedScope = s.ownerCompanyScopes[step] ?? {};
+  const [scope, setScope] = useState<OwnerCompanyScope>(savedScope);
   const [busy, setBusy] = useState(false);
+  const scoped = step !== "submission";
+
+  // Active companies, alias-labelled ("Enterprise Surat") as everywhere else here.
+  const scopeCompanies: ScopeCompany[] = useMemo(
+    () => s.companies.map((c) => ({ id: c.id, label: companyDisplayName(c) })),
+    [s.companies],
+  );
+  const personName = (id: string) => s.personName(id);
 
   // Re-seed when the appointment genuinely changes underneath (another admin,
   // another tab).
@@ -50,16 +68,19 @@ function StepRow({ step, title, blurb }: { step: StepKey; title: string; blurb: 
   //   identities on every refetch — and react-query refetches on window focus —
   //   so depending on the arrays themselves would wipe a half-made selection the
   //   moment the admin alt-tabbed away and back.
-  const signature = `${(owner?.employeeIds ?? []).join(",")}|${(owner?.departmentIds ?? []).join(",")}`;
+  const signature =
+    `${(owner?.employeeIds ?? []).join(",")}|${(owner?.departmentIds ?? []).join(",")}|${JSON.stringify(savedScope)}`;
   useEffect(() => {
     setIds(owner?.employeeIds ?? []);
     setDept(owner?.departmentIds[0] ?? ALL_DEPTS);
+    setScope(savedScope);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [signature]);
 
   const dirty =
     JSON.stringify([...ids].sort()) !== JSON.stringify([...(owner?.employeeIds ?? [])].sort()) ||
-    (dept === ALL_DEPTS ? [] : [dept]).join() !== (owner?.departmentIds ?? []).join();
+    (dept === ALL_DEPTS ? [] : [dept]).join() !== (owner?.departmentIds ?? []).join() ||
+    (scoped && JSON.stringify(pruneScope(scope, ids)) !== JSON.stringify(pruneScope(savedScope, ids)));
 
   // The filter narrows the CANDIDATES only. Anyone already appointed stays
   // visible whatever department is selected, or narrowing the list would look
@@ -71,13 +92,14 @@ function StepRow({ step, title, blurb }: { step: StepKey; title: string; blurb: 
   const save = async () => {
     setBusy(true);
     try {
-      await run(() =>
-        s.writes.setStepOwner(step, {
+      await run(async () => {
+        await s.writes.setStepOwner(step, {
           departmentIds: dept === ALL_DEPTS ? [] : [dept],
           designationId: null,
           employeeIds: ids,
-        }),
-      );
+        });
+        if (scoped) await s.setOwnerCompanyScope(step, pruneScope(scope, ids));
+      });
       toast({ title: `${title} owners saved` });
     } catch (e) {
       toast({ variant: "destructive", title: "Could not save", description: (e as Error).message });
@@ -126,10 +148,25 @@ function StepRow({ step, title, blurb }: { step: StepKey; title: string; blurb: 
         </div>
       </div>
 
+      {scoped && (
+        <OwnerCompanyScopeFields
+          employeeIds={ids}
+          personName={personName}
+          companies={scopeCompanies}
+          value={scope}
+          onChange={setScope}
+        />
+      )}
+
       <div className="flex items-center gap-2">
         <Button size="sm" onClick={() => void save()} disabled={busy || !dirty} className="gap-1.5">
           {busy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Save className="h-3.5 w-3.5" />} Save
         </Button>
+        {scoped && ids.length > 0 && Object.keys(pruneScope(savedScope, ids)).length > 0 && !dirty && (
+          <span className="text-xs text-muted-foreground">
+            {ownerNamesWithScope(ids, savedScope, personName, scopeCompanies).join(", ")}
+          </span>
+        )}
         {ids.length === 0 && step !== "submission" && (
           <span className="text-xs text-amber-700 dark:text-amber-400">
             Nobody is appointed — requests arriving here will notify no one.

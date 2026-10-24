@@ -145,6 +145,13 @@ export const isSourceScoped = (key: string): boolean =>
   (SOURCE_SCOPED_STEPS as readonly string[]).includes(key);
 
 /**
+ * Where an owner row's company-wise scope is kept in the `owner_company_scope`
+ * config: the step key, or `step:source` for a source-split step's row.
+ */
+export const sourceScopeKey = (stepKey: string, source: string | null): string =>
+  source ? `${stepKey}:${source}` : stepKey;
+
+/**
  * The branches a step serves, in words — for the two Setup screens that render
  * STEPS as ONE FLAT LIST and so cannot lean on a branch heading to tell rows
  * apart. That matters: `result_received` (lab) and `result` (outward) are both

@@ -4,6 +4,7 @@ import { useComplaintStore } from "../store";
 import { dmy, runsManagementChain } from "../lib/format";
 import type { StepKey } from "../lib/steps";
 import type { ComplaintRequest } from "../types";
+import { scopeOwnerIds } from "@/shared/lib/fmsOwners";
 
 /**
  * Where ONE complaint has got to — the numbered rail across the top of its
@@ -226,7 +227,10 @@ export default function ComplaintStepper({ r }: { r: ComplaintRequest }) {
             ? [r.rmAssigneeName]
             : n.key === "raise"
               ? [r.requesterName].filter(Boolean)
-              : (owner?.employeeIds ?? []).map((id) => s.personName(id)).filter((nm) => nm !== "—");
+              : // Only the owners who cover this complaint's company.
+                scopeOwnerIds(owner?.employeeIds ?? [], owner?.companyScope, r.companyId)
+                  .map((id) => s.personName(id))
+                  .filter((nm) => nm !== "—");
 
         return {
           key: n.key,
