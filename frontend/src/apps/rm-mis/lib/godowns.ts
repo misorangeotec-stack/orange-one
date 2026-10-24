@@ -549,12 +549,21 @@ export const DEFAULT_GODOWN_CHOICE: GodownChoice = {
   "ent-surat": [`${RM_HOME_GODOWN}${GROUP_SEP}MANUFACTURING STOCK`],
 };
 
+/** A saved choice with the default filled in for every book it says nothing about — never the whole book. */
+const withDefaults = (c: GodownChoice): GodownChoice => {
+  const out: GodownChoice = { ...c };
+  for (const [book, list] of Object.entries(DEFAULT_GODOWN_CHOICE)) {
+    if (!(out[book] ?? []).length) out[book] = [...list];
+  }
+  return out;
+};
+
 export const loadGodownChoice = (): GodownChoice => {
   try {
     const raw = window.localStorage.getItem(KEY);
-    if (!raw) return DEFAULT_GODOWN_CHOICE;
+    if (!raw) return withDefaults({});
     const v = JSON.parse(raw) as GodownChoice;
-    if (!v || typeof v !== "object") return {};
+    if (!v || typeof v !== "object") return withDefaults({});
     const clean = cleanChoice(v);
     // Write the tidied version back so this happens once, not on every read. Deliberately NOT
     // through saveGodownChoice: that raises CHANGED, which is what called this in the first
@@ -566,9 +575,9 @@ export const loadGodownChoice = (): GodownChoice => {
         /* private mode: the tidy-up just happens again next time */
       }
     }
-    return clean;
+    return withDefaults(clean);
   } catch {
-    return {};
+    return withDefaults({});
   }
 };
 

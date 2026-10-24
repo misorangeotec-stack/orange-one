@@ -443,6 +443,37 @@ const CHANGED = "ink-mis:godowns-changed";
 export type GodownChoice = Record<string, string[]>;
 
 /**
+ * Where each book's ink is read from when nobody has saved a choice for it (user, 24-10-2026,
+ * the rule given when this FMS was built):
+ *
+ *   Otec Surat, Otec Noida, Enterprises Noida   the PRINTING INK group of Tally's Stock Summary
+ *   Enterprises Surat                           Finished Goods in FINISHED GOODS-SACHIN and HOJIWALA
+ *
+ * Live had no saved choice at all, so every book fell back to the whole company — Enterprises
+ * Surat read 1.5 lakh KGS of Finished Goods across Production, Lab, Warehouse and job work
+ * instead of the ~31,000 sitting in Sachin. A book only reads the whole company now if a saved
+ * choice says something else for it; there is no "whole company" default any more.
+ */
+export const DEFAULT_GODOWN_CHOICE: GodownChoice = {
+  "otec-surat": [wholeGroupKey("PRINTING INK")],
+  "otec-noida": [wholeGroupKey("PRINTING INK")],
+  "ent-noida": [wholeGroupKey("PRINTING INK")],
+  "ent-surat": [
+    godownGroupKey("FINISHED GOODS-SACHIN", "FINISHED GOODS"),
+    godownGroupKey("HOJIWALA", "FINISHED GOODS"),
+  ],
+};
+
+/** A saved choice with the default filled in for every book it says nothing about. */
+const withDefaults = (c: GodownChoice): GodownChoice => {
+  const out: GodownChoice = { ...c };
+  for (const [book, list] of Object.entries(DEFAULT_GODOWN_CHOICE)) {
+    if (!(out[book] ?? []).length) out[book] = [...list];
+  }
+  return out;
+};
+
+/**
  * Drop picks that no longer mean anything for a book.
  *
  * A book that was being narrowed by godown before it moved to stock groups still has its old
@@ -470,7 +501,7 @@ export const loadGodownChoice = (): GodownChoice => {
   try {
     const raw = window.localStorage.getItem(KEY);
     const v = raw ? (JSON.parse(raw) as GodownChoice) : {};
-    if (!v || typeof v !== "object") return {};
+    if (!v || typeof v !== "object") return withDefaults({});
     const clean = cleanChoice(v);
     // Write the tidied version back so this happens once, not on every read. Deliberately NOT
     // through saveGodownChoice: that raises CHANGED, which is what called this in the first
@@ -482,9 +513,9 @@ export const loadGodownChoice = (): GodownChoice => {
         /* private mode: the tidy-up just happens again next time */
       }
     }
-    return clean;
+    return withDefaults(clean);
   } catch {
-    return {};
+    return withDefaults({});
   }
 };
 
