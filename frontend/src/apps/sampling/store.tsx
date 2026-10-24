@@ -144,6 +144,13 @@ interface SamplingStoreValue {
   activeCollectors: Collector[];
   recipients: HandoverRecipient[];
   activeRecipients: HandoverRecipient[];
+  /**
+   * WHO A SAMPLE CAN BE HANDED TO — every Orange Hub user (org-wide, staff only;
+   * customer accounts are never in `list_org_people`), by name. Replaced the
+   * curated recipient master as the hand-over list on 2026-10-24: the plant hands
+   * samples to whoever needs them, and the server never checked the master.
+   */
+  handoverPeople: { userId: string; name: string }[];
   senders: Sender[];
   activeSenders: Sender[];
   confirmers: Confirmer[];
@@ -576,6 +583,9 @@ export function SamplingStoreProvider({ children }: { children: ReactNode }) {
       activeCollectors: byPersonOrder(collectors),
       recipients,
       activeRecipients: byPersonOrder(recipients),
+      handoverPeople: (orgPeople ?? [])
+        .map((p) => ({ userId: p.id, name: p.name }))
+        .sort((a, b) => a.name.localeCompare(b.name)),
       senders,
       activeSenders: byPersonOrder(senders),
       confirmers,

@@ -108,11 +108,11 @@ export default function LabProcessModal({
   const options: ComboOption[] = useMemo(() => {
     const opts: ComboOption[] = [
       ...(selfId ? [{ value: selfId, label: "Self (me)" }] : []),
-      ...s.activeRecipients.filter((r) => r.userId !== selfId).map((r) => ({ value: r.userId, label: r.name })),
+      ...s.handoverPeople.filter((r) => r.userId !== selfId).map((r) => ({ value: r.userId, label: r.name })),
     ];
     if (pick.startsWith("free:")) opts.push({ value: pick, label: pick.slice(5) });
     return opts;
-  }, [s.activeRecipients, selfId, pick]);
+  }, [s.handoverPeople, selfId, pick]);
 
   const existing = request?.labDocPath ? <LabDocLink path={request.labDocPath} name={request.labDocName} /> : null;
 
@@ -171,7 +171,7 @@ export default function LabProcessModal({
       } else {
         toId = pick;
         toName =
-          pick === selfId ? session.user?.name ?? "Self" : s.activeRecipients.find((r) => r.userId === pick)?.name ?? null;
+          pick === selfId ? session.user?.name ?? "Self" : s.handoverPeople.find((r) => r.userId === pick)?.name ?? null;
       }
 
       const base = {
