@@ -10,7 +10,7 @@ import {
   setOcSeries as setOcSeriesWrite,
 } from "./data/ocpiWrites";
 import { buildQueueEntries, type QueueEntry, type QueueStep } from "./lib/queues";
-import { RAISER_STEPS } from "./lib/owners";
+import { RAISER_STEPS, quotationApproverIds } from "./lib/owners";
 import { resolveStepSla, type StepSlaMap } from "./lib/sla";
 import type { StepKey } from "./lib/steps";
 import type {
@@ -18,6 +18,7 @@ import type {
   OcpiStepOwner, QuotationVersion,
   OcpiMasterManager, OcpiMasterRequest, OcpiMasterType, OcpiNamedMaster,
   OcpiDryer, OcpiMachineHead, OcpiSalesPage, OcpiServiceCheckpoint, OcpiServiceChecklist,
+  OcpiApprovalLocation,
 } from "./types";
 
 /**
@@ -68,6 +69,8 @@ interface OcpiStoreValue {
   salespersonTags: string[];
 
   stepOwners: OcpiStepOwner[];
+  /** Quotation approval by location (Surat / Noida) — Setup → Who does what. */
+  approvalLocations: OcpiApprovalLocation[];
   config: OcpiConfig;
   /**
    * The live per-step due-date rules, defaults already merged in.
@@ -126,6 +129,13 @@ interface OcpiStoreValue {
   serviceOnly: boolean;
   /** May this person ACTION this step? */
   canActOn: (step: StepKey) => boolean;
+  /**
+   * Who approves THIS quotation: its location's approvers, else the Approve
+   * Quotation owners. Mirrors fms_ocpi_quotation_approver_ids.
+   */
+  approversFor: (deal: OcpiDeal) => string[];
+  /** May this person approve THIS quotation? Mirrors fms_ocpi_can_act on the deal. */
+  canApprove: (deal: OcpiDeal) => boolean;
   /** May this person OPEN this step's queue? Viewers included. */
   canSeeQueue: (step: QueueStep) => boolean;
   /** May this person open the settings screens? */
@@ -209,6 +219,7 @@ export function OcpiStoreProvider({ children }: { children: ReactNode }) {
 
   const value = useMemo<OcpiStoreValue>(() => {
     const stepOwners = data?.stepOwners ?? [];
+    const approvalLocations = data?.approvalLocations ?? [];
     const config = data?.config ?? EMPTY_CONFIG;
     const deals = data?.deals ?? [];
     const machines = data?.machines ?? [];
@@ -226,6 +237,14 @@ export function OcpiStoreProvider({ children }: { children: ReactNode }) {
 
     const isOwner = (step: StepKey): boolean => ownersOf(step).includes(userId);
 
+    // Named on a location's approver list (Surat / Noida) — an approver for
+    // that location's quotations even when not on the general list.
+    const isLocationApprover = approvalLocations.some((l) => l.employeeIds.includes(userId));
+    const approversFor = (deal: OcpiDeal): string[] =>
+      quotationApproverIds(deal, stepOwners, approvalLocations);
+    const canApprove = (deal: OcpiDeal): boolean =>
+      canEdit && (isProcessCoordinator || approversFor(deal).includes(userId));
+
     // Mirrors fms_ocpi_can_act. The origin step is open to any editor while it
     // has no owners; naming owners closes it to them, admins and coordinators.
     const canActOn = (step: StepKey): boolean => {
@@ -241,6 +260,7 @@ export function OcpiStoreProvider({ children }: { children: ReactNode }) {
       !isAdmin &&
       !isProcessCoordinator &&
       !isViewer &&
+      !isLocationApprover &&
       stepOwners.every((o) => o.stepKey === "service_check" || !o.employeeIds.includes(userId)) &&
       !deals.some((d) => d.raisedBy === userId);
 
@@ -262,6 +282,7 @@ export function OcpiStoreProvider({ children }: { children: ReactNode }) {
       isProcessCoordinator ||
       isViewer ||
       isOwner(step) ||
+      (step === "quotation_approval" && isLocationApprover) ||
       (RAISER_STEPS.includes(step) && canRaise);
 
     // ⚠ The SLA map is passed IN rather than read inside the builder, which is
@@ -387,6 +408,7 @@ export function OcpiStoreProvider({ children }: { children: ReactNode }) {
       salespersonTags: session.user?.receivablesSalespersons ?? [],
 
       stepOwners,
+      approvalLocations,
       config,
       stepSla,
       companyProfiles,
@@ -416,6 +438,8 @@ export function OcpiStoreProvider({ children }: { children: ReactNode }) {
       canRaise,
       serviceOnly,
       canActOn,
+      approversFor,
+      canApprove,
       canSeeQueue,
       canSetup: isAdmin,
 

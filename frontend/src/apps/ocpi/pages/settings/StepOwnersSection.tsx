@@ -4,7 +4,7 @@ import Card from "@/shared/components/ui/Card";
 import MultiSelect from "@/shared/components/ui/MultiSelect";
 import { fetchOrgPeople } from "@/core/platform/orgPeople";
 import { useOcpiStore } from "../../store";
-import { setStepOwners } from "../../data/ocpiWrites";
+import { setLocationApprovers, setStepOwners } from "../../data/ocpiWrites";
 import { LIVE_STEPS } from "../../lib/steps";
 
 /**
@@ -70,6 +70,29 @@ export default function StepOwnersSection() {
     }
   }
 
+  /*
+    Approval by location. A quotation the salesperson marks Surat goes to
+    Surat's approvers, Noida to Noida's — INSTEAD OF the list above, not as well
+    as it. A location left empty, and a quotation with no location, fall back to
+    the Approve Quotation list. Same rule as fms_ocpi_quotation_approver_ids.
+  */
+  async function saveLocation(location: string, ids: string[]) {
+    const key = `loc:${location}`;
+    setBusy(key);
+    setError(null);
+    setSaved(null);
+    try {
+      await setLocationApprovers(location, ids);
+      await s.refresh();
+      setSaved(key);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setBusy(null);
+    }
+  }
+  const locations = s.approvalLocations.filter((l) => l.active);
+
   return (
     <Card className="space-y-4 p-5">
       <div>
@@ -118,6 +141,39 @@ export default function StepOwnersSection() {
                 Nobody can approve quotations until somebody is named here — a salesperson will be
                 able to send one for approval and it will sit there.
               </p>
+            )}
+
+            {step.key === "quotation_approval" && locations.length > 0 && (
+              <div className="mt-3 space-y-2.5 border-t border-line pt-3">
+                <div>
+                  <span className="text-[13px] font-semibold text-navy">Approval by location</span>
+                  <p className="mt-0.5 text-[12px] text-grey-2">
+                    The salesperson picks the location on the quotation. A Surat quotation goes only
+                    to Surat&rsquo;s approvers, a Noida one only to Noida&rsquo;s. Leave a location
+                    empty, or leave the quotation without one, and it goes to the list above.
+                  </p>
+                </div>
+                {locations.map((loc) => {
+                  const key = `loc:${loc.name}`;
+                  return (
+                    <div key={loc.name} className="grid gap-1.5 sm:grid-cols-[110px_1fr] sm:items-center">
+                      <span className="text-[13px] font-medium text-navy">
+                        {loc.name}
+                        {saved === key && !busy && (
+                          <span className="ml-2 text-[12px] font-normal text-grey-2">Saved</span>
+                        )}
+                      </span>
+                      <MultiSelect
+                        values={loc.employeeIds}
+                        onChange={(ids) => void saveLocation(loc.name, ids)}
+                        options={options}
+                        placeholder="Nobody — uses the Approve Quotation list above"
+                        disabled={!s.isAdmin || busy === key}
+                      />
+                    </div>
+                  );
+                })}
+              </div>
             )}
           </div>
         );

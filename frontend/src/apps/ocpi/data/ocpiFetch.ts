@@ -13,6 +13,7 @@ import type {
   OcpiMasterManager, OcpiMasterRequest, OcpiNamedMaster,
   OcpiDryer, OcpiMachineHead, OcpiSalesPage,
   OcpiServiceCheckAnswer, OcpiServiceCheckpoint, OcpiServiceChecklist,
+  OcpiApprovalLocation,
 } from "../types";
 import type { StepSla } from "../lib/sla";
 // ⚠ A VALUE IMPORT, and safe: `fieldSpec` imports only from `../types`, so this
@@ -64,7 +65,8 @@ type Tbl =
   | "fms_ocpi_master_managers"
   | "fms_ocpi_master_requests"
   | "fms_ocpi_service_checkpoints"
-  | "fms_ocpi_service_checklists";
+  | "fms_ocpi_service_checklists"
+  | "fms_ocpi_approval_locations";
 
 async function fetchAll(table: Tbl, orderBy = "created_at"): Promise<any[]> {
   const out: any[] = [];
@@ -182,6 +184,8 @@ export interface OcpiData {
   masterRequests: OcpiMasterRequest[];
   serviceCheckpoints: OcpiServiceCheckpoint[];
   serviceChecklists: OcpiServiceChecklist[];
+  /** Quotation approval by location. Empty before migration 20270216120000. */
+  approvalLocations: OcpiApprovalLocation[];
 }
 
 const num = (v: unknown): number | null => (v === null || v === undefined ? null : Number(v));
@@ -344,6 +348,7 @@ const mapDeal = (r: any): OcpiDeal => ({
 
   companyId: r.company_id ?? null,
   locationId: r.location_id ?? null,
+  approvalLocation: r.approval_location ?? null,
 
   machineCount: r.machine_count ?? null,
   machineId: r.machine_id ?? null,
@@ -608,6 +613,9 @@ export async function fetchOcpiData(): Promise<OcpiData> {
   const checkpointRows = await fetchAll("fms_ocpi_service_checkpoints", "sort_order").catch(() => []);
   // ⚠ SOFT for the same reason: missing until migration 20270131120000 is applied.
   const checklistRows = await fetchAll("fms_ocpi_service_checklists").catch(() => []);
+  // ⚠ SOFT for the same reason: missing until migration 20270216120000 is applied.
+  //   No table = no location lists = every quotation goes to the general approvers.
+  const approvalLocationRows = await fetchAll("fms_ocpi_approval_locations", "sort_order").catch(() => []);
   // ⚠ A SERVICE-ONLY USER CANNOT READ fms_ocpi_deals (restrictive policy), so
   //   their Service Check rows come from fms_ocpi_service_deals — customer,
   //   machine and service fields only. Merged in only where the full row is not
@@ -693,6 +701,11 @@ export async function fetchOcpiData(): Promise<OcpiData> {
         id: r.id, machineId: r.machine_id, filePath: r.file_path, fileName: r.file_name,
         items: Array.isArray(r.items) ? r.items.map(String) : [],
         uploadedBy: r.uploaded_by ?? null, updatedAt: r.updated_at,
+      }),
+    ),
+    approvalLocations: approvalLocationRows.map(
+      (r: any): OcpiApprovalLocation => ({
+        name: r.name, employeeIds: r.employee_ids ?? [], sortOrder: r.sort_order ?? 0, active: r.active !== false,
       }),
     ),
   };

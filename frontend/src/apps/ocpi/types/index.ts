@@ -135,6 +135,8 @@ export interface OcpiDeal {
 
   companyId: string | null;
   locationId: string | null;
+  /** Surat / Noida — whose approvers the quotation goes to. Null = the general list. */
+  approvalLocation: string | null;
 
   machineCount: number | null;
   machineId: string | null;
@@ -775,6 +777,19 @@ export interface OcpiStepOwner {
   departmentIds: string[];
   designationId: string | null;
   employeeIds: string[];
+}
+
+/**
+ * Quotation approval by location (Surat / Noida). A deal whose
+ * `approvalLocation` names a row with anyone in it goes to THOSE approvers,
+ * instead of the Approve Quotation owners; an empty row falls back to them.
+ * Mirrors fms_ocpi_quotation_approver_ids.
+ */
+export interface OcpiApprovalLocation {
+  name: string;
+  employeeIds: string[];
+  sortOrder: number;
+  active: boolean;
 }
 
 export interface OcpiNotification {

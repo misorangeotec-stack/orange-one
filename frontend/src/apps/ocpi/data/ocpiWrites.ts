@@ -181,6 +181,15 @@ export async function setStepOwners(
   if (error) throw new Error(error.message);
 }
 
+/** Set who approves quotations for one location (Surat / Noida). Admin only, enforced server-side. */
+export async function setLocationApprovers(location: string, employeeIds: string[]): Promise<void> {
+  const { error } = await db.rpc("fms_ocpi_set_location_approvers", {
+    p_location: location,
+    p_employee_ids: employeeIds,
+  });
+  if (error) throw new Error(error.message);
+}
+
 /**
  * Confirm where the quotation series stands, and move the counter to it.
  *

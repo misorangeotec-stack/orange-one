@@ -27,7 +27,7 @@
 import { appName } from "@/apps/appInfo";
 import type { OcpiData } from "@/apps/ocpi/data/ocpiFetch";
 import { buildQueueEntries, dealRef, dueIsoFor, type QueueStep } from "@/apps/ocpi/lib/queues";
-import { ocpiStepOwnerIds } from "@/apps/ocpi/lib/owners";
+import { ocpiStepOwnerIds, quotationApproverIds } from "@/apps/ocpi/lib/owners";
 import { resolveStepSla } from "@/apps/ocpi/lib/sla";
 import { stepByKey } from "@/apps/ocpi/lib/steps";
 import { STATUS_STEP, type OcpiDeal } from "@/apps/ocpi/types";
@@ -40,12 +40,16 @@ export function ocpiWorkItems(data: OcpiData, uid: string, isAdmin: boolean, can
   if (!canEdit) return [];
   const stepSla = resolveStepSla(data.stepSla);
   const byId = new Map(data.deals.map((d) => [d.id, d]));
-  const approvers = data.stepOwners.find((o) => o.stepKey === "quotation_approval")?.employeeIds ?? [];
-  const soleApprover = approvers.length === 1 && approvers[0] === uid;
+  const locations = data.approvalLocations ?? [];
+  // Sole approver is judged per deal: the deal's location may have its own list.
+  const soleApprover = (d: OcpiDeal) => {
+    const approvers = quotationApproverIds(d, data.stepOwners, locations);
+    return approvers.length === 1 && approvers[0] === uid;
+  };
 
   const mine = (step: QueueStep, d: OcpiDeal): boolean => {
-    if (step === "quotation_approval" && d.raisedBy === uid && !soleApprover) return false;
-    return ocpiStepOwnerIds(d, step, data.stepOwners, () => true).includes(uid);
+    if (step === "quotation_approval" && d.raisedBy === uid && !soleApprover(d)) return false;
+    return ocpiStepOwnerIds(d, step, data.stepOwners, () => true, locations).includes(uid);
   };
 
   const live = buildQueueEntries(data.deals, stepSla).map((e) => ({ step: e.stepKey, dealId: e.dealId, ref: e.ref, dueIso: e.dueIso, held: false }));
