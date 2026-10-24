@@ -1,15 +1,26 @@
-import { createContext, useContext, useEffect, useMemo, useRef } from "react";
+import { createContext, useContext, useEffect, useMemo, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useSession } from "@/core/platform/session";
 import { useDirectory } from "@/core/platform/store";
 import { fetchOrgPeople } from "@/core/platform/orgPeople";
 import { CUSTOMER_ACTORS_QK, fetchCustomerOrderActors } from "./data/customerOrgs";
+import {
+  ROUND_RETURNS_QK,
+  fetchRoundReturns,
+  recordRoundReturn as recordRoundReturnWrite,
+  requestRoundReturn as requestRoundReturnWrite,
+  updateRoundReturn as updateRoundReturnWrite,
+  withdrawRoundReturn as withdrawRoundReturnWrite,
+  type RoundReturnPayload,
+  type RoundReturnRequest,
+} from "./data/roundReturns";
 import type { Department as OrgDepartment, Profile } from "@/core/platform/types";
 import {
-  DISPATCH_QK, DISPATCH_MASTERS_QK, fetchDispatchData, fetchDispatchMasters, dispatchQueryKey,
+  DISPATCH_QK, DISPATCH_MASTERS_QK, DISPATCH_OPEN_QK, fetchDispatchData, fetchDispatchMasters, dispatchQueryKey,
   fetchOrderActivity, orderActivityQueryKey, fetchDispatchDelta, type DispatchData,
 } from "./data/dispatchFetch";
+import { refreshFmsBells } from "@/shared/lib/fmsBell";
 import {
   announce as announceWrite,
   amendRound as amendRoundWrite,
@@ -21,7 +32,6 @@ import {
   insertMasters as insertMastersWrite,
   mapCustomerItems as mapCustomerItemsWrite,
   mapPartyCompanies as mapPartyCompaniesWrite,
-  markNotificationsRead as markNotificationsReadWrite,
   materialNothingAvailable as materialNothingAvailableWrite,
   recordSalesReturn as recordSalesReturnWrite,
   recordStep as recordStepWrite,
@@ -67,9 +77,17 @@ import { DEFAULT_STEP_SLA, type StepSlaMap } from "./lib/sla";
 import type { OwnerStepKey } from "./lib/steps";
 import type {
   Company, CompanyLocation, Customer, Designation, DispatchActivity, DispatchMasterRequest,
-  CustomerItem, CustomerCompany, DispatchMasterType, DispatchNotification, DispatchOrder, Item, MasterManager, NamedMaster, StepDoc, StepOwner, } from "./types";
+  CustomerItem, CustomerCompany, DispatchMasterType, DispatchOrder, Item, MasterManager, NamedMaster, RoundReturn, StepDoc, StepOwner, } from "./types";
+
+/** A return against a finished invoice, with the order it belongs to. */
+export interface RoundReturnRow {
+  ret: RoundReturn;
+  order: DispatchOrder;
+}
 
 const QK = DISPATCH_QK;
+// Module-level so the memo below sees ONE empty array, not a new one per render.
+const EMPTY_RETURNS: RoundReturn[] = [];
 
 export interface DispatchStoreValue {
   isLoading: boolean;
@@ -360,6 +378,24 @@ export interface DispatchStoreValue {
   salesReturnCompleted: DispatchOrder[];
 
   /**
+   * Sales returns against a FINISHED invoice — usually on a closed order
+   * (`fms_dispatch_round_returns`). The second kind of work on the Sales Return
+   * page, beside the cancellations above. Paperwork only: none of it moves an
+   * order, so it stays out of every queue builder for the same reasons.
+   *
+   * `roundReturns` is everything this person can SEE (RLS: whoever can see the
+   * order); the two lists are scoped to what they may ACTION, like every queue.
+   */
+  roundReturns: RoundReturn[];
+  roundReturnsFor: (orderId: string) => RoundReturn[];
+  roundReturnsPending: RoundReturnRow[];
+  roundReturnsCompleted: RoundReturnRow[];
+  /** Mirrors fms_dispatch_request_round_return's authz (not its per-round refusals). */
+  canRequestRoundReturn: (o: DispatchOrder) => boolean;
+  /** Mirrors fms_dispatch_withdraw_round_return's authz, for a pending return. */
+  canWithdrawRoundReturn: (ret: RoundReturn, o: DispatchOrder) => boolean;
+
+  /**
    * NEW CUSTOMER ORDERS — placed by a customer, not yet written up (OD-14).
    *
    * ⚠ OFF THE CHAIN, for the same reasons as Sales Return above. These are not
@@ -376,7 +412,7 @@ export interface DispatchStoreValue {
    *   server's `fms_dispatch_complete_customer_order` enforces.
    */
   customerOrdersPending: DispatchOrder[];
-  /** Written up, and not yet past credit check — still reopenable. */
+  /** Every written-up customer order, at any later stage (reopen is `canCompleteCustomerOrder`). */
   customerOrdersCompleted: DispatchOrder[];
   /** May this person write up (or reopen) this customer order? */
   canCompleteCustomerOrder: (o: DispatchOrder) => boolean;
@@ -395,7 +431,11 @@ export interface DispatchStoreValue {
   // feed
   /** ⚠ REMOVED — an order's trail is its own query now: useOrderActivity(orderId).
    *  It was 2,943 rows in the snapshot, refetched after every save, for one panel. */
-  notifications: DispatchNotification[];
+  /**
+   * ⚠ NO BELL HERE (PERF-2 Step 2). The bell is its own small query, read only by
+   *   OrderToDispatchLayout (useFmsBell). Held in this value it would rebuild the
+   *   whole store, and so re-render every Dispatch page, on every mark-read.
+   */
   processCoordinatorIds: string[];
 
   // actions
@@ -421,6 +461,11 @@ export interface DispatchStoreValue {
   recordSalesReturn: (orderId: string, payload: SalesReturnPayload) => Promise<void>;
   updateSalesReturn: (orderId: string, payload: SalesReturnPayload) => Promise<void>;
   withdrawCancelRequest: (orderId: string, reason: string) => Promise<void>;
+  /** Raise a sales return against a finished round's invoice. */
+  requestRoundReturn: (orderId: string, roundNo: number, req: RoundReturnRequest) => Promise<void>;
+  recordRoundReturn: (returnId: string, payload: RoundReturnPayload) => Promise<void>;
+  updateRoundReturn: (returnId: string, payload: RoundReturnPayload) => Promise<void>;
+  withdrawRoundReturn: (returnId: string, reason: string) => Promise<void>;
   closeOrder: (orderId: string, reason: string) => Promise<void>;
   materialNothingAvailable: (orderId: string, remarks: string) => Promise<void>;
   /** `receiver` OMITTED keeps the round's stored paperwork — see amendRound. */
@@ -470,7 +515,12 @@ export interface DispatchStoreValue {
   resolveMasterRequest: (
     id: string, approve: boolean, payload: Record<string, unknown> | null, note: string | null,
   ) => Promise<void>;
-  markNotificationsRead: (ids: string[]) => Promise<void>;
+  /**
+   * "What changed", on demand, with `isFetching` true until it lands. The bell
+   * calls it when a notification points at an order this copy does not hold yet,
+   * so the order page says "Loading…" rather than "Order not found".
+   */
+  refreshOrders: () => Promise<void>;
 }
 
 const Ctx = createContext<DispatchStoreValue | null>(null);
@@ -481,6 +531,9 @@ export function DispatchStoreProvider({ children }: { children: ReactNode }) {
   const queryClient = useQueryClient();
   const userId = session.user?.id ?? null;
   const isAdmin = session.isAdmin;
+
+  // True while a bell-requested "what changed" refresh is in flight (refreshOrders).
+  const [refreshingOrders, setRefreshingOrders] = useState(false);
 
   const { data, isLoading, isFetching, error } = useQuery({
     queryKey: dispatchQueryKey(userId),
@@ -537,6 +590,20 @@ export function DispatchStoreProvider({ children }: { children: ReactNode }) {
     staleTime: 5 * 60_000,
   });
 
+  /**
+   * Sales returns against finished invoices — its own query, see
+   * data/roundReturns.ts for why. Keyed on the user because RLS scopes it.
+   */
+  const roundReturnsKey = [...ROUND_RETURNS_QK, userId] as const;
+  const { data: roundReturnsData } = useQuery({
+    queryKey: roundReturnsKey,
+    queryFn: fetchRoundReturns,
+    enabled: !!session.user,
+    staleTime: 60_000,
+    refetchOnWindowFocus: false,
+  });
+  const roundReturns = roundReturnsData ?? EMPTY_RETURNS;
+
   const stepOwners = data?.stepOwners ?? [];
   const stepAssignees = data?.stepAssignees ?? [];
   const designations = data?.designations ?? [];
@@ -550,7 +617,6 @@ export function DispatchStoreProvider({ children }: { children: ReactNode }) {
   const masterManagers = data?.masterManagers ?? [];
   const masterRequests = data?.masterRequests ?? [];
   const orders = data?.orders ?? [];
-  const notifications = data?.notifications ?? [];
   const processCoordinatorIds = data?.config.processCoordinatorIds ?? [];
   const reassignPoolDepartmentIds = data?.config.reassignPoolDepartmentIds ?? [];
   const reassignPoolUserIds = data?.config.reassignPoolUserIds ?? [];
@@ -613,6 +679,15 @@ export function DispatchStoreProvider({ children }: { children: ReactNode }) {
      */
     const invalidate = () => {
       void refreshWorkingSet();
+      // A save can notify someone, the saver included, and the bell is its own
+      // query now (PERF-2 Step 2), so it does not ride the refresh above.
+      void refreshFmsBells(queryClient, "fms_dispatch_notifications");
+      // ⚠ ON EVERY WRITE, NOT JUST THE RETURN ONES. A dispatch confirmation (or a
+      //   round correction) recorded as Returned opens a sales return server-side,
+      //   by trigger — so the write that creates the row is not one of ours. The
+      //   table is a few rows; re-reading it is cheaper than guessing which writes
+      //   could have touched it.
+      void queryClient.invalidateQueries({ queryKey: ROUND_RETURNS_QK }).catch(() => {});
     };
 
     /**
@@ -632,7 +707,7 @@ export function DispatchStoreProvider({ children }: { children: ReactNode }) {
      *   leave the screen showing pre-save data: better to spend the 2.9 MB than to
      *   lie about what is on the queue.
      */
-    const refreshWorkingSet = async () => {
+    const refreshFullCopy = async () => {
       const key = dispatchQueryKey(userId);
       const prev = queryClient.getQueryData<DispatchData>(key);
       if (!prev) {
@@ -640,11 +715,22 @@ export function DispatchStoreProvider({ children }: { children: ReactNode }) {
         return;
       }
       try {
-        const next = await fetchDispatchDelta(prev, userId);
+        const next = await fetchDispatchDelta(prev);
         if (next !== prev) queryClient.setQueryData(key, next);
       } catch {
         await queryClient.invalidateQueries({ queryKey: QK }).catch(() => {});
       }
+    };
+    const refreshWorkingSet = async () => {
+      await refreshFullCopy();
+      /*
+        ⚠ THEN THE PENDING-ONLY COPY (PERF-2). Home "My Work", the side panel's
+          list and the Control Center read `DISPATCH_OPEN_QK`, not this store's
+          key. Invalidating it AFTER the full copy is fresh makes it re-derive from
+          that copy with no request of its own (useDispatchOpenWork), so a step
+          saved in the side panel leaves the list behind it at once.
+      */
+      await queryClient.invalidateQueries({ queryKey: DISPATCH_OPEN_QK }).catch(() => {});
     };
 
     /**
@@ -955,6 +1041,24 @@ export function DispatchStoreProvider({ children }: { children: ReactNode }) {
       canEdit && (o.raisedBy === uid || isProcessCoordinator) && isSalesReturnPending(o);
 
     /**
+     * Who may raise a sales return against a finished invoice: whoever may cancel
+     * an order (its raiser, a coordinator, an admin) PLUS the Sales Return owners,
+     * because accounts is often first to hear that goods are coming back. The
+     * server re-checks, and also refuses per invoice — see invoiceReturnState.
+     */
+    const canRequestRoundReturn = (o: DispatchOrder): boolean =>
+      canEdit &&
+      (o.raisedBy === uid ||
+        isProcessCoordinator ||
+        canActOn("sales_return_request", o) ||
+        canActOn("sales_return", o));
+
+    const canWithdrawRoundReturn = (ret: RoundReturn, o: DispatchOrder): boolean =>
+      canEdit &&
+      ret.status === "pending" &&
+      (ret.requestedBy === uid || o.raisedBy === uid || isProcessCoordinator || canActOn("sales_return", o));
+
+    /**
      * The people who own a step, named. With a location, the set that actually
      * covers it — its own if one exists, the fallback otherwise; a location
      * row REPLACES the fallback rather than adding to it, which is what makes
@@ -996,7 +1100,11 @@ export function DispatchStoreProvider({ children }: { children: ReactNode }) {
      */
     const myLocationIds: string[] | null = (() => {
       if (isAdmin || isProcessCoordinator) return null;
-      const mine = stepOwners.filter((o) => o.employeeIds.includes(uid));
+      // Raise Sales Return grants raising a return, not a dispatch site: being named
+      // on it for one site must not shrink that person's New Sales Order picker.
+      const mine = stepOwners.filter(
+        (o) => o.employeeIds.includes(uid) && o.stepKey !== "sales_return_request",
+      );
       if (mine.some((o) => o.locationId === null)) return null;
       const ids = [...new Set(mine.map((o) => o.locationId).filter((id): id is string => !!id))];
       return ids.length ? ids : null;
@@ -1098,11 +1206,17 @@ export function DispatchStoreProvider({ children }: { children: ReactNode }) {
      *   `fms_dispatch_assert_customer_of_company` tests `pc.active`, so an
      *   inactive pair offered here would be a name the picker shows and the save
      *   refuses.
+     *
+     * ⚠ AND ONLY ROWS A PERSON MADE (createdBy). The cron links a ledger into
+     *   every book holding one of the same name, so counting its rows put the
+     *   OTHER book's "SHREEJI PRINTS PVT LTD" beside the billing book's own —
+     *   389 duplicates, 543 orders on the wrong ledger (24-10-2026). The guard
+     *   tests `pc.created_by is not null` too; see migration 20270218120000.
      */
     const mappedBookSets = (() => {
       const seen = new Map<string, Set<string>>();
       for (const m of customerCompanies) {
-        if (!m.active) continue;
+        if (!m.active || !m.createdBy) continue;
         const set = seen.get(m.companyId);
         if (set) set.add(m.customerId);
         else seen.set(m.companyId, new Set([m.customerId]));
@@ -1151,11 +1265,17 @@ export function DispatchStoreProvider({ children }: { children: ReactNode }) {
     /* --------------------------------- indexes ------------------------------- */
 
 
-    const mineNotifications = notifications
-      .filter((n) => n.userId === uid)
-      .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
-
     const orderIndex = new Map(orders.map((o) => [o.id, o]));
+
+    // Returns joined to their orders once. A return whose order is not in the
+    // snapshot (RLS admits the same set, so this is a refresh race at most) is
+    // dropped rather than rendered without a customer or an order number.
+    const roundReturnRows: RoundReturnRow[] = [];
+    for (const ret of roundReturns) {
+      const order = orderIndex.get(ret.orderId);
+      if (order) roundReturnRows.push({ ret, order });
+    }
+
     const snapshot = dispatchSnapshotFrom({ orders, stepSla });
     const queueEntries = buildQueueEntries(snapshot);
 
@@ -1240,7 +1360,8 @@ export function DispatchStoreProvider({ children }: { children: ReactNode }) {
        *   "Order not found" on a freshly raised order. The catalogue refreshing
        *   on its own clock has nothing to do with that question.
        */
-      isFetching,
+      // A delta refresh asked for by the bell (refreshOrders) counts as "on its way" too.
+      isFetching: isFetching || refreshingOrders,
       error: error ?? mastersError,
 
       userId: uid,
@@ -1295,8 +1416,9 @@ export function DispatchStoreProvider({ children }: { children: ReactNode }) {
           //
           //   The database agrees with this line, and it has to:
           //   fms_dispatch_assert_customer_of_company accepts an active
-          //   mst_party_companies row too. Widening one without the other is
-          //   how a user fills a whole order and is thrown out at save.
+          //   mst_party_companies row that a PERSON made — never the cron's
+          //   same-name links (see mappedBookSets). Widening one without the
+          //   other is how a user fills a whole order and is thrown out at save.
           || mapped?.has(c.id)
           || c.id === includeId);
       },
@@ -1359,16 +1481,30 @@ export function DispatchStoreProvider({ children }: { children: ReactNode }) {
       salesReturnPending: orders.filter((o) => isSalesReturnPending(o) && canActOn("sales_return", o)),
       salesReturnCompleted: orders.filter((o) => isSalesReturnDone(o) && canActOn("sales_return", o)),
 
+      roundReturns,
+      roundReturnsFor: (orderId) => roundReturns.filter((x) => x.orderId === orderId),
+      roundReturnsPending: roundReturnRows.filter(
+        (r) => r.ret.status === "pending" && canActOn("sales_return", r.order),
+      ),
+      roundReturnsCompleted: roundReturnRows.filter(
+        (r) => r.ret.status === "recorded" && canActOn("sales_return", r.order),
+      ),
+      canRequestRoundReturn,
+      canWithdrawRoundReturn,
+
       // New Customer Orders. Same shape and the same reasoning as Sales Return
       // just above: plain filters over `orders`, never `buildQueueEntries`.
       customerOrdersPending: orders.filter(
         (o) => o.status === "awaiting_order_completion" && canActOn("sales_order", o),
       ),
+      // EVERY written-up customer order, wherever it is now — credit check, bill,
+      // gate, closed or cancelled. Only "still reopenable" was kept before, so an
+      // order vanished from Completed the moment credit check passed it on.
       customerOrdersCompleted: orders.filter(
         (o) =>
           o.intakeSource === "customer" &&
           !!o.intakeCompletedAt &&
-          o.status === "awaiting_credit_check" &&
+          o.status !== "awaiting_order_completion" &&
           canActOn("sales_order", o),
       ),
       canCompleteCustomerOrder,
@@ -1383,7 +1519,6 @@ export function DispatchStoreProvider({ children }: { children: ReactNode }) {
       masterReviewersFor,
       isMasterUnassigned,
 
-      notifications: mineNotifications,
       processCoordinatorIds,
 
       submitOrder: async (input) => {
@@ -1429,6 +1564,23 @@ export function DispatchStoreProvider({ children }: { children: ReactNode }) {
       },
       withdrawCancelRequest: async (orderId, reason) => {
         await withdrawCancelRequestWrite(orderId, reason);
+        invalidate();
+      },
+      // `invalidate` already re-reads the returns table; nothing here moves an order.
+      requestRoundReturn: async (orderId, roundNo, req) => {
+        await requestRoundReturnWrite(orderId, roundNo, req);
+        invalidate();
+      },
+      recordRoundReturn: async (returnId, payload) => {
+        await recordRoundReturnWrite(returnId, payload);
+        invalidate();
+      },
+      updateRoundReturn: async (returnId, payload) => {
+        await updateRoundReturnWrite(returnId, payload);
+        invalidate();
+      },
+      withdrawRoundReturn: async (returnId, reason) => {
+        await withdrawRoundReturnWrite(returnId, reason);
         invalidate();
       },
       closeOrder: async (orderId, reason) => {
@@ -1595,17 +1747,21 @@ export function DispatchStoreProvider({ children }: { children: ReactNode }) {
         // until the 30-minute timer came round.
         invalidateAll();
       },
-      markNotificationsRead: async (ids) => {
-        await markNotificationsReadWrite(ids);
-        invalidate();
+      refreshOrders: async () => {
+        setRefreshingOrders(true);
+        try {
+          await refreshWorkingSet();
+        } finally {
+          setRefreshingOrders(false);
+        }
       },
     };
   }, [
-    userId, isAdmin, isLoading, isFetching, error, queryClient, dir, orgPeople,
+    userId, isAdmin, isLoading, isFetching, refreshingOrders, error, queryClient, dir, orgPeople,
     stepOwners, designations, companies, companyLocations, customers, items, customerItems,
     customerCompanies,
-    masterManagers, masterRequests, orders, notifications,
-    processCoordinatorIds, stepSla, orderNoPreview,
+    masterManagers, masterRequests, orders,
+    processCoordinatorIds, stepSla, orderNoPreview, roundReturns,
     // Load-bearing and invisible to tsc: without these the memo keeps the
     // assignees and the pool it was built with, so a reassignment would not move
     // anything on screen and Setup Save would never confirm.

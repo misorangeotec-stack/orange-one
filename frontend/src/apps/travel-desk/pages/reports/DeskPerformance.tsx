@@ -3,12 +3,12 @@ import Card from "@/shared/components/ui/Card";
 import QueueTable, { type QueueColumn } from "@/shared/components/ui/QueueTable";
 import KpiRow, { type KpiTile } from "@/shared/components/dashboard/KpiRow";
 import { useTravelStore } from "../../store";
-import { STEPS, stepByKey, type StepKey } from "../../lib/steps";
+import { STEPS, isHiddenStep, stepByKey, type StepKey } from "../../lib/steps";
 import { stepCompletedIso } from "../../lib/queues";
 import type { Trip } from "../../types";
 
 /**
- * How long each step actually takes, against what §12 promised.
+ * How long each step actually takes, against what Section 12 promised.
  *
  * ⚠ MEASURED ON WORK THAT FINISHED, NOT ON WORK OUTSTANDING. A step still open
  *   has no duration yet, and counting it as zero would make a jammed queue look
@@ -27,7 +27,7 @@ import type { Trip } from "../../types";
  *
  * ⚠ IT DOES NOT NAME INDIVIDUALS. The dimension is the STEP, not the person who
  *   actioned it. A per-approver league table is a different thing with different
- *   consequences, and §12.1 puts escalation in HR's hands rather than in a
+ *   consequences, and Section 12.1 puts escalation in HR's hands rather than in a
  *   dashboard.
  */
 
@@ -79,13 +79,15 @@ const FROM: Record<string, { label: string; at: (t: Trip) => string | null }> = 
   claim_review: { label: "Claim filed", at: (t) => t.clAt },
   finance_review: { label: "Manager approved the claim", at: (t) => t.crAt },
   settlement: { label: "Manager approved the claim", at: (t) => t.crAt },
+  cancel_trip: { label: "Cancellation asked for", at: (t) => t.cancelRequestedAt },
 };
 
 export default function DeskPerformance() {
   const s = useTravelStore();
 
   const rows = useMemo<Row[]>(() => {
-    const queueSteps = STEPS.filter((st) => !st.noQueue);
+    // Hidden steps (new process, 2026-10) are left out for everyone but admins.
+    const queueSteps = STEPS.filter((st) => !st.noQueue && (s.isAdmin || !isHiddenStep(st.key)));
     return queueSteps.map((st) => {
       const key = st.key as StepKey;
       const from = FROM[key];
@@ -113,7 +115,7 @@ export default function DeskPerformance() {
       };
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [s.trips, s.stepSla]);
+  }, [s.trips, s.stepSla, s.isAdmin]);
 
   const closed = s.trips.filter((t) => t.status === "closed");
   const cycles = closed
@@ -122,12 +124,12 @@ export default function DeskPerformance() {
   const cancelled = s.trips.filter((t) => t.status === "cancelled" || t.status === "cancelled_pending_claim");
 
   const tiles: KpiTile[] = [
-    { key: "closed", label: "Trips closed", value: String(closed.length), hint: "Claimed, verified and settled" },
+    { key: "closed", label: "Trips closed", value: String(closed.length), hint: "Closed at booking, or settled (older trips)" },
     {
       key: "cycle",
       label: "Return to settled",
       value: median(cycles) === null ? "—" : `${median(cycles)} days`,
-      hint: "Median, calendar days. §12 promises 14 WORKING days",
+      hint: "Older trips only (new trips close at booking). Median, calendar days",
     },
     {
       key: "cancelled",
@@ -150,20 +152,24 @@ export default function DeskPerformance() {
         key: "step",
         header: "Step",
         alwaysVisible: true,
+        // One line (PF-20): what the step is measured from follows its name, cut
+        // with "…" and shown whole on hover.
         cell: (r) => (
-          <div>
-            <div className="font-semibold text-navy">{r.title}</div>
-            <div className="text-[11px] text-grey-2">from {r.measuredFrom.toLowerCase()}</div>
-          </div>
+          <span className="block truncate">
+            <span className="font-semibold text-navy">{r.title}</span>
+            <span className="ml-1.5 text-[11px] text-grey-2">from {r.measuredFrom.toLowerCase()}</span>
+          </span>
         ),
         sortValue: (r) => stepByKey(r.key)?.index ?? 0,
         filter: { kind: "select", get: (r) => r.title },
         exportValue: (r) => r.title,
+        resize: { width: 300 },
       },
       {
         key: "done",
         header: "Completed",
         cell: (r) => r.done,
+        filter: { kind: "number", get: (r) => r.done },
         sortValue: (r) => r.done,
         exportValue: (r) => r.done,
         tdClassName: "whitespace-nowrap text-right",
@@ -177,6 +183,7 @@ export default function DeskPerformance() {
           ) : (
             <span className="font-semibold text-navy">{r.medianDays}</span>
           ),
+        filter: { kind: "number", get: (r) => r.medianDays ?? -1 },
         sortValue: (r) => r.medianDays ?? -1,
         exportValue: (r) => r.medianDays ?? "",
         tdClassName: "whitespace-nowrap text-right",
@@ -185,6 +192,7 @@ export default function DeskPerformance() {
         key: "mean",
         header: "Average days",
         cell: (r) => (r.meanDays === null ? <span className="text-grey-2">—</span> : r.meanDays),
+        filter: { kind: "number", get: (r) => r.meanDays ?? -1 },
         sortValue: (r) => r.meanDays ?? -1,
         exportValue: (r) => r.meanDays ?? "",
         tdClassName: "whitespace-nowrap text-right",
@@ -193,6 +201,7 @@ export default function DeskPerformance() {
         key: "worst",
         header: "Slowest",
         cell: (r) => (r.worstDays === null ? <span className="text-grey-2">—</span> : r.worstDays),
+        filter: { kind: "number", get: (r) => r.worstDays ?? -1 },
         sortValue: (r) => r.worstDays ?? -1,
         exportValue: (r) => r.worstDays ?? "",
         tdClassName: "whitespace-nowrap text-right",
@@ -206,6 +215,7 @@ export default function DeskPerformance() {
           ) : (
             <span className="text-grey-2">{r.target} working days</span>
           ),
+        filter: { kind: "number", get: (r) => r.target ?? -1 },
         sortValue: (r) => r.target ?? -1,
         exportValue: (r) => r.target ?? "",
         tdClassName: "whitespace-nowrap text-right",
@@ -247,7 +257,7 @@ export default function DeskPerformance() {
         <p className="text-[13px] text-grey">
           How long each step took, on work that has finished. Durations are{" "}
           <strong>calendar days</strong> — a claim that sat over a weekend really did take three
-          days — while the targets from §12 are working days, so the last column is a reading rather
+          days — while the targets from Section 12 are working days, so the last column is a reading rather
           than a measurement.
         </p>
       </div>
@@ -270,7 +280,7 @@ export default function DeskPerformance() {
       <Card className="p-4">
         <div className="text-[13px] font-semibold text-navy">Why there is no per-person table</div>
         <p className="mt-1 text-[12.5px] text-grey-2">
-          The dimension here is the step, not whoever actioned it. §12.1 puts a slow approval in
+          The dimension here is the step, not whoever actioned it. Section 12.1 puts a slow approval in
           HR&rsquo;s hands to escalate, which is a conversation; a league table of approvers is a
           different instrument with different consequences, and it is not what the policy asked for.
         </p>

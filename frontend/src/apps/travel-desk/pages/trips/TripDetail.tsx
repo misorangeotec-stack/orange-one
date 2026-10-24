@@ -6,6 +6,7 @@ import { Field, SECTION_HEADING_CLASS } from "@/shared/components/ui/Readout";
 import { formatDateDMY } from "@/shared/lib/date";
 import { useOrgPersonById } from "@/core/platform/orgPeople";
 import { useDirectory } from "@/core/platform/store";
+import { useTravellerProfiles } from "../../data/travellerDirectory";
 import { useTravelStore } from "../../store";
 import TripStepper from "../../components/TripStepper";
 import StatusPill from "../../components/StatusPill";
@@ -13,6 +14,7 @@ import EntitlementPanel from "../../components/EntitlementPanel";
 import ApprovalPanel, { ApprovalHistory } from "../../components/ApprovalPanel";
 import AdvancePanel, { AdvanceRecoveryPanel } from "../../components/AdvancePanel";
 import BookingPanel from "../../components/BookingPanel";
+import CancelBookingPanel from "../../components/CancelBookingPanel";
 import ClaimPanel from "../../components/ClaimPanel";
 import ClaimReviewPanel from "../../components/ClaimReviewPanel";
 import FinanceReviewPanel from "../../components/FinanceReviewPanel";
@@ -47,14 +49,15 @@ export default function TripDetail() {
   const [params] = useSearchParams();
   const s = useTravelStore();
   const personById = useOrgPersonById();
-  const { profiles, bandById, departmentById, designationById } = useDirectory();
+  const { bandById, departmentById, designationById } = useDirectory();
+  const profiles = useTravellerProfiles();
 
   const trip = s.tripById(id ?? null);
   const passengers = useMemo(() => (trip ? s.passengersOf(trip.id) : []), [trip, s]);
 
   // Deep-linked confirmation from the form: it names the number that was minted,
   // which is what somebody quotes when they chase it.
-  const justSubmitted = params.get("submitted");
+  const submittedParam = params.get("submitted");
 
   if (!trip) return <NotFound />;
 
@@ -85,6 +88,20 @@ export default function TripDetail() {
   const approverNames = trip.approverManagerIds
     .map((x) => personById(x)?.name)
     .filter(Boolean) as string[];
+
+  /*
+    ⚠ THE BANNER IS ABOUT A MOMENT, AND THE URL IT LIVES IN OUTLASTS IT. It was
+      rendered on the `?submitted=` parameter alone, which nothing ever clears —
+      so approve the trip, pay the advance, book it, and six steps later a booked
+      trip still announced "has gone for approval. It is with Riya Kumari", who
+      by then owed it nothing. It survived a reload too, because the parameter
+      is in the address. Gate it on the trip still being where submit left it.
+  */
+  const justSubmitted =
+    submittedParam &&
+    (trip.status === "awaiting_manager_approval" || trip.status === "awaiting_director_approval")
+      ? submittedParam
+      : null;
 
   /*
     ⚠ A RETURNED TRIP IS EDITABLE, AND WITHOUT THIS "send back for clarification"
@@ -141,13 +158,13 @@ export default function TripDetail() {
       </div>
 
       {/*
-        §3.5's consequence, stated on the trip rather than left in an activity
+        Section 3.5's consequence, stated on the trip rather than left in an activity
         row. The downgrade happened at submit; anyone reading the caps later
         would otherwise take TC-D for this person's ordinary entitlement.
       */}
       {trip.tcDowngradedFrom && (
         <div className="rounded-xl bg-[#FFF7E6] px-4 py-3 text-[12.5px] text-navy">
-          <strong>Reimbursed at TC-D under §3.5.</strong> This trip was put on record more than{" "}
+          <strong>Reimbursed at TC-D under Section 3.5.</strong> This trip was put on record more than{" "}
           {s.config.policy.emergencyWindowHours} hours after departure, so it was reduced from{" "}
           {trip.tcDowngradedFrom}. Every figure below is the reduced one.
         </div>
@@ -179,6 +196,19 @@ export default function TripDetail() {
       </Card>
 
       {/*
+        ⚠ RIGHT UNDER THE RAIL, so the person booking adds the tickets without
+          scrolling past the request.
+        ⚠ SHOWN FROM THE BOOKING STEP ONWARDS, not only while booking is open.
+          A refund lands weeks after the trip — hiding the legs once the step
+          closed would hide the evidence at exactly the moment somebody needs it.
+      */}
+      {trip.status !== "draft" &&
+        trip.status !== "awaiting_manager_approval" &&
+        trip.status !== "awaiting_director_approval" &&
+        trip.status !== "returned" &&
+        trip.status !== "rejected" && <LegRows trip={trip} />}
+
+      {/*
         ⚠ BOTH PANELS RENDER; EACH DECIDES FOR ITSELF WHETHER IT APPLIES. A step
           this trip skipped returns null, which is defect (E) of 20260905120000
           handled where the reader can see it — the RPC refuses as well, but by
@@ -190,6 +220,7 @@ export default function TripDetail() {
       <AdvancePanel trip={trip} />
       <AdvanceRecoveryPanel trip={trip} />
       <BookingPanel trip={trip} />
+      <CancelBookingPanel trip={trip} />
 
       {/*
         The claim half.
@@ -201,7 +232,7 @@ export default function TripDetail() {
           approve button beside an editable amount.
 
         ⚠ THE CLAIM PANEL ALSO SHOWS FOR A CANCELLED TRIP. `cancelled_pending_claim`
-          is a journey that did not happen and money that did — a §4.1
+          is a journey that did not happen and money that did — a Section 4.1
           cancellation charge, or an advance to hand back.
       */}
       {(trip.status === "booked" || trip.status === "cancelled_pending_claim") && (
@@ -218,13 +249,6 @@ export default function TripDetail() {
       */}
       <SettlementPanel trip={trip} />
 
-      {/*
-        ⚠ THE THREAD SITS BELOW THE PANELS AND ABOVE NOTHING. It is the last
-          thing on the page because it is the only part that grows without bound;
-          putting it between the panels would push the actionable half of the
-          screen off the fold on any trip with a long history.
-      */}
-      <TripThread trip={trip} />
 
       <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_340px]">
         <div className="space-y-4">
@@ -269,7 +293,7 @@ export default function TripDetail() {
               {trip.isEmergency && (
                 <div className="sm:col-span-2">
                   <Field
-                    label="Emergency travel (§3.5)"
+                    label="Emergency travel (Section 3.5)"
                     value={trip.emergencyReason ?? "No reason recorded"}
                     emphasis="quiet"
                   />
@@ -280,6 +304,8 @@ export default function TripDetail() {
 
           <ApprovalHistory trip={trip} />
 
+          {/* New requests never ask for an advance (2026-10); the card stays for old trips that did. */}
+          {trip.advanceRequested && (
           <Card className="p-4">
             <h2 className={SECTION_HEADING_CLASS}>Travel advance</h2>
             {trip.advanceSkipped || !trip.advanceRequested ? (
@@ -307,18 +333,8 @@ export default function TripDetail() {
               </div>
             )}
           </Card>
+          )}
 
-      {/*
-        ⚠ SHOWN FROM THE BOOKING STEP ONWARDS, not only while booking is open.
-          A refund lands weeks after the trip, and the claim is measured against
-          what was actually booked — hiding the legs once the step closed would
-          be hiding the evidence at exactly the moment somebody needs it.
-      */}
-          {trip.status !== "draft" &&
-            trip.status !== "awaiting_manager_approval" &&
-            trip.status !== "awaiting_director_approval" &&
-            trip.status !== "returned" &&
-            trip.status !== "rejected" && <LegRows trip={trip} />}
 
           <Card className="p-4">
             <h2 className={SECTION_HEADING_CLASS}>
@@ -406,6 +422,15 @@ export default function TripDetail() {
           </div>
         </div>
       </div>
+
+      {/*
+        ⚠ THE THREAD IS THE LAST THING ON THE PAGE, below the request, the
+          bookings and the passengers. Above them it pushed the booking details
+          off the screen for the person booking the ticket, who reads the trip
+          first and then the discussion. It is also the only part that grows
+          without bound.
+      */}
+      <TripThread trip={trip} />
     </div>
   );
 }

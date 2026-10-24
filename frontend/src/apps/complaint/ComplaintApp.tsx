@@ -2,7 +2,7 @@ import type { ReactNode } from "react";
 import { Routes, Route, Navigate } from "react-router-dom";
 import { useSession } from "@/core/platform/session";
 import { ComplaintStoreProvider, useComplaintStore } from "./store";
-import type { StepKey } from "./lib/steps";
+import { MANAGEMENT_STEPS, type StepKey } from "./lib/steps";
 import { B } from "./lib/routes";
 import ComplaintLayout from "./ComplaintLayout";
 import Dashboard from "./pages/Dashboard";
@@ -12,10 +12,12 @@ import RequestDetail from "./pages/requests/RequestDetail";
 import PlantQueue from "./pages/queues/PlantQueue";
 import ServiceQueue from "./pages/queues/ServiceQueue";
 import ApprovalQueue from "./pages/queues/ApprovalQueue";
-import ManagementReviewQueue from "./pages/queues/ManagementReviewQueue";
+import PurchaseQueue from "./pages/queues/PurchaseQueue";
+import AssigneeQueue from "./pages/queues/AssigneeQueue";
 import Masters from "./pages/masters/Masters";
 import MasterRequests from "./pages/MasterRequests";
 import ControlCenter from "./pages/monitoring/ControlCenter";
+import CreditNotes from "./pages/CreditNotes";
 import Setup from "./pages/settings/Setup";
 import AccessDenied from "./pages/system/AccessDenied";
 import NotFound from "./pages/system/NotFound";
@@ -74,6 +76,23 @@ function RequireQueue({ step, children }: { step: StepKey; children: ReactNode }
 }
 
 /**
+ * Gate to Management Approval: the complaint approval queue's own rule, OR an
+ * owner of the compensation approval step — the page carries both.
+ */
+function RequireApprovalDesk({ children }: { children: ReactNode }) {
+  const { canSeeQueue, isStepOwner } = useComplaintStore();
+  if (!MANAGEMENT_STEPS.some((st) => canSeeQueue(st)) && !isStepOwner("cn_approval")) return <AccessDenied />;
+  return <>{children}</>;
+}
+
+/** Gate to the Tally Entry page (customer compensations) — the same rule as its nav link. */
+function RequireCreditNotes({ children }: { children: ReactNode }) {
+  const { canSeeCreditNotes } = useComplaintStore();
+  if (!canSeeCreditNotes) return <AccessDenied />;
+  return <>{children}</>;
+}
+
+/**
  * Root of the Complaint (RM/FG) FMS. Mounted per-user (App.tsx wraps it in
  * RequireModule), so what each person can see is decided by the nav, the store's
  * capability flags and — authoritatively — RLS.
@@ -91,8 +110,13 @@ export default function ComplaintApp() {
           <Route path="my-requests" element={<RequestsList mine />} />
           <Route path="queues/plant" element={<RequireQueue step="plant"><PlantQueue /></RequireQueue>} />
           <Route path="queues/service" element={<RequireQueue step="service"><ServiceQueue /></RequireQueue>} />
-          <Route path="queues/approval" element={<RequireQueue step="approval"><ApprovalQueue /></RequireQueue>} />
-          <Route path="queues/management-review" element={<RequireQueue step="management_review"><ManagementReviewQueue /></RequireQueue>} />
+          <Route path="queues/approval" element={<RequireApprovalDesk><ApprovalQueue /></RequireApprovalDesk>} />
+          <Route path="queues/purchase" element={<RequireQueue step="purchase"><PurchaseQueue /></RequireQueue>} />
+          {/* Folded into Management Approval — old links and emails land there. */}
+          <Route path="queues/rm-management" element={<Navigate to={`${B}/queues/approval`} replace />} />
+          <Route path="queues/management-review" element={<Navigate to={`${B}/queues/approval`} replace />} />
+          <Route path="queues/assignee" element={<RequireQueue step="assignee"><AssigneeQueue /></RequireQueue>} />
+          <Route path="credit-notes" element={<RequireCreditNotes><CreditNotes /></RequireCreditNotes>} />
           <Route path="master-requests" element={<RequireMasterAccess><MasterRequests /></RequireMasterAccess>} />
           <Route path="monitoring" element={<RequireMonitor><ControlCenter /></RequireMonitor>} />
           <Route path="masters" element={<RequireMasterAccess><Masters /></RequireMasterAccess>} />

@@ -129,6 +129,7 @@ export default function MasterRequests() {
       header: "Reviewer said",
       cell: (r) => r.reviewNote ?? "—",
       sortValue: (r) => r.reviewNote ?? "",
+      filter: { kind: "text", get: (r) => r.reviewNote ?? "" },
     },
   ];
 

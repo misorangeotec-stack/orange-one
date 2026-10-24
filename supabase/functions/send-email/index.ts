@@ -244,6 +244,8 @@ const PAGE = "#F6F9FD";
 const LINE = "#E9EEF6";
 const GREY = "#64748B";
 const GREY2 = "#8A99B0";
+/** The hold tile's colour, matching the screen's teal (vite.config.ts `teal`). */
+const TEAL = "#2EC4B6";
 const FONT = "-apple-system,'Segoe UI',Roboto,Helvetica,Arial,sans-serif";
 
 /** Initials for the actor avatar (first + last word). */
@@ -410,6 +412,8 @@ interface Composed {
   subject: string; html: string; text: string; replyTo?: string;
   /** Storage objects to attach, resolved to bytes just before sending. */
   files?: { bucket: string; path: string; filename: string; mime: string }[];
+  /** Attachments built in memory (the L&D calendar invite) — no storage round-trip. */
+  inline?: Attachment[];
 }
 
 /**
@@ -523,6 +527,24 @@ async function compose(row: Row): Promise<Composed | null> {
       replyTo,
     };
   }
+  // Advance reminder for a recurring template ("Notification required", N days before).
+  // Written by send_recurring_reminders — entity_id is the TEMPLATE, so there is no task row.
+  if (row.kind === "task_recurring_reminder") {
+    const rTitle = String(row.payload?.title ?? "a recurring task");
+    const fireDate = String(row.payload?.fire_date ?? "");
+    const days = Number(row.payload?.days_before ?? 0);
+    const when = days === 1 ? "tomorrow" : `in ${days} days`;
+    const listLink = APP_BASE_URL ? `${APP_BASE_URL}/task-management/tasks` : "";
+    const inner = actorRow(actorName, `set this reminder: your task is due ${when}`)
+      + taskCard(rTitle, "&#128276;", fireDate ? `Due on ${fireDate}` : "Coming up")
+      + cta(listLink, "View my tasks");
+    return {
+      subject: `Reminder: ${rTitle} is due ${when}${fireDate ? ` (${fireDate})` : ""}`,
+      html: emailShell({ eyebrow: "Reminder", headline: `A recurring task is due ${when}`, inner }),
+      text: `Reminder: ${rTitle} is due ${when}${fireDate ? ` on ${fireDate}` : ""}.\n\nOpen: ${listLink}`,
+      replyTo,
+    };
+  }
   // ---- the CUSTOMER-FACING mail ------------------------------------------
   // The one message this portal sends outside the company: the customer being
   // told their planned dispatch date. It must come BEFORE the shared FMS
@@ -604,17 +626,137 @@ async function compose(row: Row): Promise<Composed | null> {
 
     return {
       subject: str(p.subject, headline),
+      // eyebrow / tag / footerNote are optional overrides for an announcement that is not about
+      // receivables (the PF-16 backup notice). Absent, the mail renders exactly as before.
+      // eyebrow and tag are escaped by emailShell; footerNote is escaped here.
       html: emailShell({
-        eyebrow: "Receivables",
+        eyebrow: str(p.eyebrow, "Receivables"),
         headline,
         inner,
-        tag: "Outstanding Dashboard",
-        footer: `<b style="color:${GREY};">Orange One Hub</b> &middot; receivables report.<br>You're receiving this because a colleague sent it to you. Replies reach the person who sent it.`,
+        tag: str(p.tag, "Outstanding Dashboard"),
+        footer: str(p.footerNote)
+          ? `<b style="color:${GREY};">Orange One Hub</b> &middot; ${esc(str(p.footerNote))}`
+          : `<b style="color:${GREY};">Orange One Hub</b> &middot; receivables report.<br>You're receiving this because a colleague sent it to you. Replies reach the person who sent it.`,
       }),
       text: [headline, body, ...bullets.map((b) => `- ${b}`), ctaUrl, ...files.map((f) => f.filename)]
         .filter(Boolean).join("\n\n"),
       replyTo,
       files,
+    };
+  }
+
+  // ---- the evening DAILY REPORT (DR-3) -------------------------------------
+  // Queued by the GitHub runner in supabase/dailyreport/entry.ts, once the PDF is
+  // in `report-exports`. One row per recipient, because this sender has no Cc.
+  //
+  // ⚠ ITS OWN BRANCH, NOT THE GENERIC PREFIX LIST, AND NOT THE RECEIVABLES ONE.
+  //   `daily_report_` is not in the module-prefix list above, so without this the
+  //   mail would reach markSkipped(row, "unknown kind") and vanish with no error
+  //   anywhere — the failure mode a scheduled send cannot afford.
+  //
+  //   It would have been possible to reuse `receivables_collections_report`,
+  //   which since PF-18 accepts `eyebrow` / `tag` / `footerNote` / `bullets`
+  //   overrides and would render this acceptably. It is deliberately NOT reused:
+  //   `kind` is how somebody finds a mail in `email_outbox` six weeks later, and
+  //   filing the Daily Report under a receivables key would cost that permanently
+  //   to save twenty lines once.
+  //
+  // Deliberately plain, and in the house style for outbound mail: the figures
+  // first, as points rather than a paragraph, then one pointer to the attachment.
+  // No em dash anywhere in the copy - it reads as machine-written.
+  if (row.kind === "daily_report_evening") {
+    const p = (row.payload ?? {}) as Record<string, unknown>;
+    const str = (v: unknown, d = "") => (typeof v === "string" && v ? v : d);
+    const bucket = str(p.bucket, "report-exports");
+    const files = (Array.isArray(p.attachments) ? p.attachments : [])
+      .map((a) => a as Record<string, unknown>)
+      .filter((a) => typeof a.path === "string")
+      .map((a) => ({
+        bucket,
+        path: String(a.path),
+        filename: str(a.filename, String(a.path).split("/").pop() ?? "daily-report.pdf"),
+        mime: str(a.mime, "application/pdf"),
+      }));
+
+    const headline = str(p.headline, "Daily Report");
+    const lead = str(p.body);
+
+    // ⚠ THE POINTS ARRIVE AS AN ARRAY, NOT AS A NEWLINE-JOINED STRING, AND THE
+    //   DIFFERENCE IS LOAD-BEARING. The first cut had the runner join the day's
+    //   figures with newlines and this branch split them apart again. That is two
+    //   encodings of one list, and HTML collapses newlines, so any reader of the
+    //   payload who forgot to split got a paragraph of run-together figures. The
+    //   client rejected exactly that shape for the announcements on 18-09-2026.
+    //   `bullets` is the same field the receivables branch already takes.
+    const points = (Array.isArray(p.bullets) ? p.bullets : [])
+      .filter((b): b is string => typeof b === "string" && !!b);
+
+    const fileList = files.length
+      ? itemList(files.map((f) => ({ name: f.filename, meta: "PDF" })))
+      : "";
+
+    const inner =
+      (lead ? `<div style="font-family:${FONT};font-size:14.5px;line-height:1.6;color:${NAVY};margin:0 0 18px;">${esc(lead)}</div>` : "") +
+      bulletLines(points) +
+      fileList;
+
+    return {
+      subject: str(p.subject, headline),
+      html: emailShell({
+        eyebrow: "Daily Report",
+        headline,
+        inner,
+        tag: "Daily Report",
+        footer: `<b style="color:${GREY};">Orange One Hub</b> &middot; sent automatically every evening.<br>You're receiving this because you are on this report's distribution list.`,
+      }),
+      text: [headline, lead, ...points.map((t) => `- ${t}`), ...files.map((f) => f.filename)]
+        .filter(Boolean).join("\n\n"),
+      replyTo,
+      files,
+    };
+  }
+
+  // ---- the Daily Report DID NOT GO OUT -------------------------------------
+  // Queued by pg_cron (daily_report_email_watchdog) once the slot's grace window
+  // has closed with no row in daily_report_email_send_log.
+  //
+  // ⚠ SAME REASONING AS `collections_report_missed` BELOW, AND THE SAME TRAP: the
+  //   one mail that reports a silent failure must not itself be dropped silently.
+  //   Every workflow run exits SUCCESS, because "not due" is a success, and a
+  //   dropped tick creates no run at all - so a missed slot is invisible to
+  //   everyone unless this arrives.
+  if (row.kind === "daily_report_missed") {
+    const p = (row.payload ?? {}) as Record<string, unknown>;
+    const str = (v: unknown, d = "") => (typeof v === "string" && v ? v : d);
+    const num = (v: unknown) => (typeof v === "number" ? v : Number(v ?? 0) || 0);
+
+    const forDate = str(p.for_date);
+    const dateLabel = forDate ? ddmmyyyy(forDate) : "";
+    const slot = str(p.slot_ist, "20:30");
+    const grace = num(p.grace_minutes) || 60;
+    const reason = str(p.reason, "unknown");
+    const lastKick = str(p.last_kick_at);
+
+    const points = [
+      `The ${slot} IST slot for ${dateLabel || "today"} passed with nothing sent.`,
+      `The grace window of ${grace} minutes has now closed, so it will not go out on its own.`,
+      `The gate says: ${reason}`,
+      lastKick ? `The database last poked the runner at ${lastKick} IST.` : "The database has no record of poking the runner.",
+      "To send it by hand: run the Daily report workflow with mode=scheduled.",
+    ].filter(Boolean);
+
+    const headline = `Daily Report was not sent${dateLabel ? ` for ${dateLabel}` : ""}`;
+    return {
+      subject: str(p.subject, headline),
+      html: emailShell({
+        eyebrow: "Daily Report",
+        headline,
+        inner: bulletLines(points),
+        tag: "Daily Report",
+        footer: `<b style="color:${GREY};">Orange One Hub</b> &middot; scheduled send watchdog.`,
+      }),
+      text: [headline, ...points.map((t) => `- ${t}`)].join("\n\n"),
+      replyTo,
     };
   }
 
@@ -1035,9 +1177,11 @@ async function compose(row: Row): Promise<Composed | null> {
     const dueToday = num(tl.dueToday);
     const next2 = num(tl.next2);
     const noDate = num(tl.noDate);
+    const hold = num(tl.hold);
 
+    // Five tiles now, so the fixed width is a fifth rather than a quarter.
     const tile = (label: string, value: string, color: string, sub = "") => `
-      <td width="25%" style="padding:0 3px;">
+      <td width="20%" style="padding:0 3px;">
         <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:${PAGE};border:1px solid ${LINE};border-radius:11px;">
           <tr><td align="center" style="padding:12px 4px;font-family:${FONT};">
             <div style="font-size:23px;font-weight:800;color:${color};line-height:1.1;">${esc(value)}</div>
@@ -1048,12 +1192,18 @@ async function compose(row: Row): Promise<Composed | null> {
       </td>`;
 
     /**
-     * The four tiles, in the screen's order and with the screen's labels
-     * (MyWorkToday.tsx:90-95). They were suppressed while this mail could only
+     * The tiles, in the screen's order and with the screen's labels
+     * (MyWorkToday.tsx `TILES`). They were suppressed while this mail could only
      * count one module — a tile reading "6 overdue" beside a dashboard reading
      * "11 overdue" is worse than no tile, because the reader trusts whichever
      * they saw last. Now that every wired module is counted by the screen's own
-     * code, the same four numbers are the same four numbers.
+     * code, the same numbers are the same numbers.
+     *
+     * ON HOLD / PARTIAL is the fifth, and it is here for that same reason: the
+     * screen stopped counting parked work as due, so a mail that still did would
+     * be exactly the disagreement this block exists to prevent. It is NOT part of
+     * the total — nothing on it is owed today — which is why it comes last and in
+     * teal rather than red or amber.
      *
      * ⚠ Only restore a tile when the payload genuinely covers every module the
      * reader holds. If `snapshot.uncounted` is ever non-empty these totals are a
@@ -1064,6 +1214,7 @@ async function compose(row: Row): Promise<Composed | null> {
       ${tile("Due today", String(dueToday), dueToday > 0 ? AMBER : GREY, "Needs closing today")}
       ${tile("Next 2 days", String(next2), next2 > 0 ? NAVY : GREY, "Tomorrow + day after")}
       ${tile("No date set", String(noDate), noDate > 0 ? GREY : GREY, "Untimed work")}
+      ${tile("On hold / Partial", String(hold), hold > 0 ? TEAL : GREY, "Parked — not due")}
     </tr></table>`;
 
     const th2 = (label: string, align = "right") =>
@@ -1191,7 +1342,7 @@ async function compose(row: Row): Promise<Composed | null> {
         footer: `<b style="color:${GREY};">Orange One Hub</b> &middot; your personal daily snapshot.<br>You are receiving this because you have a login. Overdue counts tasks past their due date as of today, India time.`,
       }),
       text: `Your Orange One snapshot${dateLabel ? `, ${dateLabel}` : ""}\n\n`
-        + `Overdue ${overdue} | Due today ${dueToday} | Next 2 days ${next2} | No date ${noDate}\n\n`
+        + `Overdue ${overdue} | Due today ${dueToday} | Next 2 days ${next2} | No date ${noDate} | On hold/Partial ${hold}\n\n`
         + (sources.length
             ? sources.map((s) =>
                 `- ${str(s.module)}: ${num(s.items)} items, ${num(s.overdue)} overdue`).join("\n")
@@ -1205,10 +1356,32 @@ async function compose(row: Row): Promise<Composed | null> {
     };
   }
 
+  // Learning & Development — the training calendar's Teams-style mails.
+  //   learning-development_training_invite     3 days before (or at once if closer)
+  //   learning-development_training_updated    date / time / link / title changed
+  //   learning-development_training_cancelled  only to people who had the invite
+  // Each carries a calendar invite (.ics) with the SAME UID per training and a
+  // rising SEQUENCE, so Outlook/Teams updates or removes the one entry instead
+  // of stacking copies. Queued by fms_ld_queue_training_mail.
+  if (row.kind.startsWith("learning-development_training_")) {
+    return composeTrainingMail(row);
+  }
+
   // Shared FMS renderer — payload-driven, used by every purchase-family FMS
   // (Import, RM Domestic/procurement, …). The store authors subject/eyebrow/
   // headline/rows/items/note/ctaPath; only the tag + footer wording vary by app.
-  if (row.kind.startsWith("import_") || row.kind.startsWith("procurement_") || row.kind.startsWith("sampling_") || row.kind.startsWith("office-supplies_") || row.kind.startsWith("production-entry_") || row.kind.startsWith("order-to-dispatch_") || row.kind.startsWith("asset-maintenance_") || row.kind.startsWith("hr-recruitment_") || row.kind.startsWith("hr-exit_") || row.kind.startsWith("ocpi_") || row.kind.startsWith("complaint_")) {
+  if (row.kind.startsWith("import_") || row.kind.startsWith("procurement_") || row.kind.startsWith("sampling_") || row.kind.startsWith("office-supplies_") || row.kind.startsWith("production-entry_") || row.kind.startsWith("order-to-dispatch_") || row.kind.startsWith("asset-maintenance_") || row.kind.startsWith("hr-recruitment_") || row.kind.startsWith("hr-exit_") || row.kind.startsWith("ocpi_") || row.kind.startsWith("complaint_") || row.kind.startsWith("help-desk_")) {
+    // ⚠ A KIND MATCHING NONE OF THESE FALLS THROUGH TO markSkipped BELOW — it
+    //   does not error, does not retry, and the outbox row looks handled. So a
+    //   module can queue mail correctly and deliver nothing, with no failure
+    //   anywhere to notice. PF-18 shipped that way. Adding a module here is
+    //   part of building it, not a follow-up.
+    //
+    // ⚠ travel_ IS STILL MISSING FROM THE DEPLOYED COPY (checked 28-09-2026).
+    //   Its email is switched off, so nothing is being lost — but whoever next
+    //   deploys this file should add it rather than discover it when somebody
+    //   turns a gate on. (learning-development_training_* has its own branch
+    //   above since 14-10-2026; it only works once THIS file is redeployed.)
     const isProc = row.kind.startsWith("procurement_");
     const isSampling = row.kind.startsWith("sampling_");
     // ⚠ "office-supplies_" is the FROZEN outbox prefix, not the app's name. The
@@ -1236,15 +1409,26 @@ async function compose(row: Row): Promise<Composed | null> {
     // a document page rather than a step queue.
     const isOcpi = row.kind.startsWith("ocpi_");
     const isComplaint = row.kind.startsWith("complaint_");
-    const appLabel = isComplaint ? "Complaint (RM/FG)" : isOcpi ? "OCPI" : isExit ? "Employee Exit" : isHr ? "New Recruitment" : isAsset ? "Asset Maintenance" : isDispatch ? "Order to Dispatch" : isProduction ? "Production Entry" : isSupplies ? "General Purchase" : isSampling ? "Sampling" : isProc ? "RM Domestic" : "Import";
-    const basePath = isComplaint ? "/complaint" : isOcpi ? "/ocpi" : isExit ? "/hr-exit" : isHr ? "/hr-recruitment" : isAsset ? "/asset-maintenance" : isDispatch ? "/order-to-dispatch" : isProduction ? "/production-entry" : isSupplies ? "/general-purchase" : isSampling ? "/sampling" : isProc ? "/procurement" : "/import";
-    const tag = isComplaint ? "Quality · Complaint" : isOcpi ? "Sales · OCPI" : isExit ? "HR · Employee Exit" : isHr ? "HR · New Recruitment" : isAsset ? "Asset Maintenance" : isDispatch ? "Order to Dispatch" : isProduction ? "Production Entry" : isSupplies ? "General Purchase" : isSampling ? "Ink / RM Sampling" : isProc ? "Purchase · RM Domestic" : "Purchase · Import";
+    /* ⚠⚠ A CONFIDENTIAL HELP DESK TICKET MAILS NO SUBJECT AND NO BODY.
+       fms_help_announce builds the payload with `subject: null` and
+       `confidential: true` for grievance / POSH / disciplinary, because an
+       inbox is the least controlled place in the company — forwarded,
+       searched, read on a shared phone — and decision D4 is that those are
+       readable only in the hub, by named people. The mail says the ticket
+       needs them and links to it. Never "helpfully" fall back to a subject
+       line here. */
+    const isHelpDesk = row.kind.startsWith("help-desk_");
+    const appLabel = isHelpDesk ? "Help Desk" : isComplaint ? "Complaint (RM/FG)" : isOcpi ? "OCPI" : isExit ? "Employee Exit" : isHr ? "New Recruitment" : isAsset ? "Asset Maintenance" : isDispatch ? "Order to Dispatch" : isProduction ? "Production Entry" : isSupplies ? "General Purchase" : isSampling ? "Sampling" : isProc ? "RM Domestic" : "Import";
+    const basePath = isHelpDesk ? "/help-desk" : isComplaint ? "/complaint" : isOcpi ? "/ocpi" : isExit ? "/hr-exit" : isHr ? "/hr-recruitment" : isAsset ? "/asset-maintenance" : isDispatch ? "/order-to-dispatch" : isProduction ? "/production-entry" : isSupplies ? "/general-purchase" : isSampling ? "/sampling" : isProc ? "/procurement" : "/import";
+    const tag = isHelpDesk ? "HR · Help Desk" : isComplaint ? "Quality · Complaint" : isOcpi ? "Sales · OCPI" : isExit ? "HR · Employee Exit" : isHr ? "HR · New Recruitment" : isAsset ? "Asset Maintenance" : isDispatch ? "Order to Dispatch" : isProduction ? "Production Entry" : isSupplies ? "General Purchase" : isSampling ? "Ink / RM Sampling" : isProc ? "Purchase · RM Domestic" : "Purchase · Import";
     const p = (row.payload ?? {}) as Record<string, unknown>;
     const str = (v: unknown, d = "") => (typeof v === "string" && v ? v : d);
     const arr = <T,>(v: unknown): T[] => (Array.isArray(v) ? (v as T[]) : []);
     const headline = str(p.headline, str(p.text, `${appLabel} update`));
     const eyebrow = str(p.eyebrow, appLabel);
-    const ctaPath = str(p.ctaPath, basePath);
+    // Help Desk names the ticket directly in `path`; every other module uses
+    // `ctaPath`. Both fall back to the module root.
+    const ctaPath = str(p.ctaPath, str(p.path, basePath));
     const link = APP_BASE_URL ? `${APP_BASE_URL}${ctaPath}` : "";
     const note = (p.note && typeof p.note === "object") ? (p.note as { label?: string; text?: string }) : null;
     const inner =
@@ -1264,6 +1448,8 @@ async function compose(row: Row): Promise<Composed | null> {
             ? `You're receiving this because you're on the panel for this interview.`
             : isHr || isExit
             ? `You're receiving this because you own this master, or you raised the request.`
+            : isHelpDesk
+            ? `You're receiving this because this help ticket needs you.`
             : `You're receiving this because you're the next actor on this ${appLabel} document.`
         } Replies reach the person who acted.`,
       }),
@@ -1272,6 +1458,151 @@ async function compose(row: Row): Promise<Composed | null> {
     };
   }
   return null;
+}
+
+// ---- L&D training mails ---------------------------------------------------
+const TEAMS = "#5B5FC7";
+
+/** "2026-10-28" + "10:00" in IST → iCalendar UTC stamp "20261028T043000Z". */
+function istToIcsUtc(date: string, hhmm: string): string {
+  const [y, m, d] = date.slice(0, 10).split("-").map(Number);
+  const [hh, mm] = (hhmm || "00:00").split(":").map(Number);
+  const t = new Date(Date.UTC(y, m - 1, d, hh, mm) - 330 * 60_000); // IST = UTC+05:30, no DST
+  return t.toISOString().replace(/[-:]/g, "").replace(/\.\d{3}/, "");
+}
+const icsText = (s: string) =>
+  s.replace(/\\/g, "\\\\").replace(/;/g, "\\;").replace(/,/g, "\\,").replace(/\r?\n/g, "\\n");
+/** RFC 5545 lines are folded at 75 octets; continuation lines start with a space. */
+function icsFold(line: string): string {
+  const out: string[] = [];
+  let cur = "";
+  for (const ch of line) {
+    if (new TextEncoder().encode(cur + ch).length > 74) { out.push(cur); cur = " " + ch; }
+    else cur += ch;
+  }
+  out.push(cur);
+  return out.join("\r\n");
+}
+
+function buildTrainingIcs(p: Record<string, unknown>, to: string, toName: string, cancelled: boolean): string {
+  const s = (k: string) => (p[k] == null ? "" : String(p[k]));
+  const date = s("date");
+  const desc = [
+    s("description"),
+    s("trainer") ? `Trainer: ${s("trainer")}` : "",
+    s("teams_link") ? `Join Microsoft Teams Meeting: ${s("teams_link")}` : "",
+  ].filter(Boolean).join("\n\n");
+  const lines = [
+    "BEGIN:VCALENDAR",
+    "PRODID:-//Orange O Tec//Orange One Hub//EN",
+    "VERSION:2.0",
+    "CALSCALE:GREGORIAN",
+    `METHOD:${cancelled ? "CANCEL" : "REQUEST"}`,
+    "BEGIN:VEVENT",
+    `UID:ld-${s("session_id")}@orangeonehub`,
+    `SEQUENCE:${Number(p.sequence ?? 0)}`,
+    `DTSTAMP:${new Date().toISOString().replace(/[-:]/g, "").replace(/\.\d{3}/, "")}`,
+    `DTSTART:${istToIcsUtc(date, s("start"))}`,
+    `DTEND:${istToIcsUtc(date, s("end"))}`,
+    `SUMMARY:${icsText((cancelled ? "Cancelled: " : "") + s("title"))}`,
+    `DESCRIPTION:${icsText(desc)}`,
+    "LOCATION:Microsoft Teams Meeting",
+    s("teams_link") ? `URL:${s("teams_link")}` : "",
+    `ORGANIZER;CN=${icsText(s("organiser") || "Orange One Hub")}:mailto:${GMAIL_SENDER}`,
+    `ATTENDEE;CN=${icsText(toName || to)};ROLE=REQ-PARTICIPANT;PARTSTAT=NEEDS-ACTION;RSVP=FALSE:mailto:${to}`,
+    `STATUS:${cancelled ? "CANCELLED" : "CONFIRMED"}`,
+    "TRANSP:OPAQUE",
+    "BEGIN:VALARM",
+    "TRIGGER:-PT15M",
+    "ACTION:DISPLAY",
+    "DESCRIPTION:Reminder",
+    "END:VALARM",
+    "END:VEVENT",
+    "END:VCALENDAR",
+  ].filter(Boolean);
+  return lines.map(icsFold).join("\r\n") + "\r\n";
+}
+
+function composeTrainingMail(row: Row): Composed {
+  const p = row.payload ?? {};
+  const s = (k: string) => (p[k] == null ? "" : String(p[k]));
+  const kind = row.kind.replace("learning-development_training_", "");
+  const cancelled = kind === "cancelled";
+  const updated = kind === "updated";
+  const title = s("title");
+  const date = ddmmyyyy(s("date"));
+  const when = `${date} · ${s("start")}–${s("end")} IST`;
+  const hours = p.hours != null ? `${Number(p.hours).toFixed(Number(p.hours) % 1 ? 1 : 0)} hour(s)` : "";
+  const cat = s("category") === "external" ? "External training" : s("category") === "internal" ? "Internal training" : "Training";
+  const link = s("teams_link");
+  const portal = s("path") ? `${APP_BASE_URL}${s("path")}` : "";
+
+  const subject = cancelled
+    ? `Cancelled: ${title} — ${date}`
+    : updated
+    ? `Updated: ${title} — ${date} ${s("start")}`
+    : `Training invitation: ${title} — ${date} ${s("start")}`;
+  const eyebrow = cancelled ? "Training cancelled" : updated ? "Training updated" : "Training invitation";
+
+  // The Teams link is optional (HR, 14-10-2026) — added later, it arrives as an "Updated" mail.
+  const joinBlock = cancelled ? "" : !link
+    ? noteBox("Microsoft Teams meeting", "The Teams joining link will be shared with you before the training.")
+    : `
+  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin:0 0 22px;border-top:1px solid ${LINE};border-bottom:1px solid ${LINE};">
+    <tr><td style="padding:18px 0 6px;font-family:${FONT};font-size:18px;font-weight:700;color:${NAVY};">Microsoft Teams meeting</td></tr>
+    <tr><td style="padding:0 0 6px;font-family:${FONT};font-size:13px;color:${GREY};">Join on your computer, mobile app or room device</td></tr>
+    <tr><td style="padding:6px 0 18px;">
+      <table role="presentation" cellpadding="0" cellspacing="0"><tr>
+        <td align="center" bgcolor="${TEAMS}" style="border-radius:6px;background:${TEAMS};">
+          <a href="${esc(link)}" target="_blank" style="display:inline-block;padding:12px 26px;font-family:${FONT};font-size:15px;font-weight:700;color:#ffffff;text-decoration:none;border-radius:6px;">Join the meeting now</a>
+        </td>
+      </tr></table>
+      <div style="padding-top:10px;font-family:${FONT};font-size:12px;color:${GREY2};word-break:break-all;">${esc(link)}</div>
+    </td></tr>
+  </table>`;
+
+  const inner =
+    (cancelled
+      ? `<p style="font-family:${FONT};font-size:14.5px;line-height:1.6;color:${NAVY};margin:0 0 18px;">This training has been <b>cancelled</b>. It has been removed from your calendar — you do not need to attend.</p>`
+      : updated
+      ? `<p style="font-family:${FONT};font-size:14.5px;line-height:1.6;color:${NAVY};margin:0 0 18px;">The details of this training have <b>changed</b>. Please note the new date, time or link below — your calendar has been updated.</p>`
+      : `<p style="font-family:${FONT};font-size:14.5px;line-height:1.6;color:${NAVY};margin:0 0 18px;">You are invited to attend the training below. It has been added to your calendar.</p>`) +
+    (cancelled && s("reason") ? noteBox("Reason", s("reason")) : "") +
+    detailRows([
+      { label: "When", value: when },
+      ...(hours ? [{ label: "Duration", value: hours }] : []),
+      { label: "Category", value: cat },
+      ...(s("trainer") ? [{ label: "Trainer", value: s("trainer") }] : []),
+      ...(s("organiser") ? [{ label: "Organiser", value: s("organiser") }] : []),
+      ...(s("code") ? [{ label: "Reference", value: s("code") }] : []),
+    ]) +
+    (!cancelled && s("description") ? noteBox("About this training", s("description")) : "") +
+    joinBlock +
+    (!cancelled && portal
+      ? `<p style="font-family:${FONT};font-size:13px;color:${GREY};margin:0;">Material and attendance: <a href="${esc(portal)}" style="color:${ORANGE};">open it in Orange One</a></p>`
+      : "");
+
+  const ics = buildTrainingIcs(p, row.to_email ?? "", row.to_name ?? "", cancelled);
+  return {
+    subject,
+    html: emailShell({
+      eyebrow, headline: cancelled ? `Cancelled: ${title}` : title, inner,
+      tag: "Learning & Development",
+      footer: `<b style="color:${GREY};">Orange One Hub</b> &middot; Learning &amp; Development.<br>You're receiving this because you are an attendee of this training.`,
+    }),
+    text: [
+      eyebrow, title, when, hours, cat,
+      s("trainer") ? `Trainer: ${s("trainer")}` : "",
+      cancelled && s("reason") ? `Reason: ${s("reason")}` : "",
+      !cancelled && link ? `Join Microsoft Teams meeting: ${link}` : "",
+    ].filter(Boolean).join("\n"),
+    replyTo: s("organiser_email") || undefined,
+    inline: [{
+      filename: cancelled ? "cancel.ics" : "invite.ics",
+      mime: `text/calendar; charset=UTF-8; method=${cancelled ? "CANCEL" : "REQUEST"}`,
+      b64: bytesToB64(new TextEncoder().encode(ics)),
+    }],
+  };
 }
 
 // ---- outbox row lifecycle -------------------------------------------------
@@ -1297,7 +1628,9 @@ async function sendOne(token: string, row: Row) {
   try {
     // Files are fetched here, not in compose(), so a storage hiccup is a retryable
     // send failure rather than an "unknown kind" skip.
-    const { attachments, html, text } = await resolveAttachments(c);
+    const resolved = await resolveAttachments(c);
+    const { html, text } = resolved;
+    const attachments = [...resolved.attachments, ...(c.inline ?? [])];
     await gmailSend(token, buildRaw(row.to_email, c.replyTo, c.subject, text, html, attachments));
     await markSent(row, c.subject);
   } catch (e) {

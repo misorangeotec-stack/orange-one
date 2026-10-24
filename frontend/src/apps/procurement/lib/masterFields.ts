@@ -22,11 +22,17 @@ export type MasterValues = Record<string, string>;
  *
  * No `itemGroupOptions`: an item hangs off a CATEGORY now, and the item_group
  * descriptor itself has always picked a category. Nothing here selects a group.
+ *
+ * `companyOptions` / `unitOptions` feed the vendor and item REQUEST forms. Both
+ * masters are Central Masters rows now, and a central vendor or item belongs to
+ * one Tally company book — so the request has to say which.
  */
 export interface MasterFieldCtx {
   categoryOptions: ComboOption[];
   vendorOptions?: ComboOption[];
   itemOptions?: ComboOption[];
+  companyOptions?: ComboOption[];
+  unitOptions?: ComboOption[];
 }
 
 /** The live master rows, for the "does this already exist?" check. */
@@ -80,13 +86,22 @@ export function masterFields(mt: MasterType, ctx: MasterFieldCtx): MasterFieldDe
         { key: "name", label: "Item group name", type: "text", required: true, placeholder: "e.g. Solvents" },
       ];
     case "item":
+      // Approving creates a portal row in mst_items, in this company's book and
+      // typed from the category, so it turns up under that category at once.
+      // `unit` is a unit NAME from Central Masters' short list — the RPC looks it
+      // up in mst_units; free text there only produced "2 PCS" and "KG".
       return [
+        { key: "company_id", label: "Company", type: "select", required: true, options: ctx.companyOptions ?? [], placeholder: "Whose books is it in?" },
         { key: "category_id", label: "Category", type: "select", required: true, options: ctx.categoryOptions, placeholder: "Select category" },
         { key: "name", label: "Item name", type: "text", required: true, placeholder: "e.g. Isopropyl Alcohol" },
-        { key: "unit", label: "Unit", type: "text", placeholder: "e.g. KGS, PCS, LTR" },
+        { key: "unit", label: "Unit", type: "select", options: ctx.unitOptions ?? [], placeholder: "e.g. KGS, PCS, LTR" },
       ];
     case "vendor":
+      // A vendor is a ledger in ONE company's books, as Tally holds it. Approving
+      // creates a portal row in mst_parties in that book; Tally's own ledger
+      // arrives with the sync and Reconcile merges the two.
       return [
+        { key: "company_id", label: "Company", type: "select", required: true, options: ctx.companyOptions ?? [], placeholder: "Whose books is it in?" },
         { key: "name", label: "Vendor name", type: "text", required: true, placeholder: "e.g. Acme Chemicals Pvt Ltd" },
         { key: "gstin", label: "GSTIN", type: "text", placeholder: "15-digit GSTIN (optional)" },
         { key: "contact_name", label: "Contact person", type: "text" },
@@ -146,6 +161,8 @@ export function describePayload(
     itemGroupName: (id: string) => string | undefined;
     vendorName?: (id: string) => string | undefined;
     itemName?: (id: string) => string | undefined;
+    /** "O-tec — Surat". A vendor or item name alone does not say whose books. */
+    companyLabel?: (id: string) => string | undefined;
   }
 ): string {
   const s = (k: string) => (typeof payload[k] === "string" ? (payload[k] as string).trim() : "");
@@ -168,10 +185,13 @@ export function describePayload(
     case "item": {
       const cat = lookup.categoryName(s("category_id"));
       const unit = s("unit");
-      return `${name}${cat ? ` (${cat})` : ""}${unit ? ` · ${unit}` : ""}`;
+      const co = s("company_id") ? lookup.companyLabel?.(s("company_id")) : undefined;
+      return `${name}${cat ? ` (${cat})` : ""}${unit ? ` · ${unit}` : ""}${co ? ` · ${co}` : ""}`;
     }
-    case "vendor":
-      return s("gstin") ? `${name} · ${s("gstin")}` : name;
+    case "vendor": {
+      const co = s("company_id") ? lookup.companyLabel?.(s("company_id")) : undefined;
+      return [name, s("gstin"), co].filter(Boolean).join(" · ");
+    }
     case "category":
       return name;
   }
@@ -213,10 +233,14 @@ export function findExistingMaster(
       return lists.categories.find((c) => eq(c.name, name));
     case "item_group":
       return lists.itemGroups.find((g) => g.categoryId === v.category_id && eq(g.name, name));
+    // Scoped to the BOOK, because that is the unit Central Masters keys on: the
+    // same firm or product can rightly exist once per company. `lists.items`
+    // holds the company's whole book once the requisition form has picked that
+    // company (store.ensureItemBook), which is where item requests come from.
     case "item":
-      return lists.items.find((i) => i.categoryId === v.category_id && eq(i.name, name));
+      return lists.items.find((i) => i.companyId === v.company_id && eq(i.name, name));
     case "vendor":
-      return lists.vendors.find((x) => eq(x.name, name));
+      return lists.vendors.find((x) => (x.companyId === null || x.companyId === v.company_id) && eq(x.name, name));
   }
 }
 

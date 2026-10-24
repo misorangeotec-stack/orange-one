@@ -4,13 +4,13 @@ const db = supabase as any;
 /**
  * The travel advance's write layer.
  *
- * ⚠ APPROVE AND DISBURSE ARE TWO CALLS, NOT ONE, because §11.1 gives them
+ * ⚠ APPROVE AND DISBURSE ARE TWO CALLS, NOT ONE, because Section 11.1 gives them
  *   different owners and different deadlines — the HOD agrees the figure within
  *   a working day, Finance moves the money within two. Folding them together
  *   would mean an advance could only be agreed by somebody able to make a
  *   transfer.
  *
- * ⚠ §11.1 AND §11.2 ARE ENFORCED IN THE RPCs, NOT HERE. The 90% ceiling and the
+ * ⚠ Section 11.1 AND Section 11.2 ARE ENFORCED IN THE RPCs, NOT HERE. The 90% ceiling and the
  *   "no second advance while one is unreconciled" refusal both live in SQL. The
  *   screens show the ceiling and warn about an outstanding balance so nobody is
  *   surprised, but a browser that could waive either would make the whole
@@ -53,7 +53,7 @@ export async function disburseAdvance(
  *
  * ⚠ THIS IS WHAT UNBLOCKS A CANCELLED TRIP. The advance left, the trip never
  *   happened, and no claim is coming to net it against — so without a way to
- *   record the repayment §11.2 would bar that person from every future advance
+ *   record the repayment Section 11.2 would bar that person from every future advance
  *   for ever.
  */
 export async function recordAdvanceRecovery(

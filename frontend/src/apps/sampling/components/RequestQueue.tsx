@@ -105,18 +105,21 @@ export default function RequestQueue({
         </Link>
       ),
       sortValue: ({ request }) => request.reqNo,
+      filter: { kind: "text", get: ({ request }) => request.reqNo },
       tdClassName: "whitespace-nowrap",
     },
     {
       key: "subject",
       header: "Product / Party",
       cell: ({ request: r }) => <span className="text-navy">{requestSubject(r)}</span>,
+      sortValue: ({ request }) => requestSubject(request),
       filter: { kind: "text", get: ({ request }) => requestSubject(request) },
     },
     {
       key: "direction",
       header: "Direction",
       cell: ({ request: r }) => <span className="text-grey-2">{directionLabel(r.direction)}</span>,
+      sortValue: ({ request }) => directionLabel(request.direction),
       filter: { kind: "select", get: ({ request }) => directionLabel(request.direction) },
     },
     ...(pendingColumn ? [pendingColumn] : []),
@@ -129,6 +132,8 @@ export default function RequestQueue({
         return <span className={overdue ? "text-ryg-red font-semibold" : "text-navy"}>{dmy(dueIso)}</span>;
       },
       sortValue: ({ dueIso }) => dueIso ?? "9999-99-99",
+      filter: { kind: "date", get: ({ dueIso }) => dueIso ?? "" },
+      exportValue: ({ dueIso }) => (dueIso ? dmy(dueIso) : ""),
     },
   ];
 
@@ -157,6 +162,7 @@ export default function RequestQueue({
       key: "subject",
       header: "Product / Party",
       cell: (e) => <span className="text-navy">{requestSubject(e.row)}</span>,
+      sortValue: (e) => requestSubject(e.row),
       filter: { kind: "text", get: (e) => requestSubject(e.row) },
     },
     capturedColumn,
@@ -193,6 +199,7 @@ export default function RequestQueue({
           <span className="text-grey-2">—</span>
         ),
       sortValue: (e) => e.editedAtIso ?? "",
+      filter: { kind: "date", get: (e) => (e.editedAtIso ?? "").slice(0, 10) },
       tdClassName: "whitespace-nowrap",
     },
   ];

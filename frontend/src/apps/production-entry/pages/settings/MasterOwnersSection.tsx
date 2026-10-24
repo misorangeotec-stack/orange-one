@@ -3,6 +3,10 @@ import Card from "@/shared/components/ui/Card";
 import Button from "@/shared/components/ui/Button";
 import Modal from "@/shared/components/ui/Modal";
 import MultiSelect, { type MultiOption } from "@/shared/components/ui/MultiSelect";
+import { ScrollableTable } from "@/core/shared/components/ScrollableTable";
+import { FitCell } from "@/shared/components/ui/ColumnResizer";
+import { FIT } from "@/shared/lib/tableLook";
+import { useColumnWidths } from "@/shared/lib/useColumnWidths";
 import { useProductionStore } from "../../store";
 import { PRODUCTION_OWNABLE_MASTER_TYPES, type ProductionMasterType } from "../../types";
 
@@ -13,6 +17,8 @@ import { PRODUCTION_OWNABLE_MASTER_TYPES, type ProductionMasterType } from "../.
  */
 export default function MasterOwnersSection() {
   const s = useProductionStore();
+  /** PF-20: one line per row, a long owner list cut and whole on hover. A settings matrix: no drag. */
+  const fit = useColumnWidths("tb", ["master", "owners"]);
   const [editing, setEditing] = useState<ProductionMasterType | null>(null);
   const [picked, setPicked] = useState<string[]>([]);
   const [busy, setBusy] = useState(false);
@@ -47,6 +53,8 @@ export default function MasterOwnersSection() {
           Each master's owner can add and edit that master and approve requests for it. Leave a master unassigned and only admins can.
         </p>
       </div>
+      {/* PF-20: inside ScrollableTable like every other table, so a phone scrolls it rather than clipping it. */}
+      <ScrollableTable>
       <table className="w-full text-[13.5px]">
         <thead>
           <tr className="text-left text-grey-2 border-b border-line">
@@ -55,7 +63,7 @@ export default function MasterOwnersSection() {
             <th className="font-medium px-4 py-3">Owners</th>
           </tr>
         </thead>
-        <tbody>
+        <tbody {...fit.tbodyProps}>
           {PRODUCTION_OWNABLE_MASTER_TYPES.map((mt) => {
             const ids = s.managerIdsFor(mt.value);
             const names = ids.map((id) => s.profileById(id)?.name ?? "Unknown");
@@ -64,15 +72,18 @@ export default function MasterOwnersSection() {
                 <td className="px-4 py-3 whitespace-nowrap">
                   <button onClick={() => open(mt.value)} className="text-[12.5px] font-semibold text-orange hover:underline">Edit</button>
                 </td>
-                <td className="px-4 py-3 font-medium text-navy">{mt.plural}</td>
+                <td className="px-4 py-3 font-medium text-navy whitespace-nowrap">{mt.plural}</td>
                 <td className="px-4 py-3">
-                  {names.length ? <span className="text-navy">{names.join(", ")}</span> : <span className="text-grey-2">Unassigned — falls back to admins</span>}
+                  <FitCell fit={fit} col="owners" cap={FIT.CUT}>
+                    {names.length ? <span className="text-navy">{names.join(", ")}</span> : <span className="text-grey-2">Unassigned — falls back to admins</span>}
+                  </FitCell>
                 </td>
               </tr>
             );
           })}
         </tbody>
       </table>
+      </ScrollableTable>
 
       <Modal
         open={editing !== null}

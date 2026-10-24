@@ -1,3 +1,4 @@
+import BackLink from "@/shared/components/ui/BackLink";
 import { useRef, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import Card from "@/shared/components/ui/Card";
@@ -8,6 +9,9 @@ import { FieldLabel, TextArea, TextInput } from "@/shared/components/ui/Form";
 import Combobox from "@/shared/components/ui/Combobox";
 import { Field, SectionHeading } from "@/shared/components/ui/Readout";
 import { ScrollableTable } from "@/core/shared/components/ScrollableTable";
+import { FitCell, FitTh, ResetWidths } from "@/shared/components/ui/ColumnResizer";
+import { FIT } from "@/shared/lib/tableLook";
+import { useColumnWidths } from "@/shared/lib/useColumnWidths";
 import { formatDateTime } from "@/shared/lib/time";
 import { useDispatchStore, useOrderActivity } from "../../store";
 import DispatchStepper from "../../components/DispatchStepper";
@@ -21,11 +25,19 @@ import LotAllocField, { rowsFrom, filledLots, type LotRow } from "../../componen
 import { makeBookOf, useLotsForItems } from "../../lib/lotPicker";
 import type { StepDoc } from "../../types";
 import { allRoundViews, billedQtyOf, pendingQtyOf, type RoundView } from "../../lib/rounds";
-import { hasSalesReturn, isSalesReturnPending, salesReturnRound } from "../../lib/salesReturn";
+import {
+  hasSalesReturn, invoiceReturnState, isSalesReturnPending, liveReturnFor, returnCandidates, salesReturnRound,
+} from "../../lib/salesReturn";
+import RequestReturnModal from "../../components/RequestReturnModal";
+import ReturnLines from "../../components/ReturnLines";
+import type { RoundReturn } from "../../types";
 import {
   CREDIT_STATUS_LABEL, DELIVERY_STATUS_LABEL, dispatchTypeText,
-  dmy, dmyTime, isBillHeld, isCreditHeld, qtyTotals, SALES_RETURN_MODE_LABEL, sharedUnit,
+  dmy, dmyTime, isBillHeld, isCreditHeld, qtyTotals, ROUND_RETURN_ORIGIN_LABEL, SALES_RETURN_MODE_LABEL, sharedUnit,
 } from "../../lib/format";
+
+/** The Items table's columns, for its remembered widths (PF-20). */
+const ITEM_COLS = ["item", "ordered", "dispatched", "pending", "going", "bill", "lot"];
 
 export default function OrderDetail() {
   const { id = "" } = useParams();
@@ -38,6 +50,12 @@ export default function OrderDetail() {
   const [closeOpen, setCloseOpen] = useState(false);
   const [withdrawOpen, setWithdrawOpen] = useState(false);
   const [salesReturnOpen, setSalesReturnOpen] = useState(false);
+  // Returns against a FINISHED invoice (fms_dispatch_round_returns): raise one,
+  // record / correct one, or withdraw one. For the raise modal: `undefined` =
+  // closed, `null` = open with no invoice preselected, a number = that round's.
+  const [raiseReturn, setRaiseReturn] = useState<number | null | undefined>(undefined);
+  const [actReturn, setActReturn] = useState<{ ret: RoundReturn; editing: boolean } | null>(null);
+  const [withdrawReturn, setWithdrawReturn] = useState<RoundReturn | null>(null);
   const [amendRound, setAmendRound] = useState<RoundView | null>(null);
   const [reason, setReason] = useState("");
   const [busy, setBusy] = useState(false);
@@ -50,6 +68,12 @@ export default function OrderDetail() {
       value `order.id` would be, and it is available before the order has loaded.
   */
   const activity = useOrderActivity(id);
+  /**
+   * PF-20: the Items table is one line per row, and its columns drag wider. Above the guards
+   * for the same reason as `activity`. The widths are shared by every order (the key folds
+   * the id). The numbers are never cut; Item and LOT no. are, and show whole on hover.
+   */
+  const itemsFit = useColumnWidths("tb", ITEM_COLS);
 
   if (s.isLoading) return <p className="text-[13.5px] text-grey-2">Loading…</p>;
   if (!order) {
@@ -84,6 +108,15 @@ export default function OrderDetail() {
   */
   const awaitingReturn = isSalesReturnPending(order);
   const returnRound = salesReturnRound(order);
+
+  // Returns against this order's finished invoices. Withdrawn ones are left to
+  // the activity trail — they asked for nothing in the end.
+  const orderReturns = s.roundReturnsFor(order.id).filter((x) => x.status !== "withdrawn");
+  // Any invoice that has left the gate — the round awaiting delivery confirmation
+  // included, not only confirmed ones.
+  const canRaiseReturn =
+    s.canRequestRoundReturn(order) &&
+    returnCandidates(order, s.roundReturns).some((c) => c.state === "ok");
 
   // Closing early is only legal BETWEEN rounds — mid-round the goods may already
   // be through the gate. The server enforces it; this keeps the button honest.
@@ -152,6 +185,13 @@ export default function OrderDetail() {
           )}
           {s.canWithdrawCancel(order) && (
             <Button variant="ghost" onClick={() => setWithdrawOpen(true)}>Withdraw cancellation</Button>
+          )}
+          {/* The route to Sales Return for an invoice that has ALREADY gone out —
+              the one Cancel refuses past the gate. Typically a closed order. */}
+          {canRaiseReturn && (
+            <Button variant="ghost" onClick={() => { setRaiseReturn(null); setError(null); }}>
+              Raise sales return
+            </Button>
           )}
         </div>
       </div>
@@ -280,43 +320,129 @@ export default function OrderDetail() {
         </Card>
       )}
 
+      {/*
+        Returns against invoices that have left the gate. Red while one is still
+        waiting, because until it is recorded that invoice is live in Tally for
+        goods the customer may not keep. Recording it changes nothing else here.
+      */}
+      {orderReturns.map((x) => {
+        const waiting = x.status === "pending";
+        const mayAct = s.canEdit && s.canActOn("sales_return", order);
+        return (
+          <Card key={x.id} className={`p-4 border-l-4 ${waiting ? "border-l-ryg-red" : "border-l-line"}`}>
+            <div className="flex flex-wrap items-start justify-between gap-3">
+              <div className="space-y-1">
+                <p className="text-[13px] text-navy">
+                  <span className="font-semibold">
+                    {waiting
+                      ? `Sales bill ${x.invoiceNo ?? ""} is waiting for its sales return to be generated.`
+                      : x.srMode === "sales_return"
+                        ? `Sales return ${x.referenceNo ?? ""} generated against sales bill ${x.invoiceNo ?? ""}.`
+                        : `Sales bill ${x.invoiceNo ?? ""} was unwound.`}
+                  </span>{" "}
+                  {ROUND_RETURN_ORIGIN_LABEL[x.origin]}
+                  {x.scope === "partial" ? " (part of the invoice)" : ""} — {x.reason}
+                </p>
+                <ReturnLines ret={x} />
+                <p className="text-[12.5px] text-grey-2">
+                  R{x.roundNo} · raised by {s.personName(x.requestedBy)} · {dmyTime(x.requestedAt)}
+                  {x.invoiceDate ? ` · invoice dated ${dmy(x.invoiceDate)}` : ""}
+                </p>
+                {waiting ? (
+                  <p className="text-[12.5px] text-grey-2">
+                    Waiting on {s.ownerNamesFor("sales_return", order.locationId).join(", ") || "the Generate Sales Return owners"}{" "}
+                    to make it in Tally. The order itself is not affected.
+                  </p>
+                ) : (
+                  <p className="text-[12.5px] text-grey-2">
+                    {x.srMode ? SALES_RETURN_MODE_LABEL[x.srMode] : "Recorded"}
+                    {x.referenceNo ? ` · ${x.referenceNo}` : ""} · {s.personName(x.recordedBy)}
+                    {x.recordedAt ? ` · ${dmyTime(x.recordedAt)}` : ""}
+                    {x.remarks ? ` · ${x.remarks}` : ""}
+                  </p>
+                )}
+              </div>
+              <div className="flex flex-wrap items-center gap-3">
+                {x.attachmentPath && (
+                  <StepDocLink path={x.attachmentPath} name={x.attachmentName ?? "Sales return document"} />
+                )}
+                {waiting && mayAct && (
+                  <Button size="sm" onClick={() => setActReturn({ ret: x, editing: false })}>
+                    Generate sales return
+                  </Button>
+                )}
+                {!waiting && mayAct && (
+                  <Button variant="ghost" size="sm" onClick={() => setActReturn({ ret: x, editing: true })}>
+                    Correct
+                  </Button>
+                )}
+                {s.canWithdrawRoundReturn(x, order) && (
+                  <Button variant="ghost" size="sm" onClick={() => { setWithdrawReturn(x); setReason(""); setError(null); }}>
+                    Withdraw
+                  </Button>
+                )}
+              </div>
+            </div>
+          </Card>
+        );
+      })}
+
       <div className="grid gap-5 lg:grid-cols-3">
         <Card className="p-5 space-y-3 lg:col-span-2">
-          <SectionHeading>Items</SectionHeading>
+          <div className="flex items-center justify-between gap-3">
+            <SectionHeading>Items</SectionHeading>
+            {/* PF-20: only once a column has been dragged. */}
+            <ResetWidths fit={itemsFit} cols={ITEM_COLS} className="inline-flex items-center gap-1.5 text-[12px] font-semibold text-grey-2 hover:text-orange" />
+          </div>
           <ScrollableTable>
+            {/* PF-20: one line per row; each header's edge drags. Item and LOT no. are cut
+                with "…" and shown whole on hover; the quantities are never cut. The compact
+                py-2 pr-3 padding of this detail card is kept. */}
             <table className="w-full text-[13px]">
               <thead>
                 <tr className="text-left text-grey-2 border-b border-line">
-                  <th className="py-2 pr-3 font-semibold min-w-[190px]">Item</th>
-                  <th className="py-2 pr-3 font-semibold text-right">Ordered</th>
-                  <th className="py-2 pr-3 font-semibold text-right">Dispatched</th>
-                  <th className="py-2 pr-3 font-semibold text-right">Pending</th>
-                  <th className="py-2 pr-3 font-semibold text-right">Going out now</th>
+                  <FitTh fit={itemsFit} col="item" className="py-2 pr-3 font-semibold">Item</FitTh>
+                  <FitTh fit={itemsFit} col="ordered" className="py-2 pr-3 font-semibold text-right">Ordered</FitTh>
+                  <FitTh fit={itemsFit} col="dispatched" className="py-2 pr-3 font-semibold text-right">Dispatched</FitTh>
+                  <FitTh fit={itemsFit} col="pending" className="py-2 pr-3 font-semibold text-right">Pending</FitTh>
+                  <FitTh fit={itemsFit} col="going" className="py-2 pr-3 font-semibold text-right">Going out now</FitTh>
                   {/* What the invoice covers. Blank until the bill is raised — see
                       the note on RefLines: a dash here would read as "nothing is
                       being billed" rather than "nobody has said yet". */}
-                  <th className="py-2 pr-3 font-semibold text-right whitespace-nowrap">Sales bill qty</th>
-                  <th className="py-2 pr-3 font-semibold">LOT no.</th>
+                  <FitTh fit={itemsFit} col="bill" className="py-2 pr-3 font-semibold text-right whitespace-nowrap">Sales bill qty</FitTh>
+                  <FitTh fit={itemsFit} col="lot" className="py-2 pr-3 font-semibold">LOT no.</FitTh>
                 </tr>
               </thead>
-              <tbody>
+              <tbody {...itemsFit.tbodyProps}>
                 {order.lines.map((l) => {
                   const pending = pendingQtyOf(l);
                   return (
                     <tr key={l.id} className="border-b border-line/70 last:border-0">
-                      <td className="py-2 pr-3 text-navy">{s.itemName(l.itemId)}</td>
+                      <td className="py-2 pr-3 text-navy">
+                        <FitCell fit={itemsFit} col="item" cap={FIT.CUT}>{s.itemName(l.itemId)}</FitCell>
+                      </td>
                       <td className="py-2 pr-3 text-grey text-right tabular-nums whitespace-nowrap">
-                        {l.quantity} {l.unit ?? ""}
+                        <FitCell fit={itemsFit} col="ordered" cap={null}>
+                          {l.quantity} {l.unit ?? ""}
+                        </FitCell>
                       </td>
-                      <td className="py-2 pr-3 text-grey text-right tabular-nums">{l.dispatchedQty || "—"}</td>
+                      <td className="py-2 pr-3 text-grey text-right tabular-nums">
+                        <FitCell fit={itemsFit} col="dispatched" cap={null}>{l.dispatchedQty || "—"}</FitCell>
+                      </td>
                       <td className="py-2 pr-3 text-right tabular-nums font-semibold">
-                        {pending > 0 ? <span className="text-navy">{pending}</span> : <span className="text-ryg-green">Complete</span>}
+                        <FitCell fit={itemsFit} col="pending" cap={null}>
+                          {pending > 0 ? <span className="text-navy">{pending}</span> : <span className="text-ryg-green">Complete</span>}
+                        </FitCell>
                       </td>
-                      <td className="py-2 pr-3 text-grey text-right tabular-nums">{l.shipQty ?? "—"}</td>
+                      <td className="py-2 pr-3 text-grey text-right tabular-nums">
+                        <FitCell fit={itemsFit} col="going" cap={null}>{l.shipQty ?? "—"}</FitCell>
+                      </td>
                       <td className="py-2 pr-3 text-right tabular-nums font-semibold text-orange">
-                        {l.billQty ?? "—"}
+                        <FitCell fit={itemsFit} col="bill" cap={null}>{l.billQty ?? "—"}</FitCell>
                       </td>
-                      <td className="py-2 pr-3 text-grey">{l.lotNo ?? "—"}</td>
+                      <td className="py-2 pr-3 text-grey">
+                        <FitCell fit={itemsFit} col="lot" cap={FIT.CUT}>{l.lotNo ?? "—"}</FitCell>
+                      </td>
                     </tr>
                   );
                 })}
@@ -401,6 +527,7 @@ export default function OrderDetail() {
                   <th className="py-2 pr-3 font-semibold">Outcome</th>
                   <th className="py-2 pr-3 font-semibold">Confirmed</th>
                   <th className="py-2 pr-3 font-semibold">Documents</th>
+                  <th className="py-2 pr-3 font-semibold whitespace-nowrap">Sales return</th>
                   {s.canEdit && s.isProcessCoordinator && <th className="py-2 pr-3 font-semibold" />}
                 </tr>
               </thead>
@@ -493,6 +620,15 @@ export default function OrderDetail() {
                         )}
                       </div>
                     </td>
+                    <td className="py-2 pr-3 whitespace-nowrap">
+                      <RoundReturnCell
+                        live={liveReturnFor(order.id, v.roundNo, s.roundReturns)}
+                        // Any invoice out of the gate — the live round too. The same
+                        // test the server applies.
+                        canRaise={s.canRequestRoundReturn(order) && invoiceReturnState(order, v) === "ok"}
+                        onRaise={() => { setRaiseReturn(v.roundNo); setError(null); }}
+                      />
+                    </td>
                     {s.canEdit && s.isProcessCoordinator && (
                       <td className="py-2 pr-3">
                         {/* Not while the order is mid-cancellation: correcting a
@@ -532,9 +668,7 @@ export default function OrderDetail() {
       )}
 
       <p className="text-[12.5px] text-grey-2">
-        <Link to="/order-to-dispatch/orders" className="font-semibold text-orange hover:underline">
-          ← All orders
-        </Link>
+        <BackLink to="/order-to-dispatch/orders" label="All orders" className="font-semibold text-orange hover:underline" />
       </p>
 
       <Modal
@@ -680,6 +814,56 @@ export default function OrderDetail() {
         onClose={() => setSalesReturnOpen(false)}
         editing={!awaitingReturn}
       />
+
+      {/* The same form, for a return against a finished invoice. */}
+      <SalesReturnModal
+        order={order}
+        roundReturn={actReturn?.ret ?? null}
+        open={!!actReturn}
+        onClose={() => setActReturn(null)}
+        editing={actReturn?.editing ?? false}
+      />
+
+      <RequestReturnModal
+        open={raiseReturn !== undefined}
+        onClose={() => setRaiseReturn(undefined)}
+        order={order}
+        roundNo={raiseReturn ?? null}
+      />
+
+      <Modal
+        open={!!withdrawReturn}
+        onClose={() => setWithdrawReturn(null)}
+        title="Withdraw the sales return"
+        subtitle={`${order.orderNo} · invoice ${withdrawReturn?.invoiceNo ?? "—"}`}
+        footer={
+          <>
+            <Button variant="ghost" onClick={() => setWithdrawReturn(null)} disabled={busy}>
+              Keep it
+            </Button>
+            <Button
+              onClick={() =>
+                withdrawReturn &&
+                act(() => s.withdrawRoundReturn(withdrawReturn.id, reason), () => setWithdrawReturn(null))
+              }
+              disabled={busy}
+            >
+              {busy ? "Withdrawing…" : "Withdraw"}
+            </Button>
+          </>
+        }
+      >
+        <div className="space-y-3">
+          <p className="text-[13px] text-grey-2">
+            It leaves the Sales Return queue and the owners are told nothing is needed in Tally. Only
+            possible while it is still waiting — once recorded it can be corrected, not withdrawn.
+          </p>
+          <FieldLabel label="Reason" required>
+            <TextArea value={reason} onChange={(e) => setReason(e.target.value)} rows={2} />
+          </FieldLabel>
+          {error && <p className="text-[13px] font-medium text-ryg-red">{error}</p>}
+        </div>
+      </Modal>
 
       {amendRound && (
         <AmendRoundModal
@@ -951,4 +1135,37 @@ function AmendRoundModal({
       </div>
     </Modal>
   );
+}
+
+/**
+ * The Dispatch rounds table's "Sales return" cell: where this invoice stands, or
+ * the button that sends it to Sales Return. One return per invoice, so a live
+ * one replaces the button rather than sitting beside it.
+ */
+function RoundReturnCell({
+  live,
+  canRaise,
+  onRaise,
+}: {
+  live: RoundReturn | undefined;
+  canRaise: boolean;
+  onRaise: () => void;
+}) {
+  if (live?.status === "pending") return <OutcomePill label="Return pending" tone="red" />;
+  if (live?.status === "recorded") {
+    return (
+      <OutcomePill
+        label={live.srMode === "sales_return" ? `Returned · ${live.referenceNo ?? ""}` : "Invoice cancelled"}
+        tone="grey"
+      />
+    );
+  }
+  if (canRaise) {
+    return (
+      <Button size="sm" variant="ghost" onClick={onRaise}>
+        Raise
+      </Button>
+    );
+  }
+  return <span className="text-grey-2">—</span>;
 }

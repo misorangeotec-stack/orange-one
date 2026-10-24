@@ -10,9 +10,11 @@
  *   Production's issue slip does — it does not drop a PDF into Downloads for
  *   someone to find, open and print by hand.
  */
+import { useState } from "react";
 import Button from "@/shared/components/ui/Button";
 import { useDispatchStore } from "../store";
-import { gatePassFromRound } from "../lib/gatePass";
+import { expiryKey, fetchTallyExpiries, fetchTypedExpiries } from "../data/lotExpiry";
+import { gatePassFromRound, lotsOfItem } from "../lib/gatePass";
 import { printGatePass } from "../lib/printGatePass";
 import type { RoundView } from "../lib/rounds";
 import type { DispatchOrder } from "../types";
@@ -29,6 +31,7 @@ export default function GatePassButton({
   variant?: "ghost" | "outline";
 }) {
   const s = useDispatchStore();
+  const [busy, setBusy] = useState(false);
 
   // No invoice, no pass. The number is issued with the sales bill, so a round
   // that has not been billed has nothing to print — say that rather than
@@ -36,8 +39,23 @@ export default function GatePassButton({
   // desk actually files by.
   const gpNo = view?.gpNo ?? null;
 
-  const print = () => {
-    if (!view || !gpNo) return;
+  const print = async () => {
+    if (!view || !gpNo || busy) return;
+    setBusy(true);
+    /*
+      EXPIRY: Tally first, then what the store keeper typed. Read at print time,
+      so a date added after dispatch still reaches a reprint. Both reads come back
+      empty on failure — a pass without an expiry still prints.
+    */
+    const nameOf = (i: (typeof view.items)[number]) => i.itemName || s.itemName(i.itemId) || "Item";
+    const wanted = view.items.flatMap((i) => lotsOfItem(i).map((l) => ({ item: nameOf(i), lot: l.lotNo })));
+    const companyGuid = s.companies.find((c) => c.id === order.companyId)?.tallyGuid ?? null;
+    const [tally, typed] = await Promise.all([
+      fetchTallyExpiries(wanted, companyGuid),
+      fetchTypedExpiries(view.items.map((i) => i.itemId ?? "")),
+    ]);
+    setBusy(false);
+
     // ⚠ THE EM DASH TEST IS LOAD-BEARING. `masterName` answers "—" for a null
     //   or unknown id, and a masthead reading the company name over a bare "—"
     //   is worse than one with no second line at all. Mapping it to null is
@@ -51,6 +69,10 @@ export default function GatePassButton({
         customerName: s.customerName(order.customerId),
         customerLocation: order.customerLocation,
         itemName: s.itemName,
+        expiryOf: (itemId, itemName, lotNo) =>
+          tally.get(expiryKey(itemName, lotNo))
+          ?? (itemId ? typed.map.get(expiryKey(itemId, lotNo)) : undefined)
+          ?? null,
       }),
     );
   };
@@ -59,11 +81,11 @@ export default function GatePassButton({
     <Button
       size={size}
       variant={variant}
-      onClick={print}
-      disabled={!gpNo}
+      onClick={() => void print()}
+      disabled={!gpNo || busy}
       title={gpNo ? `Print gate pass ${gpNo}` : "Available once the sales bill is recorded"}
     >
-      Print gate pass
+      {busy ? "Preparing…" : "Print gate pass"}
     </Button>
   );
 }

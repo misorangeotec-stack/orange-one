@@ -21,6 +21,12 @@ const ic = {
       <path d="M3 10h18M7 15h4" />
     </svg>
   ),
+  mail: (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <rect x="3" y="5" width="18" height="14" rx="2" />
+      <path d="m3 7 9 6 9-6" />
+    </svg>
+  ),
   account: (
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
       <circle cx="12" cy="8" r="4" />
@@ -47,5 +53,8 @@ export const dailyReportNav = (missingToday: number): NavItem[] => [
     badge: missingToday > 0 ? missingToday : undefined,
   },
   { label: "Bank accounts", to: `${B}/bank-accounts`, icon: ic.accounts, section: "Setup" },
+  // ⚠ A SIBLING PATH, NOT A CHILD OF ANYTHING. The sidebar exact-matches two-segment paths, so a
+  //   nested item would light its parent up as well as itself.
+  { label: "Email", to: `${B}/email`, icon: ic.mail },
   { label: "My Account", to: "/account", icon: ic.account, section: "Account" },
 ];

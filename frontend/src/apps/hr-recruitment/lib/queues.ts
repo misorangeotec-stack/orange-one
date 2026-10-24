@@ -16,7 +16,7 @@
  */
 import { addMonths, addWorkingDays, localDateIso } from "@/shared/lib/workingDays";
 import type { QueueEntryBase } from "@/shared/lib/fmsQueue";
-import type { StepKey } from "./steps";
+import { CHECKIN_STEPS, checkinStepKey, stepByKey, type StepKey } from "./steps";
 import { REQ_STATUS_LABEL } from "./format";
 import { dueIsoFrom, type StepSlaMap } from "./sla";
 import type {
@@ -26,6 +26,7 @@ import type {
   Onboarding,
   OnboardingCheck,
   Probation,
+  ProbationCheckin,
   ProbationReview,
   Requisition,
 } from "../types";
@@ -49,6 +50,8 @@ export interface HrSnapshot {
   onboardingChecks: OnboardingCheck[];
   probations: Probation[];
   probationReviews: ProbationReview[];
+  /** NR-10 — the Day 7/15/30/60/90 check-ins that replaced the monthly reviews. */
+  probationCheckins: ProbationCheckin[];
   stepSla: StepSlaMap;
 }
 
@@ -254,17 +257,47 @@ const stageRound = (stage: CandidateStage): 0 | 1 | 2 | 3 | null =>
  * because that stage never happened). Falling back to `uploadedAt` instead would date
  * the due clock from the CV's arrival and paint the card overdue at birth.
  */
-function lastCompletedStageIso(c: Candidate): string | null {
-  return (
-    c.interview3At ??
-    c.interview2At ??
-    c.interview1At ??
-    c.telephonicAt ??
-    c.hodDecidedAt ??
-    c.hrShortlistedAt ??
-    null
-  );
+function lastCompletedStageIso(c: Candidate, before?: StepKey): string | null {
+  // Latest first. `before` limits the walk to stages EARLIER than that step — the
+  // question a step that has already closed asks, since its own stamp and every
+  // later one are no part of what it was waiting on.
+  const chain: [StepKey, string | null][] = [
+    ["interview_3", c.interview3At],
+    ["interview_2", c.interview2At],
+    ["interview_1", c.interview1At],
+    ["telephonic_screening", c.telephonicAt],
+    ["hod_shortlist", c.hodDecidedAt],
+    ["hr_shortlist", c.hrShortlistedAt],
+  ];
+  const cut = before ? CANDIDATE_STEP_ORDER.indexOf(before) : Infinity;
+  for (const [step, at] of chain) {
+    if (CANDIDATE_STEP_ORDER.indexOf(step) < cut && at) return at;
+  }
+  return null;
 }
+
+/** The candidate-scope steps in workflow order. */
+const CANDIDATE_STEP_ORDER: StepKey[] = [
+  "hr_shortlist",
+  "hod_shortlist",
+  "telephonic_screening",
+  "interview_1",
+  "interview_2",
+  "interview_3",
+  "final_decision",
+];
+
+/** The interview round a candidate STEP conducts. Telephonic is round 0. */
+const stepRound = (step: StepKey): 0 | 1 | 2 | 3 | null =>
+  step === "telephonic_screening"
+    ? 0
+    : step === "interview_1"
+      ? 1
+      : step === "interview_2"
+        ? 2
+        : step === "interview_3"
+          ? 3
+          : null;
 
 /**
  * Due date for the step a candidate card is currently waiting on.
@@ -288,19 +321,56 @@ export function candidateDueIso(
 ): string | null {
   const step = STAGE_PENDING_STEP[c.stage];
   if (!step) return null; // finalized / disqualified — nothing is due
+  return candidateDueFor(snap, c, step, stageRound(c.stage), "pending", reqById, ivByCandidate);
+}
+
+/**
+ * When a candidate step that has ALREADY CLOSED was due — the same rule
+ * `candidateDueIso` applies while it is open, asked afterwards.
+ *
+ * Two things differ only because the step is done, and both keep the answer the
+ * one the card showed while it waited:
+ *   • a round is due on the date of the interview that was HELD, which is the
+ *     booking that was pending until then;
+ *   • the skipped-stage fallback walks only the stages BEFORE this step. Its own
+ *     stamp, and every later one, happened after it.
+ *
+ * Read by the monthly ranking (CC-1), which scores a closed step against this.
+ */
+export function candidateStepDueIso(
+  snap: HrSnapshot,
+  c: Candidate,
+  step: StepKey,
+  reqById: Map<string, Requisition>,
+  ivByCandidate?: Map<string, Interview[]>,
+): string | null {
+  return candidateDueFor(snap, c, step, stepRound(step), "held", reqById, ivByCandidate);
+}
+
+function candidateDueFor(
+  snap: HrSnapshot,
+  c: Candidate,
+  step: StepKey,
+  round: 0 | 1 | 2 | 3 | null,
+  which: "pending" | "held",
+  reqById: Map<string, Requisition>,
+  ivByCandidate?: Map<string, Interview[]>,
+): string | null {
   const sla = snap.stepSla[step];
   if (!sla) return null;
 
-  const round = stageRound(c.stage);
   if (round !== null) {
     const list = ivByCandidate?.get(c.id) ?? snap.interviews.filter((iv) => iv.candidateId === c.id);
-    const booked = list.find((iv) => iv.round === round && !iv.heldAt);
+    const booked = list.find((iv) => iv.round === round && (which === "held" ? !!iv.heldAt : !iv.heldAt));
     if (booked?.scheduledOn) return booked.scheduledOn;
   }
 
   // A skipped-into stage has a null configured anchor — fall back to the last stage that
   // actually completed, not to the CV's upload date (which would be born overdue).
-  const from = candidateStepCompletedIso(c, sla.anchor, reqById) ?? lastCompletedStageIso(c) ?? c.uploadedAt;
+  const from =
+    candidateStepCompletedIso(c, sla.anchor, reqById) ??
+    lastCompletedStageIso(c, which === "held" ? step : undefined) ??
+    c.uploadedAt;
   return dueIsoFrom(from, sla);
 }
 
@@ -418,19 +488,25 @@ export const isOpenProbation = (p: Probation): boolean => !p.finalStatus;
  * Mirrors the sequence the RPCs enforce (fms_hr_record_probation_review /
  * fms_hr_decide_probation / fms_hr_decide_extension) — keep the two in step.
  */
-export function probationPendingStep(p: Probation, reviews: ProbationReview[]): StepKey | null {
+export function probationPendingStep(p: Probation, checkins: ProbationCheckin[]): StepKey | null {
   if (p.finalStatus) return null; // decided — nothing is due
-  const has = (m: number) => reviews.some((r) => r.month === m);
 
-  if (!has(1)) return "probation_m1";
-  if (!has(2)) return "probation_m2";
-  if (!has(3)) return "probation_m3";
+  // NR-10. A check-in is owed until BOTH sides are in: the HOD's and the new
+  // joiner's. Half a check-in is not a check-in, so `completedAt` is the test
+  // rather than either side's own timestamp.
+  //
+  // Unlike the retired monthly model this does NOT insist on doing them in
+  // order: Day 7 being missed must not hide that Day 30 is now overdue too.
+  // The earliest incomplete one is what the queue chases.
+  const owed = checkins
+    .filter((c) => !c.completedAt)
+    .sort((a, b) => a.dayNo - b.dayNo)[0];
+  if (owed) return checkinStepKey(owed.dayNo);
 
-  // The three reviews are in. The three-month decision is what is owed now.
+  // All five are in. The decision is what is owed now.
   if (p.outcome === null) return "probation_final";
 
   // Extended: one more review, then the same decision maker closes it out.
-  if (!has(4)) return "probation_extension";
   return "probation_final";
 }
 
@@ -445,6 +521,14 @@ export function probationPendingStep(p: Probation, reviews: ProbationReview[]): 
  * read. That number stays admin-editable in Setup → Due Dates.
  */
 export function probationDueIso(snap: HrSnapshot, p: Probation, step: StepKey): string | null {
+  // NR-10: a check-in's due date is STAMPED on its row when the probation opens
+  // (joining date + N calendar days), so it is read, never recomputed. The SLA
+  // model below cannot express it — a day-unit SLA there counts working days.
+  const checkin = snap.probationCheckins.find(
+    (c) => c.probationId === p.id && checkinStepKey(c.dayNo) === step,
+  );
+  if (checkin) return checkin.dueOn;
+
   // Once extended, the final decision follows the MONTH-4 review, not the month-3 one —
   // otherwise an extension would be born overdue.
   const key: StepKey = step === "probation_final" && p.outcome === "extended" ? "probation_extension" : step;
@@ -542,6 +626,8 @@ export function hrSnapshotFrom(data: {
   onboardingChecks: OnboardingCheck[];
   probations: Probation[];
   probationReviews: ProbationReview[];
+  /** NR-10 — the Day 7/15/30/60/90 check-ins that replaced the monthly reviews. */
+  probationCheckins: ProbationCheckin[];
   config: { stepSla: StepSlaMap };
 }): HrSnapshot {
   return {
@@ -552,8 +638,45 @@ export function hrSnapshotFrom(data: {
     onboardingChecks: data.onboardingChecks,
     probations: data.probations,
     probationReviews: data.probationReviews,
+    probationCheckins: data.probationCheckins,
     stepSla: data.config.stepSla,
   };
+}
+
+/**
+ * Every HELD requisition, as one entry at the step it is parked at.
+ *
+ * `current_step` is the answer: `fms_hr_hold_requisition` sets only `status`,
+ * `hold_reason`, `hold_at` and `held_by`, and the resume branch maps that same
+ * column straight back to a status ("Resume back to whatever step it was parked
+ * at", migration 20261107160000). See `office-supplies/lib/queues.ts#heldStep`.
+ *
+ * ⚠ ONE ROW PER REQUISITION — the CANDIDATES on a held vacancy are not listed.
+ *   They are paused by the vacancy, not each on their own account, so listing
+ *   them would put a dozen rows on the hold tile that all clear by resuming a
+ *   single MRF, and bury the one row that can actually be acted on. That differs
+ *   from HR Exit, where the parallel rows really are owed by different people.
+ *   Onboardings are untouched either way: a HIRE IS NEVER PAUSED (see below).
+ *
+ * Read ONLY by My Work's `items/` rule; `buildQueueEntries` still excludes them.
+ */
+export function buildHeldEntries(snap: HrSnapshot): QueueEntry[] {
+  const out: QueueEntry[] = [];
+  for (const r of snap.requisitions) {
+    if (r.status !== "on_hold") continue;
+    const def = stepByKey(r.currentStep);
+    if (!def || def.noQueue || def.scope !== "requisition") continue;
+    out.push({
+      stepKey: def.key,
+      entityType: "requisition",
+      entityId: r.id,
+      ref: r.mrfNo,
+      dueIso: requisitionDueIso(snap, r, def.key),
+      departmentId: r.departmentId,
+      requisitionId: r.id,
+    });
+  }
+  return out;
 }
 
 export function buildQueueEntries(snap: HrSnapshot): QueueEntry[] {
@@ -665,7 +788,7 @@ export function buildQueueEntries(snap: HrSnapshot): QueueEntry[] {
    */
   for (const p of snap.probations) {
     if (!isOpenProbation(p)) continue;
-    const step = probationPendingStep(p, reviewsByProbation.get(p.id) ?? []);
+    const step = probationPendingStep(p, snap.probationCheckins.filter((c) => c.probationId === p.id));
     if (!step) continue;
     const r = reqById.get(p.requisitionId);
 
@@ -755,6 +878,16 @@ export function stageEntryOf<T>(
 /*  Lock reasons — each mirrors its server guard in 20260721120000. The DATABASE is
  *  the gate; these exist so the button can grey and SAY WHY. All are pure. */
 
+/**
+ * NR-11 — a finished check-in is a record, never an editor. Both answers are in;
+ * changing either afterwards is done from the probation panel while it is still the
+ * pending work, exactly as the monthly reviews were.
+ */
+export const checkinLockReason = (p: Probation): string =>
+  p.finalStatus
+    ? "This probation has been decided — its check-ins can no longer be changed."
+    : "Both answers are in. Open the probation to correct one.";
+
 /** A terminal / parked requisition bars every approval edit. */
 export function reqTerminalBar(r: Requisition, what: string): string | null {
   if (r.status === "on_hold") return `This requisition is on hold — take it off hold before editing its ${what}.`;
@@ -814,3 +947,194 @@ export const probationDecisionLockReason = (p: Probation, hasMonth4Review: boole
   if (hasMonth4Review) return "The month-4 review has been recorded — the extension decision can no longer be re-opened.";
   return "The probation decision is final — it can no longer be changed.";
 };
+
+/* -------------------------------------------------------------------------- */
+/*  Completed entries — what each step's Completed tab lists                   */
+/* -------------------------------------------------------------------------- */
+
+/** The lookups the Completed builder reads. The store passes the maps it already built. */
+export interface HrCompletedIndex {
+  requisitions: Requisition[];
+  candidates: Candidate[];
+  onboardings: Onboarding[];
+  probations: Probation[];
+  reqById: Map<string, Requisition>;
+  canById: Map<string, Candidate>;
+  cansByReq: Map<string, Candidate[]>;
+  ivsByCan: Map<string, Interview[]>;
+  reviewsByProb: Map<string, ProbationReview[]>;
+  /** NR-11 — the Day 7/15/30/60/90 rows, per probation. */
+  checkinsByProb: Map<string, ProbationCheckin[]>;
+  /**
+   * NR-11 — who a step is CONFIGURED to, not who typed.
+   *
+   * ⚠ Only the check-in steps use this, and they are the one place where the two
+   * differ on purpose. A check-in is written by the head of department and by the
+   * new joiner; HR writes neither side. What HR is answerable for — and what the
+   * client's sheet actually asks of them — is that BOTH answers arrived by the due
+   * date, which is exactly when `completedAt` is stamped. So the credit follows
+   * the owner, not the pen. Everything else here still credits whoever acted.
+   */
+  stepOwnerId: (stepKey: StepKey) => string | null;
+}
+
+/**
+ * "What was done here", one entry per (step, entity) — every step's Completed tab.
+ *
+ * Lived inside the store's `useMemo` until the monthly ranking (CC-1) needed the
+ * same list on the server, where React cannot run. It moved here rather than being
+ * copied, and the store now calls it. What stayed behind is the one thing that is
+ * about the VIEWER — whether they may edit an entry — so every entry leaves here
+ * with `canEdit: false` and the store sets it.
+ */
+export function hrCompletedEntries(ix: HrCompletedIndex, stepKey: StepKey): StageEntry<CompletedRow>[] {
+  const deptOfReq = (requisitionId: string | null): string | null =>
+    requisitionId ? (ix.reqById.get(requisitionId)?.departmentId ?? null) : null;
+
+  switch (stepKey) {
+    case "hr_head_approval":
+      return ix.requisitions
+        .filter((r) => r.hrApprovedAt)
+        .map((r) =>
+          stageEntryOf(
+            "hr_head_approval",
+            { id: `hr_head_approval:${r.id}`, entityId: r.id, requisitionId: r.id, departmentId: r.departmentId, ref: r.mrfNo, editedAtIso: r.editedAt, editedById: r.editedBy, row: r },
+            r.hrApproverId, r.hrApprovedAt!, hrApprovalLockReason(r), false,
+          ),
+        );
+    case "mgmt_approval":
+      return ix.requisitions
+        .filter((r) => r.mgmtApprovedAt)
+        .map((r) =>
+          stageEntryOf(
+            "mgmt_approval",
+            { id: `mgmt_approval:${r.id}`, entityId: r.id, requisitionId: r.id, departmentId: r.departmentId, ref: r.mrfNo, editedAtIso: r.editedAt, editedById: r.editedBy, row: r },
+            r.mgmtApproverId, r.mgmtApprovedAt!, mgmtApprovalLockReason(r), false,
+          ),
+        );
+    case "job_posting":
+      return ix.requisitions
+        .filter((r) => r.postedAt)
+        .map((r) => {
+          const hasCandidate = (ix.cansByReq.get(r.id)?.length ?? 0) > 0;
+          return stageEntryOf(
+            "job_posting",
+            { id: `job_posting:${r.id}`, entityId: r.id, requisitionId: r.id, departmentId: r.departmentId, ref: r.mrfNo, editedAtIso: r.editedAt, editedById: r.editedBy, row: r },
+            r.postedBy, r.postedAt!, jobPostingLockReason(r, hasCandidate), false,
+          );
+        });
+    case "telephonic_screening":
+    case "interview_1":
+    case "interview_2":
+    case "interview_3": {
+      const round = (stepKey === "telephonic_screening" ? 0 : Number(stepKey.slice(-1))) as 0 | 1 | 2 | 3;
+      const out: StageEntry<CompletedRow>[] = [];
+      for (const c of ix.candidates) {
+        const iv = (ix.ivsByCan.get(c.id) ?? []).find((v) => v.round === round && v.heldAt);
+        if (!iv) continue;
+        out.push(
+          stageEntryOf(
+            stepKey,
+            { id: `${stepKey}:${c.id}`, entityId: c.id, requisitionId: c.requisitionId, departmentId: deptOfReq(c.requisitionId), ref: c.name, editedAtIso: iv.editedAt, editedById: iv.editedBy, row: c },
+            iv.resultRecordedBy, iv.heldAt!, interviewResultLockReason(c, round), false,
+          ),
+        );
+      }
+      return out;
+    }
+    case "onboarding":
+      // Reaches Completed only once the person joined — a record, view-only.
+      return ix.onboardings
+        .filter((o) => o.completedAt)
+        .map((o) =>
+          stageEntryOf(
+            "onboarding",
+            { id: `onboarding:${o.id}`, entityId: o.id, requisitionId: o.requisitionId, departmentId: deptOfReq(o.requisitionId), ref: ix.canById.get(o.candidateId)?.name ?? "New hire", editedAtIso: o.editedAt, editedById: o.editedBy, row: o },
+            o.joiningDateBy ?? o.offerDecidedBy, o.completedAt!, onboardingLockReason(), false,
+          ),
+        );
+    case "probation_m1":
+    case "probation_m2":
+    case "probation_m3":
+    case "probation_extension": {
+      const month = stepKey === "probation_extension" ? 4 : Number(stepKey.slice(-1));
+      const out: StageEntry<CompletedRow>[] = [];
+      for (const p of ix.probations) {
+        const review = (ix.reviewsByProb.get(p.id) ?? []).find((rv) => rv.month === month);
+        if (!review) continue;
+        out.push(
+          stageEntryOf(
+            stepKey,
+            { id: `${stepKey}:${p.id}`, entityId: p.id, requisitionId: p.requisitionId, departmentId: deptOfReq(p.requisitionId), ref: ix.canById.get(p.candidateId)?.name ?? "New hire", editedAtIso: review.editedAt, editedById: review.editedBy, row: p },
+            review.reviewerId, review.reviewedAt, reviewLockReason(p, review), false,
+          ),
+        );
+      }
+      return out;
+    }
+    case "probation_d7":
+    case "probation_d15":
+    case "probation_d30":
+    case "probation_d60":
+    case "probation_d90": {
+      // Done means BOTH sides answered: `completedAt` is stamped when the second one
+      // lands, and half a check-in is not a check-in. Neither `hodAt` nor `joinerAt`
+      // alone may stand in for it.
+      const day = CHECKIN_STEPS.find((c) => c.key === stepKey)?.day;
+      if (day == null) return [];
+      const out: StageEntry<CompletedRow>[] = [];
+      for (const p of ix.probations) {
+        const k = (ix.checkinsByProb.get(p.id) ?? []).find((c) => c.dayNo === day);
+        if (!k?.completedAt) continue;
+        out.push(
+          stageEntryOf(
+            stepKey,
+            { id: `${stepKey}:${p.id}`, entityId: p.id, requisitionId: p.requisitionId, departmentId: deptOfReq(p.requisitionId), ref: ix.canById.get(p.candidateId)?.name ?? "New hire", editedAtIso: null, editedById: null, row: p },
+            ix.stepOwnerId(stepKey), k.completedAt, checkinLockReason(p), false,
+          ),
+        );
+      }
+      return out;
+    }
+    case "probation_final":
+      // The decision is VIEW-ONLY in the Completed tab: it is taken (and, for an
+      // 'extend', corrected) from the probation panel while it is the pending work —
+      // there is no standalone decision editor. onView opens the panel.
+      return ix.probations
+        .filter((p) => p.outcome)
+        .map((p) => {
+          const hasM4 = (ix.reviewsByProb.get(p.id) ?? []).some((rv) => rv.month === 4);
+          const lock =
+            probationDecisionLockReason(p, hasM4) ??
+            "Open the probation to change an extended decision while the month-4 review is pending.";
+          return stageEntryOf(
+            "probation_final",
+            { id: `probation_final:${p.id}`, entityId: p.id, requisitionId: p.requisitionId, departmentId: deptOfReq(p.requisitionId), ref: ix.canById.get(p.candidateId)?.name ?? "New hire", editedAtIso: p.editedAt, editedById: p.editedBy, row: p },
+            p.outcomeBy, p.outcomeAt!, lock, false,
+          );
+        });
+    default:
+      return [];
+  }
+}
+
+/**
+ * WHO closed a candidate step — the twin of `candidateStepCompletedIso`, for the
+ * three candidate steps no Completed tab lists (the shortlists and the decision).
+ *
+ * ⚠ A DISQUALIFICATION RECORDS NO ACTOR. `final_decision` completes on
+ *   `finalizedAt ?? disqualifiedAt`, but only the offer has a `finalizedBy`, so a
+ *   disqualified card returns null here: it was closed, by nobody the data knows.
+ */
+export function candidateStepActorId(c: Candidate, step: StepKey): string | null {
+  switch (step) {
+    case "hr_shortlist":
+      return c.hrShortlistedBy;
+    case "hod_shortlist":
+      return c.hodDecidedBy;
+    case "final_decision":
+      return c.finalizedAt ? c.finalizedBy : null;
+    default:
+      return null;
+  }
+}

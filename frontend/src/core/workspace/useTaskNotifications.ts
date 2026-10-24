@@ -21,7 +21,7 @@ import { markNotificationsRead } from "@/apps/task-management/data/taskWrites";
  * provider already imports fetchTaskData from core.
  *
  * Because it reuses the task app's query key, /home and the task app share one
- * cache entry, one fetch and one realtime subscription.
+ * cache entry and one fetch (each holds its own uniquely named realtime channel).
  */
 export function useTaskNotifications(): {
   items: NotificationItem[];

@@ -1,0 +1,165 @@
+/**
+ * PF-20 — the table look: every column drags wider or narrower, and every row is one clean line.
+ *
+ * ── Rolled out ONE MODULE AT A TIME ──
+ *
+ * The user checks each module on localhost, then live, before the next is switched on, so the
+ * look is gated here rather than turned on everywhere at once. `TABLE_LOOK_ON` is the rollout's
+ * progress bar: adding "procurement" can change nothing in Dispatch, because every table asks
+ * THIS list, keyed by the module that owns the current URL.
+ *
+ * A table in a module that is not listed renders exactly as it did before PF-20 — same markup,
+ * same widths. That is what makes the list safe to grow one id at a time.
+ *
+ * "core" stands for the screens no module owns — the launcher, Admin, My Account, the
+ * announcements page — where `currentAppId` returns null.
+ *
+ * ⚠ Imported only by table components. Never import this from a pure `shared/lib` file: the Edge
+ *   Function bundles (work-snapshot, fms-ranking, kpi-facts) pull those in and refuse React.
+ */
+
+import { useLocation } from "react-router-dom";
+import { currentAppId } from "@/apps/currentApp";
+
+/** Modules whose tables have the look. The last phase of PF-20 deletes this list. */
+export const TABLE_LOOK_ON: readonly string[] = [
+  "kra-kpi", "order-to-dispatch", "procurement", "import", "production-entry", "sampling",
+  "hr-recruitment", "travel-desk",
+  // The small ones, switched on together (PF-20 item 14): one to four screens each, so a round
+  // apiece would have been eight rounds of the user checking one screen. Daily Report belongs
+  // with these and is held back only because another session is mid-change in it.
+  "fms-control-center", "master-report", "process-coordinator", "leads-dashboard",
+  "customer-orders", "bushra-central-master",
+  // Two small modules, one round (28-09).
+  "office-supplies", "asset-maintenance",
+  "ocpi", "complaint",
+  // A new module, built with the look from the start (MR-1C).
+  "machine-resale",
+  // "core" is the screens no module owns: the launcher, Admin, My Account, My Work Today and the
+  // announcements history, where `currentAppId` returns null.
+  "core",
+];
+
+/**
+ * Modules that get the DRAG ONLY — no one-line rows, no cut text, nothing moved.
+ *
+ * Task Management is here by the user's decision (20-09-2026): it is the module everyone lives
+ * in, and they did not want its rows, spacing or filters to change at all. A column still drags
+ * wider and remembers the width, so nobody who does not drag sees any difference.
+ */
+export const TABLE_DRAG_ON: readonly string[] = ["task-management"];
+
+/**
+ * The Outstanding Dashboard and the Reports app are switched on PAGE BY PAGE, not as a module.
+ *
+ * ⚠ THE USER ASKED FOR THIS (28-09-2026): "there are many screens that we are not using ... I don't
+ *   want to touch the screens that we are not using". Between them the two apps hold 62 page files
+ *   and a 65-report catalogue, of which only 30 reports are granted to anybody at all. So the list
+ *   below is the nine screens they named as their working day, and a page that is not on it renders
+ *   exactly as it did before — the same guarantee the module list gives, one level down.
+ *
+ * Paths are as `normalisePath` writes them, so an id becomes `:id`.
+ */
+export const HUB_PAGES_ON: readonly string[] = [
+  "/outstanding-dashboard",
+  "/outstanding-dashboard/risk-register",
+  "/outstanding-dashboard/followups",
+  "/outstanding-dashboard/alerts",
+  "/outstanding-dashboard/salesperson-analysis",
+  "/outstanding-dashboard/salesperson-collection",
+  "/outstanding-dashboard/customer/:id",
+  "/outstanding-dashboard/group/:id",
+  "/reports/disputed-bills",
+  "/reports/red-mark",
+];
+
+/**
+ * The Bushra reports and dashboards get the DRAG ONLY, like Task Management: nothing about a row
+ * changes until somebody drags a column, and then that column holds exactly the width they chose
+ * — narrower than its text if they like, cut with "…" and whole on hover. The user's words
+ * (09-10-2026): "if the line data is hidden because of adjustment that is ok, just give me that
+ * right". Whole Bushra-Dashboard branch by prefix: its Sales and Purchase dashboards are generated
+ * one per preset, so listing them singly would leave the next preset out.
+ */
+export const HUB_DRAG_ONLY_PAGES: readonly string[] = [
+  "/reports/bushra-sales-register",
+  "/reports/bushra-purchase-register",
+  "/reports/batch-costing",
+];
+export const HUB_DRAG_ONLY_PREFIXES: readonly string[] = ["/reports/bushra-dashboard/"];
+
+const hubPageOn = (pathname: string) => HUB_PAGES_ON.includes(normalisePath(pathname));
+const hubDragOnly = (pathname: string) => {
+  const p = normalisePath(pathname);
+  return HUB_DRAG_ONLY_PAGES.includes(p) || HUB_DRAG_ONLY_PREFIXES.some((pre) => p.startsWith(pre));
+};
+
+/** The two apps whose screens are listed one by one above. */
+const PAGE_GATED = ["outstanding-dashboard", "reports"];
+
+/** Whether the tables on this URL have the one-line look (which always includes the drag). */
+export function tableLookOn(pathname: string): boolean {
+  const id = currentAppId(pathname) ?? "core";
+  if (PAGE_GATED.includes(id)) return hubPageOn(pathname);
+  return TABLE_LOOK_ON.includes(id);
+}
+
+/** Whether the tables on this URL can be dragged — the look's modules, plus the drag-only ones. */
+export function tableDragOn(pathname: string): boolean {
+  const id = currentAppId(pathname) ?? "core";
+  if (PAGE_GATED.includes(id)) return hubPageOn(pathname) || hubDragOnly(pathname);
+  return TABLE_LOOK_ON.includes(id) || TABLE_DRAG_ON.includes(id);
+}
+
+/**
+ * The switch as a hook. `resizable` (drag handles) and `oneLine` (one line per row, long text
+ * cut) move together today; they are two flags because the Outstanding Dashboard keeps its own
+ * tighter rows when its turn comes.
+ */
+export function useTableLook(): { resizable: boolean; oneLine: boolean } {
+  const on = tableLookOn(useLocation().pathname);
+  return { resizable: on, oneLine: on };
+}
+
+/** Sizes, in content px (padding excluded). */
+export const FIT = {
+  /** Where long text is cut with "…" until someone drags the column wider (the user, 19-09-2026). */
+  CUT: 300,
+  /** The narrowest a drag goes — still room for a filter dropdown's "All". */
+  MIN: 80,
+  MAX: 900,
+  /** One arrow-key press on a focused edge. */
+  STEP: 20,
+  /** Pointer travel before a press on the edge counts as a drag, so a plain click saves nothing. */
+  SLOP: 3,
+} as const;
+
+/**
+ * The URL with its ids folded, so every order shares one set of widths: `/order-to-dispatch/orders/9f3c…`
+ * → `/order-to-dispatch/orders/:id`. Every route segment in the app is lowercase kebab-case with no
+ * digits, so anything else — a uuid, a number, an encoded customer name — is an id.
+ */
+export function normalisePath(pathname: string): string {
+  const parts = pathname.replace(/\/+$/, "").split("/");
+  return parts.map((s) => (s === "" || /^[a-z]+(-[a-z]+)*$/.test(s) ? s : ":id")).join("/") || "/";
+}
+
+/** FNV-1a, base 36 — short and stable, for keying on a column set. */
+function hash(s: string): string {
+  let h = 2166136261;
+  for (let i = 0; i < s.length; i++) {
+    h ^= s.charCodeAt(i);
+    h = Math.imul(h, 16777619);
+  }
+  return (h >>> 0).toString(36);
+}
+
+/**
+ * The automatic key a table's widths are remembered under: which kind of table, on which screen,
+ * with which columns. The screen keeps one stage queue's widths apart from the next stage's (one
+ * component, five routes); the column set keeps two tables on one screen apart. Pass a table's
+ * own `resizeKey` where two tables on one screen have the very same columns.
+ */
+export function widthsKey(kind: "qt" | "mc" | "tb", pathname: string, ids: readonly string[]): string {
+  return `${kind}:${normalisePath(pathname)}#${hash([...ids].sort().join("|"))}`;
+}

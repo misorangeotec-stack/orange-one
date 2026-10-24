@@ -17,7 +17,7 @@ import { extractTravelDoc, type TicketReading } from "../data/travelBookingWrite
  *   uploaded and attached; only the convenience is lost. An extractor that
  *   blocked the booking when it was unavailable would be worse than none.
  *
- * ⚠ FOREIGN CURRENCY IS A WARNING, NOT A CONVERSION. §11.3 excludes foreign
+ * ⚠ FOREIGN CURRENCY IS A WARNING, NOT A CONVERSION. Section 11.3 excludes foreign
  *   currency from this policy entirely, so a ticket priced in USD is not
  *   something to convert — it is something the booker has to be told about
  *   before they type a number into a rupee field.
@@ -57,7 +57,7 @@ export default function TicketCapture({
       const notes: string[] = [];
       if (r.currency && r.currency !== "INR") {
         notes.push(
-          `The document is priced in ${r.currency}. Policy §11.3 does not cover foreign currency — check what was actually charged in rupees before saving.`,
+          `The document is priced in ${r.currency}. Policy Section 11.3 does not cover foreign currency — check what was actually charged in rupees before saving.`,
         );
       }
       if (r.confidence === "low") {

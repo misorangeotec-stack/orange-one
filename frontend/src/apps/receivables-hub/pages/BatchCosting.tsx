@@ -41,8 +41,14 @@ import {
 } from "@hub/lib/batchCosting";
 import { exportBatchCostingXlsx } from "@hub/lib/exportBatchCosting";
 import { isScrapItem } from "@hub/lib/batchCostingRules";
+import { appBasePath } from "@/apps/appInfo";
 
-const BASE = "/outstanding-dashboard";
+/**
+ * This screen's own links, rooted at the app that serves it. It moved out of the Outstanding
+ * Dashboard with the rest of the reporting (apps/reports/), so a hard-coded
+ * "/outstanding-dashboard" here would now point every in-page link at a redirect.
+ */
+const BASE = appBasePath("reports");
 
 const collator = new Intl.Collator("en", { numeric: true, sensitivity: "base" });
 const opts = (vals: Iterable<string>): MultiSelectOption[] =>
@@ -260,7 +266,7 @@ export default function BatchCosting() {
     <div className="p-6 space-y-4 max-w-[1600px] mx-auto">
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
         <div>
-          <Link to={`${BASE}/reports?cat=bushra-report`} className="inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground mb-1">
+          <Link to={`${BASE}?cat=bushra-report`} className="inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground mb-1">
             <ArrowLeft className="h-3 w-3" /> Bushra-Report
           </Link>
           <h1 className="text-2xl font-bold text-foreground flex items-center gap-2">
@@ -421,8 +427,8 @@ export default function BatchCosting() {
             {latest && <div>Latest production voucher in the Tally mirror: {tallyDate(latest)}</div>}
           </div>
 
-          <ScrollableTable className="rounded-lg border border-border" maxHeight="max-h-[62vh]">
-            <Table className="border-collapse min-w-[1750px] [&_th]:border-b [&_th]:border-border">
+          <ScrollableTable className="rounded-lg border border-border" maxHeight="max-h-[62vh]" resizeKey="batch-costing">
+            <Table resizeKey="batch-costing" className="border-collapse min-w-[1750px] [&_th]:border-b [&_th]:border-border">
               <TableHeader>
                 <TableRow className="bg-muted/60 hover:bg-muted/60 sticky top-0 z-30">
                   <Head w={90}>Date</Head>

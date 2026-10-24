@@ -47,6 +47,35 @@ export const fmtSmart = fmtMoney;
 export const toLacs = (rupees: number | null | undefined): number =>
   (Number(rupees) || 0) / 1e5;
 
+/**
+ * Lakhs back to rupees, to the paisa — what a bank-balance box shows.
+ * `toFixed` first: 211.61 * 1e5 is 21160999.999999996 in floating point.
+ */
+export const lacsToRupees = (lacs: number): number => Number((lacs * 1e5).toFixed(2));
+
+/** "₹2,11,61,000" — a rupee figure as the bank portal prints it. */
+export function fmtRupees(rupees: number | null | undefined): string {
+  if (rupees == null || !Number.isFinite(rupees)) return "—";
+  const sign = rupees < 0 ? "−" : "";
+  return `${sign}₹${Math.abs(rupees).toLocaleString("en-IN", { maximumFractionDigits: 2 })}`;
+}
+
+/**
+ * "₹2.12 Cr" — ⚠ ONLY EVER A SECOND READING BESIDE A LAKH FIGURE, never in its
+ * place (see `fmtMoney`). The bank boxes are typed in rupees, and a crore
+ * reading next to the lakhs is how a typed figure is checked at a glance.
+ */
+export function fmtCr(lacs: number | null | undefined): string {
+  if (lacs == null || !Number.isFinite(lacs)) return "—";
+  const sign = lacs < 0 ? "−" : "";
+  const cr = Math.abs(lacs) / 100;
+  return `${sign}₹${cr.toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} Cr`;
+}
+
+/** "₹211.61 L · ₹2.12 Cr" — the conversion note under a typed rupee figure. */
+export const fmtLacsCr = (lacs: number | null | undefined): string =>
+  lacs == null || !Number.isFinite(lacs) ? "" : `${fmtMoney(lacs)} · ${fmtCr(lacs)}`;
+
 /** A quantity in kilograms — ink is sold by weight and the sheet says "kg". */
 export function fmtKg(n: number | null | undefined): string {
   if (n == null || !Number.isFinite(n)) return "—";

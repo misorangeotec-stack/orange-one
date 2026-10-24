@@ -7,7 +7,7 @@ import type { SettlementInput } from "../types";
  * Finance verification and settlement.
  *
  * ⚠ NOTHING HERE RE-DERIVES A CAP. Finance's job at this step is the judgement
- *   the engine cannot make, not a second opinion on §7.2. Every RPC below
+ *   the engine cannot make, not a second opinion on Section 7.2. Every RPC below
  *   returns the server's re-priced totals rather than letting the screen add
  *   anything up.
  *

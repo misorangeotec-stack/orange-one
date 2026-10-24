@@ -5,6 +5,9 @@ import Modal from "@/shared/components/ui/Modal";
 import MultiSelect, { type MultiOption } from "@/shared/components/ui/MultiSelect";
 import { FieldLabel } from "@/shared/components/ui/Form";
 import { ScrollableTable } from "@/core/shared/components/ScrollableTable";
+import { FitCell } from "@/shared/components/ui/ColumnResizer";
+import { FIT } from "@/shared/lib/tableLook";
+import { useColumnWidths } from "@/shared/lib/useColumnWidths";
 import { useProductionStore } from "../../store";
 import { STEPS, type StepKey } from "../../lib/steps";
 
@@ -16,6 +19,8 @@ import { STEPS, type StepKey } from "../../lib/steps";
  */
 export default function StepOwnersSection() {
   const s = useProductionStore();
+  /** PF-20: one line per row, a long owner list cut and whole on hover. A settings matrix: no drag. */
+  const fit = useColumnWidths("tb", ["step", "owners"]);
   const [editing, setEditing] = useState<StepKey | null>(null);
   const [deptIds, setDeptIds] = useState<string[]>([]);
   const [empIds, setEmpIds] = useState<string[]>([]);
@@ -83,7 +88,7 @@ export default function StepOwnersSection() {
                 <th className="font-medium px-4 py-3">Owners</th>
               </tr>
             </thead>
-            <tbody>
+            <tbody {...fit.tbodyProps}>
               {assignableSteps.map((st) => {
                 const owner = s.stepOwnerFor(st.key);
                 const names = (owner?.employeeIds ?? []).map((id) => s.profileById(id)?.name ?? "Unknown");
@@ -95,7 +100,9 @@ export default function StepOwnersSection() {
                     <td className="px-4 py-3 text-grey-2">{st.index}</td>
                     <td className="px-4 py-3 font-medium text-navy whitespace-nowrap">{st.title}</td>
                     <td className="px-4 py-3">
-                      {names.length ? <span className="text-navy">{names.join(", ")}</span> : <span className="text-grey-2">Unassigned</span>}
+                      <FitCell fit={fit} col="owners" cap={FIT.CUT}>
+                        {names.length ? <span className="text-navy">{names.join(", ")}</span> : <span className="text-grey-2">Unassigned</span>}
+                      </FitCell>
                     </td>
                   </tr>
                 );

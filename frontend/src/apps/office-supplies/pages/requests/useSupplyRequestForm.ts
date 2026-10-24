@@ -29,6 +29,24 @@ export interface SupplyFormInit {
   quantity: string;
 }
 
+/** What "Save as draft" keeps of a new request. Must stay JSON-safe. */
+export interface SupplyDraft {
+  companyId: string;
+  location: string;
+  departmentId: string;
+  onBehalf: boolean;
+  beneficiaryName: string;
+  beneficiaryUserId: string;
+  requestType: RequestType;
+  categoryId: string;
+  itemId: string;
+  otherItem: string;
+  serviceTypeId: string;
+  otherService: string;
+  reason: string;
+  quantity: string;
+}
+
 export function useSupplyRequestForm(init?: SupplyFormInit | null) {
   const s = useSuppliesStore();
   const session = useSession();
@@ -166,6 +184,28 @@ export function useSupplyRequestForm(init?: SupplyFormInit | null) {
     resolvedDept, beneficiaryDept, isOtherItem, isOtherService, routeHint,
     // action
     build,
+    /** The fields as a JSON-safe snapshot — what "Save as draft" stores. */
+    snapshot: (): SupplyDraft => ({
+      companyId, location, departmentId, onBehalf, beneficiaryName, beneficiaryUserId,
+      requestType, categoryId, itemId, otherItem, serviceTypeId, otherService, reason, quantity,
+    }),
+    /** Put a saved snapshot back — raw setters, so nothing dependent is cleared. */
+    restore: (v: SupplyDraft) => {
+      setCompanyId(v.companyId ?? "");
+      setLocation(v.location ?? "");
+      setDepartmentId(v.departmentId ?? "");
+      setOnBehalf(v.onBehalf ?? false);
+      setBeneficiaryName(v.beneficiaryName ?? "");
+      setBeneficiaryUserId(v.beneficiaryUserId ?? "");
+      setRequestType(v.requestType ?? "new_requirement");
+      setCategoryId(v.categoryId ?? "");
+      setItemId(v.itemId ?? "");
+      setOtherItem(v.otherItem ?? "");
+      setServiceTypeId(v.serviceTypeId ?? "");
+      setOtherService(v.otherService ?? "");
+      setReason(v.reason ?? "");
+      setQuantity(v.quantity ?? "");
+    },
   };
 }
 

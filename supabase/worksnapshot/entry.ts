@@ -51,7 +51,7 @@
 
 // ── IMPORTED, NOT COPIED — this is the screen's real logic ────────────────────
 import { appName, appBasePath } from "@/apps/appInfo";
-import { bucketOf, todayLocalIso, type Bucket } from "@/shared/lib/dueBuckets";
+import { holdAwareBucketOf, todayLocalIso, type WorkBucket } from "@/shared/lib/dueBuckets";
 import { toIst } from "./istWorkingDays";
 import { dueIsoFrom } from "./istStepSla";
 import { isMineByStepOwners, stepOwnerIdsFor, type StepOwnerRow } from "@/shared/lib/fmsOwners";
@@ -65,9 +65,15 @@ import { fetchImportData, type ImportData } from "@/apps/import/data/importFetch
 import { fetchSuppliesData, type SuppliesData } from "@/apps/office-supplies/data/suppliesFetch";
 import { fetchSamplingData, type SamplingData } from "@/apps/sampling/data/samplingFetch";
 import { fetchProductionData, type ProductionData } from "@/apps/production-entry/data/productionFetch";
-import { fetchDispatchData, type DispatchData } from "@/apps/order-to-dispatch/data/dispatchFetch";
+// Pending orders only (PERF-2): the mail counts what is owed, never a finished order.
+import { fetchDispatchOpenWork, type DispatchOpenWork } from "@/apps/order-to-dispatch/data/dispatchFetch";
 import { fetchAssetData, type AssetData } from "@/apps/asset-maintenance/data/assetFetch";
 import { fetchTravelData, type TravelData } from "@/apps/travel-desk/data/travelFetch";
+import { fetchLdData, type LdData } from "@/apps/learning-development/data/ldFetch";
+import { fetchHelpData, type HelpData } from "@/apps/help-desk/data/helpFetch";
+import { fetchCustomerData, type CustomerSnapshot } from "@hub/data/customerOnboarding/customerFetch";
+import { fetchComplaintData, type ComplaintData } from "@/apps/complaint/data/complaintFetch";
+import { fetchOcpiData, type OcpiData } from "@/apps/ocpi/data/ocpiFetch";
 
 // THE RULES THEMSELVES — the same files My Work Today renders from. Not copies.
 import { taskWorkItems } from "@/core/workspace/mywork/items/tasks";
@@ -81,6 +87,11 @@ import { productionWorkItems } from "@/core/workspace/mywork/items/productionEnt
 import { dispatchWorkItems } from "@/core/workspace/mywork/items/orderToDispatch";
 import { assetWorkItems } from "@/core/workspace/mywork/items/assetMaintenance";
 import { travelDeskWorkItems } from "@/core/workspace/mywork/items/travel-desk";
+import { learningDevelopmentWorkItems } from "@/core/workspace/mywork/items/learning-development";
+import { helpDeskWorkItems } from "@/core/workspace/mywork/items/help-desk";
+import { customerOnboardingWorkItems } from "@/core/workspace/mywork/items/customerOnboarding";
+import { complaintWorkItems } from "@/core/workspace/mywork/items/complaint";
+import { ocpiWorkItems } from "@/core/workspace/mywork/items/ocpi";
 
 // ── What a caller gets back ───────────────────────────────────────────────────
 
@@ -97,15 +108,28 @@ export interface SourceSummary {
   dueToday: number;
   next2: number;
   noDate: number;
+  /** Parked by someone with the right to hold it. Never part of the four above. */
+  hold: number;
 }
 
-/** The four tiles at the top of My Work Today, in the same order and arithmetic. */
+/** The tiles at the top of My Work Today, in the same order and arithmetic. */
 export interface Tiles {
   overdue: number;
   dueToday: number;
   /** "Next 2 days" is tomorrow + the day after — one tile, two buckets. */
   next2: number;
   noDate: number;
+  /**
+   * ON HOLD — parked work, counted apart from all four.
+   *
+   * It has to be here and not folded into `overdue`, because this mail and the
+   * home screen run the SAME `items/` rules and must not disagree about the same
+   * person: the screen stopped counting held rows as due, so the mail has to as
+   * well. Held rows are also excluded from `totalItems` and from a source's
+   * `items`, for the same reason the screen keeps them out of its list — the mail
+   * says "what you owe today", and a parked row is not that.
+   */
+  hold: number;
 }
 
 export interface WorkSnapshot {
@@ -130,10 +154,28 @@ export interface Datasets {
   sup?: SuppliesData;
   samp?: SamplingData;
   prod?: ProductionData;
-  disp?: DispatchData;
+  disp?: DispatchOpenWork;
   asset?: AssetData;
   travel?: TravelData;
+  ld?: LdData;
+  help?: HelpData;
+  cust?: CustomerSnapshot;
+  complaint?: ComplaintData;
+  ocpi?: OcpiData;
 }
+
+/**
+ * A UNIVERSAL app is held by everyone with no `app_access` row (apps/universal.ts).
+ * Re-exported here so work-snapshot/index.ts can union it into each person's module
+ * list from the SAME source the browser reads, rather than keeping a second copy
+ * that would drift the first time another module goes universal.
+ *
+ * ⚠ Without this, adding a universal module to COVERED_APP_IDS below delivers it to
+ *   ADMINS ONLY: a non-admin's list is read straight from `app_access`, and a
+ *   universal module has no rows there at all (Learning & Development has zero).
+ *   Nothing would look wrong — the mail would just quietly count nobody's work.
+ */
+export { UNIVERSAL_APP_IDS } from "@/apps/universal";
 
 /**
  * ⚠ THIS LIST IS CHECKED AGAINST THE APP AT BUILD TIME. build.mjs reads
@@ -153,6 +195,11 @@ export const COVERED_APP_IDS = [
   "production-entry",
   "order-to-dispatch",
   "asset-maintenance",
+  "learning-development",
+  "help-desk",
+  "customer-onboarding",
+  "complaint",
+  "ocpi",
 ] as const;
 export type CoveredAppId = (typeof COVERED_APP_IDS)[number];
 
@@ -168,6 +215,14 @@ export const DELIBERATELY_UNCOVERED: Record<string, string> = {
   // wiring below (fetch, items, SOURCE_APP) is left in place — to mail it, move
   // "travel-desk" back into COVERED_APP_IDS, rebuild, and redeploy work-snapshot.
   "travel-desk": "built, not live — excluded from the mail until Travel Desk goes live",
+  // Its untested retests come from ConnectWave lots, which this server bundle has no
+  // client for (the browser's reads import.meta.env). Screen only until a ConnectWave
+  // server shim exists.
+  "ink-stabilisation": "untested retests need ConnectWave lots — no server reader for them yet",
+  // Added 14-10-2026 with its My Work provider. Its rows are all in Orange One, but
+  // `fetchPv` shares a module with the ConnectWave stock reader the server bundle
+  // cannot load. Screen only until that fetcher is split out.
+  "physical-verification": "fetcher sits beside the ConnectWave stock reader — no server reader for it yet",
 };
 
 // ── Clock ─────────────────────────────────────────────────────────────────────
@@ -251,9 +306,14 @@ export async function loadDatasets(appIds: readonly string[]): Promise<Datasets>
     want.has("office-supplies") ? fetchSuppliesData().then((d) => void (out.sup = d)) : null,
     want.has("sampling") ? fetchSamplingData().then((d) => void (out.samp = d)) : null,
     want.has("production-entry") ? fetchProductionData().then((d) => void (out.prod = d)) : null,
-    want.has("order-to-dispatch") ? fetchDispatchData().then((d) => void (out.disp = d)) : null,
+    want.has("order-to-dispatch") ? fetchDispatchOpenWork().then((d) => void (out.disp = d)) : null,
     want.has("asset-maintenance") ? fetchAssetData().then((d) => void (out.asset = d)) : null,
     want.has("travel-desk") ? fetchTravelData().then((d) => void (out.travel = d)) : null,
+    want.has("learning-development") ? fetchLdData().then((d) => void (out.ld = d)) : null,
+    want.has("help-desk") ? fetchHelpData().then((d) => void (out.help = d)) : null,
+    want.has("customer-onboarding") ? fetchCustomerData().then((d) => void (out.cust = d)) : null,
+    want.has("complaint") ? fetchComplaintData().then((d) => void (out.complaint = d)) : null,
+    want.has("ocpi") ? fetchOcpiData().then((d) => void (out.ocpi = d)) : null,
   ]);
   assertCutoffHandled([
     out.hr?.config?.stepSla as never,
@@ -263,6 +323,11 @@ export async function loadDatasets(appIds: readonly string[]): Promise<Datasets>
     out.prod?.config?.stepSla as never,
     out.disp?.config?.stepSla as never,
     out.asset?.config?.stepSla as never,
+    out.ld?.config?.step_sla as never,
+    out.help?.config?.step_sla as never,
+    out.cust?.stepSla as never,
+    out.complaint?.config?.stepSla as never,
+    out.ocpi?.stepSla as never,
   ]);
   return out;
 }
@@ -282,6 +347,11 @@ const SOURCE_APP: Record<string, string> = {
   "order-to-dispatch": "order-to-dispatch",
   "asset-maintenance": "asset-maintenance",
   "travel-desk": "travel-desk",
+  "learning-development": "learning-development",
+  "help-desk": "help-desk",
+  "customer-onboarding": "customer-onboarding",
+  complaint: "complaint",
+  ocpi: "ocpi",
 };
 
 /** Provider display order, matching core/workspace/mywork/registry.ts:34-46. */
@@ -297,6 +367,11 @@ const SOURCE_ORDER = [
   "order-to-dispatch",
   "asset-maintenance",
   "travel-desk",
+  "learning-development",
+  "help-desk",
+  "customer-onboarding",
+  "ocpi",
+  "complaint",
 ];
 
 /**
@@ -328,15 +403,31 @@ export function computeSnapshot(
   if (data.disp && has.has("order-to-dispatch")) all = all.concat(dispatchWorkItems(data.disp, userId, isAdmin));
   if (data.asset && has.has("asset-maintenance")) all = all.concat(assetWorkItems(data.asset, userId, isAdmin));
   if (data.travel && has.has("travel-desk")) all = all.concat(travelDeskWorkItems(data.travel, userId, isAdmin));
+  if (data.ld && has.has("learning-development")) all = all.concat(learningDevelopmentWorkItems(data.ld, userId, isAdmin));
+  // ⚠ NO isAdmin ARGUMENT, unlike every line above it. Help Desk's items
+  //   function takes only the user: an admin has no wider claim on a ticket
+  //   than anybody else here, because every step is owned by a named person
+  //   or by a category's owners. Passing one would have to mean something,
+  //   and the only thing it could mean is "give the admin every ticket".
+  if (data.help && has.has("help-desk")) all = all.concat(helpDeskWorkItems(data.help, userId));
+  // These three gate on the EDIT grant on screen; the mail does not know grants,
+  // so it uses the default (true) — the same over-inclusion the other modules
+  // above already accept for view-only holders.
+  if (data.cust && has.has("customer-onboarding")) all = all.concat(customerOnboardingWorkItems(data.cust, userId, isAdmin));
+  if (data.complaint && has.has("complaint")) all = all.concat(complaintWorkItems(data.complaint, userId, isAdmin));
+  if (data.ocpi && has.has("ocpi")) all = all.concat(ocpiWorkItems(data.ocpi, userId, isAdmin));
 
   const scoped = isAdmin ? all.filter((i) => i.assignment === "direct") : all;
 
-  const tiles: Tiles = { overdue: 0, dueToday: 0, next2: 0, noDate: 0 };
+  const tiles: Tiles = { overdue: 0, dueToday: 0, next2: 0, noDate: 0, hold: 0 };
   const per = new Map<string, SourceSummary>();
 
   for (const item of scoped) {
-    const b: Bucket | null = bucketOf(item.dueIso, today);
-    if (b === "delayed") tiles.overdue++;
+    // `holdAwareBucketOf` sends a held row to `hold` whatever its due date says —
+    // the same one function the home screen buckets with.
+    const b: WorkBucket | null = holdAwareBucketOf(item, today);
+    if (b === "hold") tiles.hold++;
+    else if (b === "delayed") tiles.overdue++;
     else if (b === "today") tiles.dueToday++;
     else if (b === "tomorrow" || b === "dayAfter") tiles.next2++;
     else if (b === "noDate") tiles.noDate++;
@@ -354,20 +445,26 @@ export function computeSnapshot(
         dueToday: 0,
         next2: 0,
         noDate: 0,
+        hold: 0,
       };
       per.set(item.source, s);
     }
-    s.items++;
-    if (b === "delayed") s.overdue++;
-    else if (b === "today") s.dueToday++;
-    else if (b === "tomorrow" || b === "dayAfter") s.next2++;
-    else if (b === "noDate") s.noDate++;
+    if (b === "hold") {
+      s.hold++;
+    } else {
+      s.items++;
+      if (b === "delayed") s.overdue++;
+      else if (b === "today") s.dueToday++;
+      else if (b === "tomorrow" || b === "dayAfter") s.next2++;
+      else if (b === "noDate") s.noDate++;
+    }
   }
 
   // Worst first: overdue by how late, then dated, then undated. The mail lists a
   // capped slice, so the cap must take the rows that matter rather than the head
   // of an arbitrary order.
-  const sorted = [...scoped].sort((a, b) => {
+  const live = scoped.filter((i) => !i.isHeld);
+  const sorted = [...live].sort((a, b) => {
     const ax = a.dueIso ?? "9999-12-31";
     const bx = b.dueIso ?? "9999-12-31";
     return ax === bx ? a.ref.localeCompare(b.ref) : ax < bx ? -1 : 1;
@@ -380,7 +477,7 @@ export function computeSnapshot(
   return {
     userId,
     forDate: today,
-    totalItems: scoped.length,
+    totalItems: live.length,
     tiles,
     sources,
     items: sorted.slice(0, maxItems),

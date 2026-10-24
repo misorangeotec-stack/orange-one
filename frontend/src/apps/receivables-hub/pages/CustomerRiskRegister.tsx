@@ -1,3 +1,5 @@
+import { useBackState } from "@/shared/lib/backState";
+import { markTypesOf, type MarkType } from "@hub/lib/markType";
 import { ScrollableTable } from "@/core/shared/components/ScrollableTable";
 import { useState, useMemo, useEffect, useRef, useLayoutEffect, useCallback, type ReactNode, type CSSProperties } from "react";
 import { useSearchParams } from "react-router-dom";
@@ -65,6 +67,9 @@ interface CustomerRow {
   category: string;
   /** All unique categories (tiers) for this consolidated/group row. */
   categories?: string[];
+  /** Red Mark / Legal — joins the Category filter. */
+  markType?: MarkType;
+  markTypes?: MarkType[];
   /** All companies this row spans (one entry = single company; >1 = "Multiple"). */
   companies?: string[];
   /** All locations this row spans (one entry = single location; >1 = "Multiple"). */
@@ -682,7 +687,7 @@ export default function CustomerRiskRegister() {
       ? `${path}?saleType=${encodeURIComponent(saleTypes.join(","))}`
       : path;
   const { toast } = useToast();
-  const [search, setSearch] = useState("");
+  const [search, setSearch] = useBackState("CustomerRiskRegister.search", "");
   const [riskLevels, setRiskLevels] = useState<string[]>([]);
   const [agingFilters, setAgingFilters] = useState<string[]>([]);
   const [specialFilter, setSpecialFilter] = useState("all");
@@ -1127,9 +1132,8 @@ export default function CustomerRiskRegister() {
     } else if (blockedFilter === "not_blocked") {
       d = d.filter((r) => r.blocked !== true);
     }
-    if (categories.length > 0) {
-      d = d.filter((r) => matchesCategory(r, categories));
-    }
+    // Always applied: an empty selection is the default, which hides Legal customers.
+    d = d.filter((r) => matchesCategory(r, categories));
     if (sortKey && sortDir) {
       // For the Overdue column, sort by the value actually shown: the selected
       // aging bucket's amount when a bucket filter is active, else total overdue
@@ -1341,6 +1345,7 @@ export default function CustomerRiskRegister() {
         salesPersons: uniqStr(rs.map((r) => r.salesPersons ?? (r.salesPerson ? [r.salesPerson] : []))),
         category: "",
         categories: uniqStr(rs.map((r) => r.categories ?? (r.category ? [r.category] : []))),
+        markTypes: [...new Set(rs.flatMap((r) => markTypesOf(r)))].sort(),
         companies: uniqStr(rs.map((r) => r.companies ?? [])),
         locations: uniqStr(rs.map((r) => r.locations ?? [])),
         openingBalance: sum("openingBalance"),
@@ -2193,7 +2198,7 @@ export default function CustomerRiskRegister() {
       </p>
       <Card className="rounded-card border-border bg-surface overflow-hidden">
         <ScrollableTable>
-          <Table>
+          <Table resizeKey="risk-register">
             <TableHeader>
               <TableRow className="bg-muted/50">
                 {visibleColumnList.map((col) => {

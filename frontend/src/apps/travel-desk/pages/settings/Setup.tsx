@@ -1,11 +1,13 @@
 import MasterOwnersSection from "./MasterOwnersSection";
 import StepOwnersSection from "./StepOwnersSection";
 import CoordinatorsSection from "./CoordinatorsSection";
+import RaiseForSection from "./RaiseForSection";
 import ReassignmentSection from "./ReassignmentSection";
 import ApprovalMatrixSection from "./ApprovalMatrixSection";
 import StepDueDatesSection from "./StepDueDatesSection";
 import PolicySection from "./PolicySection";
 import EmailNotificationsSection from "./EmailNotificationsSection";
+import MenuQueuesSection from "./MenuQueuesSection";
 
 /**
  * Travel Desk settings.
@@ -30,10 +32,12 @@ export default function Setup() {
       </div>
 
       <StepOwnersSection />
+      <MenuQueuesSection />
       {/* Directly under Step Owners: this is the same question - who owes the
           work - asked for one trip instead of for the module. */}
       <ReassignmentSection />
       <CoordinatorsSection />
+      <RaiseForSection />
       <ApprovalMatrixSection />
       <MasterOwnersSection />
       <StepDueDatesSection />

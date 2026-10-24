@@ -11,8 +11,11 @@ import Combobox, { type ComboOption } from "@/shared/components/ui/Combobox";
 import ChoiceButtons from "@/shared/components/ui/ChoiceButtons";
 import { FieldLabel, TextInput, TextArea } from "@/shared/components/ui/Form";
 import { ScrollableTable } from "@/core/shared/components/ScrollableTable";
+import { FitCell, FitFilter, FitHead, FitResizer, ResetWidths, thFitStyle } from "@/shared/components/ui/ColumnResizer";
 import { usePagination } from "@/shared/lib/usePagination";
 import { matchesSearch } from "@/shared/lib/search";
+import { FIT } from "@/shared/lib/tableLook";
+import { useColumnWidths } from "@/shared/lib/useColumnWidths";
 import {
   BLANK_VALUE,
   filterOptionLabel,
@@ -126,6 +129,13 @@ export interface MasterColumn<T> {
     /** Shown when nothing is picked. Defaults to "Any". */
     placeholder?: string;
   };
+  /**
+   * PF-20, in a module with the table look (shared/lib/tableLook.ts), where every column drags
+   * and every row is one line: `false` for no handle and never cut (a column of pills or
+   * buttons); `width` for where long text is cut until dragged (default 300 px); `min` / `max`
+   * for the drag's limits. A column whose `className` right-aligns it is never cut.
+   */
+  resize?: false | { width?: number; min?: number; max?: number };
 }
 
 /**
@@ -254,6 +264,15 @@ export default function MasterCrud<T extends { id: string; name: string; active:
    */
   const [colFilters, setColFilters] = useState<Record<string, string[]>>({ __status: ["Active"] });
   const [sort, setSort] = useState<{ header: string; dir: "asc" | "desc" } | null>(null);
+
+  /**
+   * PF-20. Off unless this screen's module has the table look; off, the table renders exactly
+   * as before. `singular` is in the key because one Masters page holds several masters whose
+   * header sets can coincide. Actions and Status never resize.
+   */
+  const fit = useColumnWidths("mc", [singular, ...columns.map((c) => c.header)]);
+  const fitCap = (c: MasterColumn<T>): number | null =>
+    c.resize === false || /\btext-right\b/.test(c.className ?? "") ? null : (c.resize ? c.resize.width : undefined) ?? FIT.CUT;
 
   /**
    * What each column sorts and filters by, with the rendered text as the
@@ -696,6 +715,9 @@ export default function MasterCrud<T extends { id: string; name: string; active:
             className="w-full rounded-xl border border-line bg-white pl-9 pr-3 py-2.5 text-[14px] text-ink placeholder:text-grey-2 outline-none focus:border-orange focus:ring-4 focus:ring-orange/10"
           />
         </div>
+        {/* PF-20: only once a column has been dragged. */}
+        <ResetWidths fit={fit} cols={columns.map((c) => c.header)} />
+
         {/* Always available — on an empty master it exports a headers-only sheet that
             doubles as the import template (the "About" tab explains keep-ID-to-update /
             clear-ID-to-add). */}
@@ -777,20 +799,30 @@ export default function MasterCrud<T extends { id: string; name: string; active:
                     </th>
                     {columns.map((c) => {
                       const on = sort?.header === c.header;
+                      const label = (
+                        <button
+                          onClick={() => cycleSort(c.header)}
+                          className={`inline-flex items-center gap-1 transition hover:text-navy ${on ? "text-navy" : ""}`}
+                          title={`Sort by ${c.header}`}
+                        >
+                          {c.header}
+                          {/* The inactive arrow stays visible but faint: a sort
+                              affordance nobody can see is one nobody uses. */}
+                          <span className={on ? "text-orange" : "text-grey-2/40"}>
+                            {on ? (sort!.dir === "asc" ? "▲" : "▼") : "↕"}
+                          </span>
+                        </button>
+                      );
                       return (
-                        <th key={c.header} className={`font-medium px-4 py-3 whitespace-nowrap ${c.className ?? ""}`}>
-                          <button
-                            onClick={() => cycleSort(c.header)}
-                            className={`inline-flex items-center gap-1 transition hover:text-navy ${on ? "text-navy" : ""}`}
-                            title={`Sort by ${c.header}`}
-                          >
-                            {c.header}
-                            {/* The inactive arrow stays visible but faint: a sort
-                                affordance nobody can see is one nobody uses. */}
-                            <span className={on ? "text-orange" : "text-grey-2/40"}>
-                              {on ? (sort!.dir === "asc" ? "▲" : "▼") : "↕"}
-                            </span>
-                          </button>
+                        <th
+                          key={c.header}
+                          style={fit.on ? thFitStyle(fit, c.header) : undefined}
+                          className={`font-medium px-4 py-3 whitespace-nowrap ${c.className ?? ""}${fit.on ? " relative" : ""}`}
+                        >
+                          {fit.on ? <FitHead width={fit.width(c.header)}>{label}</FitHead> : label}
+                          {fit.on && c.resize !== false && (
+                            <FitResizer fit={fit} col={c.header} label={c.header} min={c.resize ? c.resize.min : undefined} max={c.resize ? c.resize.max : undefined} />
+                          )}
                         </th>
                       );
                     })}
@@ -809,23 +841,30 @@ export default function MasterCrud<T extends { id: string; name: string; active:
                         triggerClassName="w-full min-w-[7rem] text-[12px]"
                       />
                     </th>
-                    {columns.map((c) => (
-                      <th key={c.header} className="px-2 py-2 font-normal align-top">
-                        {colValue[c.header]?.filterable && (filterOptions[c.header]?.length ?? 0) > 0 ? (
+                    {columns.map((c) => {
+                      // PF-20: a dragged column is as narrow as it was dragged, so its filter drops
+                      // the 8rem floor. The whole string is swapped: `cn` does not merge classes.
+                      const dragged = fit.width(c.header) !== undefined;
+                      const control =
+                        colValue[c.header]?.filterable && (filterOptions[c.header]?.length ?? 0) > 0 ? (
                           <MultiSelect
                             values={colFilters[c.header] ?? []}
                             onChange={(v) => setColFilters((cur) => ({ ...cur, [c.header]: v }))}
                             options={filterOptions[c.header] ?? []}
                             placeholder={(c.filter ? c.filter.placeholder : undefined) ?? "Any"}
-                            triggerClassName="w-full min-w-[8rem] text-[12px]"
+                            triggerClassName={dragged ? "w-full min-w-0 text-[12px]" : "w-full min-w-[8rem] text-[12px]"}
                             searchable
                           />
-                        ) : null}
-                      </th>
-                    ))}
+                        ) : null;
+                      return (
+                        <th key={c.header} className="px-2 py-2 font-normal align-top">
+                          {fit.on ? <FitFilter dragged={dragged}>{control}</FitFilter> : control}
+                        </th>
+                      );
+                    })}
                   </tr>
                 </thead>
-                <tbody>
+                <tbody {...fit.tbodyProps}>
                   {filtered.length === 0 && (
                     <tr>
                       <td colSpan={columns.length + (canManage ? 2 : 1)} className="px-4 py-10 text-center">
@@ -886,11 +925,26 @@ export default function MasterCrud<T extends { id: string; name: string; active:
                           {row.active ? "Active" : "Inactive"}
                         </span>
                       </td>
-                      {columns.map((c) => (
-                        <td key={c.header} className={`px-4 py-3 align-middle ${c.className ?? ""}`}>
-                          {c.render(row)}
-                        </td>
-                      ))}
+                      {columns.map((c) =>
+                        fit.on ? (
+                          // PF-20: one line, long text cut, whole on hover. A dragged column's td
+                          // sheds the authored `w-*` width, which sits on th and td alike and
+                          // would otherwise hold the column wide.
+                          <td
+                            key={c.header}
+                            style={fit.width(c.header) !== undefined ? { width: "auto" } : undefined}
+                            className={`px-4 py-3 align-middle ${c.className ?? ""}`}
+                          >
+                            <FitCell fit={fit} col={c.header} cap={fitCap(c)}>
+                              {c.render(row)}
+                            </FitCell>
+                          </td>
+                        ) : (
+                          <td key={c.header} className={`px-4 py-3 align-middle ${c.className ?? ""}`}>
+                            {c.render(row)}
+                          </td>
+                        ),
+                      )}
                     </tr>
                     );
                   })}

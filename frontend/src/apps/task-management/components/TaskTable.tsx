@@ -1,6 +1,10 @@
-import { useState, type ReactNode } from "react";
+import { useMemo, useState, type ReactNode } from "react";
 import { useNavigate } from "react-router-dom";
+import { useQuery } from "@tanstack/react-query";
+import { fetchKras, KRAS_QUERY_KEY } from "@/core/admin/kras";
 import { ScrollableTable } from "@/core/shared/components/ScrollableTable";
+import { FitCell, FitResizer, ResetWidths, thFitStyle } from "@/shared/components/ui/ColumnResizer";
+import { useColumnWidths, type FitTable } from "@/shared/lib/useColumnWidths";
 import Avatar from "@/shared/components/ui/Avatar";
 import Button from "@/shared/components/ui/Button";
 import Modal from "@/shared/components/ui/Modal";
@@ -10,6 +14,9 @@ import { useTaskStore } from "../mock/store";
 import { useSession } from "../mock/session";
 import { isRecurringTask } from "../mock/selectors";
 import { taskDetailPath } from "../lib/taskLink";
+import { taskCategoryFor } from "../lib/kraTasks";
+import { awaitingPeerReview, completedBeforeReview } from "../lib/peerReview";
+import { TextArea } from "@/shared/components/ui/Form";
 import { RECURRENCE_LABEL, isOverdueTask, type Task } from "../types";
 import StatusChip from "./StatusChip";
 import EditTaskModal from "./EditTaskModal";
@@ -25,9 +32,12 @@ export type TaskSort = { key: TaskSortKey; dir: SortDir };
  * of sitting in an anonymous wall of dropdowns above the table. Keys match
  * TaskSortKey; omit one to leave that column's filter cell empty.
  */
-export type TaskFilterCells = Partial<Record<TaskSortKey, ReactNode>>;
+export type TaskFilterCells = Partial<Record<TaskSortKey | "category", ReactNode>>;
 
 export const DEFAULT_TASK_SORT: TaskSort = { key: "dueDate", dir: "asc" };
+
+/** The draggable columns, for their remembered widths (PF-20). */
+const TASK_COLS: TaskSortKey[] = ["title", "department", "createdBy", "assignedTo", "createdAt", "dueDate", "status"];
 
 /** Toggle direction when re-clicking the active column; otherwise default a new
  *  column to ascending (A→Z / earliest-first). */
@@ -77,17 +87,27 @@ export function sortTasks(
 
 /** Clickable column header that drives the table sort and shows the active
  *  direction. Mirrors the SortTh used in the report tables. */
-function SortTh({ label, sortKey, sort, onSort, align = "left", className }: {
+function SortTh({ label, sortKey, sort, onSort, align = "left", className, fit }: {
   label: string;
   sortKey: TaskSortKey;
   sort: TaskSort;
   onSort: (k: TaskSortKey) => void;
   align?: "left" | "center" | "right";
   className?: string;
+  /**
+   * PF-20 (drag only). The reader can drag this column's right edge; the width is remembered per
+   * browser, and double-clicking the edge puts it back. NOTHING else about the table changes —
+   * the user asked for the module everyone lives in to look and behave exactly as it did.
+   */
+  fit?: FitTable;
 }) {
   const active = sort.key === sortKey;
   return (
-    <th className={cn("font-semibold px-3 py-2.5 select-none", align === "left" ? "text-left" : align === "right" ? "text-right" : "text-center", className)}>
+    <th
+      className={cn("font-semibold px-3 py-2.5 select-none", align === "left" ? "text-left" : align === "right" ? "text-right" : "text-center", className, fit?.on && "relative")}
+      style={fit ? thFitStyle(fit, sortKey) : undefined}
+    >
+      {fit?.on && <FitResizer fit={fit} col={sortKey} label={label} />}
       <button
         type="button"
         onClick={() => onSort(sortKey)}
@@ -132,10 +152,28 @@ export default function TaskTable({ tasks, sort, onSort, showDepartment = false,
    */
   emptyMessage?: ReactNode;
 }) {
-  const { actorById, departmentById, getRecurring, canStatusActions, deleteTask, unreadAssignedTaskIds } = useTaskStore();
+  const { actorById, departmentById, getRecurring, canStatusActions, deleteTask, unreadAssignedTaskIds, profileById, reopenPeerTask } = useTaskStore();
   const { user, role } = useSession();
+
+  // Task Category per row, as this viewer may see it (null = a KRA they may not see).
+  const categoryOf = (t: Task) => taskCategoryFor(t, user.id, (id) => profileById(id)?.hodIds);
+  // KRA names only for the rows that show one; org_kras RLS returns just the ones this
+  // user may read (their own and their direct reports').
+  const anyKra = useMemo(() => tasks.some((t) => categoryOf(t) === "kra"), [tasks, user.id, profileById]);
+  const krasQ = useQuery({ queryKey: KRAS_QUERY_KEY, queryFn: fetchKras, enabled: anyKra });
+  const kraNameById = useMemo(() => new Map((krasQ.data ?? []).map((k) => [k.id, k.name])), [krasQ.data]);
   const navigate = useNavigate();
   const [confirmId, setConfirmId] = useState<string | null>(null);
+  // Peer task review: the GIVER re-opens a completed peer task straight from the list
+  // (old completed ones and ones waiting for review). Never the assignee — the
+  // re-open is the giver's call (guard_task_peer_review enforces the same).
+  const [reopenId, setReopenId] = useState<string | null>(null);
+  const [reopenNote, setReopenNote] = useState("");
+  const [reopenBusy, setReopenBusy] = useState(false);
+  const [reopenErr, setReopenErr] = useState("");
+  const canReopenPeerRow = (t: Task) =>
+    canStatusActions && t.isPeerAssignment && t.createdBy === user.id && t.assignedTo !== user.id &&
+    (completedBeforeReview(t) || awaitingPeerReview(t));
   const [deleting, setDeleting] = useState(false);
   // One modal instance for the whole table, driven by an id (like confirmId) —
   // not one per row. EditTaskModal re-prefills on each open.
@@ -188,11 +226,17 @@ export default function TaskTable({ tasks, sort, onSort, showDepartment = false,
   const editTask = editId ? tasks.find((t) => t.id === editId) : undefined;
   const personalEditTask = personalEditId ? tasks.find((t) => t.id === personalEditId) : undefined;
 
-  const colCount = showDepartment ? 8 : 7;
+  /**
+   * PF-20: the widths a reader drags columns to. The Department column only exists on All Tasks,
+   * and that is its own route, so the automatic key separates the two.
+   */
+  const fit = useColumnWidths("tb", showDepartment ? TASK_COLS : TASK_COLS.filter((c) => c !== "department"));
+
+  const colCount = showDepartment ? 9 : 8;
   // Three configurations, three minimums — a single value would either crush the
   // search box in the Task cell or give Tagged Tasks (no filter row) horizontal
   // scroll it never had. Tailwind needs literal class names, hence the ternaries.
-  const minWidth = !filterRow ? "min-w-[930px]" : showDepartment ? "min-w-[1210px]" : "min-w-[1060px]";
+  const minWidth = !filterRow ? "min-w-[1040px]" : showDepartment ? "min-w-[1320px]" : "min-w-[1170px]";
 
   return (
     <>
@@ -200,14 +244,18 @@ export default function TaskTable({ tasks, sort, onSort, showDepartment = false,
       <table className={cn("w-full text-[13px] border-collapse table-fixed", minWidth)}>
         <thead>
           <tr className="text-grey-2 text-[11px] uppercase tracking-wide bg-page/50 border-b border-line">
-            <SortTh label="Task" sortKey="title" sort={sort} onSort={onSort} className="px-4" />
-            {showDepartment && <SortTh label="Department" sortKey="department" sort={sort} onSort={onSort} className="w-[150px]" />}
-            <SortTh label="Created By" sortKey="createdBy" sort={sort} onSort={onSort} className="w-[160px]" />
-            <SortTh label="Assigned To" sortKey="assignedTo" sort={sort} onSort={onSort} className="w-[160px]" />
-            <SortTh label="Assigned" sortKey="createdAt" sort={sort} onSort={onSort} className="w-[120px]" />
-            <SortTh label="Due" sortKey="dueDate" sort={sort} onSort={onSort} className="w-[120px]" />
-            <SortTh label="Status" sortKey="status" sort={sort} onSort={onSort} align="center" className="w-[130px]" />
-            <th className="w-[90px]" />
+            <SortTh label="Task" sortKey="title" sort={sort} onSort={onSort} className="px-4" fit={fit} />
+            {showDepartment && <SortTh label="Department" sortKey="department" sort={sort} onSort={onSort} className="w-[150px]" fit={fit} />}
+            <SortTh label="Created By" sortKey="createdBy" sort={sort} onSort={onSort} className="w-[160px]" fit={fit} />
+            <SortTh label="Assigned To" sortKey="assignedTo" sort={sort} onSort={onSort} className="w-[160px]" fit={fit} />
+            <SortTh label="Assigned" sortKey="createdAt" sort={sort} onSort={onSort} className="w-[120px]" fit={fit} />
+            <SortTh label="Due" sortKey="dueDate" sort={sort} onSort={onSort} className="w-[120px]" fit={fit} />
+            <SortTh label="Status" sortKey="status" sort={sort} onSort={onSort} align="center" className="w-[130px]" fit={fit} />
+            <th className="w-[110px] px-3 py-2.5 text-left font-semibold">Category</th>
+            {/* PF-20: the icon appears here only once a column has been dragged. */}
+            <th className="w-[90px] text-right pr-2">
+              <ResetWidths fit={fit} cols={TASK_COLS} label="" className="inline-flex items-center text-grey-2 hover:text-orange align-middle" />
+            </th>
           </tr>
           {filterRow && (
             /*
@@ -228,11 +276,12 @@ export default function TaskTable({ tasks, sort, onSort, showDepartment = false,
               <th className="px-2 py-2 font-normal text-left align-middle">{filterRow.createdAt}</th>
               <th className="px-2 py-2 font-normal text-left align-middle">{filterRow.dueDate}</th>
               <th className="px-2 py-2 font-normal text-left align-middle">{filterRow.status}</th>
+              <th className="px-2 py-2 font-normal text-left align-middle">{filterRow.category}</th>
               <th />
             </tr>
           )}
         </thead>
-        <tbody className="divide-y divide-line">
+        <tbody className="divide-y divide-line" {...fit.tbodyProps}>
           {tasks.length === 0 && emptyMessage && (
             <tr>
               <td colSpan={colCount} className="px-4 py-10 text-center text-[13px] text-grey">{emptyMessage}</td>
@@ -298,7 +347,7 @@ export default function TaskTable({ tasks, sort, onSort, showDepartment = false,
                     )}
                     {task.isPeerAssignment && (
                       <span
-                        title="Assigned by another HOD — scored on the Peer Tasks board, not in your own weekly score."
+                        title="Assigned by another HOD or Sub-HOD — scored on the Peer Tasks board, not in your own weekly score."
                         className="shrink-0 inline-flex items-center gap-1 text-[10px] font-semibold uppercase tracking-wide text-[#5b52c9] bg-[#EEECFB] rounded-pill px-1.5 py-0.5"
                       >
                         <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round"><path d="M7 17L17 7" /><polyline points="8 7 17 7 17 16" /></svg>
@@ -350,34 +399,44 @@ export default function TaskTable({ tasks, sort, onSort, showDepartment = false,
                 {/* Department (All Tasks only — elsewhere it's in the Task subtitle) */}
                 {showDepartment && (
                   <td className="px-3 py-3 align-middle">
-                    <span className="text-[12.5px] text-navy truncate block">{dept?.name ?? "—"}</span>
+                    <FitCell fit={fit} col="department" cap={null}>
+                      <span className="text-[12.5px] text-navy truncate block">{dept?.name ?? "—"}</span>
+                    </FitCell>
                   </td>
                 )}
 
                 {/* Created By */}
                 <td className="px-3 py-3 align-middle">
-                  <div className="flex items-center gap-2 min-w-0">
-                    {creator && <Avatar name={creator.name} color={creator.avatarColor} size={24} />}
-                    <span className="text-[12.5px] text-navy truncate">{creator?.name ?? "—"}</span>
-                  </div>
+                  <FitCell fit={fit} col="createdBy" cap={null}>
+                    <div className="flex items-center gap-2 min-w-0">
+                      {creator && <Avatar name={creator.name} color={creator.avatarColor} size={24} />}
+                      <span className="text-[12.5px] text-navy truncate">{creator?.name ?? "—"}</span>
+                    </div>
+                  </FitCell>
                 </td>
 
                 {/* Assigned To */}
                 <td className="px-3 py-3 align-middle">
-                  <div className="flex items-center gap-2 min-w-0">
-                    {assignee && <Avatar name={assignee.name} color={assignee.avatarColor} size={24} />}
-                    <span className="text-[12.5px] text-navy truncate">{assignee?.name ?? "Unassigned"}</span>
-                  </div>
+                  <FitCell fit={fit} col="assignedTo" cap={null}>
+                    <div className="flex items-center gap-2 min-w-0">
+                      {assignee && <Avatar name={assignee.name} color={assignee.avatarColor} size={24} />}
+                      <span className="text-[12.5px] text-navy truncate">{assignee?.name ?? "Unassigned"}</span>
+                    </div>
+                  </FitCell>
                 </td>
 
                 {/* Assigned (task creation date) */}
                 <td className="px-3 py-3 align-middle">
-                  <span className="text-[12.5px] text-navy">{dateLabel(task.createdAt)}</span>
+                  <FitCell fit={fit} col="createdAt" cap={null}>
+                    <span className="text-[12.5px] text-navy">{dateLabel(task.createdAt)}</span>
+                  </FitCell>
                 </td>
 
                 {/* Due */}
                 <td className="px-3 py-3 align-middle">
-                  <span className={cn("text-[12.5px] font-medium", overdue ? "text-[#d4493f]" : "text-navy")}>{dateLabel(task.dueDate)}</span>
+                  <FitCell fit={fit} col="dueDate" cap={null}>
+                    <span className={cn("text-[12.5px] font-medium", overdue ? "text-[#d4493f]" : "text-navy")}>{dateLabel(task.dueDate)}</span>
+                  </FitCell>
                 </td>
 
                 {/* Status — the Overdue pill sits BESIDE the status, not instead of
@@ -385,7 +444,23 @@ export default function TaskTable({ tasks, sort, onSort, showDepartment = false,
                     still genuinely Pending or In Progress underneath. */}
                 <td className="px-3 py-3 align-middle text-center">
                   <div className="flex flex-col items-center gap-1">
-                    <StatusChip status={task.status} notApplicable={task.notApplicable} />
+                    <StatusChip status={task.status} notApplicable={task.notApplicable} peer={task} />
+                    {canReopenPeerRow(task) && (
+                      <button
+                        type="button"
+                        title="Send it back to the HOD with what needs to change"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setReopenNote("");
+                          setReopenErr("");
+                          setReopenId(task.id);
+                        }}
+                        className="inline-flex items-center gap-1 rounded-pill border border-[#f3c2bf] bg-white px-2 py-0.5 text-[10.5px] font-semibold text-[#c0392b] hover:bg-[#FDECEC] whitespace-nowrap"
+                      >
+                        <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round"><path d="M3 2v6h6" /><path d="M3 13a9 9 0 1 0 3-7.7L3 8" /></svg>
+                        Re-open
+                      </button>
+                    )}
                     {overdue && (
                       <span
                         title={`Overdue — was due ${dateLabel(task.dueDate)}`}
@@ -396,6 +471,25 @@ export default function TaskTable({ tasks, sort, onSort, showDepartment = false,
                       </span>
                     )}
                   </div>
+                </td>
+
+                {/* Category — the Task Category it was given under: a KRA, or Others. */}
+                <td className="px-3 py-3 align-middle">
+                  {(() => {
+                    const cat = categoryOf(task);
+                    if (cat === "kra") {
+                      const name = task.kraId ? kraNameById.get(task.kraId) : undefined;
+                      return (
+                        <div className="min-w-0" title={name ? `KRA: ${name}` : "KRA task"}>
+                          <span className="inline-flex items-center text-[10px] font-semibold uppercase tracking-wide text-[#0f7b6c] bg-[#E3F5F1] rounded-pill px-1.5 py-0.5">KRA</span>
+                          {name && <div className="text-[11px] text-grey mt-0.5 truncate">{name}</div>}
+                          {!task.kraId && <div className="text-[11px] text-[#9a6200] mt-0.5 truncate">KRA to be picked</div>}
+                        </div>
+                      );
+                    }
+                    if (cat === "others") return <span className="text-[12.5px] text-grey">Others</span>;
+                    return <span className="text-[12.5px] text-grey-2" title="The category is visible to the assignee and their HOD only">—</span>;
+                  })()}
                 </td>
 
                 {/* Edit + Delete (pending one-offs only) + chevron */}
@@ -465,6 +559,45 @@ export default function TaskTable({ tasks, sort, onSort, showDepartment = false,
       }
     >
       <p className="text-[13px] text-grey">This permanently removes this pending task. This can't be undone.</p>
+    </Modal>
+
+    <Modal
+      open={!!reopenId}
+      onClose={() => setReopenId(null)}
+      title="Re-open task"
+      subtitle={tasks.find((t) => t.id === reopenId)?.title}
+      size="sm"
+      footer={
+        <>
+          <Button variant="ghost" onClick={() => setReopenId(null)} disabled={reopenBusy}>Cancel</Button>
+          <Button
+            disabled={reopenBusy || !reopenId}
+            onClick={async () => {
+              if (!reopenId) return;
+              if (!reopenNote.trim()) {
+                setReopenErr("Write what needs to change before re-opening.");
+                return;
+              }
+              setReopenBusy(true);
+              setReopenErr("");
+              try {
+                await reopenPeerTask(reopenId, reopenNote);
+                setReopenId(null);
+              } catch (e) {
+                setReopenErr((e as Error).message || "Couldn't re-open the task.");
+              } finally {
+                setReopenBusy(false);
+              }
+            }}
+          >
+            {reopenBusy ? "Re-opening…" : "Re-open"}
+          </Button>
+        </>
+      }
+    >
+      <p className="text-[13px] text-grey mb-2">It goes back to {actorById(tasks.find((t) => t.id === reopenId)?.assignedTo ?? null)?.name ?? "the HOD"} as Re-opened, with your note.</p>
+      <TextArea rows={3} value={reopenNote} onChange={(e) => { setReopenNote(e.target.value); setReopenErr(""); }} placeholder="What needs to change (required)" />
+      {reopenErr && <p className="mt-1.5 text-[12px] text-[#d4493f]">{reopenErr}</p>}
     </Modal>
 
     {/* Both edit modals prefill on open, so a single instance serves every row. */}

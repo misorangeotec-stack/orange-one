@@ -18,6 +18,7 @@ import CreditApprovalPanel, { approvedQtyError } from "./CreditApprovalPanel";
 import ShipLinesGrid, { shipLinesFrom, type ShipLineValue } from "./ShipLinesGrid";
 import BillLinesGrid, { billLinesFrom, overBilledCount, type BillLineValue } from "./BillLinesGrid";
 import { filledLots } from "./LotAllocField";
+import { expiryKey, saveLotExpiries } from "../data/lotExpiry";
 import StepDocLink from "./StepDocLink";
 import GatePassButton from "./GatePassButton";
 import ReceiverCopyCapture, { type ReceiverPage } from "./ReceiverCopyCapture";
@@ -92,6 +93,9 @@ export default function StepModal({
 
   const [values, setValues] = useState<Record<string, string>>({});
   const [shipLines, setShipLines] = useState<ShipLineValue[]>([]);
+  /** Lot expiries typed at Material Status, keyed `expiryKey(itemId, lot)`. Only
+   *  what changed on this screen; saved with the step (see ShipLinesGrid). */
+  const [expiryEdits, setExpiryEdits] = useState<Record<string, string>>({});
   /** The sales bill’s own per-line quantity. Its own state for the same reason
    *  the ship grid has one: a grid of inputs has nowhere to live in the
    *  string-keyed `values` map. */
@@ -129,6 +133,7 @@ export default function StepModal({
     for (const f of cfg.fields) next[f.key] = f.get(order, view);
     setValues(next);
     setShipLines(cfg.lines === "ship" ? shipLinesFrom(order) : []);
+    setExpiryEdits({});
     /*
       Seeds from what is STORED, which is blank on a first record and the saved
       figure on an edit. That asymmetry is the point: billing everything must be
@@ -464,6 +469,24 @@ export default function StepModal({
         // Editing with no new file: the keys stay OMITTED — the RPC keeps the file.
       }
 
+      /*
+        Typed lot expiries go FIRST, so a refused save records nothing and the
+        store keeper sees why. Only the lots actually being sent are saved — a
+        date typed against a lot then removed from the line is dropped.
+      */
+      if (cfg.lines === "ship" && Object.keys(expiryEdits).length > 0) {
+        const rows = shipLines
+          .filter((l) => Number(l.ship_qty) > 0)
+          .flatMap((l) => {
+            const itemId = order.lines.find((x) => x.id === l.id)?.itemId;
+            if (!itemId) return [];
+            return filledLots(l.lots)
+              .filter((r) => expiryKey(itemId, r.lot_no) in expiryEdits)
+              .map((r) => ({ itemId, lotNo: r.lot_no, expiry: expiryEdits[expiryKey(itemId, r.lot_no)] }));
+          });
+        await saveLotExpiries(order.id, rows);
+      }
+
       if (editing) await s.updateStep(stepKey, order.id, payload);
       else await s.recordStep(stepKey, order.id, payload);
       onClose();
@@ -702,7 +725,14 @@ export default function StepModal({
         {cfg.lines === "ship" && (
           <section className="space-y-2">
             <SectionHeading>What is going out</SectionHeading>
-            <ShipLinesGrid order={order} values={shipLines} onChange={setShipLines} readOnly={locked} />
+            <ShipLinesGrid
+              order={order}
+              values={shipLines}
+              onChange={setShipLines}
+              readOnly={locked}
+              expiryEdits={expiryEdits}
+              onExpiryEdits={setExpiryEdits}
+            />
           </section>
         )}
 

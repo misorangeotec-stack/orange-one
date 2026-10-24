@@ -18,6 +18,29 @@ export const isSampleBlank = (r: SampleRow): boolean => !r.colour.trim() && !r.q
 /** Tri-state Yes/No for the lab-testing gate (blank = the user hasn't chosen). */
 export type LabChoice = "" | "true" | "false";
 
+/** What "Save as draft" keeps of a new request. Must stay JSON-safe. */
+export interface SampleDraft {
+  companyId: string;
+  receiveVia: ReceiveVia | "";
+  direction: Direction | "";
+  requirementType: RequirementType | "";
+  requesterName: string;
+  partyName: string;
+  partyAddress: string;
+  partyContactName: string;
+  partyContactMobile: string;
+  senderId: string;
+  productDesc: string;
+  sampleItems: SampleRow[];
+  labTestingRequired: LabChoice;
+  machineTestingRequired: LabChoice;
+  collectorId: string;
+  handoverRecipientId: string;
+  transportBorne: TransportBorne | "";
+  desiredResult: string;
+  additionalInfo: string;
+}
+
 /**
  * The intake form's state + derivation for a new sampling request.
  *
@@ -268,6 +291,41 @@ export function useSampleRequestForm(initial?: SamplingRequest) {
     isInward, isOutward, isCompetitor, labNotRequired,
     // action
     build,
+    /** The fields as a JSON-safe snapshot — what "Save as draft" stores. */
+    snapshot: (): SampleDraft => ({
+      companyId, receiveVia, direction, requirementType, requesterName,
+      partyName, partyAddress, partyContactName, partyContactMobile, senderId,
+      productDesc, sampleItems, labTestingRequired, machineTestingRequired,
+      collectorId, handoverRecipientId, transportBorne, desiredResult, additionalInfo,
+    }),
+    /**
+     * Put a saved snapshot back. Raw setters — the direction change handler in
+     * SampleRequestFields would clear the source. The sender effect above then
+     * re-checks senderId against the restored source's owners.
+     */
+    restore: (v: SampleDraft) => {
+      setCompanyId(v.companyId ?? "");
+      setReceiveVia(v.receiveVia ?? "");
+      setDirection(v.direction ?? "");
+      setRequirementType(v.requirementType ?? "");
+      setRequesterName(v.requesterName ?? session.user?.name ?? "");
+      setPartyName(v.partyName ?? "");
+      setPartyAddress(v.partyAddress ?? "");
+      setPartyContactName(v.partyContactName ?? "");
+      setPartyContactMobile(v.partyContactMobile ?? "");
+      setSenderId(v.senderId ?? "");
+      setProductDesc(v.productDesc ?? "");
+      setSampleItems(
+        v.sampleItems?.length ? v.sampleItems.map((r) => ({ ...r, uid: newUid() })) : [makeEmptySample()],
+      );
+      setLabTestingRequired(v.labTestingRequired ?? "");
+      setMachineTestingRequired(v.machineTestingRequired ?? "");
+      setCollectorId(v.collectorId ?? "");
+      setHandoverRecipientId(v.handoverRecipientId || selfId);
+      setTransportBorne(v.transportBorne ?? "");
+      setDesiredResult(v.desiredResult ?? "");
+      setAdditionalInfo(v.additionalInfo ?? "");
+    },
   };
 }
 

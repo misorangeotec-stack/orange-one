@@ -1,3 +1,4 @@
+import { useBackState } from "@/shared/lib/backState";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
@@ -45,6 +46,7 @@ import NameMasterTab, { type NameMasterUsage } from "./NameMasterTab";
 import { formatDateDMY } from "@hub/lib/utils";
 import { MasterIoBar } from "@hub/pages/MusterIoBar";
 import { tagIo, groupIo, companyIo, otherPaymentIo, redMarkIo, disputeIo } from "@hub/lib/musterIo";
+import { MARK_LABEL, MARK_TYPES, type MarkType } from "@hub/lib/markType";
 import { ClearStatusToggle } from "@hub/components/ClearStatusToggle";
 import { ClearStatusBadge } from "@hub/components/ClearStatusBadge";
 import { ClearNoteDialog } from "@hub/components/ClearNoteDialog";
@@ -165,7 +167,7 @@ function TagMuster({ rows, snapByGuid, master, knownNames, onReload }: {
   master: NameMasterRow[]; knownNames: Set<string>; onReload: () => void;
 }) {
   const { toast } = useToast();
-  const [search, setSearch] = useState("");
+  const [search, setSearch] = useBackState("MusterEditor.search.1", "");
   const [balanceOnly, setBalanceOnly] = useState(false);
   const [page, setPage] = useState(1);
   const [draft, setDraft] = useState<Record<string, TagDraft>>({});
@@ -415,7 +417,7 @@ function GroupMuster({ rows, snapByGuid, master, knownNames, onReload }: {
   master: NameMasterRow[]; knownNames: Set<string>; onReload: () => void;
 }) {
   const { toast } = useToast();
-  const [search, setSearch] = useState("");
+  const [search, setSearch] = useBackState("MusterEditor.search.2", "");
   const [balanceOnly, setBalanceOnly] = useState(false);
   const [page, setPage] = useState(1);
   const [draft, setDraft] = useState<Record<string, GroupDraft>>({});
@@ -669,7 +671,7 @@ function CompanyMuster({ rows, custCounts, onReload }: {
   onReload: () => void;
 }) {
   const { toast } = useToast();
-  const [search, setSearch] = useState("");
+  const [search, setSearch] = useBackState("MusterEditor.search.3", "");
   const [draft, setDraft] = useState<Record<string, { company: string; location: string; checked: boolean }>>({});
   const [saving, setSaving] = useState<string | null>(null);
 
@@ -842,7 +844,7 @@ function CustomerPicker({ snap, value, onPick }: {
   snap: SnapRow[]; value: string | null; onPick: (s: SnapRow) => void;
 }) {
   const [open, setOpen] = useState(false);
-  const [q, setQ] = useState("");
+  const [q, setQ] = useBackState("MusterEditor.q.4", "");
   const picked = value ? snap.find((s) => s.ledger_id === value) : undefined;
   const matches = useMemo(() => {
     const needle = q.trim().toUpperCase();
@@ -1009,7 +1011,7 @@ function OtherPaymentMuster({ rows, snap, snapByGuid, onReload }: {
   const [addOpen, setAddOpen] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState<OtherPaymentRow | null>(null);
 
-  const [search, setSearch] = useState("");
+  const [search, setSearch] = useBackState("MusterEditor.search.5", "");
   const [page, setPage] = useState(1);
 
   const cur = (r: OtherPaymentRow): OpDraft => draft[String(r.id)] ?? draftOf(r);
@@ -1303,14 +1305,32 @@ function OtherPaymentMuster({ rows, snap, snapByGuid, onReload }: {
   );
 }
 
-// ── Red Mark master ────────────────────────────────────────────────────────────────────────────
+// ── Red Mark + Legal master ───────────────────────────────────────────────────────────────────
 // A per-ledger flag (presence = flagged), keyed by the Tally GUID. Drives the "Red Mark" badge/KPI/
 // filter on the Live (Tally) screens. Add = pick a customer; Delete = un-flag.
+//
+// Every row has a TYPE — Red Mark or Legal (21-10-2026). One packet, two kinds of customer: both
+// count as Red Mark everywhere, and the type is what the Category filter on the outstanding pages
+// uses to show just the legal ones (or just the red-marked ones).
 
-type RmDraft = { salesperson: string; reason: string; checked: boolean };
+type RmDraft = { salesperson: string; reason: string; checked: boolean; mark_type: MarkType };
 const rmDraftOf = (r: RedMarkRow): RmDraft => ({
-  salesperson: r.salesperson ?? "", reason: r.reason ?? "", checked: r.checked,
+  salesperson: r.salesperson ?? "", reason: r.reason ?? "", checked: r.checked, mark_type: r.mark_type,
 });
+
+/** Red Mark / Legal picker — the same control on each row and in the Add dialog. */
+function MarkTypeSelect({ value, onChange, className }: {
+  value: MarkType; onChange: (v: MarkType) => void; className?: string;
+}) {
+  return (
+    <Select value={value} onValueChange={(v) => onChange(v as MarkType)}>
+      <SelectTrigger className={className ?? "h-8 w-28"} aria-label="Type"><SelectValue /></SelectTrigger>
+      <SelectContent>
+        {MARK_TYPES.map((t) => <SelectItem key={t} value={t}>{MARK_LABEL[t]}</SelectItem>)}
+      </SelectContent>
+    </Select>
+  );
+}
 
 /** Add-red-mark dialog: pick a customer + optional reason, then flag them. */
 function AddRedMarkDialog({ open, onOpenChange, snap, rows, onAdded }: {
@@ -1321,9 +1341,10 @@ function AddRedMarkDialog({ open, onOpenChange, snap, rows, onAdded }: {
   const { toast } = useToast();
   const [ledger, setLedger] = useState<SnapRow | null>(null);
   const [reason, setReason] = useState("");
+  const [markType, setMarkType] = useState<MarkType>("redmark");
   const [saving, setSaving] = useState(false);
 
-  useEffect(() => { if (open) { setLedger(null); setReason(""); } }, [open]);
+  useEffect(() => { if (open) { setLedger(null); setReason(""); setMarkType("redmark"); } }, [open]);
 
   // Adding a customer whose case was CLEARED is a re-flag, and the server reopens it (the upsert
   // sends cleared:false). Saying so beats a silent "added" on a row that was already there.
@@ -1343,11 +1364,12 @@ function AddRedMarkDialog({ open, onOpenChange, snap, rows, onAdded }: {
         salesperson: null,
         reason: reason.trim() || null,
         checked: true,
+        mark_type: markType,
       });
       onAdded();
       onOpenChange(false);
       toast({
-        title: existing?.cleared ? "Red Mark reopened" : "Red Mark added",
+        title: existing?.cleared ? `${MARK_LABEL[markType]} reopened` : `${MARK_LABEL[markType]} added`,
         description: `${ledger.name}`,
       });
     } catch (e) {
@@ -1361,16 +1383,21 @@ function AddRedMarkDialog({ open, onOpenChange, snap, rows, onAdded }: {
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-lg">
         <DialogHeader>
-          <DialogTitle>Add a Red Mark customer</DialogTitle>
+          <DialogTitle>Add a Red Mark / Legal customer</DialogTitle>
           <DialogDescription>
-            Flags the customer as Red Mark across the Live (Tally) screens (KPI, badge, filter, and
-            the Red Mark report). Keyed by the Tally GUID, so a rename never loses the flag.
+            Flags the customer across the Live (Tally) screens (KPI, badge, filter, and the Red Mark +
+            Legal report). Pick the Type — it is also a Category on the outstanding pages, so the legal
+            customers can be seen on their own. Keyed by the Tally GUID, so a rename never loses the flag.
           </DialogDescription>
         </DialogHeader>
         <div className="grid gap-3">
           <div className="grid gap-1.5">
             <span className="text-xs font-medium text-muted-foreground">Customer</span>
             <CustomerPicker snap={snap} value={ledger?.ledger_id ?? null} onPick={setLedger} />
+          </div>
+          <div className="grid gap-1.5">
+            <span className="text-xs font-medium text-muted-foreground">Type</span>
+            <MarkTypeSelect value={markType} onChange={setMarkType} className="h-9 w-40" />
           </div>
           <div className="grid gap-1.5">
             <span className="text-xs font-medium text-muted-foreground">Reason (optional)</span>
@@ -1387,7 +1414,7 @@ function AddRedMarkDialog({ open, onOpenChange, snap, rows, onAdded }: {
         <DialogFooter>
           <Button variant="outline" onClick={() => onOpenChange(false)}>Cancel</Button>
           <Button onClick={submit} disabled={!ledger || saving} className="gap-1.5">
-            <Plus className="h-4 w-4" />{saving ? "Adding…" : "Add Red Mark"}
+            <Plus className="h-4 w-4" />{saving ? "Adding…" : `Add ${MARK_LABEL[markType]}`}
           </Button>
         </DialogFooter>
       </DialogContent>
@@ -1415,7 +1442,7 @@ function RedMarkMuster({ rows, snap, snapByGuid, teamByGuid, master, knownNames,
   const [clearView, setClearView] = useState<ClearView>(CLEAR_VIEW_DEFAULT);
   const canClear = useCanClear();
 
-  const [search, setSearch] = useState("");
+  const [search, setSearch] = useBackState("MusterEditor.search.6", "");
   const [page, setPage] = useState(1);
 
   const cur = (r: RedMarkRow): RmDraft => draft[r.ledger_id] ?? rmDraftOf(r);
@@ -1438,7 +1465,7 @@ function RedMarkMuster({ rows, snap, snapByGuid, teamByGuid, master, knownNames,
     const q = search.trim().toUpperCase();
     if (!q) return true;
     const name = snapByGuid.get(r.ledger_id)?.name ?? r.tally_name ?? "";
-    return `${name} ${r.salesperson ?? ""} ${r.reason ?? ""} ${r.clear_note ?? ""}`.toUpperCase().includes(q);
+    return `${name} ${MARK_LABEL[r.mark_type]} ${r.salesperson ?? ""} ${r.reason ?? ""} ${r.clear_note ?? ""}`.toUpperCase().includes(q);
   }, [search, clearView, snapByGuid]);
 
   const counts = useMemo(() => countByClearView(rows), [rows]);
@@ -1452,10 +1479,12 @@ function RedMarkMuster({ rows, snap, snapByGuid, teamByGuid, master, knownNames,
         salesperson: d.salesperson.trim() || null,
         reason: d.reason.trim() || null,
         checked: d.checked,
+        mark_type: d.mark_type,
       });
       r.salesperson = d.salesperson.trim() || null;
       r.reason = d.reason.trim() || null;
       r.checked = d.checked;
+      r.mark_type = d.mark_type;
       setDraft((prev) => { const { [r.ledger_id]: _omit, ...rest } = prev; return rest; });
       toast({ title: "Saved", description: nameOf(r) });
     } catch (e) {
@@ -1530,6 +1559,12 @@ function RedMarkMuster({ rows, snap, snapByGuid, teamByGuid, master, knownNames,
     {
       key: "location", label: "Location", head: "w-24", cellClass: "text-muted-foreground",
       value: (r) => locationOf(r), cell: (r) => locationOf(r) || "—",
+    },
+    {
+      // Red Mark or Legal. Saved with the row's Save button, like every other edit on this tab.
+      key: "type", label: "Type", head: "w-32",
+      value: (r) => MARK_LABEL[r.mark_type],
+      cell: (r) => <MarkTypeSelect value={cur(r).mark_type} onChange={(v) => patch(r, { mark_type: v })} />,
     },
     {
       key: "salesperson", label: "Salesperson", head: "w-40",
@@ -1631,7 +1666,7 @@ function RedMarkMuster({ rows, snap, snapByGuid, teamByGuid, master, knownNames,
           <div className="relative flex-1 max-w-sm">
             <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
             <Input value={search} onChange={(e) => setSearch(e.target.value)}
-              placeholder="Search customer / salesperson / reason / clear note…" className="pl-8" />
+              placeholder="Search customer / type / salesperson / reason / clear note…" className="pl-8" />
           </div>
           <div className="flex items-center gap-2 flex-wrap">
             {/* Company and Location moved into the column filters below, where every other column now
@@ -1642,12 +1677,16 @@ function RedMarkMuster({ rows, snap, snapByGuid, teamByGuid, master, knownNames,
               activeFilters={describeFilters({ search, clearView, columns: describeColumnFilters(columns, grid) })}
               onReload={onReload} />
             <Button size="sm" onClick={() => setAddOpen(true)} className="gap-1.5">
-              <Plus className="h-4 w-4" />Add Red Mark
+              <Plus className="h-4 w-4" />Add Red Mark / Legal
             </Button>
           </div>
         </div>
         <p className="text-xs text-muted-foreground">
-          <span className="font-medium text-foreground">{total}</span> Red Mark customer{total === 1 ? "" : "s"} shown
+          <span className="font-medium text-foreground">{total}</span> Red Mark + Legal customer{total === 1 ? "" : "s"} shown
+          <span className="ml-2">
+            ({rows.filter((r) => !r.cleared && r.mark_type === "redmark").length} Red Mark ·{" "}
+            {rows.filter((r) => !r.cleared && r.mark_type === "legal").length} Legal, uncleared)
+          </span>
         </p>
       </div>
 
@@ -1655,8 +1694,8 @@ function RedMarkMuster({ rows, snap, snapByGuid, teamByGuid, master, knownNames,
         columns={columns} grid={grid} pageRows={pageRows} rowKey={(r) => r.ledger_id}
         rowClass={(r) => (r.cleared ? "opacity-70" : undefined)}
         sourceCount={rows.length}
-        emptyMessage="No Red Mark customers yet."
-        emptyFilteredMessage={`No Red Mark customers match the current filters${clearView !== "all" ? ` in the ${clearView} view` : ""}.`}
+        emptyMessage="No Red Mark or Legal customers yet."
+        emptyFilteredMessage={`No Red Mark or Legal customers match the current filters${clearView !== "all" ? ` in the ${clearView} view` : ""}.`}
         onClearFilters={clearAll}
       />
 
@@ -1667,8 +1706,10 @@ function RedMarkMuster({ rows, snap, snapByGuid, teamByGuid, master, knownNames,
       />
 
       <p className="text-xs text-muted-foreground pt-2">
-        Hand-picked customers flagged <span className="font-medium">Red Mark</span>. The flag shows as a
-        red badge, a Dashboard KPI, a filter, and the Red Mark report on the Live (Tally) screens.
+        Hand-picked customers flagged <span className="font-medium">Red Mark</span> or{" "}
+        <span className="font-medium">Legal</span> — one packet. Both show as a red badge, a Dashboard
+        KPI, a filter, and the Red Mark + Legal report on the Live (Tally) screens; the{" "}
+        <span className="font-medium">Type</span> is also a Category on every outstanding page.
         Keyed by the Tally GUID, so a rename never loses the flag.{" "}
         <span className="font-medium">Clear</span> closes a settled case and keeps the record;{" "}
         <span className="font-medium">Delete</span> is only for a customer marked by mistake.
@@ -1750,7 +1791,7 @@ function DisputeMuster({ snap, snapByGuid, teamByGuid }: {
   const [clearing, setClearing] = useState<{ row: DisputeRow; mode: "clear" | "reopen" } | null>(null);
   const [clearBusy, setClearBusy] = useState(false);
   const [clearView, setClearView] = useState<ClearView>(CLEAR_VIEW_DEFAULT);
-  const [search, setSearch] = useState("");
+  const [search, setSearch] = useBackState("MusterEditor.search.7", "");
   const [page, setPage] = useState(1);
 
   /** Every open (ledger, bill) — "is this dispute's bill still open?" — and the bills per customer. */
@@ -2294,7 +2335,7 @@ export function MusterPanel() {
               <TabsTrigger value="groups">Customer Groups</TabsTrigger>
               <TabsTrigger value="companies">Companies &amp; Locations</TabsTrigger>
               <TabsTrigger value="other-payments">Other Payments</TabsTrigger>
-              <TabsTrigger value="redmark">Red Mark</TabsTrigger>
+              <TabsTrigger value="redmark">Red Mark + Legal</TabsTrigger>
               <TabsTrigger value="disputes">Disputed Bills</TabsTrigger>
               <TabsTrigger value="salesperson-list">Salespersons</TabsTrigger>
               <TabsTrigger value="team-list">Collection Teams</TabsTrigger>

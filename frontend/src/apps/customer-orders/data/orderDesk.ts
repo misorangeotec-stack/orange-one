@@ -12,8 +12,9 @@ import { supabase } from "@/core/platform/supabase";
  *   1. The security sweep could be a clean "staff only" rule with NO exceptions
  *      to reason about. There is no table needing an external read arm, so there
  *      is no table where somebody must remember one.
- *   2. Q11 — "the customer never sees the ticked ledger list" — is honoured by
- *      never sending it. Not by hiding it in the UI, which is not honouring it.
+ *   2. What reaches them is decided by the server. Since OD-17 that includes
+ *      their own firm NAMES (Q11 relaxed for exactly that) — but never which of
+ *      our books each one sits in, nor how many.
  *   3. Our books, sites and companies (`mst_companies`, `mst_locations`,
  *      `mst_company_locations`) stay entirely out of reach, so the customer never
  *      learns which of our ledgers they are about to be billed from.
@@ -65,24 +66,47 @@ export interface DeskOrderLine {
   lineRemark: string | null;
 }
 
+/** One consignment's note to the customer, as the gate wrote it. */
+export interface DeskDispatchNote {
+  /**
+   * Which consignment. Shown only when there is more than one, because "Note 1 of
+   * 1" is noise — but carried always, so the screen can tell.
+   */
+  roundNo: number | null;
+  /** The date it actually went out. Null if the gate left the date blank. */
+  sentOn: string | null;
+  note: string;
+}
+
 export interface DeskOrder {
   id: string;
   orderNo: string;
   orderDate: string;
   orderRemarks: string | null;
   /**
-   * Which of ours it was ordered from.
+   * Which of OUR books bills it — never shown, only used to scope the picker.
    *
-   * ⚠ NEEDED TO CHANGE THE ORDER, not only to display it. The item picker is
-   *   scoped to a book since OD-14, so re-rendering it for an edit without this
-   *   would fall back to every book and let a line onto the order that the
-   *   billing company cannot supply.
-   *
-   *   Null on orders placed before OD-14, which had no company until credit check
-   *   filled one in.
+   * ⚠ NULL UNTIL WE COMPLETE THE ORDER (OD-17). The customer no longer chooses
+   *   it; our team does, on Complete Customer Order. Once set, a change has to
+   *   offer that book's copies of the items, or a line could go onto the order
+   *   that the billing company cannot supply.
    */
   companyId: string | null;
-  companyLabel: string | null;
+  /** Which of THEIR firms it was placed for — the ledger they picked (OD-17). */
+  ledgerId: string;
+  ledgerName: string;
+  /**
+   * The notes written FOR this customer as each consignment left, oldest first.
+   *
+   * ⚠ THIS IS THE ONLY REMARK CHANNEL THAT REACHES THEM, and the server is what
+   *   makes that true — `go_remarks`, the internal note beside it, is not in the
+   *   RPC at all. Do not add a second source here: the guarantee is "nothing else
+   *   is sent", which a component cannot honour by choosing not to render.
+   *
+   * Empty until the gate stamps the order, and empty on an order whose round
+   * looped back — the note went to the archive with the consignment it described.
+   */
+  dispatchNotes: DeskDispatchNote[];
   /** Already collapsed by the server — see lib/customerLabels.ts. */
   statusKey: string;
   /**
@@ -90,8 +114,14 @@ export interface DeskOrder {
    *
    * ⚠ THE SERVER'S ANSWER, NOT OURS. This is `fms_dispatch_customer_window_open`,
    *   the very function both write RPCs enforce — so a hidden button and a refused
-   *   call can never disagree. Do not re-derive it from `statusKey`: two distinct
-   *   states both render as "Placed" and only one of them is open.
+   *   call can never disagree.
+   *
+   *   Since OD-16 it is also what `status_key` tests to decide "request_raised",
+   *   so the two now agree BY CONSTRUCTION rather than by coincidence. That is not
+   *   licence to re-derive one from the other here: the server sends both because
+   *   the server is where the rule lives, and a browser that computed
+   *   `canChange = statusKey === "request_raised"` would be a second copy of a rule
+   *   that is allowed to change without asking this file.
    */
   canChange: boolean;
   placedAt: string | null;
@@ -99,30 +129,34 @@ export interface DeskOrder {
 }
 
 export const PROFILE_QK = ["order-desk", "profile"] as const;
-export const COMPANIES_QK = ["order-desk", "companies"] as const;
-/** Keyed on the book, because the list IS the book's. */
-export const itemsQueryKey = (companyId: string | null) =>
-  ["order-desk", "items", companyId ?? "all"] as const;
+export const LEDGERS_QK = ["order-desk", "ledgers"] as const;
+/** Keyed on both, because the list is the firm's — and, once we bill it, the book's. */
+export const itemsQueryKey = (companyId: string | null, ledgerId: string | null) =>
+  ["order-desk", "items", companyId ?? "all", ledgerId ?? "all"] as const;
 export const ORDERS_QK = ["order-desk", "orders"] as const;
 
 /**
- * One of ours the customer may buy from, named as they would recognise it.
+ * One of THEIR firms — a ledger ticked for them in Setup → Customer Logins (OD-17).
  *
- * ⚠ THIS IS NOT THE LEDGER LIST, AND Q11 STILL STANDS. What comes back is our
- *   COMPANY — "O-tec - Surat" — which is on every invoice we send them. The ticked
- *   ledgers behind it never leave the server, exactly as before.
+ * ⚠ THE CUSTOMER NO LONGER CHOOSES ONE OF OUR COMPANIES. Which book bills the
+ *   order is decided at our end, on Complete Customer Order. What they choose is
+ *   which of their own firms is ordering, and the item list follows it.
+ *
+ * ⚠ ONE ROW PER FIRM NAME, NOT PER LEDGER. The same firm is a separate ledger in
+ *   every book that bills it; the server folds them into one row and hands out a
+ *   single representative id, which every write expands back on its side.
  */
-export interface DeskCompany {
-  companyId: string;
-  label: string;
+export interface DeskLedger {
+  ledgerId: string;
+  name: string;
   itemCount: number;
 }
 
-export async function fetchDeskCompanies(): Promise<DeskCompany[]> {
-  const { data, error } = await db.rpc("fms_dispatch_my_companies");
+export async function fetchDeskLedgers(): Promise<DeskLedger[]> {
+  const { data, error } = await db.rpc("fms_dispatch_my_ledgers");
   if (error) throw new Error(error.message);
-  return ((data ?? []) as { company_id: string; label: string; item_count: number | null }[])
-    .map((r) => ({ companyId: r.company_id, label: r.label, itemCount: r.item_count ?? 0 }));
+  return ((data ?? []) as { ledger_id: string; ledger_name: string; item_count: number | null }[])
+    .map((r) => ({ ledgerId: r.ledger_id, name: r.ledger_name, itemCount: r.item_count ?? 0 }));
 }
 
 /**
@@ -155,16 +189,22 @@ export async function fetchCustomerProfile(): Promise<CustomerProfile | null> {
  *   raw, the customer sees the same ink three times with nothing on screen to tell
  *   them apart.
  *
- * ⚠ AND SCOPED TO THE BOOK THEY CHOSE (OD-14). Given a company, the server returns
- *   THAT BOOK'S OWN copy of everything mapped to their ledger there, matched by
- *   name. So the id on the line is already one the billing book can supply, and
- *   the old best-effort re-point at credit check has nothing left to move.
+ * ⚠ AND SCOPED TO THE FIRM THEY PICKED (OD-17) — only what Setup mapped to that
+ *   firm's ledgers. Given a company as well (an order we have already written
+ *   up), the server returns THAT BOOK'S own copy of each, matched by name, so a
+ *   change cannot add a line the billing book cannot supply.
  *
- *   Called with null only by the order-history screen, which needs every book's
- *   items to name lines already placed.
+ *   Both null is the whole account — the order-history screen, which needs every
+ *   item to name lines already placed.
  */
-export async function fetchDeskItems(companyId: string | null): Promise<DeskItem[]> {
-  const { data, error } = await db.rpc("fms_dispatch_my_items", { p_company: companyId });
+export async function fetchDeskItems(
+  companyId: string | null,
+  ledgerId: string | null,
+): Promise<DeskItem[]> {
+  const { data, error } = await db.rpc("fms_dispatch_my_items", {
+    p_company: companyId,
+    p_ledger: ledgerId,
+  });
   if (error) throw new Error(error.message);
   return ((data ?? []) as { item_id: string; name: string; unit: string | null; item_type: string | null }[])
     .map((r) => ({ itemId: r.item_id, name: r.name, unit: r.unit, itemType: r.item_type }));
@@ -183,7 +223,10 @@ export async function fetchDeskOrders(): Promise<DeskOrder[]> {
   return ((data ?? []) as {
     id: string; order_no: string; order_date: string; order_remarks: string | null;
     status_key: string; can_change: boolean; placed_at: string | null;
-    company_id: string | null; company_label: string | null;
+    company_id: string | null; ledger_id: string; ledger_name: string | null;
+    dispatch_notes:
+      | { round_no: number | null; sent_on: string | null; note: string | null }[]
+      | null;
     lines:
       | {
           line_no: number; item_id: string; name: string; quantity: number | string;
@@ -199,7 +242,18 @@ export async function fetchDeskOrders(): Promise<DeskOrder[]> {
     canChange: r.can_change,
     placedAt: r.placed_at,
     companyId: r.company_id,
-    companyLabel: r.company_label,
+    ledgerId: r.ledger_id,
+    ledgerName: r.ledger_name ?? "",
+    /* Server-side `jsonb_agg` already orders these; a note with no text cannot
+       reach the array, but the filter keeps a blank from rendering an empty box
+       if that ever changes. */
+    dispatchNotes: (r.dispatch_notes ?? [])
+      .filter((n) => (n.note ?? "").trim())
+      .map((n) => ({
+        roundNo: n.round_no ?? null,
+        sentOn: n.sent_on ?? null,
+        note: (n.note ?? "").trim(),
+      })),
     lines: (r.lines ?? []).map((l) => ({
       lineNo: l.line_no,
       itemId: l.item_id,
@@ -239,13 +293,14 @@ const linePayload = (lines: DeskLineInput[]) =>
     }));
 
 export async function submitDeskOrder(input: {
-  companyId: string;
+  /** Which of their firms — `DeskLedger.ledgerId`. The company is ours to choose. */
+  ledgerId: string;
   orderRemarks: string;
   lines: DeskLineInput[];
 }): Promise<string> {
   const { data, error } = await db.rpc("fms_dispatch_submit_customer_order", {
     p: {
-      company_id: input.companyId,
+      ledger_id: input.ledgerId,
       order_remarks: input.orderRemarks.trim() || null,
       lines: linePayload(input.lines),
     },
@@ -269,6 +324,18 @@ export async function updateDeskOrder(input: {
   if (error) throw new Error(error.message);
 }
 
+/**
+ * Cancel an order the customer has raised but we have not accepted.
+ *
+ * ⚠ BOUNDED BY THE SAME WINDOW AS `updateDeskOrder`, and the server is what
+ *   enforces it — `fms_dispatch_customer_window_open`, which is also what
+ *   `status_key` tests to decide whether the order reads "Request raised". So the
+ *   pill, the Cancel button and the server's answer are three views of one fact
+ *   and cannot drift apart.
+ *
+ *   Once we accept, this refuses. That refusal is the real rule; hiding the
+ *   button is only what stops us offering something we would turn down.
+ */
 export async function cancelDeskOrder(orderId: string, reason: string): Promise<void> {
   const { error } = await db.rpc("fms_dispatch_cancel_customer_order", {
     p: { order_id: orderId, reason: reason.trim() || null },

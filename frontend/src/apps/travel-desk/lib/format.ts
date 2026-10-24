@@ -24,7 +24,7 @@ import type { TripStatus, TravelCategory, CityTier, LegKind } from "../types";
  *   distinction: "—" says nobody has worked this out yet; "₹0" says they worked
  *   it out and the answer was nothing. Same reasoning as hr-exit's F&F money().
  *
- * There is deliberately no currency argument. Policy §11.3: "Expenses in foreign
+ * There is deliberately no currency argument. Policy Section 11.3: "Expenses in foreign
  * currency are NOT covered under this policy." A trip is priced in rupees or it
  * is not this module's business.
  */
@@ -48,10 +48,12 @@ export const STATUS_LABEL: Record<TripStatus, string> = {
   booked: "Booked — claim due after return",
   cancellation_requested: "Cancellation requested",
   cancelled_pending_claim: "Cancelled — charges to settle",
+  cancel_pending: "Cancellation requested — awaiting credit note",
   awaiting_claim_review: "Claim awaiting approval",
   awaiting_finance_review: "Claim with Finance",
   awaiting_settlement: "Awaiting payment",
-  closed: "Settled",
+  // "Closed", not "Settled": since 2026-10 a trip closes at booking, with nothing paid out.
+  closed: "Closed",
   on_hold: "On hold",
   cancelled: "Cancelled",
 };
@@ -77,6 +79,7 @@ export const STATUS_TONE: Record<TripStatus, "neutral" | "amber" | "green" | "re
   //   the company may still be owed an advance. Greying it out would file it
   //   with the finished trips, which is exactly how the money gets forgotten.
   cancelled_pending_claim: "amber",
+  cancel_pending: "amber",
   awaiting_claim_review: "amber",
   awaiting_finance_review: "amber",
   awaiting_settlement: "amber",

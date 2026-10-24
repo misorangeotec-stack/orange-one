@@ -110,18 +110,21 @@ export default function ControlCenter() {
         key: "customer",
         header: "Customer",
         cell: (e) => e.customerName,
+        sortValue: (e) => e.customerName,
         filter: { kind: "select", get: (e) => e.customerName },
       },
       {
         key: "machine",
         header: "Machine",
         cell: (e) => (e.machineId ? s.machineById(e.machineId)?.name ?? "" : ""),
+        sortValue: (e) => (e.machineId ? s.machineById(e.machineId)?.name ?? "" : ""),
         filter: { kind: "select", get: (e) => (e.machineId ? s.machineById(e.machineId)?.name ?? "" : "") },
       },
       {
         key: "salesperson",
         header: "Salesperson",
         cell: (e) => e.salespersonName ?? "",
+        sortValue: (e) => e.salespersonName ?? "",
         filter: { kind: "select", get: (e) => e.salespersonName ?? "" },
       },
       {

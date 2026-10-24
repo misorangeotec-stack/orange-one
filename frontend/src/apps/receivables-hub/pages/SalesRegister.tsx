@@ -21,6 +21,7 @@
  * come from the `rpt_sales_despatch` sidecar merged in lib/salesRegister.ts; a voucher with an
  * empty despatch block renders them blank, which is the honest reading — Tally holds nothing there.
  */
+import { useBackState } from "@/shared/lib/backState";
 import { useMemo, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
@@ -38,8 +39,14 @@ import {
 } from "@hub/lib/salesRegister";
 import { exportSalesRegisterXlsx } from "@hub/lib/exportSalesRegister";
 import { useScopedParties } from "@hub/lib/scopeParties";
+import { appBasePath } from "@/apps/appInfo";
 
-const BASE = "/outstanding-dashboard";
+/**
+ * This screen's own links, rooted at the app that serves it. It moved out of the Outstanding
+ * Dashboard with the rest of the reporting (apps/reports/), so a hard-coded
+ * "/outstanding-dashboard" here would now point every in-page link at a redirect.
+ */
+const BASE = appBasePath("reports");
 
 const nf = (max: number) => new Intl.NumberFormat("en-IN", { minimumFractionDigits: 0, maximumFractionDigits: max });
 const fmtQty = (n: number) => (n === 0 ? "—" : nf(3).format(n));
@@ -100,7 +107,7 @@ export default function SalesRegister() {
   // special cases — the house rule is that a column's options come from the rows surviving every
   // OTHER filter, so adding a fifth column must not mean rewriting the other four.
   const [sel, setSel] = useState<Record<FilterKey, string[]>>(NO_FILTERS);
-  const [search, setSearch] = useState("");
+  const [search, setSearch] = useBackState("SalesRegister.search", "");
 
   const searched = useMemo(() => {
     const q = search.trim().toLowerCase();
@@ -222,7 +229,7 @@ export default function SalesRegister() {
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
         <div>
-          <Link to={`${BASE}/reports?cat=tally`} className="inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground mb-1">
+          <Link to={`${BASE}?cat=tally`} className="inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground mb-1">
             <ArrowLeft className="h-3 w-3" /> Tally Reports
           </Link>
           <h1 className="text-2xl font-bold text-foreground flex items-center gap-2">

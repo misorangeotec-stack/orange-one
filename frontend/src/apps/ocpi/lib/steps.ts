@@ -66,6 +66,8 @@ export type StepKey =
   | "management_signoff"
   | "finance_handover"
   | "finance_receipt"
+  /** Runs IN PARALLEL with the Finance chain — opened by the countersignature. */
+  | "service_check"
   /** Retired at the stage-F cutover. Kept so historical deals stay readable. */
   | "order_confirmation"
   | "oc_approval";
@@ -121,9 +123,16 @@ export const STEPS: StepDef[] = [
     blurb: "Upload the copy signed by management." },
   { key: "finance_handover",   index: 5, title: "Hand Over to Finance",      short: "To Finance", scope: "deal" },
   { key: "finance_receipt",    index: 6, title: "Finance Receipt",           short: "Fin Recd",  scope: "deal" },
+  /*
+    ⚠ PARALLEL, NOT NEXT. Opened by the same countersignature that opens
+      "Hand Over to Finance", and tracked in its own svc_* columns — `status`
+      never waits on it. It is kept off the deal's stepper rail (PARALLEL_STEPS).
+  */
+  { key: "service_check",      index: 7, title: "Service Check",             short: "Service",   scope: "deal",
+    blurb: "Confirm installation date, engineer, site contact, site readiness and the service check points." },
   // ── Retired at the stage-F cutover. Nothing new arrives here. ─────────────
-  { key: "order_confirmation", index: 7, title: "Order Confirmation (retired)",         short: "OC (old)",      scope: "deal", retired: true },
-  { key: "oc_approval",        index: 8, title: "Approve Order Confirmation (retired)", short: "OC Appr (old)", scope: "deal", retired: true },
+  { key: "order_confirmation", index: 8, title: "Order Confirmation (retired)",         short: "OC (old)",      scope: "deal", retired: true },
+  { key: "oc_approval",        index: 9, title: "Approve Order Confirmation (retired)", short: "OC Appr (old)", scope: "deal", retired: true },
 ];
 
 export const stepByKey = (key: string): StepDef | undefined => STEPS.find((s) => s.key === key);
@@ -133,6 +142,9 @@ export const LIVE_STEPS: StepDef[] = STEPS.filter((s) => !s.retired);
 
 /** The two the cutover left behind. Exported so consumers can name them once. */
 export const RETIRED_STEPS: StepKey[] = STEPS.filter((s) => s.retired).map((s) => s.key);
+
+/** Steps that run beside the status chain rather than on it. Not on the stepper rail. */
+export const PARALLEL_STEPS: StepKey[] = ["service_check"];
 
 export const isRetiredStep = (key: string): boolean => RETIRED_STEPS.includes(key as StepKey);
 
@@ -147,6 +159,7 @@ export const STAGES: { label: string; keys: StepKey[] }[] = [
   { label: "Quotation", keys: ["quotation_approval"] },
   { label: "Signatures", keys: ["customer_signoff", "management_signoff"] },
   { label: "Finance", keys: ["finance_handover", "finance_receipt"] },
+  { label: "Service", keys: ["service_check"] },
   { label: "Order Confirmation (retired)", keys: ["order_confirmation", "oc_approval"] },
 ];
 

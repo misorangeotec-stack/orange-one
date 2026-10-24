@@ -5,6 +5,8 @@ import DraftBar from "@/shared/components/ui/DraftBar";
 import LineGrid, { type LineGridColumn } from "@/shared/components/ui/LineGrid";
 import { FieldLabel, TextInput, TextArea } from "@/shared/components/ui/Form";
 import RequestMasterModal from "./RequestMasterModal";
+import SourcingDocsCapture from "./SourcingDocsCapture";
+import { useProcurementStore } from "../store";
 import { masterTypeLabel } from "../lib/masterFields";
 import { isLineBlank, makeInheritedLine, type RequestFormApi, type RequestLine } from "../pages/requests/useRequestForm";
 
@@ -21,8 +23,9 @@ export default function RequestForm({ form, children }: { form: RequestFormApi; 
   const {
     mode, companyId, setCompanyId, note, setNote, err, requested, setRequested,
     raise, setRaise, companyOptions, categoryOptions, itemOptionsFor,
-    raiseItem, itemById, lines, setLines, draft,
+    raiseItem, itemsLoading, itemById, lines, setLines, draft, files, setFiles,
   } = form;
+  const s = useProcurementStore();
 
   const locked = mode === "edit";
 
@@ -64,8 +67,13 @@ export default function RequestForm({ form, children }: { form: RequestFormApi; 
             api.advance();
           }}
           options={itemOptionsFor(row)}
-          placeholder={row.categoryId ? "Search & select an item…" : "Pick a category first"}
-          disabled={!row.categoryId}
+          placeholder={
+            !companyId ? "Pick the company first"
+              : !row.categoryId ? "Pick a category first"
+              : itemsLoading ? "Loading the company's items…"
+              : "Search & select an item…"
+          }
+          disabled={!companyId || !row.categoryId}
           searchable
           triggerClassName="px-2.5 py-1.5 text-[13.5px]"
           onTriggerKeyDown={api.keyHandler}
@@ -130,13 +138,14 @@ export default function RequestForm({ form, children }: { form: RequestFormApi; 
             </FieldLabel>
           ) : (
             <FieldLabel label="Company" required>
+              {/* No "request new company": companies are Tally's books, from
+                  Central Masters. A new one is opened in Tally and appears here
+                  on its own within 15 minutes. */}
               <Combobox
                 value={companyId}
                 onChange={setCompanyId}
                 options={companyOptions}
                 placeholder="Select company"
-                onCreate={(name) => setRaise({ mt: "company", prefill: { name } })}
-                createLabel={(q) => `Request new company “${q}”`}
                 autoAdvance
               />
             </FieldLabel>
@@ -154,8 +163,8 @@ export default function RequestForm({ form, children }: { form: RequestFormApi; 
             isRowBlank={isLineBlank}
           />
           <p className="text-[12px] text-grey-2">
-            Each row has its own category. Press Tab or Enter at the end of a row to start the next one. Missing an item
-            or category? Type its name to request it.
+            Each row has its own category. Items are the company's items in Tally, narrowed to the row's category. Press
+            Tab or Enter at the end of a row to start the next one. Missing an item or category? Type its name to request it.
           </p>
           {requested && <p className="text-[12px] text-teal">Requested {requested} — selectable once the master's owner approves it.</p>}
         </div>
@@ -163,6 +172,17 @@ export default function RequestForm({ form, children }: { form: RequestFormApi; 
         <FieldLabel label="Note (optional)">
           <TextArea rows={2} value={note} onChange={(e) => setNote(e.target.value)} placeholder="Anything the purchase team should know" />
         </FieldLabel>
+
+        {/* Optional. Every later step shows these in its reference block. */}
+        <SourcingDocsCapture
+          value={files}
+          onChange={setFiles}
+          onError={(m) => form.setErr(m)}
+          onOpenStored={(d) => void s.sourcingDocUrl(d.path).then((url) => window.open(url, "_blank", "noopener,noreferrer"))}
+          label="Attachments (optional)"
+          hint="Any file: a photo, the old invoice, a drawing. Everyone on the next steps sees these."
+          acceptAny
+        />
 
         {err && <p className="text-[12.5px] text-ryg-red">{err}</p>}
 

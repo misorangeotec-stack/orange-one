@@ -1,3 +1,4 @@
+import { useHistoryTrail } from "@/shared/components/ui/BackLink";
 import { Routes, Route, Navigate, useLocation } from "react-router-dom";
 import { useEffect, type ReactNode } from "react";
 import { supabase } from "@/core/platform/supabase";
@@ -6,11 +7,22 @@ import Login from "@/core/auth/Login";
 import HomeLayout from "@/core/workspace/HomeLayout";
 import MyWorkToday from "@/core/workspace/MyWorkToday";
 import Account from "@/core/account/Account";
+import AnnouncementsHistory from "@/core/announcements/AnnouncementsHistory";
+import MyProbation from "@/core/probation/MyProbation";
+import MyBuddy from "@/core/probation/MyBuddy";
+import HandbookPage from "@/core/knowledge-base/HandbookPage";
+import AskHrBubble from "@/core/knowledge-base/AskHrBubble";
+import SharedLayoutGate, { SaveLayoutButton } from "@/core/layout/SharedLayoutGate";
+import { WorkPanel, useWorkPanelState } from "@/core/workspace/WorkPanel";
+import { ANNOUNCEMENTS_PATH, HANDBOOK_PATH } from "@/shared/components/layout/types";
 import AdminApp from "@/core/admin/AdminApp";
 import RequireRole from "@/core/platform/RequireRole";
 import { RequireAuth } from "@/core/platform/auth";
 import { useSession } from "@/core/platform/session";
 import { liveApps } from "@/apps/registry";
+import { knowledgeBaseApp } from "@/apps/knowledge-base/meta";
+import type { AppManifest } from "@/apps/types";
+import { canOpenApp } from "@/core/workspace/homeNav";
 import { appBasePath } from "@/apps/appInfo";
 
 /**
@@ -36,20 +48,32 @@ const VISIT_THROTTLE_MS = 30 * 60_000;
  *   Fire-and-forget and throttled: telemetry hanging off a route guard must
  *   never be able to delay or break navigation.
  */
-function RequireModule({ appId, children }: { appId: string; children: ReactNode }) {
-  const { hasModule } = useSession();
-  const allowed = hasModule(appId);
+function RequireModule({ app, children }: { app: AppManifest; children: ReactNode }) {
+  const session = useSession();
+  // ONE rule, shared with the launcher menu (core/workspace/homeNav) rather than restated
+  // here — a hidden menu entry is not access control, so the two have to agree.
+  const allowed = canOpenApp(app, session);
+
+  /**
+   * Stamped under the GRANT id, not the route id, on the one app where they differ.
+   *
+   * Reports is the most-read part of the Outstanding Dashboard, whose whole usage signal is
+   * this ping (nobody writes to it — see above). Stamping "reports" instead would post the
+   * traffic against a module_visits app_id that no master_report_modules row claims, and
+   * read the hub back as Dormant while it is in daily use.
+   */
+  const visitId = app.accessAppId ?? app.id;
 
   useEffect(() => {
     if (!allowed) return;
     const now = Date.now();
-    if (now - (stampedAt.get(appId) ?? 0) < VISIT_THROTTLE_MS) return;
-    stampedAt.set(appId, now);
-    void supabase.rpc("touch_module_visit", { p_app_id: appId }).then(
+    if (now - (stampedAt.get(visitId) ?? 0) < VISIT_THROTTLE_MS) return;
+    stampedAt.set(visitId, now);
+    void supabase.rpc("touch_module_visit", { p_app_id: visitId }).then(
       () => {},
       () => {}
     );
-  }, [appId, allowed]);
+  }, [visitId, allowed]);
 
   if (!allowed) return <Navigate to="/home" replace />;
   return <>{children}</>;
@@ -109,31 +133,90 @@ function OfficeSuppliesLegacyRedirect() {
 }
 
 export default function App() {
+  const location = useLocation();
+  // Lets a detail page's "← Back" know what the previous page was (BackLink).
+  useHistoryTrail();
+  /*
+   * My Control Center's work panel (core/workspace/WorkPanel.tsx). While it is
+   * open the URL is the item's, but the main routes keep rendering WHERE THE PANEL
+   * WAS OPENED FROM, so the home screen stays put underneath; the item's own route
+   * renders a second time, inside the panel.
+   */
+  const { background } = useWorkPanelState();
+
+  // Each registered app owns everything under its basePath, gated by auth + access.
+  // A list, not inline, because the work panel renders the same routes.
+  const appRoutes = liveApps.map((app) => {
+    const Component = app.Component!;
+    return (
+      <Route
+        key={app.id}
+        path={`${app.basePath}/*`}
+        element={<RequireAuth><RequireModule app={app}><SharedLayoutGate><Component /></SharedLayoutGate></RequireModule></RequireAuth>}
+      />
+    );
+  });
+
   return (
-    <Routes>
+    <>
+    <Routes location={background ?? location}>
       {/* ---- Public (landing + auth) ---- */}
       <Route path="/" element={<Landing />} />
       <Route path="/login" element={<Login />} />
 
       {/* ---- Signed-in portal (launcher + account + admin) ---- */}
       {/* Nested: HomeLayout renders the shared AppShell, whose <Outlet/> is the page. */}
-      <Route path="/home" element={<RequireAuth><HomeLayout /></RequireAuth>}>
+      <Route path="/home" element={<RequireAuth><SharedLayoutGate><HomeLayout /></SharedLayoutGate></RequireAuth>}>
         <Route index element={<MyWorkToday />} />
       </Route>
       <Route path="/account" element={<RequireAuth><StaffOnly><Account /></StaffOnly></RequireAuth>} />
-      <Route path="/admin/*" element={<RequireAuth><RequireRole roles={["admin"]}><AdminApp /></RequireRole></RequireAuth>} />
+      {/* PF-18 · Every announcement meant for you, running or past. Staff furniture
+          like /account: no module grant (the database decides the list), and never
+          under the Announcements module's own gated basePath. Wears the home shell. */}
+      <Route path={ANNOUNCEMENTS_PATH} element={<RequireAuth><StaffOnly><HomeLayout /></StaffOnly></RequireAuth>}>
+        <Route index element={<AnnouncementsHistory />} />
+      </Route>
+      {/* NR-10 · A new joiner's own half of their probation check-ins. Staff
+          furniture for the same reason as the two routes above: the joiner has no
+          hr-recruitment grant, and granting them one to reach this would hand them
+          the entire recruitment pipeline. The database decides what they see —
+          fms_hr_my_probation() returns their own check-ins and nothing else. */}
+      <Route path="/my-probation" element={<RequireAuth><StaffOnly><HomeLayout /></StaffOnly></RequireAuth>}>
+        <Route index element={<MyProbation />} />
+      </Route>
+      {/* NR-9 · The buddy's own screen. Same reasoning as the route above: a buddy
+          is an ordinary colleague from another department, and granting them the
+          recruitment module to log a coffee would hand them every CV in it. */}
+      <Route path="/my-buddy" element={<RequireAuth><StaffOnly><HomeLayout /></StaffOnly></RequireAuth>}>
+        <Route index element={<MyBuddy />} />
+      </Route>
+      {/* KB-1 · The HR handbook. Reached three ways: the "HR Handbook" row under Home, the
+          "Open the handbook" link in the Ask HR bubble, and a citation chip in an answer.
+          ⚠ NOT staff furniture any more. It was (anyone signed in could read it, because
+          the handbook is issued to every employee at joining), but on 01-10-2026 it was
+          gated on the `knowledge-base` grant so HR can check the whole feature before the
+          company sees it. RequireModule here matters: without it, typing the URL would
+          walk straight past the hidden menu row. The DATABASE refuses the rows too, so
+          this guard is the courtesy, not the lock.
+          To reopen it to everyone: grant 'view' to all staff. Do not remove this guard. */}
+      <Route
+        path={HANDBOOK_PATH}
+        element={
+          <RequireAuth>
+            <StaffOnly>
+              <RequireModule app={knowledgeBaseApp}>
+                <HomeLayout />
+              </RequireModule>
+            </StaffOnly>
+          </RequireAuth>
+        }
+      >
+        <Route index element={<HandbookPage />} />
+      </Route>
+      <Route path="/admin/*" element={<RequireAuth><RequireRole roles={["admin"]}><SharedLayoutGate><AdminApp /></SharedLayoutGate></RequireRole></RequireAuth>} />
 
       {/* ---- Registered apps, each owns everything under its basePath, gated by auth + access ---- */}
-      {liveApps.map((app) => {
-        const Component = app.Component!;
-        return (
-          <Route
-            key={app.id}
-            path={`${app.basePath}/*`}
-            element={<RequireAuth><RequireModule appId={app.id}><Component /></RequireModule></RequireAuth>}
-          />
-        );
-      })}
+      {appRoutes}
 
       {/* ---- Moved on 29-07-2026: General Purchase left /office-supplies ---- */}
       <Route path={LEGACY_SUPPLIES_BASE} element={<OfficeSuppliesLegacyRedirect />} />
@@ -141,5 +224,23 @@ export default function App() {
 
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
+
+    {background && (
+      <WorkPanel>
+        <Routes>{appRoutes}</Routes>
+      </WorkPanel>
+    )}
+
+    {/* KB-1 · The Ask HR bubble, on every screen of the hub.
+        ⚠ MOUNTED HERE, NOT IN AppShell, and not by accident. Each app renders its OWN
+        AppShell, so a widget living inside one would be torn down and rebuilt on every
+        move between apps, throwing away the conversation mid-thread. Out here it never
+        unmounts, and it also reaches /account, which does not use AppShell at all.
+        It renders nothing without the knowledge-base grant, and never for a customer. */}
+    <AskHrBubble />
+
+    {/* The admin's "Save layout for everyone" — once, on every screen (core/layout/sharedLayout.ts). */}
+    <SaveLayoutButton />
+    </>
   );
 }

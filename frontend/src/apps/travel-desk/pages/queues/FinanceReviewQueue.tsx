@@ -12,7 +12,7 @@ import type { Trip } from "../../types";
 /**
  * Claims the reporting manager has approved and Finance has not yet verified.
  *
- * ⚠ §12 GIVES FINANCE FIVE WORKING DAYS FROM HOD APPROVAL, and the credit seven
+ * ⚠ Section 12 GIVES FINANCE FIVE WORKING DAYS FROM HOD APPROVAL, and the credit seven
  *   — both measured from the SAME point. So a row that is late here is already
  *   eating into the traveller's payment window, not into Finance's own. That is
  *   why the due column is the default sort.
@@ -78,6 +78,7 @@ export default function FinanceReviewQueue() {
         header: "Claimed",
         cell: (t) => money(t.claimTotal),
         sortValue: (t) => t.claimTotal ?? 0,
+        filter: { kind: "number", get: (t) => t.claimTotal ?? 0 },
         exportValue: (t) => t.claimTotal ?? "",
         tdClassName: "whitespace-nowrap text-right",
       },
@@ -103,6 +104,7 @@ export default function FinanceReviewQueue() {
         header: "Allowance",
         cell: (t) => money(t.daTotal),
         sortValue: (t) => t.daTotal ?? 0,
+        filter: { kind: "number", get: (t) => t.daTotal ?? 0 },
         exportValue: (t) => t.daTotal ?? "",
         tdClassName: "whitespace-nowrap text-right",
       },
@@ -114,6 +116,7 @@ export default function FinanceReviewQueue() {
           return a > 0 ? money(a) : <span className="text-grey-2">—</span>;
         },
         sortValue: (t) => Math.max((t.advancePaidAmount ?? 0) - (t.advanceRecoveredAmount ?? 0), 0),
+        filter: { kind: "number", get: (t) => Math.max((t.advancePaidAmount ?? 0) - (t.advanceRecoveredAmount ?? 0), 0) },
         exportValue: (t) =>
           Math.max((t.advancePaidAmount ?? 0) - (t.advanceRecoveredAmount ?? 0), 0),
         tdClassName: "whitespace-nowrap text-right",
@@ -169,7 +172,7 @@ export default function FinanceReviewQueue() {
       <div>
         <h1 className="text-[19px] font-bold text-navy">Finance verification</h1>
         <p className="text-[13px] text-grey">
-          §12 allows five working days from HOD approval, and the credit seven — both counted from
+          Section 12 allows five working days from HOD approval, and the credit seven — both counted from
           the same point, so a claim that waits here is eating into the traveller&rsquo;s payment
           window rather than into Finance&rsquo;s own.
         </p>

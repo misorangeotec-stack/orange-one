@@ -16,9 +16,9 @@
  * import-free leaves; that is what keeps this safe to call from anywhere.
  */
 
-import { APPS } from "./appInfo";
+import { APPS, appBasePath } from "./appInfo";
 import { CATEGORIES, UNCATEGORISED_LABEL } from "./categories";
-import { HOME_LABEL, HOME_PATH } from "@/shared/components/layout/types";
+import { ANNOUNCEMENTS_LABEL, ANNOUNCEMENTS_PATH, HANDBOOK_LABEL, HANDBOOK_PATH, HOME_LABEL, HOME_PATH } from "@/shared/components/layout/types";
 
 export interface Crumb {
   label: string;
@@ -37,12 +37,24 @@ export interface Crumb {
  * manifest to read a family/name from. Their page step still comes from the nav
  * (e.g. Admin → Users), so these are the leading steps only.
  */
+const REPORT_DASHBOARD_PATH = `${appBasePath("reports")}/bushra-dashboard`;
+
 const STATIC_TRAILS: { prefix: string; crumbs: Crumb[] }[] = [
   {
     prefix: "/admin",
     crumbs: [{ label: "Control", collapsible: true }, { label: "Administration", to: "/admin" }],
   },
   { prefix: HOME_PATH, crumbs: [{ label: "Orange One", collapsible: true }, { label: HOME_LABEL }] },
+  // PF-18's history page. A PREFIX match, which is why the posting module lives at
+  // /post-announcements and not under /announcements — it would be swallowed here.
+  { prefix: ANNOUNCEMENTS_PATH, crumbs: [{ label: "Orange One", collapsible: true }, { label: ANNOUNCEMENTS_LABEL }] },
+  // KB-1's reader. Also a PREFIX match, and /handbook/read is the only route under
+  // /handbook, so nothing else can be swallowed by it. Keep it that way.
+  { prefix: HANDBOOK_PATH, crumbs: [{ label: "Orange One", collapsible: true }, { label: HANDBOOK_LABEL }] },
+  // The Report Dashboard screens are served by the Reports app but have their own menu group,
+  // so their trail starts at "Report Dashboard", not at "Reports" (08-10-2026). Listed here
+  // because a prefix inside another app's basePath has no manifest of its own to read.
+  { prefix: REPORT_DASHBOARD_PATH, crumbs: [{ label: "Report Dashboard", to: REPORT_DASHBOARD_PATH }] },
 ];
 
 /** Display label for a category key, e.g. "sales" → "Sales & Receivables". */
@@ -111,7 +123,11 @@ export function buildTrail(pathname: string, pageLabel?: string | Crumb[] | null
 
   const crumbs: Crumb[] = [];
   const family = categoryLabel(app.category);
-  if (family) crumbs.push({ label: family, collapsible: true });
+  // A family step that just repeats the module name is a stutter, not a path: Reports is a
+  // category of one app with the same name, and "Reports → Reports → Finance" reads as a
+  // bug. `trimPrefix` below already handles the near-miss case ("Purchase" + "Purchase RM
+  // Import"); this is the exact-match one it cannot express, because trimming leaves nothing.
+  if (family && family !== app.name) crumbs.push({ label: family, collapsible: true });
   if (app.subGroup) crumbs.push({ label: app.subGroup, collapsible: true });
   crumbs.push({ label: trimPrefix(app.name, app.subGroup ?? family), to: app.basePath });
 

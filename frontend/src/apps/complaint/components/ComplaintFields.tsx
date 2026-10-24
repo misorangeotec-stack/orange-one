@@ -11,7 +11,15 @@ import {
   partyLabelOf,
   partyRoleOf,
 } from "../lib/format";
-import { COMPLAINT_TYPE_LABEL, COMPLAINT_TYPES, type ComplaintType } from "../types";
+import {
+  COMPLAINT_TYPE_LABEL,
+  COMPLAINT_TYPES,
+  RM_ORIGIN_DESTINATION,
+  RM_ORIGIN_LABEL,
+  RM_ORIGINS,
+  type ComplaintType,
+  type RmOrigin,
+} from "../types";
 import { nowLocalInput, type ComplaintFormApi } from "../pages/requests/useComplaintForm";
 
 /**
@@ -29,13 +37,59 @@ function ErrorText({ children }: { children: string }) {
   return <p className="mt-1 text-[12px] text-red-600">{children}</p>;
 }
 
-export default function ComplaintFields({ f }: { f: ComplaintFormApi }) {
+/** The fourth choice on the type card. Not a ComplaintType — it opens a different form. */
+export const CREDIT_NOTE_CHOICE = "credit_note" as const;
+export type RaiseChoice = ComplaintType | typeof CREDIT_NOTE_CHOICE;
+
+/**
+ * "Type of complaint" — Finished Good / Raw Material / Other Supplier Complaint,
+ * plus Customer Credit Note. Shared by the complaint form and the credit-note
+ * form so the four buttons never move when the user switches between them.
+ */
+export function ComplaintTypeCard({
+  value,
+  onChange,
+  withCreditNote = true,
+}: {
+  value: RaiseChoice;
+  onChange: (v: RaiseChoice) => void;
+  withCreditNote?: boolean;
+}) {
+  const options = COMPLAINT_TYPES.map((v) => ({ value: v as string, label: COMPLAINT_TYPE_LABEL[v] }));
+  if (withCreditNote) options.push({ value: CREDIT_NOTE_CHOICE, label: "Customer Compensation" });
+  return (
+    <Card className="p-5">
+      <h2 className="text-[15px] font-bold text-navy">Type of complaint</h2>
+      <div className="mt-3 max-w-3xl">
+        <ChoiceButtons
+          ariaLabel="Type of complaint"
+          options={options}
+          value={value}
+          onChange={(v) => onChange(v as RaiseChoice)}
+        />
+      </div>
+    </Card>
+  );
+}
+
+export default function ComplaintFields({
+  f,
+  onPickCreditNote,
+}: {
+  f: ComplaintFormApi;
+  /** Shows the fourth "Customer Compensation" choice; called when it is picked. */
+  onPickCreditNote?: () => void;
+}) {
   const s = useComplaintStore();
   const t = f.form.complaintType;
 
   const companyOpts = s.companies.map((c) => ({ value: c.id, label: c.name }));
   const partyOpts = f.partyOptions.map((p) => ({ value: p.id, label: p.name }));
-  const itemOpts = f.partyItems.map((i) => ({
+  // ⚠ `itemOptions`, NOT the party catalogue. It folds in the search hits and —
+  //   critically — whatever is already selected, so an item resolved from a LOT
+  //   still renders on the RM side, where the catalogue is always empty. See
+  //   useComplaintForm.
+  const itemOpts = f.itemOptions.map((i) => ({
     value: i.id,
     label: i.name,
     sublabel: i.category ?? undefined,
@@ -48,23 +102,53 @@ export default function ComplaintFields({ f }: { f: ComplaintFormApi }) {
   return (
     <div className="space-y-5">
       {/* ---------------------------- what kind ---------------------------- */}
-      <Card className="p-5">
-        <h2 className="text-[15px] font-bold text-navy">Type of complaint</h2>
-        <div className="mt-3 max-w-md">
-          <ChoiceButtons
-            ariaLabel="Type of complaint"
-            options={COMPLAINT_TYPES.map((v) => ({ value: v, label: COMPLAINT_TYPE_LABEL[v] }))}
-            value={t}
-            onChange={(v) => f.setComplaintType(v as ComplaintType)}
-          />
-        </div>
-      </Card>
+      <ComplaintTypeCard
+        value={t}
+        onChange={(v) => (v === CREDIT_NOTE_CHOICE ? onPickCreditNote?.() : f.setComplaintType(v))}
+        withCreditNote={!!onPickCreditNote}
+      />
 
       {/* ------------------------- the LOT and its facts ------------------- */}
       <Card className="p-5">
         <h2 className="text-[15px] font-bold text-navy">The LOT facing the issue</h2>
 
         <div className="mt-4 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+          {/*
+            ⚠ FIRST IN THE CARD, AND BEFORE THE LOT NO., because it is the only
+              field on this form that changes what HAPPENS rather than what
+              something is called: Domestic sends the complaint to the purchase
+              department, Import sends it to management. Asked here, the user
+              answers it while they are still thinking about where the material
+              came from — and the hint below says out loud whose desk they are
+              choosing, so the routing is never a surprise on submit.
+
+            ⚠ RAW MATERIAL ONLY. A finished-good complaint has no such thing, so
+              the field is absent rather than disabled — and `setComplaintType`
+              clears the answer when the type is switched either way.
+          */}
+          {t === "raw_material" && (
+            <div>
+              <FieldLabel
+                strong
+                label="Type"
+                required
+              >
+                <Combobox
+                  value={f.form.rmOrigin}
+                  onChange={(v) => f.set("rmOrigin", v as "" | RmOrigin)}
+                  options={RM_ORIGINS.map((v) => ({
+                    value: v,
+                    label: RM_ORIGIN_LABEL[v],
+                    sublabel: RM_ORIGIN_DESTINATION[v],
+                  }))}
+                  placeholder="Domestic or Import"
+                  clearable
+                />
+              </FieldLabel>
+              <ErrorText>{f.errorFor("rmOrigin")}</ErrorText>
+            </div>
+          )}
+
           <div>
             <FieldLabel strong label={lotLabelOf(t)} required>
               <TextInput
@@ -85,7 +169,7 @@ export default function ComplaintFields({ f }: { f: ComplaintFormApi }) {
           <div>
             <FieldLabel
               label="LOT Expiry Date"
-              hint="typed — no system holds this"
+             
             >
               <TextInput
                 type="date"
@@ -96,7 +180,7 @@ export default function ComplaintFields({ f }: { f: ComplaintFormApi }) {
           </div>
 
           <div>
-            <FieldLabel strong label="Company" hint="whose book this sits in">
+            <FieldLabel strong label="Company">
               <Combobox
                 value={f.form.companyId}
                 onChange={(v) => f.set("companyId", v)}
@@ -182,7 +266,6 @@ export default function ComplaintFields({ f }: { f: ComplaintFormApi }) {
             <FieldLabel
               label={partyLabelOf(t)}
               required
-              hint={f.form.companyId ? undefined : "pick a company to narrow this"}
             >
               <Combobox
                 value={f.form.partyId}
@@ -245,9 +328,15 @@ export default function ComplaintFields({ f }: { f: ComplaintFormApi }) {
             <FieldLabel strong label="Item name" required>
               <Combobox
                 value={f.form.itemId}
-                onChange={(v) => f.pickItem(f.partyItems.find((i) => i.id === v) ?? null)}
+                onChange={(v) => f.pickItem(f.itemOptions.find((i) => i.id === v) ?? null)}
                 options={itemOpts}
-                placeholder={f.form.partyId ? "Search this party's items" : "Pick a party first"}
+                placeholder={
+                  !f.form.partyId
+                    ? "Pick a party first"
+                    : itemOpts.length === 0
+                      ? "Type the item name below to search"
+                      : "Search items"
+                }
                 disabled={!f.form.partyId}
                 searchable
                 wrapLabel
@@ -255,12 +344,33 @@ export default function ComplaintFields({ f }: { f: ComplaintFormApi }) {
               />
             </FieldLabel>
             {!f.form.itemId && (
-              <TextInput
-                className="mt-2"
-                value={f.form.itemName}
-                onChange={(e) => f.set("itemName", e.target.value)}
-                placeholder="…or type the item name"
-              />
+              <>
+                {/*
+                  ONE BOX, TWO JOBS. It has always been the free-text fallback —
+                  a complaint may legitimately name an item that is not in
+                  mst_items, and refusing it would block the complaint rather
+                  than fix the master. It now ALSO drives the item search, so
+                  typing the name surfaces the real rows in the picker above.
+
+                  That matters most on the RM side: `mst_party_items` is a
+                  customer catalogue built from the sales register, so a vendor
+                  has no items in it and the picker would otherwise be a dropdown
+                  that never opens onto anything.
+                */}
+                <TextInput
+                  className="mt-2"
+                  value={f.form.itemName}
+                  onChange={(e) => f.set("itemName", e.target.value)}
+                  placeholder="…or type the item name to search"
+                />
+                {f.itemCatalogueEmpty && f.form.partyId && f.form.itemName.trim().length < 2 && (
+                  <p className="mt-1 text-[12px] text-grey-2">
+                    {partyRoleOf(t) === "Vendor"
+                      ? "Vendors have no item catalogue — type two letters to search all items."
+                      : "This party has no catalogue yet — type two letters to search all items."}
+                  </p>
+                )}
+              </>
             )}
             <ErrorText>{f.errorFor("itemName")}</ErrorText>
           </div>
@@ -268,7 +378,7 @@ export default function ComplaintFields({ f }: { f: ComplaintFormApi }) {
           <div>
             {/* Seeded from mst_items.category — the authoritative 96-value list — and
                 then left editable, because the item master is not always right. */}
-            <FieldLabel strong label="Category of ink" hint="from the item master">
+            <FieldLabel strong label="Category of ink">
               <TextInput
                 value={f.form.category}
                 onChange={(e) => f.set("category", e.target.value)}
@@ -278,7 +388,7 @@ export default function ComplaintFields({ f }: { f: ComplaintFormApi }) {
           </div>
 
           <div>
-            <FieldLabel strong label="Ink type" hint="optional">
+            <FieldLabel strong label="Ink type">
               <TextInput
                 value={f.form.inkType}
                 onChange={(e) => f.set("inkType", e.target.value)}
@@ -287,7 +397,7 @@ export default function ComplaintFields({ f }: { f: ComplaintFormApi }) {
           </div>
 
           <div>
-            <FieldLabel strong label="Quantity affected" hint="optional">
+            <FieldLabel strong label="Quantity affected">
               <TextInput
                 inputMode="decimal"
                 value={f.form.qtyAffected}
@@ -298,7 +408,7 @@ export default function ComplaintFields({ f }: { f: ComplaintFormApi }) {
           </div>
 
           <div>
-            <FieldLabel strong label="Unit" hint="optional">
+            <FieldLabel strong label="Unit">
               <Combobox
                 value={f.form.unitName}
                 onChange={(v) => f.set("unitName", v)}
@@ -323,11 +433,6 @@ export default function ComplaintFields({ f }: { f: ComplaintFormApi }) {
               strong
               label="Issue identified on"
               required
-              hint={
-                f.form.invoiceDate
-                  ? `between ${dmy(f.form.invoiceDate)} and now`
-                  : "when it was noticed, not when raised"
-              }
             >
               {/*
                 BOUNDED BY THE INVOICE AND BY NOW. The goods cannot have failed
@@ -356,7 +461,7 @@ export default function ComplaintFields({ f }: { f: ComplaintFormApi }) {
           </div>
 
           <div>
-            <FieldLabel strong label="Nature of complaint" hint="optional">
+            <FieldLabel strong label="Nature of complaint">
               <Combobox
                 value={f.form.natureId}
                 onChange={(v) => f.set("natureId", v)}
@@ -388,7 +493,7 @@ export default function ComplaintFields({ f }: { f: ComplaintFormApi }) {
               there is nothing to upload against before submit. They then follow
               the complaint through every bucket to the last (ComplaintRecap).
             */}
-            <FieldLabel strong label="Attachments" hint="photos, reports — optional">
+            <FieldLabel strong label="Attachments">
               <input
                 type="file"
                 multiple
@@ -403,7 +508,7 @@ export default function ComplaintFields({ f }: { f: ComplaintFormApi }) {
               </p>
             )}
 
-            <FieldLabel strong label="Any other remarks" hint="optional">
+            <FieldLabel strong label="Any other remarks">
               <TextArea
                 rows={3}
                 value={f.form.otherRemarks}

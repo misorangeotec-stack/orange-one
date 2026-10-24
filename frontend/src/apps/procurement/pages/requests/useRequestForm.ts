@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type { ComboOption } from "@/shared/components/ui/Combobox";
 import { newUid, type LineGridRow } from "@/shared/components/ui/LineGrid";
 import { draftKey } from "@/shared/lib/draftStore";
@@ -6,15 +6,22 @@ import { useStepDraft } from "@/shared/lib/useStepDraft";
 import { useEffectiveIdentity } from "@/shared/sandbox/useEffectiveIdentity";
 import type { MasterValues } from "../../lib/masterFields";
 import type { MasterType, RequestItem } from "../../types";
+import { asStoredDoc, type SourcingFile } from "../../components/SourcingDocsCapture";
 import { useProcurementStore } from "../../store";
+import {
+  handoffSheetLabel, matchCompany, matchItem, normName, type HandoffLine, type OrderHandoff,
+} from "../../../ink-mis/lib/orderHandoff";
 
 /**
  * Everything New Request and Edit Request share: the form state, the
- * Category → Item derivation, validation. The item-group step is hidden — an
- * item is picked straight under its category (the group is resolved behind the
- * scenes only when requesting a brand-new item). Domestic has no vendor,
+ * Company + Category → Item derivation, validation. Domestic has no vendor,
  * currency, FX or rate at request time (those are chosen at sourcing), so this
  * is the slim cousin of Import's hook.
+ *
+ * CENTRAL MASTERS. Items are the company's Tally stock book (mst_items), not a
+ * Purchase list: picking the company loads that book, and each line's category
+ * narrows it to the Tally item types the category covers. The category still
+ * decides QC, exactly as before.
  */
 
 export interface RequestLine extends LineGridRow {
@@ -71,19 +78,29 @@ export interface RequestFormInit {
 }
 
 /** Exactly what an unsaved requisition is worth keeping. Must stay JSON-safe. */
-interface RequestDraft {
+export interface RequestDraft {
   companyId: string;
   note: string;
   lines: RequestLine[];
 }
 
-export function useRequestForm(opts: { mode: "new" | "edit"; init?: RequestFormInit | null }) {
-  const { mode, init } = opts;
+export function useRequestForm(opts: {
+  mode: "new" | "edit";
+  init?: RequestFormInit | null;
+  /** An order placed on the Ink IMS dashboard (`?ink=` on New Request) — see `ink` below. */
+  handoff?: OrderHandoff | null;
+}) {
+  const { mode, init, handoff } = opts;
   const s = useProcurementStore();
 
   const [companyId, setCompanyId] = useState("");
   const [lines, setLines] = useState<RequestLine[]>([makeEmptyLine()]);
   const [note, setNote] = useState("");
+  /**
+   * The requester's optional attachments. NOT in the draft: a File cannot be
+   * serialised, so a restored draft comes back without them.
+   */
+  const [files, setFiles] = useState<SourcingFile[]>([]);
   const [err, setErr] = useState<string | null>(null);
   const [requested, setRequested] = useState<string | null>(null);
   const [raise, setRaise] = useState<{ mt: MasterType; prefill: MasterValues } | null>(null);
@@ -96,6 +113,7 @@ export function useRequestForm(opts: { mode: "new" | "edit"; init?: RequestFormI
     setCompanyId(init.companyId);
     setNote(init.note);
     setLines(init.lines.length > 0 ? init.lines : [makeEmptyLine()]);
+    setFiles(s.requestDocsForRequest(init.requestId).map(asStoredDoc));
   }
 
   /**
@@ -116,10 +134,13 @@ export function useRequestForm(opts: { mode: "new" | "edit"; init?: RequestFormI
    * into a useEffect would race the restore.
    */
   const { user } = useEffectiveIdentity();
+  // NEW no longer autosaves to the browser: it has explicit server drafts
+  // ("Save as draft" + the drafts list on New Request), and two draft systems
+  // on one form would restore over each other.
   const key = !user?.id
     ? null
     : mode === "new"
-      ? draftKey(user.id, "procurement:request:new")
+      ? null
       : init
         ? draftKey(user.id, `procurement:request:${init.requestId}`)
         : null;
@@ -156,6 +177,15 @@ export function useRequestForm(opts: { mode: "new" | "edit"; init?: RequestFormI
     },
   });
 
+  // The item picker reads the company's Tally stock book, which loads on demand.
+  // Asked for the moment a company is known — including a restored draft and an
+  // edit, where the company arrives already set.
+  const { ensureItemBook } = s;
+  useEffect(() => {
+    if (companyId) ensureItemBook(companyId);
+  }, [companyId, ensureItemBook]);
+  const itemsLoading = s.itemBookLoading(companyId);
+
   const companyOptions: ComboOption[] = useMemo(
     () => s.activeCompanies.map((c) => ({ value: c.id, label: c.location ? `${c.name} — ${c.location}` : c.name })),
     [s.activeCompanies]
@@ -165,22 +195,101 @@ export function useRequestForm(opts: { mode: "new" | "edit"; init?: RequestFormI
     [s.activeCategories]
   );
 
-  /** Items under a row's category (via its groups), minus ones another row already took. */
+  /**
+   * A new requisition changing company: the items already picked are the OLD
+   * company's stock items, and a PO books against the requisition's company, so
+   * they are cleared rather than silently carried into the wrong book. Category,
+   * qty and remark stay — they are not per-company.
+   */
+  const changeCompany = (next: string) => {
+    if (next === companyId) return;
+    setCompanyId(next);
+    setLines((ls) => ls.map((l) => (l.itemId ? { ...l, itemId: "", unit: "" } : l)));
+  };
+
+  /**
+   * The company's items of the types the row's category covers, minus ones
+   * another row already took. The row's OWN item is always kept: an edited
+   * requisition can name an item that predates the category's types, or one
+   * filed under another company's book, and a picker that cannot show the
+   * current value renders it blank.
+   */
   const itemOptionsFor = (line: RequestLine): ComboOption[] => {
-    if (!line.categoryId) return [];
+    if (!line.categoryId || !companyId) return [];
     const taken = new Set(lines.filter((l) => l.uid !== line.uid && l.itemId).map((l) => l.itemId));
-    return s
-      .itemsForCategory(line.categoryId)
-      .filter((it) => !taken.has(it.id))
-      .map((it) => ({ value: it.id, label: it.name, sublabel: it.unit || undefined }));
+    const list = s.itemsForLine(companyId, line.categoryId).filter((it) => !taken.has(it.id));
+    const own = line.itemId ? s.itemById(line.itemId) : undefined;
+    if (own && !list.some((it) => it.id === own.id)) list.unshift(own);
+    return list.map((it) => ({ value: it.id, label: it.name, sublabel: it.unit || undefined }));
   };
 
   const raiseItem = (line: RequestLine) => (name: string) => {
+    if (!companyId) {
+      setErr("Pick the company first.");
+      return;
+    }
     if (!line.categoryId) {
       setErr("Pick a category first.");
       return;
     }
-    setRaise({ mt: "item", prefill: { name, category_id: line.categoryId } });
+    // The company rides along: a central item lives in one Tally book.
+    setRaise({ mt: "item", prefill: { name, category_id: line.categoryId, company_id: companyId } });
+  };
+
+  /**
+   * INK IMS ORDER. Company from the ink book's Tally GUID; then, once that company's item book
+   * has loaded, one line per ink whose Tally name (or description / code) matches a Central
+   * Masters item of that book, with the ink's quantity. The line's category is the first one
+   * covering the item's Tally type (an "ink" category preferred). Inks that match nothing stay
+   * listed above the form. Re-runs if the company is changed, since that clears the items.
+   */
+  const companyItems = useMemo(
+    () => (companyId ? s.items.filter((i) => i.active && i.companyId === companyId) : []),
+    [s.items, companyId]
+  );
+  const inkCompanySeeded = useRef(false);
+  useEffect(() => {
+    if (!handoff || inkCompanySeeded.current || mode !== "new") return;
+    inkCompanySeeded.current = true;
+    const co = matchCompany(handoff, s.activeCompanies);
+    if (co) setCompanyId(co.id);
+    setNote(`${handoffSheetLabel(handoff)} new order (${handoff.companyLabel})`);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [handoff]);
+  // The book can land in two steps (working set first, then the full book), so the fill re-runs
+  // while it keeps matching MORE inks for the same company, and stops there.
+  const inkFilled = useRef<{ companyId: string; matched: number } | null>(null);
+  useEffect(() => {
+    if (!handoff || mode !== "new" || !companyId || itemsLoading || companyItems.length === 0) return;
+    const categoryFor = (itemType: string | null) => {
+      const fits = s.activeCategories.filter(
+        (c) => c.itemTypes.length === 0 || (itemType !== null && c.itemTypes.includes(itemType))
+      );
+      // An Ink IMS order prefers an "ink" category; an RM IMS order a raw-material one.
+      const prefer = handoff.sheet === "rm" ? /RAW|RM/ : /INK/;
+      return (fits.find((c) => prefer.test(normName(c.name))) ?? fits[0])?.id ?? "";
+    };
+    const out: RequestLine[] = [];
+    for (const l of handoff.lines) {
+      const it = matchItem(l, companyItems);
+      if (!it) continue;
+      // Two inks naming the same purchase item add up on one line — never drop a quantity.
+      const same = out.find((o) => o.itemId === it.id);
+      if (same) {
+        same.qty = String(Number(same.qty) + l.qty);
+        continue;
+      }
+      out.push({ ...makeEmptyLine(), categoryId: categoryFor(it.itemType), itemId: it.id, unit: it.unit, qty: String(l.qty) });
+    }
+    const prev = inkFilled.current;
+    if (prev && prev.companyId === companyId && out.length <= prev.matched) return;
+    inkFilled.current = { companyId, matched: out.length };
+    if (out.length > 0) setLines(out);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [handoff, companyId, itemsLoading, companyItems]);
+  const inkOnForm = (l: HandoffLine) => {
+    const it = matchItem(l, companyItems);
+    return !!it && lines.some((x) => x.itemId === it.id);
   };
 
   const filled = lines.filter((l) => !isLineBlank(l));
@@ -196,17 +305,28 @@ export function useRequestForm(opts: { mode: "new" | "edit"; init?: RequestFormI
 
   return {
     mode,
-    companyId, setCompanyId,
+    companyId, setCompanyId: changeCompany,
     lines, setLines,
     note, setNote,
+    files, setFiles,
     err, setErr,
     requested, setRequested,
     raise, setRaise,
+    /** The Ink IMS order being raised, and whether each of its inks is on the form now. */
+    ink: handoff ? { handoff, onForm: inkOnForm } : null,
     companyOptions, categoryOptions,
-    itemOptionsFor, raiseItem,
+    itemOptionsFor, raiseItem, itemsLoading,
     itemById: s.itemById,
     filled, validate,
     draft,
+    /** The fields as a JSON-safe snapshot — what "Save as draft" stores. */
+    snapshot: (): RequestDraft => ({ companyId, note, lines }),
+    /** Put a saved snapshot back into the form. */
+    restore: (v: RequestDraft) => {
+      setCompanyId(v.companyId ?? "");
+      setNote(v.note ?? "");
+      setLines(v.lines?.length ? v.lines.map((l) => ({ ...l, uid: newUid() })) : [makeEmptyLine()]);
+    },
   };
 }
 

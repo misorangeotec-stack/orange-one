@@ -2,7 +2,10 @@ import { useMemo, useState } from "react";
 import type { ReactNode } from "react";
 import { Outlet, useLocation } from "react-router-dom";
 import { cn } from "@/shared/lib/cn";
+import { useInPanel } from "@/shared/lib/embedded";
 import { pageLabelFor } from "@/apps/currentApp";
+import AnnouncementStrip from "@/core/announcements/AnnouncementStrip";
+import { useHubSearch } from "@/core/workspace/hubSearch";
 import Sidebar from "./Sidebar";
 import Topbar from "./Topbar";
 import { HOME_LABEL, HOME_PATH, type NavItem, type NotificationItem, type ShellUser } from "./types";
@@ -29,6 +32,7 @@ export default function AppShell({
   user,
   notifications,
   onMarkRead,
+  onMarkAllRead,
   roleSwitcher,
   banner,
   logoTo = HOME_PATH,
@@ -40,6 +44,8 @@ export default function AppShell({
   notifications: NotificationItem[];
   /** Mark the given notification ids read (omit if the shell has no live notifications). */
   onMarkRead?: (ids: string[]) => void;
+  /** Clear all of this person's unread on the server (see NotificationsBell). */
+  onMarkAllRead?: () => void;
   roleSwitcher?: ReactNode;
   /** Optional banner rendered above the page content (e.g. a read-only notice). */
   banner?: ReactNode;
@@ -64,12 +70,26 @@ export default function AppShell({
   // opened an exit case read "Dashboard" at the top of the screen. The trail now
   // stops at the module rather than naming the page wrongly.
   const pageLabel = useMemo(() => pageLabelFor(pathname, items), [pathname, items]);
+  const inPanel = useInPanel();
+  // Hub-wide, not this app's own menu: the search box jumps to ANY FMS or report.
+  const search = useHubSearch();
+
+  // Inside My Control Center's work panel: the page alone, no sidebar or topbar —
+  // the panel scrolls it. See shared/lib/embedded.ts.
+  if (inPanel) {
+    return (
+      <div className="px-4 sm:px-5 py-4">
+        {banner}
+        <Outlet />
+      </div>
+    );
+  }
 
   return (
     <div className="h-screen flex bg-page-grad overflow-hidden">
       {/* desktop sidebar — owns its own width (resizable / collapsible to a rail) */}
       <aside className="hidden lg:block shrink-0 h-full">
-        <Sidebar nav={items} role={role} logoTo={logoTo} />
+        <Sidebar nav={items} role={role} logoTo={logoTo} search={search} />
       </aside>
 
       {/* mobile drawer */}
@@ -84,7 +104,14 @@ export default function AppShell({
             drawer ? "translate-x-0" : "-translate-x-full"
           )}
         >
-          <Sidebar nav={items} role={role} logoTo={logoTo} onNavigate={() => setDrawer(false)} variant="drawer" />
+          <Sidebar
+            nav={items}
+            role={role}
+            logoTo={logoTo}
+            search={search}
+            onNavigate={() => setDrawer(false)}
+            variant="drawer"
+          />
         </div>
       </div>
 
@@ -95,9 +122,14 @@ export default function AppShell({
           user={user}
           notifications={notifications}
           onMarkRead={onMarkRead}
+          onMarkAllRead={onMarkAllRead}
           roleSwitcher={roleSwitcher}
           onMenu={() => setDrawer(true)}
         />
+        {/* PF-18 · Hub-wide announcements. Its own element, NOT the `banner` below:
+            four layouts fill `banner` with the Demo Sandbox notice, and both must
+            show. Here, every app on this shell carries it at once. */}
+        <AnnouncementStrip />
         <main className="flex-1 overflow-y-auto">
           {/*
             1440, not 1180: the wide tables (All Tasks now runs to 1210px with its

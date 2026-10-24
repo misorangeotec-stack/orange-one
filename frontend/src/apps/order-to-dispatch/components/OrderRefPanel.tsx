@@ -219,6 +219,18 @@ function RemarksTrail({ order, round }: { order: DispatchOrder; round: RoundView
     },
     { step: "Sales bill", text: round.sbRemarks, who: s.personName(round.sbBy), at: round.sbAt },
     { step: "Gate outward", text: round.goRemarks, who: s.personName(round.goBy), at: round.goAt },
+    {
+      // ⚠ THE ONE ENTRY IN THIS LIST THE CUSTOMER HAS ALREADY READ (OD-16). It is
+      //   labelled by its AUDIENCE rather than by its step, because that is the
+      //   only thing separating it from the "Gate outward" line directly above —
+      //   same step, same author, same moment, opposite readership. Somebody
+      //   scanning this trail to work out what the customer knows needs to find it
+      //   without opening the step.
+      step: "Told the customer",
+      text: round.goCustomerRemark,
+      who: s.personName(round.goBy),
+      at: round.goAt,
+    },
     { step: "Delivery", text: round.dcRemarks, who: s.personName(round.dcBy), at: round.dcAt },
   ].filter((e) => !!(e.text ?? "").trim());
 

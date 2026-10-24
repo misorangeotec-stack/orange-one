@@ -1,3 +1,4 @@
+import { useBackState } from "@/shared/lib/backState";
 import { useCallback, useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import * as XLSX from "xlsx-js-style";
@@ -149,7 +150,7 @@ function DisputedBillsInner() {
     refetchOnWindowFocus: false,
   });
 
-  const [search, setSearch] = useState("");
+  const [search, setSearch] = useBackState("DisputedBillsReport.search", "");
   const [clearView, setClearView] = useState<ClearView>(CLEAR_VIEW_DEFAULT);
   const [currentPage, setCurrentPage] = useState(1);
   const [pageSize, setPageSize] = useState<PageSize>(25);
@@ -492,7 +493,7 @@ function DisputedBillsInner() {
             </div>
           ) : (
             <ScrollableTable>
-              <Table className="text-xs">
+              <Table resizeKey="disputed-bills" className="text-xs">
                 <TableHeader>
                   {/* 1 + 6 + 3 + 3 + 3 + 1 = 17 columns */}
                   <TableRow className="bg-muted hover:bg-muted border-b-0">

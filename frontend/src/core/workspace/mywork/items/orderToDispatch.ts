@@ -13,9 +13,10 @@
  *   `ownsStepAt` mirrors `fms_dispatch_is_step_owner`.
  */
 import { appName } from "@/apps/appInfo";
-import type { DispatchData } from "@/apps/order-to-dispatch/data/dispatchFetch";
-import { buildQueueEntries, dispatchSnapshotFrom } from "@/apps/order-to-dispatch/lib/queues";
+import type { DispatchOpenWork } from "@/apps/order-to-dispatch/data/dispatchFetch";
+import { buildHeldEntries, buildQueueEntries, dispatchSnapshotFrom } from "@/apps/order-to-dispatch/lib/queues";
 import { stepByKey } from "@/apps/order-to-dispatch/lib/steps";
+import { STEP_STATUS } from "@/apps/order-to-dispatch/lib/format";
 import type { StepOwner } from "@/apps/order-to-dispatch/types";
 import type { WorkItem } from "../types";
 
@@ -36,7 +37,12 @@ const ownsStepAt = (
       (o.locationId === null || o.locationId === locationId),
   );
 
-export function dispatchWorkItems(data: DispatchData, uid: string, isAdmin: boolean): WorkItem[] {
+/**
+ * ⚠ TAKES `DispatchOpenWork`, the pending-only load (PERF-2). The full
+ *   `DispatchData` fits it too, which is what the ranking and the Call List pass.
+ *   Everything this reads lives on a pending order, so the two give the same rows.
+ */
+export function dispatchWorkItems(data: DispatchOpenWork, uid: string, isAdmin: boolean): WorkItem[] {
   const owners = data.stepOwners;
   const orderById = new Map(data.orders.map((o) => [o.id, o]));
 
@@ -57,15 +63,53 @@ export function dispatchWorkItems(data: DispatchData, uid: string, isAdmin: bool
     return ownsStepAt(stepKey, locationId, uid, owners);
   };
 
-  return buildQueueEntries(
-    dispatchSnapshotFrom({ orders: data.orders, stepSla: data.config.stepSla }),
-  )
+  const snap = dispatchSnapshotFrom({ orders: data.orders, stepSla: data.config.stepSla });
+
+  /**
+   * THIS MODULE HAS TWO KINDS OF HOLD, and both belong on the hold tile.
+   *
+   *  1. ORDER-LEVEL (`status === "on_hold"`) — pulls the order out of every
+   *     queue, so `buildHeldEntries` puts it back at the step it is parked at.
+   *
+   *  2. STEP-LEVEL (`STEP_STATUS` in lib/format.ts) — a credit hold, a parked
+   *     invoice, or an order waiting on the balance of a PARTIAL credit
+   *     approval. These deliberately LEAVE THE ORDER EXACTLY WHERE IT IS: it
+   *     stays in its queue, still owed by the same desk, still accruing days
+   *     against its due date. That is right for the step queue, which is the
+   *     desk's own worklist, but it is what made a shelf of deliberately parked
+   *     orders read as overdue here — the reason this tile was asked for.
+   *
+   * Read off `STEP_STATUS`, which is also what the step queue's Status column
+   * reads, so the words on this screen and the words on that one cannot drift.
+   * Its `rank` is the test: 0 = held, 1 = waiting on a partial balance, and both
+   * are parked. Rank 2 is an approved order genuinely moving, and is NOT parked.
+   */
+  const stepParked = (
+    stepKey: string,
+    orderId: string,
+  ): { isHeld: true; holdLabel: string; holdReason: string | null } | null => {
+    const rule = STEP_STATUS[stepKey as keyof typeof STEP_STATUS];
+    const o = orderById.get(orderId);
+    if (!rule || !o) return null;
+    const v = rule(o);
+    if (!v || v.rank > 1) return null;
+    return { isHeld: true, holdLabel: v.label, holdReason: v.reason?.trim() || null };
+  };
+
+  const entries = [
+    ...buildQueueEntries(snap).map((e) => ({ e, held: false })),
+    ...buildHeldEntries(snap).map((e) => ({ e, held: true })),
+  ];
+
+  return entries
     .filter(
-      (e) =>
+      ({ e }) =>
         isAdmin || mine(e.stepKey, e.orderId, orderById.get(e.orderId)?.locationId ?? null),
     )
-    .map((e) => {
+    .map(({ e, held }) => {
       const o = orderById.get(e.orderId);
+      // Order-level hold wins if both are somehow live; either way it is parked.
+      const parked = held ? { isHeld: true, holdReason: o?.holdReason ?? null } : stepParked(e.stepKey, e.orderId);
       return {
         id: `order-to-dispatch:${e.orderId}:${e.stepKey}`,
         source: "order-to-dispatch",
@@ -88,6 +132,7 @@ export function dispatchWorkItems(data: DispatchData, uid: string, isAdmin: bool
           ? ("direct" as const)
           : ("team" as const),
         isApproval: false,
+        ...(parked ?? {}),
       };
     })
     /*

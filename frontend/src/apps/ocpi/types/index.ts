@@ -135,6 +135,8 @@ export interface OcpiDeal {
 
   companyId: string | null;
   locationId: string | null;
+  /** Surat / Noida — whose approvers the quotation goes to. Null = the general list. */
+  approvalLocation: string | null;
 
   machineCount: number | null;
   machineId: string | null;
@@ -460,6 +462,23 @@ export interface OcpiDeal {
   frAt: string | null;
   frBy: string | null;
   /**
+   * The Service Check — runs IN PARALLEL with the Finance chain, opened by the
+   * countersignature (`svcOpenedAt`) and completed by the service team
+   * (`svcAt`). `status` never waits on it.
+   */
+  svcOpenedAt: string | null;
+  svcAt: string | null;
+  svcBy: string | null;
+  svcInstallationDate: string | null;
+  svcEngineer: string | null;
+  svcSiteContactName: string | null;
+  svcSiteContactPhone: string | null;
+  svcSiteReady: boolean | null;
+  svcSiteRemark: string | null;
+  /** One answer per check point, by NAME — see fms_ocpi_service_checkpoints. */
+  svcChecks: OcpiServiceCheckAnswer[];
+  svcNote: string | null;
+  /**
    * The approved SUMMARY sheet — the sibling of `ocPdfPath`, which holds the
    * detailed one. Both are written at the Directors' approval, re-headed and
    * carrying the OC number, and both are what gets printed for signature.
@@ -760,6 +779,19 @@ export interface OcpiStepOwner {
   employeeIds: string[];
 }
 
+/**
+ * Quotation approval by location (Surat / Noida). A deal whose
+ * `approvalLocation` names a row with anyone in it goes to THOSE approvers,
+ * instead of the Approve Quotation owners; an empty row falls back to them.
+ * Mirrors fms_ocpi_quotation_approver_ids.
+ */
+export interface OcpiApprovalLocation {
+  name: string;
+  employeeIds: string[];
+  sortOrder: number;
+  active: boolean;
+}
+
 export interface OcpiNotification {
   id: string;
   userId: string;
@@ -793,6 +825,36 @@ export const OCPI_MASTER_TYPES: { value: OcpiMasterType; label: string; plural: 
   { value: "ink_type", label: "Ink type", plural: "Ink types" },
   { value: "dryer_type", label: "Dryer type", plural: "Dryer types" },
 ];
+
+/** One answered service check point, stored on the deal by name. */
+export interface OcpiServiceCheckAnswer {
+  name: string;
+  ok: boolean;
+  remark: string | null;
+}
+
+/** A row of the Service check points master. */
+export interface OcpiServiceCheckpoint {
+  id: string;
+  name: string;
+  active: boolean;
+  sortOrder: number;
+}
+
+/**
+ * Masters → Service checklists (PDF): the one checklist PDF a machine carries.
+ * The file is in storage bucket fms-ocpi-service-checklists at `filePath`.
+ */
+export interface OcpiServiceChecklist {
+  id: string;
+  machineId: string;
+  filePath: string;
+  fileName: string;
+  /** The check points read from the PDF, one per line — the Service Check's boxes. */
+  items: string[];
+  uploadedBy: string | null;
+  updatedAt: string;
+}
 
 /** A plain name/active/order vocabulary row. Satisfies MasterCrud's contract. */
 export interface OcpiNamedMaster {

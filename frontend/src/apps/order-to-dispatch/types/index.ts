@@ -182,12 +182,13 @@ export interface CustomerItem extends NamedMaster {
  * firm we trade with from two books is two party rows. This table is ours, and
  * it says a book may bill a customer whose ledger is filed elsewhere.
  *
- * ⚠ IT USED TO BE A FINDER AND IS NOW A PERMISSION, deliberately (OD-5, decided
- *   07-09-2026). `fms_dispatch_assert_customer_of_company` accepts an active row
- *   here, so what the picker offers and what the database will save are the same
- *   set. Read supabase/migrations/20261119120000_od5_map_party_company.sql
- *   before narrowing either one — this gate has been widened, narrowed and
- *   widened again, and every argument is on disk.
+ * ⚠ A PERMISSION ONLY WHEN A PERSON MADE IT (`createdBy` set, 24-10-2026).
+ *   OD-5 (07-09-2026) let every active row bill; the cron-derived rows then put
+ *   other books' same-name ledgers in the picker — 389 duplicates. Now
+ *   `fms_dispatch_assert_customer_of_company` and `customersForCompany` both
+ *   accept only rows with created_by. Read
+ *   supabase/migrations/20270218120000_o2d_customer_picker_own_book.sql before
+ *   widening either one again.
  *
  * ⚠ `source` has THREE values, not two: 'tally' derived from a same-named ledger
  *   in that book, 'order_history' seeded from an order the company actually
@@ -201,6 +202,8 @@ export interface CustomerCompany extends NamedMaster {
   customerId: string;
   companyId: string;
   source: string;
+  /** Who mapped it. Null = derived by mst_refresh_party_companies(), not billable. */
+  createdBy: string | null;
 }
 
 /* -------------------------------------------------------------------------- */
@@ -437,6 +440,70 @@ export type DispatchStatus =
 export type SalesReturnMode = "invoice_cancelled" | "sales_return";
 
 /**
+ * A sales return against ONE round's invoice, once it has left the gate — `fms_dispatch_round_returns`
+ * (migration 20261230120000).
+ *
+ * ⚠ NOT THE `sr` BLOCK ON `DispatchOrder`. That one is the cancellation kind: an
+ *   order cancelled while its billed goods were still in the plant. This is for
+ *   an invoice that has already gone out — typically on a CLOSED order — and it
+ *   is paperwork only: recording it never moves the order or its quantities.
+ *
+ * `origin` says how it opened: raised by hand (`requested`), or automatically
+ * because the round was recorded as Returned at Dispatch Confirmation
+ * (`returned_consignment`).
+ */
+export type RoundReturnOrigin = "requested" | "returned_consignment";
+export type RoundReturnScope = "full" | "partial";
+export type RoundReturnStatus = "pending" | "recorded" | "withdrawn";
+
+/** One line of what comes back on a return — a snapshot taken when it was raised. */
+export interface RoundReturnLine {
+  orderItemId: string | null;
+  itemId: string | null;
+  itemName: string;
+  unit: string | null;
+  lotNo: string | null;
+  /** What the invoice billed on this line. */
+  billedQty: number;
+  /** What is coming back. Equal to `billedQty` on every line of a full return. */
+  returnQty: number;
+}
+
+export interface RoundReturn {
+  id: string;
+  orderId: string;
+  /** With `orderId`, what identifies the invoice — it works for the round in progress too. */
+  roundNo: number;
+  /** The archived round. Null while the round is still in progress (out of the gate, not yet confirmed). */
+  roundId: string | null;
+  /** Snapshot of the invoice as it was when the return opened. */
+  invoiceNo: string | null;
+  invoiceDate: string | null;
+  ewayExpected: boolean;
+  origin: RoundReturnOrigin;
+  scope: RoundReturnScope;
+  /** What comes back, line by line. Empty only on rows opened before lines existed. */
+  lines: RoundReturnLine[];
+  reason: string;
+  requestedAt: string;
+  requestedBy: string | null;
+  status: RoundReturnStatus;
+  srMode: SalesReturnMode | null;
+  referenceNo: string | null;
+  actualDate: string | null;
+  remarks: string | null;
+  attachmentPath: string | null;
+  attachmentName: string | null;
+  recordedAt: string | null;
+  recordedBy: string | null;
+  editedAt: string | null;
+  editedBy: string | null;
+  withdrawnAt: string | null;
+  withdrawnBy: string | null;
+  withdrawReason: string | null;
+}
+
+/**
  * `credit_hold`, not `on_hold`: the ORDER-level status already owns that word,
  * and a credit hold is a different thing — the order stays in the credit queue
  * and its own owner releases it. Two holds sharing one token is how the wrong
@@ -603,6 +670,14 @@ export interface DispatchRound {
   goActualDate: string | null;
   goOutwardNo: string | null;
   goRemarks: string | null;
+  /**
+   * The note written FOR THE CUSTOMER as this consignment left (OD-16).
+   *
+   * ⚠ NOT `goRemarks`, AND THE TWO MUST NOT BE MERGED. That one is ours —
+   *   written for the next person in the chain and never shown outside the
+   *   company. This one is published to the Order Desk the moment it is saved.
+   */
+  goCustomerRemark: string | null;
   goAt: string | null;
   goBy: string | null;
 
@@ -783,6 +858,14 @@ export interface DispatchOrder {
   /** Typed from the plant's paper register. Not generated, not unique. */
   goOutwardNo: string | null;
   goRemarks: string | null;
+  /**
+   * The note written FOR THE CUSTOMER as this consignment left (OD-16).
+   *
+   * ⚠ NOT `goRemarks`, AND THE TWO MUST NOT BE MERGED. That one is ours —
+   *   written for the next person in the chain and never shown outside the
+   *   company. This one is published to the Order Desk the moment it is saved.
+   */
+  goCustomerRemark: string | null;
   goAt: string | null;
   goBy: string | null;
 

@@ -44,9 +44,10 @@ export default function Dashboard() {
   // (weekStart = this Monday, the same boundary the RYG sections use); "all
   // time" keeps the full backlog. Every card + the donut read the scoped list.
   const scopedList = scopeTasks(list, scope);
-  // ...or to a peer HOD. Four HODs have no downline at all, so without the peer
-  // arm the New Task button stays hidden from exactly the people TM-1 is for.
-  const canCreate = canCreateTask && (assignableUsers(role, user.id).length > 0 || (role === "hod" && peerAssignableUsers(user.id).length > 0));
+  // ...or to a peer HOD/Sub-HOD. Four HODs have no downline at all, so without
+  // the peer arm the New Task button stays hidden from exactly the people TM-1
+  // is for.
+  const canCreate = canCreateTask && (assignableUsers(role, user.id).length > 0 || ((role === "hod" || role === "sub_hod") && peerAssignableUsers(user.id).length > 0));
   // countsTowardWorkload, not the default: these cards are a WORKLIST, so a peer
   // task the viewer has been handed must still read as due today / overdue. It is
   // scored on the peer board, but it is still work somebody owes today.
@@ -337,7 +338,7 @@ function RecentActivityCard({ list }: { list: Task[] }) {
               <li key={a.id} className="flex gap-2.5 text-[12.5px]">
                 <span className="mt-0.5 text-orange [&>svg]:w-4 [&>svg]:h-4 shrink-0">{actIcon(a.type)}</span>
                 <span className="text-grey leading-snug">
-                  <b className="text-navy font-semibold">{actor?.name ?? "Someone"}</b> {actVerb(a.type)}{" "}
+                  <b className="text-navy font-semibold">{actor?.name ?? "Someone"}</b> {actVerb(a.type, a.note)}{" "}
                   <b className="text-navy font-medium">“{task?.title ?? "a task"}”</b>
                   <span className="block text-[11px] text-grey-2 mt-0.5">{timeAgo(a.createdAt)}</span>
                 </span>
@@ -379,7 +380,7 @@ function TaskRow({ task }: { task: Task }) {
           </span>
         </span>
         <span className="text-[11.5px] text-grey whitespace-nowrap">{dateLabel(task.dueDate)}</span>
-        <StatusChip status={task.status} />
+        <StatusChip status={task.status} peer={task} />
       </Link>
     </li>
   );
@@ -429,7 +430,9 @@ function actIcon(t: ActivityType) {
   if (t === "assigned") return ICONS.users;
   return ICONS.clock;
 }
-function actVerb(t: ActivityType) {
+function actVerb(t: ActivityType, note?: string | null) {
+  // A noted `shifted` entry is a due-date move on the same task (see TaskDetail).
+  if (t === "shifted" && note) return "changed the due date of";
   return {
     created: "created",
     assigned: "assigned",

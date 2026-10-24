@@ -39,7 +39,7 @@ export const productionEntryProvider: MyWorkProvider = {
   key: "production-entry",
   label: appName("production-entry"),
   appId: "production-entry",
-  category: "production",
+  category: "plant",
   unit: "steps",
   tier: 2,
   useMyWork: useProductionWork,

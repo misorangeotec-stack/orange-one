@@ -55,6 +55,15 @@ export const APPS: Record<string, AppInfo> = {
     basePath: "/task-management",
     category: "productivity",
   },
+  // Every employee's own KRA / KPI report — work done, and work done on time, per
+  // module and step, for any week or range (KPI-1). Filed beside Task Management
+  // because half of it IS Task Management, and because it is a personal screen
+  // everyone opens, not a control-room board.
+  "kra-kpi": {
+    name: "KRA / KPI Scorecard",
+    basePath: "/kra-kpi",
+    category: "productivity",
+  },
   "outstanding-dashboard": {
     name: "Outstanding Dashboard",
     basePath: "/outstanding-dashboard",
@@ -87,15 +96,89 @@ export const APPS: Record<string, AppInfo> = {
   sampling: {
     name: "Ink / RM Sampling",
     basePath: "/sampling",
-    category: "sampling",
+    category: "plant",
+  },
+  /**
+   * INK IMS — ink inventory planning. Its own module, filed under its own menu group.
+   * Deliberately NOT part of the Receivables Hub: different report, different owners.
+   */
+  "ink-mis": {
+    name: "Ink IMS",
+    basePath: "/ink-mis",
+    // Its own menu group, "IMS Sheet", next to Purchase — asked for by the planner.
+    category: "ims",
+  },
+  /**
+   * RM IMS — a mirror of Ink IMS for raw material: Enterprises Surat, Warehouse godown,
+   * Manufacturing Stock. A SEPARATE module from Ink IMS, with its own grant; same menu group.
+   */
+  "rm-mis": {
+    name: "RM IMS",
+    basePath: "/rm-mis",
+    category: "ims",
+  },
+  /**
+   * BUSHRA CENTRAL MASTER — a private mirror of Central Masters' items. Changes stay
+   * in the browser (like Ink IMS); Central Masters itself is never written.
+   */
+  "bushra-central-master": {
+    name: "Bushra Central Master",
+    basePath: "/bushra-central-master",
+    category: "control",
+  },
+  /**
+   * ALL DRAFTS — every saved draft of every FMS raise form, on one page. Admins
+   * see it without a grant; anyone else needs it granted in Admin -> Module
+   * Access, and the grant is read-only (RLS on public.fms_drafts).
+   */
+  "all-drafts": {
+    name: "All Drafts",
+    basePath: "/all-drafts",
+    category: "control",
+  },
+  /**
+   * INK STABILISATION — Enterprises Surat's manufactured ink lots and their 3 / 6 / 9-month
+   * retests. Read-only from ConnectWave.
+   */
+  "ink-stabilisation": {
+    name: "Ink Stabilisation",
+    basePath: "/ink-stabilisation",
+    category: "plant",
+  },
+  /**
+   * INK EXPIRY — every ink lot in stock, in every company, and whether Tally has its expiry
+   * date; the lots without one are the accountant's list. Read-only from ConnectWave.
+   */
+  "ink-expiry": {
+    name: "Ink Expiry Date",
+    basePath: "/ink-expiry",
+    category: "plant",
+  },
+  /**
+   * PHYSICAL VERIFICATION — Otec Surat Printing Ink items holding stock; the admin sets a
+   * verification date, the verifier counts, difference = physical − Tally closing at count time.
+   */
+  "physical-verification": {
+    name: "Physical Verification",
+    basePath: "/physical-verification",
+    category: "plant",
+  },
+  /**
+   * TRAINING VIDEOS — the training recordings, each a OneDrive / SharePoint link that opens in a new
+   * tab. Open to all staff; each sees the videos of the modules they hold. Only admins edit.
+   */
+  "training-videos": {
+    name: "Training Videos",
+    basePath: "/training-videos",
+    category: "training",
   },
   "production-entry": {
     name: "Production Entry",
     basePath: "/production-entry",
-    category: "production",
+    category: "plant",
   },
   /**
-   * The post-sale (and post-purchase) grievance, filed under QUALITY rather than
+   * The post-sale (and post-purchase) grievance, filed under PLANT OPERATIONS rather than
    * under Sales or Production because it is genuinely both: a FINISHED GOOD
    * complaint arrives from a customer against a sales invoice, and a RAW
    * MATERIAL one goes out to a vendor against a purchase invoice. Filing it
@@ -104,7 +187,7 @@ export const APPS: Record<string, AppInfo> = {
   complaint: {
     name: "Complaint (RM/FG)",
     basePath: "/complaint",
-    category: "quality",
+    category: "plant",
   },
   // Picks up where Production Entry ends: that module closes at "FG Transfer to
   // Godown", this one takes the goods from the godown to the customer.
@@ -163,11 +246,30 @@ export const APPS: Record<string, AppInfo> = {
   "asset-maintenance": {
     name: "Asset Maintenance",
     basePath: "/asset-maintenance",
-    category: "asset",
+    // Filed under HR in the menu, at the business's request (its own "Asset" group before).
+    category: "hr",
+  },
+  /**
+   * Learning & Development. Filed under HR beside Recruitment and Exit — it is the
+   * same department's work and the same people configure it.
+   */
+  "learning-development": {
+    name: "Learning & Development",
+    basePath: "/learning-development",
+    category: "hr",
   },
   "hr-recruitment": {
     name: "New Recruitment",
     basePath: "/hr-recruitment",
+    category: "hr",
+  },
+  // The HR instruments the client writes by hand — a weighted PMS sheet per job and
+  // the weekly review form — filled in from live data. Its own app rather than a
+  // corner of New Recruitment: every employee has a KPI sheet, and most of them have
+  // no business in the recruitment pipeline.
+  "hr-reports": {
+    name: "HR Reports",
+    basePath: "/hr-reports",
     category: "hr",
   },
   "hr-exit": {
@@ -181,6 +283,22 @@ export const APPS: Record<string, AppInfo> = {
   "travel-desk": {
     name: "Travel Desk",
     basePath: "/travel-desk",
+    category: "hr",
+  },
+  // KB-1 · HR's side of the handbook Knowledge Base. ⚠ Holding this module is what lets
+  // somebody ASK and READ at all while HR trials the feature (01-10-2026); full access
+  // also opens the question log and the section notes.
+  "knowledge-base": {
+    name: "Knowledge Base",
+    basePath: "/knowledge-base",
+    category: "hr",
+  },
+  // The HR front door: one place to ask HR anything, routed by the category the
+  // employee picks. Filed under HR rather than Productivity even though everyone
+  // uses it — a reader looking for it is looking for HR.
+  "help-desk": {
+    name: "Help Desk",
+    basePath: "/help-desk",
     category: "hr",
   },
   "leads-dashboard": {
@@ -197,6 +315,14 @@ export const APPS: Record<string, AppInfo> = {
     basePath: "/ocpi",
     category: "sales",
   },
+  // Machine Resale (MR-1C): the admin side of the pre-owned printer website. Its
+  // data lives in the portal's OWN Supabase project, reached through a short-lived
+  // pass (see apps/machine-resale/data/client.ts); nothing of it is in the hub DB.
+  "machine-resale": {
+    name: "Machine Resale",
+    basePath: "/machine-resale",
+    category: "sales",
+  },
   "fms-control-center": {
     name: "FMS Control Center",
     basePath: "/fms-control-center",
@@ -206,6 +332,31 @@ export const APPS: Record<string, AppInfo> = {
     name: "Master Report",
     basePath: "/master-report",
     category: "control",
+  },
+  /**
+   * Promoted OUT of the Outstanding Dashboard to the main menu, exactly as
+   * Customer Onboarding was above — the reports had become the larger half of
+   * that app, and burying a finance catalogue two clicks inside a receivables
+   * module is how people stop finding it.
+   *
+   * ⚠ ITS PAGES STILL LIVE UNDER apps/receivables-hub/, for the same reason
+   *   Customer Onboarding's do: every one of them is a hub-native (shadcn)
+   *   component, and `.hub-root` is what makes their colour tokens resolve.
+   *   apps/reports/ is a SHELL — its own basePath, sidebar and chrome — mounting
+   *   the existing subtree.
+   *
+   * ⚠ NOT SEPARATELY GRANTED. The key below is a routing id, not an app_access
+   *   id: the module is still gated by `outstanding-dashboard` plus the `reports`
+   *   menu key and the per-report grants it always had. See apps/reports/meta.tsx.
+   */
+  reports: {
+    name: "Reports",
+    basePath: "/reports",
+    // Its OWN top-level category, not Sales & Receivables. The catalogue reaches
+    // well past receivables — Finance, Inventory, Dashboards, Tally — and parking
+    // it under the department it happened to grow inside is the filing the move
+    // was meant to undo. See the note beside it in apps/categories.ts.
+    category: "reports",
   },
   // The evening snapshot for management and the CFO: what was sold, collected,
   // paid and purchased today, and what is in the bank. Its own module rather
@@ -225,6 +376,15 @@ export const APPS: Record<string, AppInfo> = {
   "process-coordinator": {
     name: "Process Coordinator",
     basePath: "/process-coordinator",
+    category: "control",
+  },
+  // PF-18 · Where announcements are WRITTEN. Holding this module (at Full access) is
+  // what lets a non-admin post. Reading them needs no grant at all: that is the
+  // /announcements page, which is why this base is NOT /announcements (the
+  // breadcrumb matches that path by prefix and would swallow this module).
+  announcements: {
+    name: "Announcements",
+    basePath: "/post-announcements",
     category: "control",
   },
   // Virtual module: no web app and no route, so no basePath that resolves to a

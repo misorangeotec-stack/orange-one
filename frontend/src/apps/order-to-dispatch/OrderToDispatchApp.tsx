@@ -10,6 +10,8 @@ import EditOrder from "./pages/orders/EditOrder";
 import CompleteCustomerOrder from "./pages/orders/CompleteCustomerOrder";
 import MyOrders from "./pages/orders/MyOrders";
 import OrdersList from "./pages/orders/OrdersList";
+import AllSalesReturns from "./pages/orders/AllSalesReturns";
+import SalesReturnRequests from "./pages/orders/SalesReturnRequests";
 import OrderDetail from "./pages/orders/OrderDetail";
 import CreditCheckQueue from "./pages/queues/CreditCheckQueue";
 import MaterialStatusQueue from "./pages/queues/MaterialStatusQueue";
@@ -147,6 +149,8 @@ export default function OrderToDispatchApp() {
           <Route path="my-orders" element={<MyOrders />} />
           <Route path="master-requests" element={<MasterRequests />} />
           <Route path="orders" element={<OrdersList />} />
+          <Route path="sales-returns" element={<AllSalesReturns />} />
+          <Route path="sales-return" element={<SalesReturnRequests />} />
           {/* "orders/:id/edit" must come before ":id" would swallow "edit". Same
               for "complete". */}
           <Route path="orders/:id/edit" element={<EditOrder />} />

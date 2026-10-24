@@ -13,13 +13,14 @@ import type {
   ComplaintType,
   RequestStatus,
   ResolutionType,
+  RmOrigin,
   Severity,
 } from "../types";
 
 /* ----------------------------- the RM/FG labels --------------------------- */
 
 export const lotLabelOf = (t: ComplaintType): string =>
-  t === "finished_good" ? "FG Lot No." : "RM Lot No.";
+  t === "finished_good" ? "FG Lot No." : t === "raw_material" ? "RM Lot No." : "Lot No.";
 
 export const partyRoleOf = (t: ComplaintType): string =>
   t === "finished_good" ? "Customer" : "Vendor";
@@ -40,6 +41,40 @@ export const invoiceDateLabelOf = (t: ComplaintType): string =>
 export const partyFlagOf = (t: ComplaintType): "is_customer" | "is_vendor" =>
   t === "finished_good" ? "is_customer" : "is_vendor";
 
+/**
+ * "Domestic" / "Import" for display, and "—" for a complaint that has no such
+ * thing — every finished-good row, and the raw-material rows raised before the
+ * branch existed.
+ *
+ * ⚠ NOT A LABEL SWITCH like the four above. `rmOrigin` decides WHERE the
+ *   complaint goes (types/index.ts); this function only spells it.
+ */
+export const rmOriginLabelOf = (o: RmOrigin | null): string =>
+  o === "domestic" ? "Domestic" : o === "import" ? "Import" : "—";
+
+/**
+ * Does this complaint run the MANAGEMENT chain — RM-Complaint View (MGT), then
+ * close or assign → assignee → management review? An imported raw material
+ * does, and so does every Other Supplier complaint (it has no Domestic/Import
+ * question; the submit RPC routes it straight to management).
+ */
+export const runsManagementChain = (r: {
+  complaintType: ComplaintType;
+  rmOrigin: RmOrigin | null;
+}): boolean => r.complaintType === "other_supplier" || r.rmOrigin === "import";
+
+/**
+ * Badge classes for the Domestic / Import column.
+ *
+ * Deliberately the tones of the two buckets they route to — amber for Purchase,
+ * violet for Management — so the grid reads as "whose desk", which is the only
+ * reason anyone looks at this column.
+ */
+export const RM_ORIGIN_TONE: Record<RmOrigin, string> = {
+  domestic: "bg-amber-50 text-amber-700",
+  import: "bg-violet-50 text-violet-700",
+};
+
 /* --------------------------------- statuses ------------------------------- */
 
 export const STATUS_LABEL: Record<RequestStatus, string> = {
@@ -47,6 +82,9 @@ export const STATUS_LABEL: Record<RequestStatus, string> = {
   awaiting_service: "With the service team",
   awaiting_approval: "Awaiting management approval",
   awaiting_service_close: "Back with the service team",
+  awaiting_purchase: "With the purchase department",
+  awaiting_rm_management: "With management",
+  awaiting_assignee: "With the assignee",
   awaiting_management_review: "Awaiting management review",
   closed: "Closed",
   on_hold: "On hold",
@@ -67,6 +105,9 @@ export const STATUS_TONE: Record<RequestStatus, string> = {
   awaiting_service: "bg-blue-50 text-blue-700",
   awaiting_approval: "bg-violet-50 text-violet-700",
   awaiting_service_close: "bg-blue-50 text-blue-700",
+  awaiting_purchase: "bg-amber-50 text-amber-700",
+  awaiting_rm_management: "bg-violet-50 text-violet-700",
+  awaiting_assignee: "bg-teal-50 text-teal-700",
   awaiting_management_review: "bg-emerald-50 text-emerald-700",
   closed: "bg-grey-1 text-grey-2",
   on_hold: "bg-grey-1 text-grey-2",
@@ -104,6 +145,7 @@ export const isOpen = (s: RequestStatus): boolean => !isTerminal(s);
 export const COMPLAINT_TYPE_TONE: Record<ComplaintType, string> = {
   finished_good: "bg-blue-50 text-blue-700",
   raw_material: "bg-violet-50 text-violet-700",
+  other_supplier: "bg-cyan-50 text-cyan-700",
 };
 
 /** Badge classes for the root-cause Pareto. `party_side` is the one that isn't ours. */

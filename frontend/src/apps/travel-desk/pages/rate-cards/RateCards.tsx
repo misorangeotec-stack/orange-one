@@ -1,9 +1,12 @@
-import { useMemo, useState } from "react";
+import { useMemo, useState, type ReactNode } from "react";
 import Card from "@/shared/components/ui/Card";
 import Button from "@/shared/components/ui/Button";
 import Modal from "@/shared/components/ui/Modal";
 import { formatDateDMY } from "@/shared/lib/date";
 import { useOrgPersonById } from "@/core/platform/orgPeople";
+import { FitCell, FitTh, ResetWidths } from "@/shared/components/ui/ColumnResizer";
+import { useColumnWidths } from "@/shared/lib/useColumnWidths";
+import { FIT } from "@/shared/lib/tableLook";
 import { useTravelStore } from "../../store";
 import { money } from "../../lib/format";
 import {
@@ -90,7 +93,7 @@ export default function RateCards() {
         await s.setRate(editing.id, { textValue: draftValue.trim() || null });
       } else {
         const t = draftValue.trim();
-        // An EMPTY cell is a real answer for a cap: §10 gives TC-A "no cap,
+        // An EMPTY cell is a real answer for a cap: Section 10 gives TC-A "no cap,
         // actuals with a receipt". So blank means uncapped, not unset.
         const n = t === "" ? null : Number(t);
         if (t !== "" && !Number.isFinite(n)) throw new Error("That is not a number.");
@@ -232,83 +235,15 @@ export default function RateCards() {
         {err && <p className="mt-3 text-[12.5px] text-ryg-red">{err}</p>}
       </Card>
 
-      {RATE_TYPE_ORDER.filter((t) => (byType.get(t) ?? []).length > 0).map((type) => {
-        const meta = RATE_TYPE_META[type];
-        const rows = byType.get(type) ?? [];
-        const keys = Array.from(new Set(rows.map((r) => r.key).filter(Boolean))) as string[];
-        const hasCategory = rows.some((r) => r.travelCategory !== null);
-
-        return (
-          <Card key={type} className="p-4">
-            <h2 className="text-[15px] font-bold text-navy">{meta.label}</h2>
-            <p className="mt-1 max-w-3xl text-[13px] text-grey-2">{meta.blurb}</p>
-
-            <div className="mt-3 overflow-x-auto">
-              <table className="w-full min-w-[560px] text-[13px]">
-                <thead>
-                  <tr className="border-b border-line text-left text-[12px] uppercase tracking-wide text-grey-2">
-                    <th className="py-2 pr-3">{hasCategory ? "Category" : "Rule"}</th>
-                    {/* ⚠ THE KEY COLUMNS ONLY EXIST WHEN THERE IS A CATEGORY AXIS
-                        TO CROSS THEM WITH. Without one — band → category, or the
-                        general rules like `min_distance_km` — each ROW already IS
-                        a key, so one column per key would print nine headers over
-                        two cells. */}
-                    {meta.byTier
-                      ? TIERS.map((t) => <th key={t} className="py-2 pr-3">{TIER_HEAD[t]}</th>)
-                      : hasCategory && keys.length
-                        ? keys.map((k) => <th key={k} className="py-2 pr-3">{k.replace(/_/g, " ")}</th>)
-                        : <th className="py-2 pr-3">Value</th>}
-                  </tr>
-                </thead>
-                <tbody>
-                  {hasCategory
-                    ? TRAVEL_CATEGORIES.filter((tc) =>
-                        rows.some((r) => r.travelCategory === tc.value),
-                      ).map((tc) => (
-                        <tr key={tc.value} className="border-b border-line/60">
-                          <td className="py-1.5 pr-3 font-medium text-navy">{tc.label}</td>
-                          {meta.byTier
-                            ? TIERS.map((tier) => (
-                                <td key={tier} className="py-1.5 pr-3">
-                                  {cellButton(
-                                    cellFor(type, tc.value, tier, null)
-                                      ?? cellFor(type, tc.value, null, null),
-                                    type,
-                                  )}
-                                </td>
-                              ))
-                            : keys.length
-                              ? keys.map((k) => (
-                                  <td key={k} className="py-1.5 pr-3">
-                                    {cellButton(cellFor(type, tc.value, null, k), type)}
-                                  </td>
-                                ))
-                              : (
-                                <td className="py-1.5 pr-3">
-                                  {cellButton(cellFor(type, tc.value, null, null), type)}
-                                </td>
-                              )}
-                        </tr>
-                      ))
-                    : rows
-                        .slice()
-                        .sort((a, b) => a.sortOrder - b.sortOrder)
-                        .map((r) => (
-                          <tr key={r.id} className="border-b border-line/60">
-                            <td className="py-1.5 pr-3 font-medium text-navy">
-                              {type === "band_category"
-                                ? `Band ${r.key}`
-                                : (r.key ?? "").replace(/_/g, " ") || "Value"}
-                            </td>
-                            <td className="py-1.5 pr-3">{cellButton(r, type)}</td>
-                          </tr>
-                        ))}
-                </tbody>
-              </table>
-            </div>
-          </Card>
-        );
-      })}
+      {RATE_TYPE_ORDER.filter((t) => (byType.get(t) ?? []).length > 0).map((type) => (
+        <RateTypeTable
+          key={type}
+          type={type}
+          rows={byType.get(type) ?? []}
+          cellFor={cellFor}
+          cellButton={cellButton}
+        />
+      ))}
 
       {editing && (
         <Modal
@@ -363,5 +298,119 @@ export default function RateCards() {
         </Modal>
       )}
     </div>
+  );
+}
+
+
+/**
+ * One rate type's grid — the Category (or Rule) column, then a column per tier, per key, or a
+ * single Value column.
+ *
+ * ⚠ A COMPONENT OF ITS OWN ONLY BECAUSE OF PF-20. The widths hook must run once per table and
+ *   the list of types is data, so it cannot be called inside the `.map` that renders them.
+ *
+ * ⚠ ONLY THE LEADING COLUMN IS CUT TO ONE LINE. A value here is the policy's own wording —
+ *   "Business class permitted; the upgrade is reimbursable" — and a reader is looking across the
+ *   grid to compare two categories, so the text wraps as it always has and the drag is what
+ *   widens it. Cutting it would put the policy behind a hover.
+ */
+function RateTypeTable({
+  type,
+  rows,
+  cellFor,
+  cellButton,
+}: {
+  type: RateType;
+  rows: TravelRate[];
+  cellFor: (type: RateType, tc: TravelCategory | null, tier: CityTier | null, key: string | null) => TravelRate | undefined;
+  cellButton: (r: TravelRate | undefined, type: RateType) => ReactNode;
+}) {
+  const meta = RATE_TYPE_META[type];
+  const keys = Array.from(new Set(rows.map((r) => r.key).filter(Boolean))) as string[];
+  const hasCategory = rows.some((r) => r.travelCategory !== null);
+  const valueCols = meta.byTier
+    ? TIERS.map((t) => `tier-${t}`)
+    : hasCategory && keys.length
+      ? keys
+      : ["value"];
+  // The type goes into the key: several of these tables carry the same column set, and without it
+  // they would share one set of widths.
+  const fit = useColumnWidths("tb", [type, "label", ...valueCols]);
+
+  return (
+    <Card className="p-4">
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <h2 className="text-[15px] font-bold text-navy">{meta.label}</h2>
+          <p className="mt-1 max-w-3xl text-[13px] text-grey-2">{meta.blurb}</p>
+        </div>
+        <ResetWidths fit={fit} cols={["label", ...valueCols]} label="" />
+      </div>
+
+      <div className="mt-3 overflow-x-auto">
+        <table className="w-full min-w-[560px] text-[13px]">
+          <thead>
+            <tr className="border-b border-line text-left text-[12px] uppercase tracking-wide text-grey-2">
+              <FitTh fit={fit} col="label" className="py-2 pr-3">{hasCategory ? "Category" : "Rule"}</FitTh>
+              {/* ⚠ THE KEY COLUMNS ONLY EXIST WHEN THERE IS A CATEGORY AXIS
+                  TO CROSS THEM WITH. Without one — band → category, or the
+                  general rules like `min_distance_km` — each ROW already IS
+                  a key, so one column per key would print nine headers over
+                  two cells. */}
+              {meta.byTier
+                ? TIERS.map((t) => <FitTh fit={fit} col={`tier-${t}`} key={t} className="py-2 pr-3">{TIER_HEAD[t]}</FitTh>)
+                : hasCategory && keys.length
+                  ? keys.map((k) => <FitTh fit={fit} col={k} key={k} className="py-2 pr-3">{k.replace(/_/g, " ")}</FitTh>)
+                  : <FitTh fit={fit} col="value" className="py-2 pr-3">Value</FitTh>}
+            </tr>
+          </thead>
+          <tbody {...fit.tbodyProps}>
+            {hasCategory
+              ? TRAVEL_CATEGORIES.filter((tc) => rows.some((r) => r.travelCategory === tc.value)).map((tc) => (
+                  <tr key={tc.value} className="border-b border-line/60">
+                    <td className="py-1.5 pr-3 font-medium text-navy">
+                      <FitCell fit={fit} col="label" cap={FIT.CUT}>{tc.label}</FitCell>
+                    </td>
+                    {meta.byTier
+                      ? TIERS.map((tier) => (
+                          <td key={tier} className="py-1.5 pr-3">
+                            {cellButton(
+                              cellFor(type, tc.value, tier, null) ?? cellFor(type, tc.value, null, null),
+                              type,
+                            )}
+                          </td>
+                        ))
+                      : keys.length
+                        ? keys.map((k) => (
+                            <td key={k} className="py-1.5 pr-3">
+                              {cellButton(cellFor(type, tc.value, null, k), type)}
+                            </td>
+                          ))
+                        : (
+                          <td className="py-1.5 pr-3">
+                            {cellButton(cellFor(type, tc.value, null, null), type)}
+                          </td>
+                        )}
+                  </tr>
+                ))
+              : rows
+                  .slice()
+                  .sort((a, b) => a.sortOrder - b.sortOrder)
+                  .map((r) => (
+                    <tr key={r.id} className="border-b border-line/60">
+                      <td className="py-1.5 pr-3 font-medium text-navy">
+                        <FitCell fit={fit} col="label" cap={FIT.CUT}>
+                          {type === "band_category"
+                            ? `Band ${r.key}`
+                            : (r.key ?? "").replace(/_/g, " ") || "Value"}
+                        </FitCell>
+                      </td>
+                      <td className="py-1.5 pr-3">{cellButton(r, type)}</td>
+                    </tr>
+                  ))}
+          </tbody>
+        </table>
+      </div>
+    </Card>
   );
 }

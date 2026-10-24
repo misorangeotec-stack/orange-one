@@ -25,7 +25,13 @@ export default function MasterOwnersSection() {
     [s.profiles],
   );
 
+  /**
+   * ⚠ REFUSES TO OPEN UNTIL THE STORE HAS LOADED — same seed-on-open hazard as
+   *   StepOwnersSection: before the fetch lands `managerIdsFor` returns `[]`, the
+   *   modal shows an empty picker over a saved row, and Save unassigns the master.
+   */
   const open = (mt: SupplyMasterType) => {
+    if (s.isLoading) return;
     setPicked(s.managerIdsFor(mt));
     setErr(null);
     setEditing(mt);
@@ -68,12 +74,16 @@ export default function MasterOwnersSection() {
         <tbody>
           {SUPPLY_MASTER_TYPES.map((mt) => {
             const ids = s.managerIdsFor(mt.value);
-            const names = ids.map((id) => s.profileById(id)?.name ?? "Unknown");
+            const names = ids.map((id) => s.personName(id));
             const pending = s.pendingRequests.filter((r) => r.masterType === mt.value).length;
             return (
               <tr key={mt.value} className="border-b border-line/70 last:border-0 hover:bg-page/60">
                 <td className="px-4 py-3 whitespace-nowrap">
-                  <button onClick={() => open(mt.value)} className="text-[12.5px] font-semibold text-orange hover:underline">
+                  <button
+                    onClick={() => open(mt.value)}
+                    disabled={s.isLoading}
+                    className="text-[12.5px] font-semibold text-orange hover:underline disabled:text-grey-2 disabled:no-underline disabled:cursor-not-allowed"
+                  >
                     Edit
                   </button>
                 </td>
@@ -99,7 +109,7 @@ export default function MasterOwnersSection() {
         footer={
           <>
             <Button variant="ghost" size="sm" onClick={() => setEditing(null)} disabled={busy}>Cancel</Button>
-            <Button size="sm" onClick={save} disabled={busy}>{busy ? "Saving…" : "Save"}</Button>
+            <Button size="sm" onClick={save} disabled={busy || s.isLoading}>{busy ? "Saving…" : "Save"}</Button>
           </>
         }
       >

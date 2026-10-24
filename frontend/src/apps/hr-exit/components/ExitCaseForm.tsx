@@ -1,9 +1,11 @@
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import Card from "@/shared/components/ui/Card";
 import Button from "@/shared/components/ui/Button";
 import Combobox, { type ComboOption } from "@/shared/components/ui/Combobox";
 import MultiSelect, { type MultiOption } from "@/shared/components/ui/MultiSelect";
 import { FieldLabel, TextArea, TextInput } from "@/shared/components/ui/Form";
+import SavedDraftsPanel, { SaveDraftButton } from "@/shared/components/ui/SavedDraftsPanel";
+import type { SavedDraftsApi } from "@/shared/lib/useSavedDrafts";
 import { useEffectiveIdentity } from "@/shared/sandbox/useEffectiveIdentity";
 import RequestMasterModal from "./RequestMasterModal";
 import { useExitStore } from "../store";
@@ -31,6 +33,23 @@ import type { CaseType, ExitCase } from "../types";
  * every MANAGER step (the review, the asset sign-off, the handover) to a real person.
  * Self-raising prefills it from the portal's own reporting links (`user_hods`).
  */
+
+/** What "Save as draft" stores for a new exit. The letter travels as the draft's file. */
+export interface ExitDraft {
+  forSelf: boolean;
+  caseType: CaseType;
+  employeeUserId: string;
+  employeeCode: string;
+  employeeName: string;
+  departmentId: string;
+  designation: string;
+  dateOfJoining: string;
+  reportingManagerIds: string[];
+  reportingManagerNote: string;
+  reasonId: string;
+  reasonNote: string;
+}
+
 export default function ExitCaseForm({
   existing,
   busy,
@@ -38,6 +57,7 @@ export default function ExitCaseForm({
   submitLabel,
   onSubmit,
   onCancel,
+  drafts,
 }: {
   existing?: ExitCase;
   busy: boolean;
@@ -46,6 +66,8 @@ export default function ExitCaseForm({
   /** `letter` is uploaded AFTER the case exists — the storage policy keys on its id. */
   onSubmit: (input: CaseInput, letter: File | null) => void;
   onCancel: () => void;
+  /** New exit only: server drafts, listed above the form. */
+  drafts?: SavedDraftsApi<ExitDraft>;
 }) {
   const s = useExitStore();
   const { user } = useEffectiveIdentity();
@@ -70,6 +92,8 @@ export default function ExitCaseForm({
   const [reasonId, setReasonId] = useState(existing?.reasonId ?? "");
   const [reasonNote, setReasonNote] = useState(existing?.reasonNote ?? "");
   const [letter, setLetter] = useState<File | null>(null);
+  /** The letter came back from a draft — the file input itself can't show it. */
+  const [letterFromDraft, setLetterFromDraft] = useState(false);
 
   // "My reason isn't on the list." Opened from the Reason dropdown's own create row,
   // prefilled with whatever they typed. It cannot select the new reason immediately —
@@ -151,10 +175,53 @@ export default function ExitCaseForm({
     );
   };
 
+  /* ----------------------------- server drafts ---------------------------- */
+
+  const snapshot = (): ExitDraft => ({
+    forSelf, caseType, employeeUserId, employeeCode, employeeName, departmentId, designation,
+    dateOfJoining, reportingManagerIds, reportingManagerNote, reasonId, reasonNote,
+  });
+  // The form as it opened — what "nothing to save yet" is judged against.
+  const blank = useRef<ExitDraft | null>(null);
+  if (blank.current === null) blank.current = snapshot();
+
+  const saveDraft = () => {
+    if (!drafts) return Promise.resolve();
+    if (!letter && JSON.stringify(snapshot()) === JSON.stringify(blank.current)) {
+      return Promise.reject(new Error("Nothing to save yet."));
+    }
+    return drafts.save({
+      title: `${employeeName.trim() || "No employee yet"} · ${CASE_TYPE_LABEL[caseType]}`,
+      payload: snapshot(),
+      files: letter ? [letter] : [],
+    });
+  };
+
+  /** Raw setters on purpose: pickEmployee / setMode would re-seed what the draft holds. */
+  const continueDraft = (d: ExitDraft, files: File[]) => {
+    const v = { ...(blank.current ?? snapshot()), ...d };
+    setForSelf(v.forSelf);
+    setCaseType(v.caseType);
+    setEmployeeUserId(v.employeeUserId);
+    setEmployeeCode(v.employeeCode);
+    setEmployeeName(v.employeeName);
+    setDepartmentId(v.departmentId);
+    setDesignation(v.designation);
+    setDateOfJoining(v.dateOfJoining);
+    setReportingManagerIds(v.reportingManagerIds ?? []);
+    setReportingManagerNote(v.reportingManagerNote);
+    setReasonId(v.reasonId);
+    setReasonNote(v.reasonNote);
+    setLetter(files[0] ?? null);
+    setLetterFromDraft(files.length > 0);
+  };
+
   const types: CaseType[] = ["resignation", "termination", "retirement", "absconding", "end_of_contract"];
 
   return (
     <div className="max-w-4xl space-y-5">
+      {drafts && <SavedDraftsPanel api={drafts} onContinue={continueDraft} noun="exit" />}
+
       {/* ---- Who is leaving ---- */}
       <Card className="space-y-4 p-5">
         <h2 className="text-[15px] font-semibold text-navy">Who is leaving</h2>
@@ -286,9 +353,17 @@ export default function ExitCaseForm({
           <FieldLabel label="Resignation letter" hint="optional · pdf, image or doc">
             <input
               type="file"
-              onChange={(e) => setLetter(e.target.files?.[0] ?? null)}
+              onChange={(e) => {
+                setLetter(e.target.files?.[0] ?? null);
+                setLetterFromDraft(false);
+              }}
               className="w-full rounded-xl border border-line bg-white px-3.5 py-2 text-[13px] text-ink file:mr-3 file:rounded-lg file:border-0 file:bg-page file:px-3 file:py-1.5 file:text-[12.5px] file:font-semibold file:text-navy"
             />
+            {letterFromDraft && letter && (
+              <span className="mt-1 block text-[11px] leading-snug text-grey-2">
+                Attached: {letter.name} — pick a file to replace it.
+              </span>
+            )}
           </FieldLabel>
         </div>
         <FieldLabel label="Anything worth recording">
@@ -303,6 +378,7 @@ export default function ExitCaseForm({
         <Button variant="ghost" onClick={onCancel} disabled={busy}>
           Cancel
         </Button>
+        {drafts && <SaveDraftButton api={drafts} onSave={saveDraft} disabled={busy} />}
         {invalid && (
           <span className="text-[12.5px] text-grey-2">
             {selfServiceOff

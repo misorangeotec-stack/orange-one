@@ -61,7 +61,10 @@ export const matchesStatusFilter = (
   statuses: StatusFilter[],
 ): boolean => statuses.length === 0 || statuses.includes(effectiveStatus(t));
 
-export type RecurrenceType = "daily" | "weekly" | "monthly" | "when" | "quarterly";
+export type RecurrenceType = "daily" | "weekly" | "monthly" | "when" | "quarterly" | "half_yearly" | "yearly";
+
+/** Frequencies that pick a day inside a month the Monthly way (Nth weekday or specific dates). */
+export const MONTH_DAY_TYPES: RecurrenceType[] = ["monthly", "half_yearly", "yearly"];
 
 /** Short, badge-friendly label for a recurrence type (e.g. "Weekly", "As & When"). */
 export const RECURRENCE_LABEL: Record<RecurrenceType, string> = {
@@ -69,6 +72,8 @@ export const RECURRENCE_LABEL: Record<RecurrenceType, string> = {
   weekly: "Weekly",
   monthly: "Monthly",
   quarterly: "Quarterly",
+  half_yearly: "Half-yearly",
+  yearly: "Yearly",
   when: "As and When",
 };
 
@@ -150,6 +155,26 @@ export interface Task {
   // ordinary downward work. Peer work is scored in the peer block ONLY — see
   // countsTowardMetrics / countsTowardPeerMetrics (selectors).
   isPeerAssignment: boolean;
+  // Peer task review (20270204120100): when the person who GAVE the peer task closed it
+  // after reviewing the work. A completed peer task with no close is awaiting their
+  // review; a reopen clears it. Always null on a non-peer task. See lib/peerReview.ts.
+  peerClosedAt: string | null;
+  peerClosedBy: string | null;
+  peerReopenCount: number; // times the giver sent it back; drives the "Re-opened" label
+  // KRA task (Task Category ≠ Others) — see lib/kraTasks.ts. kraWeight is the KRA's Wt%
+  // and kraCompletionWeight the part of it earned on completion, both snapshotted when
+  // the task was given; reviewRating is the direct HOD's 1-10, null while awaiting
+  // review. All null on an ordinary task.
+  kraId: string | null;
+  kraWeight: number | null;
+  kraCompletionWeight: number | null;
+  reviewRating: number | null;
+  reviewedBy: string | null;
+  reviewedAt: string | null;
+  // Director KRA task (20270130120000): category "KRA" with the KRA picked later, and
+  // who reviews it (null = the assignee's direct HOD). See lib/kraColumns.ts.
+  kraOpen: boolean;
+  kraReviewerId: string | null;
   createdAt: string; // ISO datetime
   updatedAt: string; // ISO datetime — bumped on any task change (status, revise, remark, reschedule)
   lastRemarkAt: string | null;
@@ -165,12 +190,16 @@ export interface RecurringTask {
   monthlyDays: number[]; // 1..31 (used when monthly, day-of-month mode); MONTH_LAST_DAY = last day of month
   monthlyNth: number | null; // monthly Nth-weekday mode: 1..5 (e.g. 1 = 1st); null = day-of-month mode
   monthlyWeekday: number | null; // monthly Nth-weekday mode: 0=Sun..6=Sat (e.g. 6 = Saturday); null = day-of-month mode
+  yearlyMonth: number | null; // yearly: its month (1..12); half-yearly: the first of its two months (+6); else null
   assignedTo: string | null;
   createdBy: string;
   departmentId: string | null;
   active: boolean;
   createdAt: string; // when this recurring template was set up (recurring_tasks.created_at)
   locationIds: string[]; // locations each generated task is tagged with
+  notifyRequired: boolean; // remind the assignee before each fire date (weekly/monthly/quarterly/half-yearly/yearly only)
+  notifyDaysBefore: number | null; // how many days before (1..30); null when no reminder
+  kraId: string | null; // Task Category: the assignee's KRA every generated task carries; null = Others
 }
 
 export interface WeeklyPlan {
@@ -198,8 +227,14 @@ export interface TaskActivity {
  * `mention` = someone @mentioned you in a remark (written by the add_task_remark
  * RPC). `assigned` = someone assigned you a task (written by the
  * trg_tasks_notify_assignee trigger; see supabase/migrations/20260721120100).
+ * `task_recurring_reminder` = a recurring task with "Notification required" is due
+ * in N days (send_recurring_reminders, 20270106120100). There is no task yet, so
+ * taskId is null and recurringTaskId / reminderDate say which template and date.
+ * `peer_review` = a peer task you gave was completed and waits for your review;
+ * `peer_reopened` = the giver reopened your peer task (trg_tasks_notify_peer_review,
+ * 20270204120100).
  */
-export type NotificationType = "mention" | "assigned";
+export type NotificationType = "mention" | "assigned" | "task_recurring_reminder" | "peer_review" | "peer_reopened";
 
 export interface Notification {
   id: string;
@@ -221,6 +256,9 @@ export interface Notification {
    * message builder renders as a generic fallback.
    */
   taskTitle: string | null;
+  /** Reminder rows only: the recurring template, and the date its task will appear. */
+  recurringTaskId: string | null;
+  reminderDate: string | null;
   readAt: string | null;
   createdAt: string;
 }

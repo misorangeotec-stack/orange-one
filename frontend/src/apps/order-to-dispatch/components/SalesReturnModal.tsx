@@ -2,17 +2,36 @@ import { useEffect, useState } from "react";
 import Button from "@/shared/components/ui/Button";
 import Modal from "@/shared/components/ui/Modal";
 import PillToggle from "@/shared/components/ui/PillToggle";
-import { FieldLabel, TextArea, TextInput } from "@/shared/components/ui/Form";
+import { FieldHeading, FieldLabel, TextArea, TextInput } from "@/shared/components/ui/Form";
 import { formatDateTime } from "@/shared/lib/time";
 import { useDispatchStore } from "../store";
-import { dmy, SALES_RETURN_MODE_LABEL } from "../lib/format";
+import { dmy, ROUND_RETURN_ORIGIN_LABEL, SALES_RETURN_MODE_LABEL } from "../lib/format";
+import { roundViewNo } from "../lib/rounds";
 import { salesReturnRound } from "../lib/salesReturn";
 import StepDocLink from "./StepDocLink";
-import type { DispatchOrder, SalesReturnMode } from "../types";
+import ReturnLines from "./ReturnLines";
+import type { DispatchOrder, RoundReturn, SalesReturnMode } from "../types";
 
 /**
- * Record (or correct) how a cancelled order's already-raised sales bill was
- * unwound in Tally. Saving this is what finally cancels the order.
+ * Record (or correct) how an already-raised sales bill was unwound in Tally.
+ *
+ * ONE FORM, TWO KINDS OF WORK:
+ *   · no `roundReturn` — the CANCELLATION kind: an order cancelled while its
+ *     billed goods were still in the plant. Saving this is what finally cancels
+ *     the order. Reads and writes the `sr` block on the order.
+ *   · with `roundReturn` — a return against a FINISHED round's invoice, usually
+ *     on a closed order (migration 20261230120000). Paperwork only: saving it
+ *     leaves the order exactly as it is.
+ * The Tally side is the same job either way, so the form is shared rather than
+ * copied.
+ *
+ * ⚠ A RAISED RETURN IS THE "GENERATE SALES RETURN" STEP. The goods have left the
+ *   gate, so the invoice cannot be cancelled outright — the owner makes a sales
+ *   return in Tally, enters its number and attaches it, exactly as Generate Sales
+ *   Bill asks for the invoice, and submitting closes it. So the cancel-or-return
+ *   choice is offered on the cancellation kind only. (A raised return recorded
+ *   before this as "Invoice cancelled" keeps that outcome when corrected — the
+ *   server never changes `sr_mode` on an edit.)
  *
  * ⚠ THE TWO OUTCOMES ARE A HUMAN'S CHOICE, NOT A CALCULATION. There is no
  *   24-hour timer here, no deadline and no suggested answer: whether the bill
@@ -22,19 +41,22 @@ import type { DispatchOrder, SalesReturnMode } from "../types";
  *   have to be readable without a click, because picking the wrong one writes a
  *   false statement about a tax document.
  *
- * ⚠ THE RECAP IS READ OFF THE ROUND, VIA `sr_round_no`. Before this is recorded
- *   that round is still live (the archive is deferred so the invoice stays
- *   readable); afterwards it is in the archive. `salesReturnRound` spans both.
- *   Reading the order header instead would show nothing once it archives.
+ * ⚠ THE RECAP IS READ OFF THE ROUND. For a cancellation that is `sr_round_no`,
+ *   which is still LIVE until this is recorded (the archive is deferred so the
+ *   invoice stays readable); `salesReturnRound` spans both. A round return always
+ *   points at an archived round.
  */
 export default function SalesReturnModal({
   order,
+  roundReturn = null,
   open,
   onClose,
   editing = false,
   readOnly = false,
 }: {
   order: DispatchOrder | null;
+  /** Set ⇒ this is a return against a finished invoice, not a cancellation. */
+  roundReturn?: RoundReturn | null;
   open: boolean;
   onClose: () => void;
   /** Correcting an entry already recorded, rather than making it. */
@@ -51,40 +73,51 @@ export default function SalesReturnModal({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  const rr = roundReturn;
+
   // Re-seed whenever a different order (or a different intent) is opened. The
   // modal is mounted once per page, so stale state would otherwise leak from the
   // last row into the next one.
   useEffect(() => {
     if (!open || !order) return;
-    setMode(order.srMode ?? "invoice_cancelled");
-    setReference(order.srReferenceNo ?? "");
-    setActualDate(order.srActualDate ?? new Date().toISOString().slice(0, 10));
-    setRemarks(order.srRemarks ?? "");
+    setMode((rr ? rr.srMode : order.srMode) ?? "invoice_cancelled");
+    setReference((rr ? rr.referenceNo : order.srReferenceNo) ?? "");
+    setActualDate((rr ? rr.actualDate : order.srActualDate) ?? new Date().toISOString().slice(0, 10));
+    setRemarks((rr ? rr.remarks : order.srRemarks) ?? "");
     setFile(null);
     setError(null);
     setBusy(false);
-  }, [open, order, editing]);
+  }, [open, order, rr, editing]);
 
   if (!order) return null;
 
-  const view = salesReturnRound(order);
-  const needsReturnDetails = mode === "sales_return";
-  const storedDoc = order.srAttachmentPath;
+  // Everything below reads through these, so the two kinds render one way.
+  const invoiceNo = rr ? rr.invoiceNo : order.srInvoiceNo;
+  const invoiceDate = rr ? rr.invoiceDate : order.srInvoiceDate;
+  const roundNo = rr ? rr.roundNo : order.srRoundNo;
+  const ewayExpected = rr ? rr.ewayExpected : order.srEwayExpected;
+  const storedDoc = rr ? rr.attachmentPath : order.srAttachmentPath;
+  const storedDocName = rr ? rr.attachmentName : order.srAttachmentName;
+  const view = rr ? roundViewNo(order, rr.roundNo) : salesReturnRound(order);
+  // The Generate Sales Return form: no choice, the outcome is always a sales return.
+  const generate = !!rr && !(editing && rr.srMode === "invoice_cancelled");
+  const effectiveMode: SalesReturnMode = generate ? "sales_return" : mode;
+  const needsReturnDetails = effectiveMode === "sales_return";
 
   const save = async () => {
     if (needsReturnDetails && !reference.trim()) {
-      setError("Enter the sales return / credit note number.");
+      setError(generate ? "Enter the Tally sales return no." : "Enter the sales return / credit note number.");
       return;
     }
     if (needsReturnDetails && !file && !storedDoc) {
-      setError("Attach the sales return / credit note.");
+      setError(generate ? "Attach the sales return." : "Attach the sales return / credit note.");
       return;
     }
     setBusy(true);
     setError(null);
     try {
       const payload: Record<string, unknown> = {
-        sr_mode: mode,
+        sr_mode: effectiveMode,
         sr_reference_no: reference.trim(),
         sr_actual_date: actualDate,
         sr_remarks: remarks.trim(),
@@ -92,12 +125,7 @@ export default function SalesReturnModal({
       if (file) {
         // The round number is what puts the file beside that consignment's other
         // documents in the bucket.
-        const up = await s.uploadStepDocument(
-          order.id,
-          "sales_return",
-          file,
-          order.srRoundNo ?? order.roundNo,
-        );
+        const up = await s.uploadStepDocument(order.id, "sales_return", file, roundNo ?? order.roundNo);
         payload.sr_attachment_path = up.path;
         payload.sr_attachment_name = up.name;
       } else if (!editing) {
@@ -107,7 +135,10 @@ export default function SalesReturnModal({
       }
       // Editing with no new file: the keys stay OMITTED and the RPC keeps the
       // stored document. Same presence contract as every other step here.
-      if (editing) await s.updateSalesReturn(order.id, payload);
+      if (rr) {
+        if (editing) await s.updateRoundReturn(rr.id, payload);
+        else await s.recordRoundReturn(rr.id, payload);
+      } else if (editing) await s.updateSalesReturn(order.id, payload);
       else await s.recordSalesReturn(order.id, payload);
       onClose();
     } catch (e) {
@@ -123,9 +154,7 @@ export default function SalesReturnModal({
         <StepDocLink path={view.sbAttachmentPath} name={view.sbAttachmentName ?? "Sales invoice"} />
       )}
       {view?.sbEwayPath && <StepDocLink path={view.sbEwayPath} name={view.sbEwayName ?? "E-way bill"} />}
-      {storedDoc && (
-        <StepDocLink path={storedDoc} name={order.srAttachmentName ?? "Sales return document"} />
-      )}
+      {storedDoc && <StepDocLink path={storedDoc} name={storedDocName ?? "Sales return document"} />}
       {!view?.sbAttachmentPath && !view?.sbEwayPath && !storedDoc && (
         <span className="text-[12.5px] text-grey-2">No documents attached.</span>
       )}
@@ -137,23 +166,44 @@ export default function SalesReturnModal({
       <div className="grid grid-cols-2 gap-x-4 gap-y-2 text-[12.5px] sm:grid-cols-3">
         <Fact label="Order" value={order.orderNo} />
         <Fact label="Customer" value={s.customerName(order.customerId)} />
-        <Fact label="Invoice no." value={order.srInvoiceNo ?? "—"} />
-        <Fact label="Invoice date" value={dmy(order.srInvoiceDate)} />
+        <Fact label="Invoice no." value={invoiceNo ?? "—"} />
+        <Fact label="Invoice date" value={dmy(invoiceDate)} />
         <Fact label="Gate pass" value={view?.gpNo ?? "—"} />
-        <Fact label="Round" value={order.srRoundNo ? `R${order.srRoundNo}` : "—"} />
+        <Fact label="Round" value={roundNo ? `R${roundNo}` : "—"} />
       </div>
       <div className="border-t border-line/70 pt-2 text-[12.5px]">
-        <span className="text-grey-2">Cancelled by </span>
-        <span className="font-semibold text-navy">{s.personName(order.cancelRequestedBy)}</span>
-        {order.cancelRequestedAt && (
-          <span className="text-grey-2"> · {formatDateTime(order.cancelRequestedAt)}</span>
+        {rr ? (
+          <>
+            <span className="font-semibold text-navy">{ROUND_RETURN_ORIGIN_LABEL[rr.origin]}</span>
+            <span className="text-grey-2">
+              {" "}· {rr.scope === "partial" ? "part of the invoice" : "the whole invoice"} · raised by{" "}
+            </span>
+            <span className="font-semibold text-navy">{s.personName(rr.requestedBy)}</span>
+            <span className="text-grey-2"> · {formatDateTime(rr.requestedAt)}</span>
+            {rr.reason && <p className="mt-1 text-grey">{rr.reason}</p>}
+            {rr.lines.length > 0 && (
+              <div className="mt-2">
+                <p className="text-grey-2">Coming back</p>
+                <ReturnLines ret={rr} />
+              </div>
+            )}
+          </>
+        ) : (
+          <>
+            <span className="text-grey-2">Cancelled by </span>
+            <span className="font-semibold text-navy">{s.personName(order.cancelRequestedBy)}</span>
+            {order.cancelRequestedAt && (
+              <span className="text-grey-2"> · {formatDateTime(order.cancelRequestedAt)}</span>
+            )}
+            {order.cancelReason && <p className="mt-1 text-grey">{order.cancelReason}</p>}
+          </>
         )}
-        {order.cancelReason && <p className="mt-1 text-grey">{order.cancelReason}</p>}
       </div>
-      {order.srEwayExpected && (
+      {ewayExpected && (
         <p className="rounded-lg bg-yellow/10 px-2.5 py-1.5 text-[12.5px] text-navy">
-          This consignment carried an <span className="font-semibold">e-way bill</span> — cancel it on
-          the portal too. That is a separate system; nothing here does it for you.
+          This consignment carried an <span className="font-semibold">e-way bill</span> —{" "}
+          {rr ? "check whether the portal needs anything too" : "cancel it on the portal too"}. That is a
+          separate system; nothing here does it for you.
         </p>
       )}
     </div>
@@ -163,8 +213,12 @@ export default function SalesReturnModal({
     <Modal
       open={open}
       onClose={onClose}
-      title={editing ? "Correct the sales return" : "Record the sales return"}
-      subtitle={`${order.orderNo} · invoice ${order.srInvoiceNo ?? "—"}`}
+      title={
+        generate
+          ? editing ? "Correct the sales return" : "Generate Sales Return"
+          : editing ? "Correct the sales return" : "Record the sales return"
+      }
+      subtitle={`${order.orderNo} · invoice ${invoiceNo ?? "—"}`}
       size="lg"
       readOnly={readOnly}
       readOnlyHeader={
@@ -179,7 +233,15 @@ export default function SalesReturnModal({
             Cancel
           </Button>
           <Button onClick={save} disabled={busy}>
-            {busy ? "Saving…" : editing ? "Save changes" : "Record and cancel the order"}
+            {busy
+              ? "Saving…"
+              : editing
+                ? "Save changes"
+                : generate
+                  ? "Submit"
+                  : rr
+                    ? "Record sales return"
+                    : "Record and cancel the order"}
           </Button>
         </>
       }
@@ -192,37 +254,52 @@ export default function SalesReturnModal({
           </>
         )}
 
-        <FieldLabel label="What was done in Tally" required>
-          <PillToggle<SalesReturnMode>
-            value={mode}
-            onChange={setMode}
-            options={[
-              { value: "invoice_cancelled", label: SALES_RETURN_MODE_LABEL.invoice_cancelled },
-              { value: "sales_return", label: SALES_RETURN_MODE_LABEL.sales_return },
-            ]}
-          />
-        </FieldLabel>
-        <p className="text-[12.5px] text-grey-2">
-          {needsReturnDetails
-            ? "The invoice stays on record and a sales return is booked against it. Enter its number and attach the document."
-            : "The invoice itself was cancelled in Tally, so nothing is booked against it."}
-        </p>
+        {generate ? (
+          <p className="text-[12.5px] text-grey-2">
+            Make the sales return against invoice {invoiceNo ?? "—"} in Tally, then enter its number and
+            attach it.
+          </p>
+        ) : (
+          <>
+            {/* A heading DIV, not FieldLabel: a <label> forwards a click on its text to the first
+                pill, so clicking the question silently recorded "Invoice cancelled". */}
+            <div>
+              <FieldHeading label="What was done in Tally" required />
+              <PillToggle<SalesReturnMode>
+                value={mode}
+                onChange={setMode}
+                options={[
+                  { value: "invoice_cancelled", label: SALES_RETURN_MODE_LABEL.invoice_cancelled },
+                  { value: "sales_return", label: SALES_RETURN_MODE_LABEL.sales_return },
+                ]}
+              />
+            </div>
+            <p className="text-[12.5px] text-grey-2">
+              {needsReturnDetails
+                ? "The invoice stays on record and a sales return is booked against it. Enter its number and attach the document."
+                : "The invoice itself was cancelled in Tally, so nothing is booked against it."}
+            </p>
+          </>
+        )}
 
         <div className="grid gap-3.5 sm:grid-cols-2">
-          <FieldLabel label="Sales return / credit note no." required={needsReturnDetails}>
+          <FieldLabel
+            label={generate ? "Tally sales return no." : "Sales return / credit note no."}
+            required={needsReturnDetails}
+          >
             <TextInput
               value={reference}
               onChange={(e) => setReference(e.target.value)}
               placeholder={needsReturnDetails ? "as generated in Tally" : "optional"}
             />
           </FieldLabel>
-          <FieldLabel label="Date">
+          <FieldLabel label={generate ? "Sales return date" : "Date"}>
             <TextInput type="date" value={actualDate} onChange={(e) => setActualDate(e.target.value)} />
           </FieldLabel>
         </div>
 
         <FieldLabel
-          label="Sales return document"
+          label={generate ? "Sales return" : "Sales return document"}
           required={needsReturnDetails}
           hint={storedDoc ? "A file is already attached — pick another only to replace it." : undefined}
         >
@@ -242,8 +319,9 @@ export default function SalesReturnModal({
 
         {!editing && (
           <p className="text-[12.5px] text-grey-2">
-            Saving this cancels order {order.orderNo}. The person who raised it will be told how the
-            invoice was dealt with.
+            {rr
+              ? `Submitting closes this sales return — order ${order.orderNo} stays as it is. Whoever raised it will be told the sales return number.`
+              : `Saving this cancels order ${order.orderNo}. The person who raised it will be told how the invoice was dealt with.`}
           </p>
         )}
 

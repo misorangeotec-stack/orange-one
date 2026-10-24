@@ -1,4 +1,6 @@
 import { ScrollableTable } from "@/core/shared/components/ScrollableTable";
+import { FitCell, FitResizer, FitTh, ResetWidths, thFitStyle } from "@/shared/components/ui/ColumnResizer";
+import { useColumnWidths, type FitTable } from "@/shared/lib/useColumnWidths";
 import { Fragment, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import Card from "@/shared/components/ui/Card";
@@ -74,6 +76,11 @@ export default function DepartmentReport({ weekStart = WEEK_START, scope }: { we
   const [query, setQuery] = useState("");
   const q = query.trim();
   const [sort, setSort] = useState<{ key: SortKey; dir: SortDir }>({ key: "planned", dir: "desc" });
+  /**
+   * PF-20 (drag only): a column's right edge drags wider, and the width is remembered per browser
+   * (double-click the edge to put it back). Nothing else about this table changes.
+   */
+  const weekFit = useColumnWidths("tb", WEEK_COLS);
   // Name sorts A→Z by default; numeric columns sort highest-first.
   const onSort = (key: SortKey) =>
     setSort((s) => (s.key === key ? { key, dir: s.dir === "asc" ? "desc" : "asc" } : { key, dir: key === "name" ? "asc" : "desc" }));
@@ -224,19 +231,25 @@ export default function DepartmentReport({ weekStart = WEEK_START, scope }: { we
 
       {/* all departments in one table */}
       <Card className="p-0 overflow-hidden">
+      {/* PF-20: appears only once a column here has been dragged. */}
+      {weekFit.anyCustom(WEEK_COLS) && (
+        <div className="flex justify-end px-4 pt-2">
+          <ResetWidths fit={weekFit} cols={WEEK_COLS} className="inline-flex items-center gap-1.5 text-[11.5px] font-semibold text-grey-2 hover:text-orange" />
+        </div>
+      )}
         <ScrollableTable>
           <table className="w-full text-[12.5px] border-collapse">
             <thead>
               <tr className="text-grey-2 text-[11px] uppercase tracking-wide bg-page/50">
-                <SortTh label="Department / Member" sortKey="name" sort={sort} onSort={onSort} align="left" className="px-4 min-w-[220px]" />
-                <th className="text-left font-semibold px-3 py-2.5 w-[200px]">Performance</th>
-                <SortTh label="Planned" sortKey="planned" sort={sort} onSort={onSort} />
-                <SortTh label="Green" sortKey="green" sort={sort} onSort={onSort} className="text-[#1f8a4d]" />
-                <SortTh label="Yellow" sortKey="yellow" sort={sort} onSort={onSort} className="text-[#B7820E]" />
-                <SortTh label="Red" sortKey="red" sort={sort} onSort={onSort} className="text-[#c0392b]" />
+                <SortTh label="Department / Member" sortKey="name" sort={sort} onSort={onSort} align="left" className="px-4 min-w-[220px]" fit={weekFit} />
+                <FitTh fit={weekFit} col="performance" className="text-left font-semibold px-3 py-2.5 w-[200px]">Performance</FitTh>
+                <SortTh label="Planned" sortKey="planned" sort={sort} onSort={onSort} fit={weekFit} />
+                <SortTh label="Green" sortKey="green" sort={sort} onSort={onSort} className="text-[#1f8a4d]" fit={weekFit} />
+                <SortTh label="Yellow" sortKey="yellow" sort={sort} onSort={onSort} className="text-[#B7820E]" fit={weekFit} />
+                <SortTh label="Red" sortKey="red" sort={sort} onSort={onSort} className="text-[#c0392b]" fit={weekFit} />
               </tr>
             </thead>
-            <tbody>
+            <tbody {...weekFit.tbodyProps}>
               {visibleGroups.length === 0 && (
                 <tr className="border-t border-line">
                   <td colSpan={6} className="px-4 py-8 text-center text-[12.5px] text-grey-2">
@@ -325,17 +338,27 @@ export default function DepartmentReport({ weekStart = WEEK_START, scope }: { we
 }
 
 /** Clickable column header that drives the table sort and shows the active direction. */
-function SortTh({ label, sortKey, sort, onSort, align = "center", className }: {
+/** The draggable columns of the two report tables, for their remembered widths (PF-20). */
+const WEEK_COLS = ["name", "performance", "planned", "green", "yellow", "red"];
+const PLAN_COLS = ["planName", "plan", "actual", "vsPlan"];
+
+function SortTh({ label, sortKey, sort, onSort, align = "center", className, fit }: {
   label: string;
   sortKey: SortKey;
   sort: { key: SortKey; dir: SortDir };
   onSort: (k: SortKey) => void;
   align?: "left" | "center";
   className?: string;
+  /** PF-20 (drag only): the handle on this header's right edge. */
+  fit?: FitTable;
 }) {
   const active = sort.key === sortKey;
   return (
-    <th className={cn("font-semibold px-3 py-2.5 select-none", align === "left" ? "text-left" : "text-center", className)}>
+    <th
+      className={cn("font-semibold px-3 py-2.5 select-none", align === "left" ? "text-left" : "text-center", className, fit?.on && "relative")}
+      style={fit ? thFitStyle(fit, sortKey) : undefined}
+    >
+      {fit?.on && <FitResizer fit={fit} col={sortKey} label={label} />}
       <button
         type="button"
         onClick={() => onSort(sortKey)}
@@ -367,6 +390,8 @@ function GreenDelta({ planned, actual }: { planned: RygPct; actual: RygPct }) {
 /** Numbers table comparing planned target vs actual result — per department, each expandable
  *  to its members. */
 function PlanVsActualTable({ groups, scoped, selfId, weekStart }: { groups: Group[]; scoped?: boolean; selfId?: string; weekStart: string }) {
+  /** PF-20 (drag only): the widths a reader drags these columns to. Nothing else changes. */
+  const planFit = useColumnWidths("tb", PLAN_COLS);
   const navigate = useNavigate();
   const openScorecard = (id: string) => navigate(`/task-management/scorecard?user=${id}&week=${weekStart}`);
   const [openIds, setOpenIds] = useState<Record<string, boolean>>({});
@@ -381,17 +406,24 @@ function PlanVsActualTable({ groups, scoped, selfId, weekStart }: { groups: Grou
       {rows.length === 0 ? (
         <p className="px-5 py-6 text-center text-[12.5px] text-grey-2">No plans set or tasks logged for this week yet.</p>
       ) : (
+        <>
+      {/* PF-20: appears only once a column here has been dragged. */}
+      {planFit.anyCustom(PLAN_COLS) && (
+        <div className="flex justify-end px-4 pt-2">
+          <ResetWidths fit={planFit} cols={PLAN_COLS} className="inline-flex items-center gap-1.5 text-[11.5px] font-semibold text-grey-2 hover:text-orange" />
+        </div>
+      )}
         <ScrollableTable>
           <table className="w-full text-[12.5px] border-collapse">
             <thead>
               <tr className="text-grey-2 text-[11px] uppercase tracking-wide">
-                <th className="text-left font-semibold px-5 py-2.5">Department / Member</th>
-                <th className="text-center font-semibold px-3 py-2.5">Plan&nbsp;(G/Y/R)</th>
-                <th className="text-center font-semibold px-3 py-2.5">Actual&nbsp;(G/Y/R)</th>
-                <th className="text-right font-semibold px-5 py-2.5">Green&nbsp;vs&nbsp;plan</th>
+                <FitTh fit={planFit} col="planName" className="text-left font-semibold px-5 py-2.5">Department / Member</FitTh>
+                <FitTh fit={planFit} col="plan" className="text-center font-semibold px-3 py-2.5">Plan&nbsp;(G/Y/R)</FitTh>
+                <FitTh fit={planFit} col="actual" className="text-center font-semibold px-3 py-2.5">Actual&nbsp;(G/Y/R)</FitTh>
+                <FitTh fit={planFit} col="vsPlan" className="text-right font-semibold px-5 py-2.5">Green&nbsp;vs&nbsp;plan</FitTh>
               </tr>
             </thead>
-            <tbody>
+            <tbody {...planFit.tbodyProps}>
               {rows.map((g) => {
                 const open = scoped || !!openIds[g.id];
                 const memberRows = g.rows.filter(({ planned, actual }) => planned.total || actual.total);
@@ -451,6 +483,7 @@ function PlanVsActualTable({ groups, scoped, selfId, weekStart }: { groups: Grou
             </tbody>
           </table>
         </ScrollableTable>
+        </>
       )}
     </Card>
   );

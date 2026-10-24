@@ -31,6 +31,13 @@ import { productionEntryProvider } from "./providers/production-entry";
 import { orderToDispatchProvider } from "./providers/order-to-dispatch";
 import { assetMaintenanceProvider } from "./providers/asset-maintenance";
 import { travelDeskProvider } from "./providers/travel-desk";
+import { learningDevelopmentProvider } from "./providers/learning-development";
+import { helpDeskProvider } from "./providers/help-desk";
+import { customerOnboardingProvider } from "./providers/customer-onboarding";
+import { complaintProvider } from "./providers/complaint";
+import { ocpiProvider } from "./providers/ocpi";
+import { inkStabilisationProvider } from "./providers/ink-stabilisation";
+import { physicalVerificationProvider } from "./providers/physical-verification";
 
 export const myWorkProviders: MyWorkProvider[] = [
   tasksProvider,
@@ -43,6 +50,28 @@ export const myWorkProviders: MyWorkProvider[] = [
   samplingProvider,
   productionEntryProvider,
   orderToDispatchProvider,
+  customerOnboardingProvider,
+  ocpiProvider,
+  complaintProvider,
+  inkStabilisationProvider,
+  physicalVerificationProvider,
   assetMaintenanceProvider,
   travelDeskProvider,
+  /*
+   * ⚠ THE ONLY UNIVERSAL PROVIDER HERE. Every other one is narrowed by
+   *   `hasModule(appId)`; Learning & Development is open to the whole company,
+   *   so this one fetches for all 67 people. What it hands each of them back is
+   *   almost always their OWN obligation — an invitation to answer, an
+   *   assignment to hand in, feedback to give — never HR's pipeline. See
+   *   ./items/learning-development.ts, which is where that line is drawn.
+   */
+  learningDevelopmentProvider,
+  /*
+   * ⚠ THE SECOND UNIVERSAL PROVIDER. Like L&D above it, this fetches for all 70
+   *   people rather than for a granted few — anyone may have asked HR something.
+   *   Most of what it returns is the READER'S OWN obligation (answer HR's
+   *   question, accept the answer), not HR's pipeline; ./items/help-desk.ts is
+   *   where that line is drawn.
+   */
+  helpDeskProvider,
 ];

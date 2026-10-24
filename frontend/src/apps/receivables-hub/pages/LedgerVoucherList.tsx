@@ -7,6 +7,7 @@
  * default pipeline this shows a "Not applicable" panel (same pattern as TopExposureReport). Mirrors
  * Ledger Outstandings' list scaffolding (filter bar + FilterChips + hand-rolled 25/page pagination).
  */
+import { useBackState } from "@/shared/lib/backState";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
@@ -29,8 +30,14 @@ import { loadLedgerList, loadLedgerMeta, type LedgerListRow } from "@hub/lib/led
 import { loadLedgerVouchers, buildLedgerStatement, periodLabelFor } from "@hub/lib/ledgerVouchers";
 import { filterByScope, useScopedParties } from "@hub/lib/scopeParties";
 import { exportLedgerVouchersMultiXlsx, type LedgerBlock } from "@hub/lib/exportFinancialStatements";
+import { appBasePath } from "@/apps/appInfo";
 
-const BASE = "/outstanding-dashboard";
+/**
+ * This screen's own links, rooted at the app that serves it. It moved out of the Outstanding
+ * Dashboard with the rest of the reporting (apps/reports/), so a hard-coded
+ * "/outstanding-dashboard" here would now point every in-page link at a redirect.
+ */
+const BASE = appBasePath("reports");
 const PAGE_SIZE = 25;
 
 /** Dr-positive amount → "<n> Dr"/"<n> Cr", blank at zero. */
@@ -82,7 +89,7 @@ export default function LedgerVoucherList() {
     return (guid: string) => m.get(guid) ?? guid;
   }, [companies]);
 
-  const [search, setSearch] = useState("");
+  const [search, setSearch] = useBackState("LedgerVoucherList.search", "");
   const [companyFilters, setCompanyFilters] = useState<string[]>([]);
   const [groupFilters, setGroupFilters] = useState<string[]>([]);
   const [page, setPage] = useState(1);
@@ -216,7 +223,7 @@ export default function LedgerVoucherList() {
   if (!live) {
     return (
       <div className="p-6 max-w-[900px] mx-auto space-y-4">
-        <Link to={`${BASE}/reports?cat=tally`} className="inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground">
+        <Link to={`${BASE}?cat=tally`} className="inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground">
           <ArrowLeft className="h-3.5 w-3.5" /> Tally Reports
         </Link>
         <Card className="rounded-card border-border bg-surface">
@@ -240,7 +247,7 @@ export default function LedgerVoucherList() {
   return (
     <div className="p-6 space-y-5 max-w-[1400px] mx-auto">
       <div>
-        <Link to={`${BASE}/reports?cat=tally`} className="inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground mb-1">
+        <Link to={`${BASE}?cat=tally`} className="inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground mb-1">
           Tally Reports
         </Link>
         <h1 className="text-2xl font-bold text-foreground flex items-center gap-2">
@@ -365,7 +372,7 @@ export default function LedgerVoucherList() {
                         />
                       </td>
                       <td className="py-1.5 px-3 text-sm">
-                        <Link to={`${BASE}/reports/ledger-voucher/${l.guid}`} className="text-foreground hover:text-primary font-medium">
+                        <Link to={`${BASE}/ledger-voucher/${l.guid}`} className="text-foreground hover:text-primary font-medium">
                           {l.ledger}
                         </Link>
                       </td>
@@ -373,7 +380,7 @@ export default function LedgerVoucherList() {
                       <td className="py-1.5 px-3 text-sm text-muted-foreground whitespace-nowrap">{companyName(l.companyGuid)}</td>
                       <td className="py-1.5 px-3 text-right text-sm tabular-nums whitespace-nowrap">{drcr(l.closing)}</td>
                       <td className="py-1.5 px-2 text-right">
-                        <Link to={`${BASE}/reports/ledger-voucher/${l.guid}`}>
+                        <Link to={`${BASE}/ledger-voucher/${l.guid}`}>
                           <ChevronRight className="h-4 w-4 text-muted-foreground inline" />
                         </Link>
                       </td>

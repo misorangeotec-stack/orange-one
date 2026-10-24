@@ -28,7 +28,7 @@ export default function SourcingQueue() {
   const editRequest = useEntryModal<PurchaseRequest>();
   const stage = useStageMode(s.completedSourcingRequestEntries, user.id);
 
-  const companyName = (id: string) => s.companyById(id)?.name ?? "—";
+  const companyName = (id: string) => s.companyLabel(id);
   /** Admin-configured: anchor step's completion + N working days (Setup → Due Dates). */
   const dueIso = (r: PurchaseRequest) => s.dueIsoForRequest(r, "sourcing");
 
@@ -73,11 +73,12 @@ export default function SourcingQueue() {
       key: "items", header: "Items",
       cell: (e) => {
         const { count, text } = itemSummary(e.row);
+        // Inline, not a <div> (PF-20): a block wrapper is clipped with no "…".
         return (
-          <div className="min-w-0">
+          <>
             <span className="font-medium text-navy">{count} item{count === 1 ? "" : "s"}</span>
             <span className="ml-1.5 text-[11.5px] text-grey-2">{text}</span>
-          </div>
+          </>
         );
       },
       sortValue: (e) => itemSummary(e.row).count,
@@ -115,11 +116,12 @@ export default function SourcingQueue() {
       key: "items", header: "Items",
       cell: (r) => {
         const { count, text } = itemSummary(r);
+        // Inline, not a <div> (PF-20): a block wrapper is clipped with no "…".
         return (
-          <div className="min-w-0">
+          <>
             <span className="font-medium text-navy">{count} item{count === 1 ? "" : "s"}</span>
             <span className="ml-1.5 text-[11.5px] text-grey-2">{text}</span>
-          </div>
+          </>
         );
       },
       sortValue: (r) => itemSummary(r).count,

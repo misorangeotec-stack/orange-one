@@ -160,6 +160,7 @@ export function consolidateByName(customers: Customer[]): ConsolidatedCustomer[]
       // "nobody is chasing this", not a team called "".
       collectionTeams:         [...new Set(entries.map((c) => c.collectionTeam).filter(Boolean))].sort(),
       categories:              [...new Set(entries.map((c) => c.category).filter(Boolean))].sort(),
+      markTypes:               [...new Set(entries.flatMap((c) => (c.markType ? [c.markType] : [])))].sort(),
     } as ConsolidatedCustomer;
   });
 }

@@ -9,6 +9,7 @@ import { FieldLabel, TextInput, PasswordInput, Select } from "@/shared/component
 import { useSession } from "@/core/platform/session";
 import { useDirectory } from "@/core/platform/store";
 import { supabase } from "@/core/platform/supabase";
+import AnnouncementStrip from "@/core/announcements/AnnouncementStrip";
 
 /**
  * Personal account page — any signed-in user edits their own profile + password.
@@ -99,6 +100,10 @@ export default function Account() {
           </button>
         </div>
       </header>
+
+      {/* PF-18 · This page has its own header rather than AppShell, so the
+          hub-wide announcement strip is placed here by hand. */}
+      <AnnouncementStrip />
 
       <main className="max-w-3xl mx-auto px-6 py-10">
         <h1 className="text-[26px] font-bold text-navy mb-1 tracking-tight">My Account</h1>

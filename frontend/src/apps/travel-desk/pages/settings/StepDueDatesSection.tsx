@@ -3,13 +3,14 @@ import Card from "@/shared/components/ui/Card";
 import Button from "@/shared/components/ui/Button";
 import { TextInput } from "@/shared/components/ui/Form";
 import { useTravelStore } from "../../store";
-import { STEPS, stepByKey, type StepKey } from "../../lib/steps";
+import { STEPS, isHiddenStep, stepByKey, type StepKey } from "../../lib/steps";
+import { STATUS_STEP } from "../../types";
 import { TRIGGER_STEPS, type StepSlaMap } from "../../lib/sla";
 
 /**
  * How long each step gets.
  *
- * ⚠ EVERY DEFAULT HERE IS A FIGURE FROM §12, NOT A GUESS — 5 working days for
+ * ⚠ EVERY DEFAULT HERE IS A FIGURE FROM Section 12, NOT A GUESS — 5 working days for
  *   the claim, 2 for the HOD, 5 for Finance, 7 for the credit, 14 for the whole
  *   cycle. Editing one is editing the company's promise to its own staff, which
  *   is why the screen names where each number came from.
@@ -18,7 +19,7 @@ import { TRIGGER_STEPS, type StepSlaMap } from "../../lib/sla";
  *   say so or the numbers read as wrong:
  *     · CLAIM counts from the trip's RETURN DATE — the journey ending is what
  *       starts the clock, and the journey is not a step anybody completes.
- *     · ADVANCE counts BACKWARDS from the planned departure. §11.1 wants the
+ *     · ADVANCE counts BACKWARDS from the planned departure. Section 11.1 wants the
  *       money credited BEFORE the traveller leaves; money that lands afterwards
  *       has missed the point entirely.
  *   The direction lives in code (`TRIGGER_STEPS`), never in this box — the
@@ -90,7 +91,11 @@ export default function StepDueDatesSection() {
       </div>
 
       <div className="space-y-3">
-        {queueSteps.map((st) => {
+        {/* Hidden steps keep their saved days (save() writes every step); they are
+            listed only while a trip still waits at one. */}
+        {queueSteps
+          .filter((st) => !isHiddenStep(st.key) || s.trips.some((t) => STATUS_STEP[t.status] === st.key))
+          .map((st) => {
           const trigger = TRIGGER_STEPS[st.key as StepKey];
           return (
             <div key={st.key} className="flex items-start justify-between gap-4">

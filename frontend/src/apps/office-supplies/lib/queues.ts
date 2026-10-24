@@ -11,7 +11,7 @@
  */
 import type { QueueEntryBase } from "@/shared/lib/fmsQueue";
 import { dueIsoFrom, type StepSlaMap } from "./sla";
-import type { StepKey } from "./steps";
+import { stepByKey, type StepKey } from "./steps";
 import type { SupplyRequest } from "../types";
 
 export interface SupplySnapshot {
@@ -29,8 +29,9 @@ export interface QueueEntry extends QueueEntryBase<StepKey> {
   departmentId: string;
   requestId: string;
   /**
-   * Whoever this request's FIRST approval has been handed to, or null while it
-   * still sits with the department HOD.
+   * Whoever THIS STEP's approval has been handed to, or null while it still sits
+   * with its default owner (the department HOD for first approval, the step owners
+   * for second). Always null for handover, which cannot be reassigned.
    *
    * ⚠ IT HAS TO RIDE ON THE ENTRY. `core/workspace/mywork/items/officeSupplies.ts`
    *   decides ownership from the entry alone - it never sees the request row - so
@@ -49,6 +50,17 @@ export const isOpenRequest = (r: SupplyRequest): boolean =>
   r.status === "pending_handover";
 
 /** The single step a request currently owes, from its status. */
+/**
+ * Who holds this step's approval by handover, if anyone. Per STEP, not per status:
+ * the columns are never cleared at the decision, and the Completed tab asks about
+ * a step the request has already left.
+ */
+export function holderForStep(r: SupplyRequest, step: StepKey): string | null {
+  if (step === "first_approval") return r.assignedApproverId;
+  if (step === "second_approval") return r.secondAssignedApproverId;
+  return null;
+}
+
 export function openStep(r: SupplyRequest): StepKey | null {
   switch (r.status) {
     case "pending_first_approval":
@@ -226,6 +238,60 @@ export const completedHandoverEntries = (data: SupplySnapshot): StageEntry<Suppl
     .filter((r) => !!r.handedOverAt)
     .map((r) => entryOf("handover", r, r.handoverBy, r.handedOverAt!, handoverLockReason(r)));
 
+/**
+ * The step a HELD request is parked at — where it would resume if taken off hold.
+ *
+ * IT IS THE `current_step` COLUMN, not a re-derivation. Every RPC advances
+ * `status` and `current_step` together (migration 20260715170000), and
+ * `fms_supplies_hold_request` sets ONLY `status`, `hold_at` and `hold_reason` —
+ * it never touches `current_step`. So a held request still carries the step it
+ * was parked at, and the resume RPC recomputes `current_step` on the way back out.
+ *
+ * ⚠ DO NOT REPLACE THIS WITH A COPY OF `fms_supplies_resume_status`. Mirroring
+ *   that function in TypeScript is the trap: it encodes the skip path
+ *   (`requires_approval = false` submits straight into `pending_handover`) and it
+ *   has been revised more than once per module, so a hand-copy starts correct and
+ *   drifts silently — which is exactly how the SQL and the screen have disagreed
+ *   before. Reading the column cannot drift.
+ *
+ * Returns null when the column holds something this module no longer has a queue
+ * step for (a retired step, a row predating a rename). Nobody is guessed at.
+ */
+export function heldStep(r: SupplyRequest): StepKey | null {
+  const def = stepByKey(r.currentStep);
+  if (!def || def.noQueue) return null;
+  return def.key;
+}
+
+/**
+ * Every HELD request, as one entry at the step it is parked at.
+ *
+ * SEPARATE FROM `buildQueueEntries` ON PURPOSE. That builder feeds the per-step
+ * queue pages, the FMS Control Center rails and the Master Report, all of which
+ * ask "what is owed at this step" — and a held request is owed at none of them.
+ * Only My Work's `items/` rule reads this one, to show parked work on its own
+ * tile instead of letting it vanish from the home screen entirely.
+ */
+export function buildHeldEntries(snap: SupplySnapshot): QueueEntry[] {
+  const out: QueueEntry[] = [];
+  for (const r of snap.requests) {
+    if (r.status !== "on_hold") continue;
+    const step = heldStep(r);
+    if (!step) continue;
+    out.push({
+      stepKey: step,
+      entityType: "request",
+      entityId: r.id,
+      ref: r.reqNo,
+      dueIso: supplyDueIso(snap, r, step),
+      departmentId: r.departmentId,
+      requestId: r.id,
+      assignedApproverId: holderForStep(r, step),
+    });
+  }
+  return out;
+}
+
 /** Every open work-item, one per (current step, request). */
 export function buildQueueEntries(snap: SupplySnapshot): QueueEntry[] {
   const out: QueueEntry[] = [];
@@ -240,7 +306,7 @@ export function buildQueueEntries(snap: SupplySnapshot): QueueEntry[] {
       dueIso: supplyDueIso(snap, r, step),
       departmentId: r.departmentId,
       requestId: r.id,
-      assignedApproverId: r.assignedApproverId,
+      assignedApproverId: holderForStep(r, step),
     });
   }
   return out;

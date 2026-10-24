@@ -1,0 +1,59 @@
+{
+  "_README": [
+    "KB-1 · What the handbook's pictures SAY.",
+    "",
+    "Six of the seven JPEGs in HR_Handbook_Formatted_v4.doc carry real text that no text",
+    "extraction can see: the Preface, the Director's Desk, the two halves of the Organization",
+    "Chart, the Designation Hierarchy, and the back cover's address. Without this file those",
+    "six pages are invisible to the Knowledge Base, and questions like 'who handles",
+    "grievances?', 'what grade is above Assistant Manager?' and 'what is the office address?'",
+    "have no answer at all.",
+    "",
+    "Keyed by the picture's ordinal in document order (1-7). Each entry becomes its own",
+    "section, so it is citable and findable, with the picture shown beside the words.",
+    "",
+    "Transcribed by reading the images on 28-09-2026. SPELLINGS ARE THE HANDBOOK'S OWN",
+    "('Complaince', 'Unloding', 'Polices', 'employes', 'Sharm') - this is a transcript, not a",
+    "correction. Same rule as the rest of the ingest: our copy must agree with the paper one.",
+    "",
+    "Re-run `npm run handbook -- --publish` after editing. Set decorative pictures to null."
+  ],
+
+  "1": null,
+
+  "2": {
+    "heading": "FROM THE DIRECTOR'S DESK",
+    "depth": 1,
+    "transcript": "From the Director's Desk. The Directors of Orange O Tec Pvt. Ltd. are Aayush Rathi, Karan Toshniwal, Shivkishan Rathi and Sushil Toshniwal.\n\n\"Let's give our best and excel, always\"\n\nAs a progressive company, committed equally to the environment and our clientele, we at Orange, consider our team members as our biggest assets. Any company's success and more importantly, its reputation is built and maintained by its team members. And hence, Human Resources department plays a significant role in fostering a positive work environment and boosting member productivity. At Orange, we have always focused on building a team of talented and skilled professionals. Now, it is our constant endeavor to provide the team with the best facilities and conducive work environment to shine out. Humans and culture are intertwined with a company's success. With this HR Manual, I am sure that we will have a set of standard guidelines to pursue excellence in everything we do. Our HR department will also strive for ensuring the well-being and personal development of our team members. This manual is yet another example that your company cares for you! Stay committed, stay productive, the company is always with you."
+  },
+
+  "3": {
+    "heading": "DESIGNATION HIERARCHY",
+    "depth": 1,
+    "transcript": "Designation Hierarchy (the grade ladder, top to bottom).\n\nAt the top: Aayush Rathi, Director; and Karan Toshniwal, Director.\nReporting to them: Manmohan Totla, Director - Sales Other than West Region; and Nakuleshwar Sharm, Director - Sales West Region.\n\nBelow the Directors the ladder runs across three parallel tracks.\n\nSenior levels, equivalent across the tracks:\n- Senior General Manager = Vice President / Assistant Vice President = C-Level employes\n- General Manager = Deputy General Manager = Head of Department / Division Head\n- Deputy Manager = Manager = Senior Manager\n\nManagement and engineering track, descending: Assistant Manager, then Senior Engineer, Engineer, Junior / Associate Engineer, Trainee.\n\nExecutive track, descending: Senior Executive, Executive, Junior / Associate, Trainee.\n\nPlant and operations track, descending: Senior Supervisor, Floor Supervisor, Junior Supervisor, Senior Operator, Operator, Junior Operator, Trainee Operator, Helper."
+  },
+
+  "4": {
+    "heading": "ORGANIZATION CHART (1 of 2)",
+    "depth": 1,
+    "transcript": "Organization Chart, first half: which department owns what.\n\nAdministration\n- Facility: Drivers, Security, Pantry, Housekeeping, Office Support\n- Receptionist: Hospitality, Facility Maintenance, Office Management, Call/Work Transfer, Currier Management, Support for any Departments\n\nFinance\n- Finance and Accounts - Accounts: Payable, Receivable, Expense, Taxation, Compliance, Capital Assets, SOPs, Audit\n- Finance and Accounts - Collection\n- Finance and Accounts - EXIM\n- Finance and Accounts - MIS\n- Finance and Accounts - Data Entry\n\nHuman Resource\n- Talent Acquisition: Manpower Requsition, JD, Job Posting/Sourcing, Interview coordination, Background Verification, Confirmation, Onboarding, Inductions, Weekly Review (1 Month), Exit Formalities, Negotiation\n- Operation and Compliance: Employee Life-cycle, Documentation, Labour Laws, Factory Regulations, Polices\n- Compensation and Benefits: Salary Structure, Payroll, Health Isurance, Bonus, Retirement, PF, ESIC, PT, SMC\n- Training and Development: TNI, Training Planning, Executions\n- Employee Relation: Engagement, Branding, Grivence, Company Culture\n- PMS: Appraisal, KRA-KPI, SOPs, etc\n\nInk Manufacturing\n- Ink Manufacturing: R&D, RM Store, FG Packing and Dispatch, Production, Lab, Purchase, Complaince, Admin\n\nMarketing\n- Marketing: PR, Branding, Trademark, Vendor Management, Exhibitions, Strategies"
+  },
+
+  "5": {
+    "heading": "ORGANIZATION CHART (2 of 2)",
+    "depth": 1,
+    "transcript": "Organization Chart, second half: which department owns what.\n\nM/C Manufacturing\n- M/C Manufacturing: R&D, Purchase, Store, Assembly, Testing, Packing and Dispatch, Complaince, Admin\n\nSales\n- Business Development: Business analyst, Lead Generation Specialist\n- Sales (Machine): Textile, Label, Publication, Domestic and Export\n- Sales (Ink): Domestic and Export\n- Sales (New Product): Domestic and Export\n\nService\n- After Sales - Application (Enginners)\n- After Sales - CRM\n- After Sales - Service (Engineers)\n- After Sales - Technical Excellence (L&D)\n\nSupply Chain\n- Warehouse: Ink - M/C Warehouse, Spare - Print Head Warehouse. Inventory Management, Loading/Unloding, Admin, Data Entry, Coordinator, Import-Export\n- Procurement: Vendor Development, Purchase, Vendor Performance, Negotiation, Compliance, Data Entry, Coordinator, Import"
+  },
+
+  "6": {
+    "heading": "PREFACE",
+    "depth": 1,
+    "transcript": "Preface.\n\nAt Orange, we have always focused on creating an encouraging work environment that can boost our individual and collective productivity further.\n\nAs a concerned and committed corporate citizen, at Orange, we are always eager to set high standards of human resources management.\n\nThis manual is designed to serve as the primary source of information for team members regarding human resources policies, programmes, and procedures. The purpose of this manual is to serve as a reference for the managers, supervisors, and other team members so that human resources issues can be dealt with more consistently and fairly across our operations.\n\nThe guidelines outlined here have been crafted with an aim to serve as a sort of code of conduct that encourages law-abiding, human-centric work practices.\n\nThis manual must be followed in all situations unless an exception is granted by the management of the company. This manual supersedes all previous personnel policies and procedures. The manual will be reviewed at a regular interval and updated as and when required."
+  },
+
+  "7": {
+    "heading": "COMPANY ADDRESS AND CONTACT",
+    "depth": 1,
+    "transcript": "Orange O Tec Pvt. Ltd.\n\nAddress: Shed No: A2/7111, Street No: 71, Road No: 7, Gate No: 01, Sachin G.I.D.C, Surat - 94230 (Guj) India.\n\nPhone: +91 74900 43336\nEmail: info@orangeotec.com\nWebsite: www.orangeotec.com"
+  }
+}

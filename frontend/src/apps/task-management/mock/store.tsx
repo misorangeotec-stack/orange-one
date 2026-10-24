@@ -1,4 +1,4 @@
-import { createContext, useContext, useEffect, useMemo } from "react";
+import { createContext, useContext, useEffect, useMemo, useRef } from "react";
 import type { ReactNode } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import type { QueryClient } from "@tanstack/react-query";
@@ -10,6 +10,7 @@ import { supabase } from "@/core/platform/supabase";
 import { isoWeekOf, weekEndOf, weekStartOf, todayIso } from "@/shared/lib/time";
 import { fetchTaskData, fetchTaskActivity, fetchTasksByIds, fetchActivityByTaskIds, type TaskData, type TaskActivityData } from "../data/fetchTaskData";
 import { useMyNotifications, markReadOptimistic, TASK_NOTIF_KEY } from "../lib/useMyNotifications";
+import { saveKraReview } from "../lib/kraTasks";
 import {
   insertTask,
   updatePersonalTask as updatePersonalTaskWrite,
@@ -19,6 +20,8 @@ import {
   startTask as startTaskWrite,
   completeTask as completeTaskWrite,
   reopenTask as reopenTaskWrite,
+  closePeerTask as closePeerTaskWrite,
+  reopenPeerTask as reopenPeerTaskWrite,
   setTaskNotApplicable as setTaskNotApplicableWrite,
   reviseTask as reviseTaskWrite,
   rescheduleTask as rescheduleTaskWrite,
@@ -78,7 +81,9 @@ interface TaskStoreValue {
   getTask: (id: string) => Task | undefined;
   activityFor: (taskId: string) => TaskActivity[];
   revisionInfo: (task: Task) => RevisionInfo;
-  createTask: (input: { title: string; description?: string; assignedTo: string | null; departmentId: string | null; dueDate: string | null; locationIds?: string[]; isPeerAssignment?: boolean }) => Promise<string>;
+  createTask: (input: { title: string; description?: string; assignedTo: string | null; departmentId: string | null; dueDate: string | null; locationIds?: string[]; isPeerAssignment?: boolean; kraId?: string | null; kraOpen?: boolean; kraWeight?: number | null; kraCompletionWeight?: number | null }) => Promise<string>;
+  /** The assignee's direct HOD rates a completed KRA task 1-10 (lib/kraTasks.ts). */
+  reviewKraTask: (id: string, rating: number, note?: string, kraId?: string) => Promise<void>;
   /** Create a personal (self-tracking) task. Self-assigned and excluded from every score/RYG/dashboard metric. */
   createPersonalTask: (input: { title: string; description?: string; dueDate: string | null }) => Promise<string>;
   /** Edit a personal task's title/description/due date. */
@@ -93,17 +98,28 @@ interface TaskStoreValue {
   updateTask: (id: string, patch: { title: string; description?: string; dueDate: string | null; locationIds: string[] }) => Promise<void>;
   deleteTask: (id: string) => Promise<void>;
   startTask: (id: string) => Promise<void>;
-  completeTask: (id: string, note?: string) => Promise<void>;
+  completeTask: (id: string, note?: string, kraId?: string) => Promise<void>;
   reopenTask: (id: string) => Promise<void>;
+  /** Peer task review: the person who gave it closes the completed task (lib/peerReview.ts). */
+  closePeerTask: (id: string, note?: string) => Promise<void>;
+  /** Peer task review: the giver sends it back to the same assignee, with what to recheck. */
+  reopenPeerTask: (id: string, reason: string) => Promise<void>;
+  /**
+   * Re-read these tasks (and their timeline) from the server. Read-only: no full
+   * reconcile is scheduled. Used when a task is opened and when a peer review /
+   * re-open notification arrives, because other people's changes otherwise reach
+   * this cache only on the next stale refetch.
+   */
+  refreshTask: (...ids: string[]) => Promise<void>;
   /** Mark a "when" task instance Not Applicable for its day, or back to applicable. Reversible. */
   setTaskNotApplicable: (id: string, value: boolean) => Promise<void>;
   /** True when this task was generated from a "when" recurring template (so N/A is offered). */
   isWhenTask: (task: Task) => boolean;
   /**
    * Revise with a follow-up date. A follow-up in a LATER week is treated as a
-   * shift (original → 'shifted', a continuation task opens in that week) and
-   * returns the new task's id; a same/earlier-week follow-up is a true in-week
-   * revision (capped 2/week) and returns null.
+   * shift: the SAME task's due date (and week) move there — no copy. A
+   * same/earlier-week follow-up is a true in-week revision (capped 2/week).
+   * Always returns null.
    */
   reviseTask: (id: string, args: { followUpDate: string; note?: string }) => Promise<string | null>;
   rescheduleTask: (id: string, newDueDate: string) => Promise<string | null>;
@@ -179,7 +195,10 @@ interface TaskStoreValue {
   downlineIds: (rootId: string) => string[];
   assignableUsers: (role: AppRole, userId: string) => Profile[];
   /**
-   * The OTHER HODs, for the peer group of the Create Task picker (TM-1).
+   * The other HODs and Sub-HODs, for the peer group of the Create Task picker
+   * (TM-1). One pool for both roles: a Sub-HOD may hand work to a HOD and a HOD
+   * to a Sub-HOD, symmetrically. The CALLER decides who gets a picker at all —
+   * admins and employees never do.
    *
    * ⚠ A SECOND FUNCTION RATHER THAN A WIDER `assignableUsers`, deliberately.
    *   That one has five callers and two of them break silently if the list
@@ -473,6 +492,18 @@ export function TaskStoreProvider({ children }: { children: ReactNode }) {
       scheduleFullReconcile(queryClient);
     };
 
+    const refreshTask = async (...ids: string[]) => {
+      const wanted = ids.filter(Boolean);
+      if (wanted.length === 0) return;
+      try {
+        const [freshTasks, freshActivity] = await Promise.all([fetchTasksByIds(wanted), fetchActivityByTaskIds(wanted)]);
+        upsertTasksInCache(queryClient, freshTasks);
+        replaceActivityForTasks(queryClient, wanted, freshActivity);
+      } catch {
+        // A view refresh: the cached copy simply stays until the next refetch.
+      }
+    };
+
     // Org-wide id → person map (name + avatar only) so activity actors can be
     // named even when they fall outside the viewer's RLS-scoped directory — e.g.
     // a Director in another department who assigned a recurring task. Without
@@ -488,12 +519,16 @@ export function TaskStoreProvider({ children }: { children: ReactNode }) {
     };
 
     // TM-1: any HOD may assign to any other HOD (settled 07-09-2026 — no pair
-    // master, no Setup screen), so this is simply "role is hod, minus me".
-    // Sub-HODs are out for round one; widening it later is this one line, with
-    // no data migration, because the marker is stamped per task and says
-    // nothing about roles.
+    // master, no Setup screen). Widened to Sub-HODs, symmetrically: the pool is
+    // every HOD and Sub-HOD, minus me, whichever of the two the viewer is. No
+    // data migration needed — is_peer_assignment is stamped per task and says
+    // nothing about roles, so this stays a filter change.
+    // Widened again (05-10-2026) to Admins as RECEIVERS: a HOD/Sub-HOD can hand
+    // a one-off task up to an admin. Admins still never get the peer picker
+    // themselves (CreateTask gates on the viewer's role), so admin → HOD work
+    // stays ordinary downward work.
     const peerAssignableUsers = (userId: string): OrgPerson[] =>
-      (orgPeople ?? []).filter((p) => p.role === "hod" && p.id !== userId);
+      (orgPeople ?? []).filter((p) => (p.role === "hod" || p.role === "sub_hod" || p.role === "admin") && p.id !== userId);
 
     const visibleTasks = (role: AppRole, userId: string): Task[] => {
       if (role === "admin") return tasks;
@@ -585,9 +620,9 @@ export function TaskStoreProvider({ children }: { children: ReactNode }) {
         await startTaskWrite(id, user.id);
         await refreshTasks(id);
       },
-      completeTask: async (id, note) => {
+      completeTask: async (id, note, kraId) => {
         try {
-          await completeTaskWrite(id, user.id, note);
+          await completeTaskWrite(id, user.id, note, kraId);
         } catch (e) {
           // The `enforce_task_locations_complete` trigger rejects a completion
           // whose checklist isn't fully resolved, and the modal renders that
@@ -607,6 +642,19 @@ export function TaskStoreProvider({ children }: { children: ReactNode }) {
         await reopenTaskWrite(id, user.id);
         await refreshTasks(id);
       },
+      refreshTask,
+      closePeerTask: async (id, note) => {
+        await closePeerTaskWrite(id, user.id, note);
+        await refreshTasks(id);
+      },
+      reopenPeerTask: async (id, reason) => {
+        await reopenPeerTaskWrite(id, user.id, reason);
+        await refreshTasks(id);
+      },
+      reviewKraTask: async (id, rating, note, kraId) => {
+        await saveKraReview(id, rating, user.id, note, kraId);
+        await refreshTasks(id);
+      },
       // setTaskNotApplicable: LIVE. A plain not_applicable column update under the
       // task UPDATE RLS (same path as complete). Reversible; excluded from reports
       // in the selectors. Only offered for "when" instances (see isWhenTask).
@@ -621,38 +669,32 @@ export function TaskStoreProvider({ children }: { children: ReactNode }) {
       reviseTask: async (id, args) => {
         const task = tasks.find((t) => t.id === id);
         if (!task) return null;
-        // A follow-up date in a LATER week is a shift, not a revision: route it
-        // through the continuation mechanism (original → 'shifted', a fresh task
-        // opens in the new week) so the move is visible as a shift, and it's
-        // allowed even when the weekly revision limit is reached. Same-week (or
-        // earlier) follow-ups are true in-week revisions, capped at 2/week.
+        // A follow-up date in a LATER week is a shift, not a revision: the SAME
+        // task's due date moves there (logged as a shift in its own history), and
+        // it's allowed even when the weekly revision limit is reached. Same-week
+        // (or earlier) follow-ups are true in-week revisions, capped at 2/week.
         const targetWeek = weekStartOf(args.followUpDate);
         const currentWeek = task.weekStart ?? weekStartOf(todayIso());
         if (targetWeek > currentWeek) {
-          const newId = await rescheduleTaskWrite(task, args.followUpDate);
-          if (args.note && newId) await addRemarkWrite(newId, args.note, []);
-          // BOTH tasks changed: the original is marked 'shifted' (and gets its
-          // shifted_to link), the continuation is brand new.
-          await refreshTasks(id, newId);
-          return newId;
+          await rescheduleTaskWrite(task, args.followUpDate, user.id);
+          if (args.note) await addRemarkWrite(id, args.note, []);
+          await refreshTasks(id);
+          return null;
         }
         if (!revisionInfo(task).allowed) return null; // weekly revision limit / closed guard
         await reviseTaskWrite(id, user.id, { ...args, currentRevisionCount: task.revisionCount });
         await refreshTasks(id);
         return null;
       },
-      // rescheduleTask: LIVE (B4). Same/earlier week → move due date; future week →
-      // create a linked continuation task + mark the original shifted. Trigger logs
-      // the shifted/created activity; refetch and return the new id (if any).
+      // rescheduleTask: moves the SAME task's due date (and week, if later) and
+      // logs the old → new date in its history. No continuation copy, so the
+      // creator never changes. Always returns null.
       rescheduleTask: async (id, newDueDate) => {
         const task = tasks.find((t) => t.id === id);
         if (!task || !newDueDate) return null;
-        const newId = await rescheduleTaskWrite(task, newDueDate);
-        // A future-week reschedule shifts: original + continuation both change.
-        // Same/earlier week just moves the due date, so newId is null and this
-        // collapses to the single-task refresh.
-        await refreshTasks(id, newId);
-        return newId;
+        await rescheduleTaskWrite(task, newDueDate, user.id);
+        await refreshTasks(id);
+        return null;
       },
       // addRemark: LIVE (B4). Posts a remark + fans out @mention notifications via
       // the add_task_remark RPC (notifications has no client INSERT policy), then refetches.
@@ -714,10 +756,13 @@ export function TaskStoreProvider({ children }: { children: ReactNode }) {
           monthlyDays: input.monthlyDays ?? [],
           monthlyNth: input.monthlyNth ?? null,
           monthlyWeekday: input.monthlyWeekday ?? null,
+          yearlyMonth: input.yearlyMonth ?? null,
           assignedTo: input.assignedTo,
           departmentId: input.departmentId,
           active: input.active,
           locationIds: input.locationIds ?? [],
+          notify: input.notifyRequired ? { required: true, daysBefore: input.notifyDaysBefore } : undefined,
+          kraId: input.kraId || undefined,
           createdBy: user.id,
         });
         // Materialise today's instance immediately if the template is active and
@@ -745,10 +790,17 @@ export function TaskStoreProvider({ children }: { children: ReactNode }) {
           monthlyDays: m.monthlyDays ?? [],
           monthlyNth: m.monthlyNth ?? null,
           monthlyWeekday: m.monthlyWeekday ?? null,
+          yearlyMonth: m.yearlyMonth ?? null,
           assignedTo: m.assignedTo,
           departmentId: m.departmentId,
           active: m.active,
           locationIds: m.locationIds ?? [],
+          // Named only when the reminder is on now or was on before (so turning it off is saved).
+          notify: m.notifyRequired || cur.notifyRequired
+            ? { required: m.notifyRequired, daysBefore: m.notifyDaysBefore }
+            : undefined,
+          // Named only when the template has a KRA now or had one (so going back to Others is saved).
+          kraId: m.kraId || cur.kraId ? m.kraId ?? null : undefined,
         });
         // If the edit leaves the template active, ensure today's instance exists
         // (e.g. activating via the edit form). Idempotent, so no duplicate if it
@@ -961,10 +1013,25 @@ export function TaskStoreProvider({ children }: { children: ReactNode }) {
     };
   }, [tasks, activity, notifications, recurringTasks, weeklyPlans, workspace, locations, orgPeople, dir, user, role, canEdit, queryClient]);
 
+  // Peer task review: the bell is realtime but this task cache is not, so when
+  // "X completed … please review it" (or "re-opened") arrives, re-read that task —
+  // otherwise the Review / Received tabs and the task page show the old status until
+  // the next stale refetch. Each notification is handled once per session.
+  const handledPeerNotifs = useRef(new Set<string>());
+  const { refreshTask } = value;
+  useEffect(() => {
+    const fresh = notifications.filter(
+      (n) => n.userId === user?.id && !n.readAt && n.taskId && (n.type === "peer_review" || n.type === "peer_reopened") && !handledPeerNotifs.current.has(n.id),
+    );
+    if (fresh.length === 0) return;
+    fresh.forEach((n) => handledPeerNotifs.current.add(n.id));
+    void refreshTask(...new Set(fresh.map((n) => n.taskId as string)));
+  }, [notifications, user?.id, refreshTask]);
+
   // The realtime notification subscription used to live here. It now belongs to
   // useMyNotifications (called above) so the portal home screen gets the same
-  // live bell without mounting this provider — and so there is only ever one
-  // subscription to the `notifications:<uid>` channel.
+  // live bell without mounting this provider. Each caller gets its own uniquely
+  // named channel — see `channelSeq` there for why a shared topic crashed.
 
   if (isLoading) {
     return (

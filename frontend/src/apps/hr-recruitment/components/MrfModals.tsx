@@ -7,6 +7,7 @@ import { SectionHeading } from "@/shared/components/ui/Readout";
 import { todayIso } from "@/shared/lib/time";
 import MrfRecap from "./MrfRecap";
 import RequestMasterModal from "./RequestMasterModal";
+import { TargetsFields, draftComplete, draftFrom, numberOf, type TargetsDraft } from "./TargetsFields";
 import { useHrStore } from "../store";
 import type { MrfDecision, MrfStage } from "../data/hrWrites";
 import type { Requisition } from "../types";
@@ -43,18 +44,34 @@ export function MrfDecisionModal({
   const [remarks, setRemarks] = useState(() =>
     editing ? ((stage === "hr" ? requisition.hrRemarks : requisition.mgmtRemarks) ?? "") : "",
   );
+  // NR-7 — the HR Head's own numbers. Seeded from whatever the requisition
+  // already carries: the two bars are NOT NULL (3), the two typed ones start empty.
+  const [targets, setTargets] = useState<TargetsDraft>(() => draftFrom(requisition));
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
 
   const needsReason = decision !== "approve";
-  const invalid = needsReason && !remarks.trim();
+
+  // The numbers are asked for at the HR gate only, and only on an approval —
+  // there is nothing to plan for a vacancy being rejected or sent back.
+  const wantsTargets = stage === "hr" && decision === "approve";
+
+  const invalid = (needsReason && !remarks.trim()) || (wantsTargets && !draftComplete(targets));
 
   const submit = async () => {
     setBusy(true);
     setErr(null);
     try {
-      if (editing) await s.updateDecideMrf(requisition.id, stage, decision, remarks.trim());
-      else await s.decideMrf(requisition.id, stage, decision, remarks.trim());
+      const payload = wantsTargets
+        ? {
+            targetCloseDays: numberOf(targets.days),
+            cvTarget: numberOf(targets.cvs),
+            shortlistTarget: numberOf(targets.shortlist),
+            directorCvTarget: numberOf(targets.director),
+          }
+        : null;
+      if (editing) await s.updateDecideMrf(requisition.id, stage, decision, remarks.trim(), payload);
+      else await s.decideMrf(requisition.id, stage, decision, remarks.trim(), payload);
       onClose();
       setRemarks("");
       setDecision("approve");
@@ -125,6 +142,10 @@ export function MrfDecisionModal({
               placeholder={needsReason ? "The requester will see this." : "Anything worth recording."}
             />
           </FieldLabel>
+
+          {/* NR-7. Below the decision, because they only apply to an approval —
+              and they disappear entirely the moment Reject or Send back is picked. */}
+          {wantsTargets && <TargetsFields draft={targets} onChange={setTargets} />}
 
           {err && <p className="text-[12.5px] text-ryg-red">{err}</p>}
         </div>

@@ -1,4 +1,5 @@
 import { supabase } from "@/core/platform/supabase";
+import { parseMarkType, type MarkType } from "./markType";
 import { getConnectwaveSupabase } from "./connectwaveSupabase";
 
 /**
@@ -90,6 +91,11 @@ export interface RedMarkRow {
   salesperson: string | null;
   reason: string | null;          // optional note
   checked: boolean;
+  /**
+   * Red Mark or Legal (21-10-2026): one master, two kinds of customer. Both count as Red Mark
+   * everywhere; the type splits them on the Category filter and the report.
+   */
+  mark_type: MarkType;
   match_status: string | null;
   source: string | null;          // 'redmark_sheet' (seeded) | 'muster' (entered in-app)
   updated_at: string | null;
@@ -123,6 +129,7 @@ export interface RedMarkInput {
   salesperson: string | null;
   reason: string | null;
   checked: boolean;
+  mark_type: MarkType;
 }
 
 // PostgREST caps a request at 1000 rows; page through until exhausted.
@@ -303,12 +310,14 @@ export function deleteOtherPayment(id: number): Promise<void> {
  * Every red-mark customer, for both the Masters tab and the Live (Tally) flag. Ordered by the
  * UNIQUE primary key `ledger_id` — required for correct .range() paging (see fetchOtherPaymentRows).
  */
-export function fetchRedMarkRows(): Promise<RedMarkRow[]> {
-  return fetchAll<RedMarkRow>(
-    "ext_redmark",
-    "ledger_id,tally_name,company,location,salesperson,reason,checked,match_status,source,updated_at,updated_by,cleared,cleared_at,cleared_by,clear_note",
-    "ledger_id",
-  );
+export async function fetchRedMarkRows(): Promise<RedMarkRow[]> {
+  const cols =
+    "ledger_id,tally_name,company,location,salesperson,reason,checked,match_status,source,updated_at,updated_by,cleared,cleared_at,cleared_by,clear_note";
+  // mark_type arrived 21-10-2026. Until the column is on the database, read without it and call
+  // every row Red Mark, so the screen keeps working whichever side is deployed first.
+  const rows = await fetchAll<RedMarkRow>("ext_redmark", `${cols},mark_type`, "ledger_id")
+    .catch(() => fetchAll<RedMarkRow>("ext_redmark", cols, "ledger_id"));
+  return rows.map((r) => ({ ...r, mark_type: parseMarkType(r.mark_type) ?? "redmark" }));
 }
 
 /** Flag a customer as Red Mark. Upserts on ledger_id, so re-adding is idempotent. Returns the row. */
@@ -322,6 +331,7 @@ export function saveRedMark(input: {
   salesperson: string | null;
   reason: string | null;
   checked: boolean;
+  mark_type: MarkType;
 }): Promise<void> {
   return invokeMuster({ action: "update_redmark", ...input });
 }

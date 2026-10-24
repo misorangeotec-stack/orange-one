@@ -1,3 +1,5 @@
+import { useBackState } from "@/shared/lib/backState";
+import type { MarkType } from "@hub/lib/markType";
 import { useCallback, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
@@ -188,6 +190,8 @@ interface Row {
   salesPerson: string;
   collectionTeam: string;
   category: string;
+  /** Red Mark / Legal — joins the Category filter. */
+  markType?: MarkType;
   creditDays: number;
   creditLimit: number;
   /** creditLimit === 1 — the legacy block flag, shown as a chip and never as a rupee figure. */
@@ -309,7 +313,7 @@ export default function CreditTermsReport() {
   const { label: fyLabel } = useFY();
   const source = useReceivablesSource();
 
-  const [search, setSearch] = useState("");
+  const [search, setSearch] = useBackState("CreditTermsReport.search", "");
   const [books, setBooks] = useState<string[]>([]);
   const [statuses, setStatuses] = useState<TermStatus[]>(INCOMPLETE);
   const [salesPersons, setSalesPersons] = useState<string[]>([]);
@@ -391,6 +395,7 @@ export default function CreditTermsReport() {
         salesPerson: c.salesPerson || "—",
         collectionTeam: c.collectionTeam || "",
         category: c.category || "",
+        markType: c.markType,
         creditDays: c.creditPeriod,
         creditLimit: c.creditLimit,
         limitIsFlag: c.creditLimit === 1,
@@ -710,7 +715,7 @@ export default function CreditTermsReport() {
   if (source === "default") {
     return (
       <div className="p-6 max-w-[900px] mx-auto space-y-4">
-        <Link to="/outstanding-dashboard/reports" className="inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground">
+        <Link to="/reports" className="inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground">
           <ArrowLeft className="h-3.5 w-3.5" /> Reports
         </Link>
         <Card className="rounded-card border-border bg-surface">

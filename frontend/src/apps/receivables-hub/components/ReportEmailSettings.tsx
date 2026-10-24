@@ -5,6 +5,8 @@ import { REPORT_CATEGORIES, type ReportCategory, type ReportEntry } from "@hub/l
 import { EMAILABLE_REPORTS } from "@hub/lib/reportAccess";
 import { fetchReportEmailSettings, setReportEmailEnabled } from "@hub/lib/reportEmail";
 import ReportDeliveryConfig from "@hub/components/ReportDeliveryConfig";
+import BushraSalesMailOptions from "@hub/components/BushraSalesMailOptions";
+import { SALES_DASHBOARDS } from "@hub/lib/bushraSalesDashboards";
 import { useToast } from "@hub/hooks/use-toast";
 import { cn } from "@/shared/lib/cn";
 
@@ -36,6 +38,9 @@ import { cn } from "@/shared/lib/cn";
  */
 
 const QK = ["receivables", "reportEmailSettings"] as const;
+
+/** The dashboards that carry blocks and person-recipients, not just a file. */
+const SALES_DASHBOARD_IDS = new Set(SALES_DASHBOARDS.map((p) => p.id));
 
 /** A switch that reads as on/off at a glance and does not depend on the Hub's CSS variables. */
 function Toggle({ on, busy, disabled }: { on: boolean; busy: boolean; disabled: boolean }) {
@@ -214,6 +219,14 @@ export default function ReportEmailSettings() {
                         so several open panels still fetch it once.
                       */}
                       <ReportDeliveryConfig reportKey={r.id} />
+                      {/* A dashboard is nine sections, not one file, so it adds two questions the
+                          schedule above cannot answer: which blocks go in the mail, and who gets it
+                          BY PERSON rather than by address. */}
+                      {SALES_DASHBOARD_IDS.has(r.id) && (
+                        <div className="mt-3">
+                          <BushraSalesMailOptions reportKey={r.id} reportTitle={r.title} />
+                        </div>
+                      )}
                     </div>
                   );
                 })}

@@ -1,7 +1,7 @@
 import type { QueueEntryBase } from "@/shared/lib/fmsQueue";
 import { dueIsoFrom } from "@/shared/lib/stepSla";
 import { addWorkingDaysSigned, localDateIso } from "@/shared/lib/workingDays";
-import type { StepKey } from "./steps";
+import { stepByKey, type StepKey } from "./steps";
 import { TRIGGER_STEPS, type StepSlaMap } from "./sla";
 import { STATUS_STEP, type Trip } from "../types";
 
@@ -67,8 +67,10 @@ const ANCHOR_AT: Record<QueueStep, (t: Trip) => string | null> = {
   claim: (t) => t.actualReturnDate ?? t.plannedReturnDate,
   claim_review: (t) => t.clAt,
   finance_review: (t) => t.crAt,
-  // §12 measures the credit from HOD APPROVAL, not from Finance's verification.
+  // Section 12 measures the credit from HOD APPROVAL, not from Finance's verification.
   settlement: (t) => t.crAt,
+  // The cancellation being asked for starts this clock (a trigger step).
+  cancel_trip: (t) => t.cancelRequestedAt,
 };
 
 /**
@@ -93,6 +95,7 @@ export function stepCompletedIso(t: Trip, step: StepKey): string | null {
     case "claim_review":       return t.crAt;
     case "finance_review":     return t.frAt;
     case "settlement":         return t.stAt;
+    case "cancel_trip":        return t.cancelDoneAt;
     default:                   return null;
   }
 }
@@ -116,6 +119,7 @@ export function stepActorId(t: Trip, step: StepKey): string | null {
     case "claim_review":       return t.crBy;
     case "finance_review":     return t.frBy;
     case "settlement":         return t.stBy;
+    case "cancel_trip":        return t.cancelDoneBy;
     default:                   return null;
   }
 }
@@ -214,6 +218,43 @@ export function buildQueueEntries(trips: Trip[], stepSla: StepSlaMap | null | un
 }
 
 /**
+ * Every HELD trip, as one entry at the step it is parked at.
+ *
+ * `current_step` is the answer: `fms_travel_hold_trip` stashes `hold_from_status`
+ * and sets `status = 'on_hold'` without touching `current_step`; only the resume
+ * branch rewrites both. See `office-supplies/lib/queues.ts#heldStep`.
+ *
+ * This is the same population as `parkedTrips` below, in the shape My Work needs.
+ * That one hands the Control Center whole trips for its "Parked" strip; this one
+ * addresses each to the step — and so to the people — it is parked on. Read ONLY
+ * by My Work's `items/` rule; `buildQueueEntries` still excludes held trips.
+ */
+export function buildHeldEntries(trips: Trip[], stepSla: StepSlaMap | null | undefined): QueueEntry[] {
+  const out: QueueEntry[] = [];
+  for (const t of trips) {
+    if (t.status !== "on_hold") continue;
+    const def = t.currentStep ? stepByKey(t.currentStep) : undefined;
+    if (!def || def.noQueue) continue;
+    const step = def.key as QueueStep;
+    out.push({
+      stepKey: step,
+      entityId: t.id,
+      ref: t.tripNo ?? t.travellerName,
+      dueIso: tripDueIso(t, step, stepSla),
+      tripId: t.id,
+      travellerId: t.travellerId,
+      travellerName: t.travellerName,
+      departmentId: t.snapDepartmentId,
+      destinationCityId: t.destinationCityId,
+      departureIso: t.plannedDepartureDate,
+      status: t.status,
+      approverManagerIds: t.approverManagerIds,
+    });
+  }
+  return out;
+}
+
+/**
  * Trips that are open but owe nobody an action today — the Control Center's
  * "Parked" strip. Held trips only: a returned trip owes its own author, who is
  * shown it under My Trips.
@@ -222,9 +263,17 @@ export function parkedTrips(trips: Trip[]): Trip[] {
   return trips.filter((t) => t.status === "on_hold");
 }
 
+/**
+ * Has tickets that still stand. Old flow: `booked`. Since 2026-10 a trip closes
+ * at booking, so a `closed` trip that closed there counts too (it becomes
+ * `cancelled` once every ticket is cancelled).
+ */
+export const hasLiveBooking = (t: Trip): boolean =>
+  t.status === "booked" || (t.status === "closed" && t.closedAtBooking);
+
 /** Booked trips that have not left yet — the PRD's "Upcoming Travel". */
 export function upcomingTrips(trips: Trip[], todayIso: string): Trip[] {
   return trips
-    .filter((t) => t.status === "booked" && !!t.plannedDepartureDate && t.plannedDepartureDate >= todayIso)
+    .filter((t) => hasLiveBooking(t) && !!t.plannedDepartureDate && t.plannedDepartureDate >= todayIso)
     .sort((a, b) => (a.plannedDepartureDate ?? "").localeCompare(b.plannedDepartureDate ?? ""));
 }

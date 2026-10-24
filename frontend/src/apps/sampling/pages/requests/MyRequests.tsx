@@ -36,18 +36,21 @@ export default function MyRequests() {
       key: "subject",
       header: "Product / Party",
       cell: (r) => <span className="text-navy">{requestSubject(r)}</span>,
+      sortValue: (r) => requestSubject(r),
       filter: { kind: "text", get: (r) => requestSubject(r) },
     },
     {
       key: "direction",
       header: "Direction",
       cell: (r) => <span className="text-grey-2">{directionLabel(r.direction)}</span>,
+      sortValue: (r) => directionLabel(r.direction),
       filter: { kind: "select", get: (r) => directionLabel(r.direction) },
     },
     {
       key: "labTesting",
       header: "Lab testing",
       cell: (r) => <span className="text-grey-2">{labTestingLabel(r.labTestingRequired)}</span>,
+      sortValue: (r) => labTestingLabel(r.labTestingRequired),
       filter: { kind: "select", get: (r) => labTestingLabel(r.labTestingRequired) },
       tdClassName: "whitespace-nowrap",
     },
@@ -55,7 +58,10 @@ export default function MyRequests() {
       key: "status",
       header: "Status",
       cell: (r) => <StatusPill status={r.status} />,
+      sortValue: (r) => r.status,
       filter: { kind: "select", get: (r) => r.status },
+      // A pill: never cut, no handle (PF-20).
+      resize: false,
     },
     {
       key: "submitted",

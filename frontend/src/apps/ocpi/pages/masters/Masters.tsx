@@ -3,12 +3,14 @@ import { Link } from "react-router-dom";
 import Card from "@/shared/components/ui/Card";
 import MasterCrud, { type MasterColumn, type MasterFieldDef } from "@/shared/components/ui/MasterCrud";
 import { useOcpiStore } from "../../store";
+import ServiceChecklistsTab from "./ServiceChecklistsTab";
 import {
   insertNamedMaster, updateNamedMaster,
   insertMachineCategory, updateMachineCategory,
   insertDryer, updateDryer,
+  insertServiceCheckpoint, updateServiceCheckpoint,
 } from "../../data/ocpiMasterWrites";
-import type { OcpiDryer, OcpiMasterType, OcpiNamedMaster } from "../../types";
+import type { OcpiDryer, OcpiMasterType, OcpiNamedMaster, OcpiServiceCheckpoint } from "../../types";
 
 /**
  * ⚠ TWO OF THESE TABS ARE NOT MASTER *TYPES*.
@@ -22,7 +24,7 @@ import type { OcpiDryer, OcpiMasterType, OcpiNamedMaster } from "../../types";
  *   `OWNED_BY` below is the single place that says which — it must agree with
  *   the RLS policies in migration 20261021130000.
  */
-type Tab = Exclude<OcpiMasterType, "machine"> | "machine_category" | "dryer";
+type Tab = Exclude<OcpiMasterType, "machine"> | "machine_category" | "dryer" | "service_check" | "service_checklist";
 
 const TABS: { key: Tab; label: string }[] = [
   { key: "machine_category", label: "Machine categories" },
@@ -30,6 +32,9 @@ const TABS: { key: Tab; label: string }[] = [
   { key: "ink_type", label: "Ink types" },
   { key: "dryer_type", label: "Dryer categories" },
   { key: "dryer", label: "Dryers" },
+  // "Service check points" (service_check) is retired from the menu: the check points now
+  // come from each machine's checklist PDF (Service checklists tab, migration 20270131120000).
+  { key: "service_checklist", label: "Service checklists (PDF)" },
 ];
 
 /** Which master's owner may edit each tab. Mirrors the RLS in 20261021130000. */
@@ -39,6 +44,10 @@ const OWNED_BY: Record<Tab, OcpiMasterType> = {
   dryer_type: "dryer_type",
   machine_category: "machine",
   dryer: "dryer_type",
+  // The Service Check's Yes/No list. Mirrors the RLS in 20270119120000.
+  service_check: "machine",
+  // One checklist PDF per machine. Mirrors the RLS in 20270131120000.
+  service_checklist: "machine",
 };
 
 /**
@@ -227,7 +236,50 @@ export default function Masters() {
         </Card>
       )}
 
-      {tab === "dryer" ? (
+      {tab === "service_checklist" ? (
+        <ServiceChecklistsTab canManage={canManage} />
+      ) : tab === "service_check" ? (
+        /*
+          Every ACTIVE row here is a box to tick on every deal's Service Check.
+          A finished check stores the NAME with its answer, so editing or
+          deactivating a row never rewrites a completed check.
+        */
+        <MasterCrud<OcpiServiceCheckpoint>
+          key={tab}
+          singular="check point"
+          rows={s.serviceCheckpoints}
+          columns={[
+            { header: "Check point", render: (r) => <span className="font-medium text-navy">{r.name}</span>,
+              filter: { get: (r) => r.name } },
+            { header: "Order", render: (r) => <span className="text-grey-2">{r.sortOrder}</span>, className: "w-24" },
+          ]}
+          fields={[
+            { key: "name", label: "Check point", type: "text", required: true,
+              hint: "A box the service team must tick on every deal's Service Check." },
+            { key: "sortOrder", label: "Sort order", type: "text", placeholder: "0",
+              hint: "Lower comes first on the Service Check." },
+          ]}
+          searchText={(r) => r.name}
+          defaultOrder={(r) => r.sortOrder}
+          canManage={canManage}
+          emptyValues={{ name: "", sortOrder: "0" }}
+          toValues={(r) => ({ name: r.name, sortOrder: String(r.sortOrder) })}
+          onSubmit={async (id, v, active) => {
+            const input = {
+              name: v.name.trim(),
+              active,
+              sortOrder: Math.max(0, Math.floor(Number(v.sortOrder) || 0)),
+            };
+            if (id) await updateServiceCheckpoint(id, input);
+            else await insertServiceCheckpoint(input);
+            await s.refresh();
+          }}
+          onToggleActive={async (row, active) => {
+            await updateServiceCheckpoint(row.id, { name: row.name, active, sortOrder: row.sortOrder });
+            await s.refresh();
+          }}
+        />
+      ) : tab === "dryer" ? (
         /*
           ⚠ ITS OWN INSTANCE, because a dryer is the one list here that is not
             just a name — it belongs to a dryer CATEGORY, and the quotation

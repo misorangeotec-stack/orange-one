@@ -11,6 +11,7 @@
  * in `printGatePass.ts` — it prints, it does not download; see the note there.
  */
 import { billedQtyOf, type RoundView } from "./rounds";
+import type { RoundItem } from "../types";
 
 export interface GatePassData {
   /** e.g. `OTEC-2608-001`. Null means no invoice yet — callers must not get here. */
@@ -33,7 +34,36 @@ export interface GatePassData {
   /** The invoice date, ISO. Printed dd-mm-yyyy. */
   invoiceDateIso: string | null;
   orderNo: string;
-  lines: { name: string; qty: number; unit: string | null }[];
+  lines: GatePassLine[];
+}
+
+/** One billed item on the slip, with the lots it went out from. */
+export interface GatePassLine {
+  name: string;
+  /** The BILLED quantity of the whole line. */
+  qty: number;
+  unit: string | null;
+  /**
+   * Its lots, in pick order. Empty when no lot was recorded. `qty` per lot is set
+   * only when the split adds up to the billed figure — otherwise the slip prints
+   * the line's quantity once against all its lots rather than invent a split.
+   */
+  lots: { lotNo: string; expiryIso: string | null; qty: number | null }[];
+}
+
+/** Resolves a lot's expiry (ISO) — Tally first, then typed. Null = unknown. */
+export type ExpiryOf = (itemId: string | null, itemName: string, lotNo: string) => string | null;
+
+/** The lots a round item went out from, best record first (see LotAllocation). */
+export function lotsOfItem(i: RoundItem): { lotNo: string; qty: number | null }[] {
+  if (i.lots.length > 0) {
+    return [...i.lots]
+      .sort((a, b) => a.seq - b.seq)
+      .filter((l) => l.lotNo.trim() !== "")
+      .map((l) => ({ lotNo: l.lotNo.trim(), qty: l.qty }));
+  }
+  // Pre-OD-15 lines: the typed text, whole — never parsed.
+  return i.lotNo?.trim() ? [{ lotNo: i.lotNo.trim(), qty: null }] : [];
 }
 
 /**
@@ -54,6 +84,8 @@ export function gatePassFromRound(
     customerName: string;
     customerLocation: string | null;
     itemName: (id: string | null) => string;
+    /** Omitted ⇒ every expiry prints blank. */
+    expiryOf?: ExpiryOf;
   },
 ): GatePassData {
   return {
@@ -75,14 +107,33 @@ export function gatePassFromRound(
     */
     lines: view.items
       .filter((i) => billedQtyOf(i) > 0)
-      .map((i) => ({
+      .map((i): GatePassLine => {
         // The frozen name on a reprint of an archived round, the master's
         // current name on a live one. Both are right for their case: history
         // should not be rewritten by a rename, and a live round has no snapshot.
-        name: i.itemName || meta.itemName(i.itemId) || "Item",
-        qty: billedQtyOf(i),
-        unit: i.unitName,
-      })),
+        const name = i.itemName || meta.itemName(i.itemId) || "Item";
+        const billed = billedQtyOf(i);
+        const lots = lotsOfItem(i);
+        /*
+          ⚠ PER-LOT QUANTITIES ONLY WHEN THEY ADD UP TO THE BILL. The split was
+            recorded against what was SHIPPED; the slip states what was BILLED.
+            When the two differ (or a lot has no figure) the per-lot numbers
+            would not sum to the line, so they are dropped, not printed.
+        */
+        const single = lots.length === 1;
+        const sum = lots.reduce((a, l) => a + (l.qty ?? NaN), 0);
+        const splitHolds = !single && lots.length > 0 && Math.abs(sum - billed) < 0.001;
+        return {
+          name,
+          qty: billed,
+          unit: i.unitName,
+          lots: lots.map((l) => ({
+            lotNo: l.lotNo,
+            expiryIso: meta.expiryOf?.(i.itemId, name, l.lotNo) ?? null,
+            qty: single ? billed : splitHolds ? l.qty : null,
+          })),
+        };
+      }),
   };
 }
 

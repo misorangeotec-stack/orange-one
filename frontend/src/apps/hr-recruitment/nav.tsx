@@ -23,6 +23,9 @@ const ic = {
   candidates: (
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="9" cy="8" r="3.5" /><path d="M2 20c0-3.5 3-5.5 7-5.5s7 2 7 5.5" /><path d="M17 8h5M19.5 5.5v5" /></svg>
   ),
+  futureRef: (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z" /></svg>
+  ),
   pipeline: (
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 5h18" /><path d="M6 10h12" /><path d="M9 15h6" /><path d="M11 20h2" /></svg>
   ),
@@ -82,6 +85,9 @@ export function buildHrNav(opts: {
   canSeePositions: boolean;
   /** Board access OR the Setup pipeline-viewers list — see lib/access.ts. */
   canSeePipeline: boolean;
+  /** Admins + Setup → Future Reference list. Badge = how many are saved. */
+  canSeeFutureRef: boolean;
+  futureRefCount: number;
   canInterview: boolean;
   canOnboard: boolean;
   canReview: boolean;
@@ -106,6 +112,14 @@ export function buildHrNav(opts: {
   // so fail canSeeBoard. Same predicate the route enforces, so the link and the
   // screen always agree.
   if (opts.canSeePipeline) nav.push({ label: "Pipeline", to: `${B}/pipeline`, icon: ic.pipeline });
+  // CVs not taken forward but kept for a later vacancy, from every position at once.
+  if (opts.canSeeFutureRef)
+    nav.push({
+      label: "Future Reference",
+      to: `${B}/future-reference`,
+      icon: ic.futureRef,
+      badge: opts.futureRefCount || undefined,
+    });
 
   // "Actions" — the things anyone might personally start. The closure owns the
   // section header, so whichever item renders first carries it (an employee who

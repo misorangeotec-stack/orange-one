@@ -76,7 +76,7 @@ export interface TicketReading {
   endTime: string;
   ticketCost: number | null;
   otherCharges: number | null;
-  /** ⚠ §11.3 excludes foreign currency entirely, so anything but INR is a WARNING. */
+  /** ⚠ Section 11.3 excludes foreign currency entirely, so anything but INR is a WARNING. */
   currency: string;
   passengers: string[];
   confidence: "high" | "medium" | "low";
@@ -184,6 +184,51 @@ export async function completeBooking(tripId: string): Promise<string> {
   return data as string;
 }
 
+/**
+ * Step 1 of a cancellation (since 2026-10-23): the raiser chooses the ticket(s)
+ * and gives the reason. Nothing is cancelled yet — the trip goes to
+ * `cancel_pending` and waits in the Cancel Trip bucket. Returns the request id.
+ */
+export async function requestCancelBooking(
+  tripId: string,
+  legIds: string[],
+  reason: string,
+): Promise<string> {
+  const { data, error } = await db.rpc("fms_travel_request_cancel_booking", {
+    p_trip: tripId,
+    p_leg_ids: legIds,
+    p_reason: reason,
+  });
+  if (error) throw new Error(error.message);
+  return data as string;
+}
+
+export interface CreditNoteInput {
+  creditNoteNo: string;
+  creditNoteAmount: number;
+  /** Already uploaded to the trip's `cancellation` slot. */
+  creditNotePath: string;
+}
+
+/**
+ * Step 2: the Cancel Trip owner files the credit note — file, number and amount,
+ * all mandatory. The tickets are cancelled then. Returns the trip's new status:
+ * `closed` (tickets left) or `cancelled` (none left).
+ */
+export async function completeCancelBooking(
+  cancellationId: string,
+  input: CreditNoteInput,
+): Promise<string> {
+  const { data, error } = await db.rpc("fms_travel_complete_cancel_booking", {
+    p_cancellation: cancellationId,
+    p_cn_no: input.creditNoteNo,
+    p_cn_amount: input.creditNoteAmount,
+    p_cn_path: input.creditNotePath,
+  });
+  if (error) throw new Error(error.message);
+  return data as string;
+}
+
 export async function requestCancellation(tripId: string, reason: string): Promise<void> {
   const { error } = await db.rpc("fms_travel_request_cancellation", {
     p_trip: tripId,
@@ -195,7 +240,7 @@ export async function requestCancellation(tripId: string, reason: string): Promi
 /**
  * The desk cancels and the trip is routed by what is left to settle.
  *
- * ⚠ `kind` IS NOT COSMETIC. §4.1 makes a cancellation charge reimbursable when
+ * ⚠ `kind` IS NOT COSMETIC. Section 4.1 makes a cancellation charge reimbursable when
  *   the reason is BUSINESS and not when it is personal, and phase 8 reads it to
  *   decide whether the charge may be claimed at all.
  */

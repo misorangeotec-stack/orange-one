@@ -1,6 +1,7 @@
+import { useSession } from "@/core/platform/session";
 import Combobox, { type ComboOption } from "@/shared/components/ui/Combobox";
 import ChoiceButtons from "@/shared/components/ui/ChoiceButtons";
-import { FieldLabel, TextInput, TextArea } from "@/shared/components/ui/Form";
+import { FieldHeading, FieldLabel, TextInput, TextArea } from "@/shared/components/ui/Form";
 import RequestMasterModal from "./RequestMasterModal";
 import type { RequestType } from "../types";
 import type { SupplyRequestFormApi } from "../pages/requests/useSupplyRequestForm";
@@ -30,15 +31,22 @@ export default function SupplyRequestFields({ form }: { form: SupplyRequestFormA
     companyOptions, deptOptions, categoryOptions, itemOptions, serviceOptions, peopleOptions,
     resolvedDept, beneficiaryDept, isOtherItem, isOtherService, routeHint,
   } = form;
+  // Services / Maintenance is paused for now — admins only. A request that is
+  // already of that type keeps the option, so editing it still works.
+  const { isAdmin } = useSession();
+  const typeOptions = isAdmin || requestType === "services_maintenance" ? TYPES : TYPES.filter((t) => t.value !== "services_maintenance");
 
   return (
     <>
       <FieldLabel label="Company" required>
         <Combobox value={companyId} onChange={setCompanyId} options={companyOptions} placeholder="Select company" autoAdvance />
       </FieldLabel>
-      <FieldLabel label="Location" required>
+      {/* FieldHeading, not FieldLabel — a <label> around a button group makes a click
+          on the word "Location" press the first option. See Form.tsx. */}
+      <div>
+        <FieldHeading label="Location" required />
         <ChoiceButtons value={location} onChange={setLocation} options={LOCATIONS} autoAdvance ariaLabel="Location" />
-      </FieldLabel>
+      </div>
       <label className="flex items-center gap-2.5 cursor-pointer select-none">
         <input type="checkbox" checked={onBehalf} onChange={(e) => setOnBehalf(e.target.checked)} className="w-4 h-4 accent-orange" />
         <span className="text-[13px] text-navy">I'm requesting this for someone else</span>
@@ -70,9 +78,10 @@ export default function SupplyRequestFields({ form }: { form: SupplyRequestFormA
         </FieldLabel>
       )}
 
-      <FieldLabel label="Type of request" required>
-        <ChoiceButtons value={requestType} onChange={(v) => setRequestType(v as RequestType)} options={TYPES} autoAdvance ariaLabel="Type of request" />
-      </FieldLabel>
+      <div>
+        <FieldHeading label="Type of request" required />
+        <ChoiceButtons value={requestType} onChange={(v) => setRequestType(v as RequestType)} options={typeOptions} autoAdvance ariaLabel="Type of request" />
+      </div>
 
       {requestType === "new_requirement" ? (
         <>

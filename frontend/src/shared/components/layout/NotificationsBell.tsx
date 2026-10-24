@@ -28,9 +28,18 @@ import type { NotificationItem } from "./types";
 export default function NotificationsBell({
   items,
   onMarkRead,
+  onMarkAllRead,
 }: {
   items: NotificationItem[];
   onMarkRead?: (ids: string[]) => void;
+  /**
+   * Clear EVERY unread notification for this person, not only the rows on screen.
+   * An FMS bell loads just the newest 100 unread (shared/lib/fmsBell.ts), so
+   * marking only those would leave the count at "99+". Optional: a bell that
+   * loads its whole inbox (Task Management, the home screen) leaves it out and
+   * "Mark all as read" falls back to onMarkRead(every id shown), as before.
+   */
+  onMarkAllRead?: () => void;
 }) {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
@@ -71,7 +80,7 @@ export default function NotificationsBell({
       <button
         onClick={() => setOpen((o) => !o)}
         className="relative w-10 h-10 rounded-xl bg-white border border-line text-grey flex items-center justify-center hover:text-navy hover:border-[#d9e2f0] transition"
-        aria-label={unread > 0 ? `Notifications, ${unread} unread` : "Notifications"}
+        aria-label={unread > 0 ? `Notifications, ${unread > 99 ? "99+" : unread} unread` : "Notifications"}
       >
         <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
           <path d="M18 8a6 6 0 1 0-12 0c0 7-3 9-3 9h18s-3-2-3-9" />
@@ -97,7 +106,7 @@ export default function NotificationsBell({
             <span className="text-sm font-semibold text-navy">Notifications</span>
             {unread > 0 && onMarkRead && (
               <button
-                onClick={() => onMarkRead(unreadIds)}
+                onClick={() => (onMarkAllRead ? onMarkAllRead() : onMarkRead(unreadIds))}
                 className="text-[11px] text-orange font-medium hover:underline"
               >
                 Mark all as read

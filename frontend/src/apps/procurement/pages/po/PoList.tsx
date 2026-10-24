@@ -28,7 +28,7 @@ export default function PoList() {
     { key: "value", header: "Value", cell: (p) => inr(p.totalValue), sortValue: (p) => p.totalValue, filter: { kind: "number", get: (p) => p.totalValue }, tdClassName: "whitespace-nowrap" },
     { key: "advance", header: "Advance", cell: (p) => inr(p.advancePaid), sortValue: (p) => p.advancePaid, filter: { kind: "number", get: (p) => p.advancePaid }, tdClassName: "whitespace-nowrap" },
     { key: "pending", header: "Pending", cell: (p) => inr(s.pendingAmount(p)), sortValue: (p) => s.pendingAmount(p), filter: { kind: "number", get: (p) => s.pendingAmount(p) }, tdClassName: "whitespace-nowrap" },
-    { key: "stage", header: "Stage", cell: (p) => <span className={poStageBadge(p.currentStage)}>{stageLabel(p)}</span>, sortValue: (p) => stageLabel(p), filter: { kind: "select", get: (p) => stageLabel(p) }, tdClassName: "whitespace-nowrap" },
+    { key: "stage", header: "Stage", cell: (p) => <span className={poStageBadge(p.currentStage)}>{stageLabel(p)}</span>, sortValue: (p) => stageLabel(p), filter: { kind: "select", get: (p) => stageLabel(p) }, tdClassName: "whitespace-nowrap", resize: false /* a pill: never cut (PF-20) */ },
   ];
 
   return (

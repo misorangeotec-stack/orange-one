@@ -1,8 +1,9 @@
 import { useMemo, useRef, useState } from "react";
 import Button from "@/shared/components/ui/Button";
+import { Package, ShoppingCart } from "lucide-react";
 import Combobox, { type ComboOption } from "@/shared/components/ui/Combobox";
 import { TextInput, TextArea } from "@/shared/components/ui/Form";
-import type { DeskCompany, DeskItem, DeskLineInput } from "../data/orderDesk";
+import type { DeskItem, DeskLedger, DeskLineInput } from "../data/orderDesk";
 import { customerItemType } from "../lib/customerLabels";
 
 /**
@@ -69,10 +70,10 @@ const RETIRED_GROUP = "No longer on your list";
 export default function OrderForm({
   items,
   retired,
-  companies,
-  companyId,
-  onCompanyChange,
-  companyLabel,
+  ledgers,
+  ledgerId,
+  onLedgerChange,
+  ledgerLabel,
   initialLines,
   initialRemarks,
   submitLabel,
@@ -80,18 +81,19 @@ export default function OrderForm({
   onSubmit,
   onCancel,
   cancelLabel,
+  onSaveDraft,
 }: {
   items: DeskItem[];
   retired?: RetiredItem[];
   /**
-   * Which of ours they may buy from. Passed only when placing — an order that
-   * already exists is committed to a book and cannot move to another.
+   * Which of their firms is ordering (OD-17). Passed only when placing — an
+   * order that already exists stays with the firm it was placed for.
    */
-  companies?: DeskCompany[];
-  companyId?: string;
-  onCompanyChange?: (id: string) => void;
+  ledgers?: DeskLedger[];
+  ledgerId?: string;
+  onLedgerChange?: (id: string) => void;
   /** Shown instead of the picker when changing an existing order. */
-  companyLabel?: string | null;
+  ledgerLabel?: string | null;
   initialLines?: DeskLineInput[];
   initialRemarks?: string;
   submitLabel: string;
@@ -99,6 +101,11 @@ export default function OrderForm({
   onSubmit: (lines: DeskLineInput[], remarks: string) => Promise<void>;
   onCancel?: () => void;
   cancelLabel?: string;
+  /**
+   * Keep what is typed so far without placing it (Place an order only). The
+   * caller stores it; nothing is checked until the order is actually placed.
+   */
+  onSaveDraft?: (lines: DeskLineInput[], remarks: string) => Promise<void>;
 }) {
   const [lines, setLines] = useState<DeskLineInput[]>(
     initialLines?.length ? initialLines : [blankLine()]
@@ -107,6 +114,25 @@ export default function OrderForm({
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
   const [touched, setTouched] = useState(false);
+  const [draftBusy, setDraftBusy] = useState(false);
+  const [draftSavedAt, setDraftSavedAt] = useState<Date | null>(null);
+
+  const saveDraft = async () => {
+    if (!onSaveDraft) return;
+    setErr("");
+    if (!lines.some((l) => l.itemId) && !remarks.trim()) {
+      return setErr("Add an item or a note before saving a draft.");
+    }
+    setDraftBusy(true);
+    try {
+      await onSaveDraft(lines.filter((l) => l.itemId), remarks);
+      setDraftSavedAt(new Date());
+    } catch (e) {
+      setErr((e as Error).message);
+    } finally {
+      setDraftBusy(false);
+    }
+  };
 
   const options = useMemo(
     () => [
@@ -203,65 +229,62 @@ export default function OrderForm({
   };
 
   /*
-    WHO THEY ARE BUYING FROM, ABOVE THE ITEMS AND NOT BESIDE THEM.
+    WHICH OF THEIR FIRMS IS ORDERING, ABOVE THE ITEMS AND NOT BESIDE THEM.
 
     It is not one field among several — it decides what the list underneath can
     contain, so it has to be answered first and has to look like it was. Placed
     beside the lines it reads as an afterthought, and a customer who changes it
     after typing six lines loses them.
 
-    ⚠ ONE PICKER, OR NONE AT ALL. Most customers buy from exactly one of our
-      companies, and a required dropdown with a single option is a question with
-      one answer — so it prints as a sentence instead. The picker appears only
-      where there is a real choice to make.
+    ⚠ ONE PICKER, OR NONE AT ALL. Most customers are exactly one firm, and a
+      required dropdown with a single option is a question with one answer — so it
+      prints as a sentence instead. The picker appears only where there is a real
+      choice to make.
+
+    ⚠ NOT ONE OF OUR COMPANY NAMES ANYWHERE IN HERE (OD-17). The options are their
+      own ledgers; which of our books bills the order is chosen at our end.
   */
-  const companyPicker = (() => {
-    if (companyLabel) {
+  const ledgerPicker = (() => {
+    const fixed = ledgerLabel ?? (ledgers?.length === 1 ? ledgers[0].name : null);
+    if (fixed) {
       return (
-        <p className="text-[13.5px] text-grey">
-          Ordering from <span className="font-semibold text-ink">{companyLabel}</span>
+        <p className="text-[14px] text-grey">
+          Ordering for <span className="font-bold text-navy">{fixed}</span>
         </p>
       );
     }
-    if (!companies || companies.length === 0) return null;
-    if (companies.length === 1) {
-      return (
-        <p className="text-[13.5px] text-grey">
-          Ordering from <span className="font-semibold text-ink">{companies[0].label}</span>
-        </p>
-      );
-    }
+    if (!ledgers || ledgers.length === 0) return null;
     return (
-      <div className="space-y-2">
-        <label className="block text-[13px] font-semibold text-ink">Who are you buying from?</label>
-        <div className="max-w-md">
+      <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
+        <label className="text-[14px] font-semibold text-ink">Which of your companies is this order for?</label>
+        <div className="w-full sm:w-80">
           <Combobox
-            value={companyId ?? ""}
-            onChange={(v) => onCompanyChange?.(v)}
-            options={companies.map((c) => ({
-              value: c.companyId,
-              label: c.label,
-              sublabel: `${c.itemCount} ${c.itemCount === 1 ? "item" : "items"}`,
-            }))}
-            placeholder="Choose one of ours"
+            value={ledgerId ?? ""}
+            onChange={(v) => onLedgerChange?.(v)}
+            options={ledgers.map((l) => ({ value: l.ledgerId, label: l.name }))}
+            placeholder="Choose your company"
           />
         </div>
-        {/* Says the quiet part out loud, so "where is my usual ink?" has an
-            answer on the screen rather than on the phone. */}
-        <p className="text-[12.5px] text-grey-2">
-          One order goes to one of our companies, and each sells a different list.
-          If something you buy is not below, it may be sold by another of ours.
-        </p>
       </div>
     );
   })();
 
+  /*
+    ONE CARD, TOP TO BOTTOM (OD-19): who it is for, the lines, the note and the
+    buttons all sit in the same white sheet, so the order reads as one document
+    rather than four boxes stacked on the page.
+  */
   return (
-    <div className="space-y-5">
-      {companyPicker && (
-        <div className="rounded-2xl border border-line bg-white px-5 py-4">{companyPicker}</div>
+    <div className="rounded-2xl border border-line bg-white shadow-[0_18px_50px_-24px_rgba(11,26,54,0.35)]">
+      {ledgerPicker && (
+        <div className="flex items-center gap-3 px-5 py-4 border-b border-line">
+          <span aria-hidden className="grid place-items-center w-9 h-9 shrink-0 rounded-xl bg-[#FFF1E4] text-orange">
+            <Package size={18} strokeWidth={2.2} />
+          </span>
+          <div className="min-w-0 flex-1">{ledgerPicker}</div>
+        </div>
       )}
-      <div className="rounded-2xl border border-line bg-white overflow-hidden">
+      <div>
         <div className="hidden sm:grid grid-cols-[1fr_130px_90px_1fr_40px] gap-3 px-5 py-3 border-b border-line bg-[#FBFCFE] text-[12px] font-semibold text-grey uppercase tracking-wide">
           <span>Item</span>
           <span>Quantity</span>
@@ -378,7 +401,7 @@ export default function OrderForm({
         </div>
       </div>
 
-      <div>
+      <div className="px-5 py-4 border-t border-line">
         <label className="block text-[13px] font-semibold mb-1.5">Anything we should know?</label>
         <TextArea
           value={remarks}
@@ -389,19 +412,32 @@ export default function OrderForm({
       </div>
 
       {err ? (
-        <div className="rounded-xl border border-[#f6d2d3] bg-[#FDECEC] px-4 py-3 text-[13.5px] text-[#B3282C]">
+        <div className="mx-5 mb-1 rounded-xl border border-[#f6d2d3] bg-[#FDECEC] px-4 py-3 text-[13.5px] text-[#B3282C]">
           {err}
         </div>
       ) : null}
 
-      <div className="flex items-center gap-3">
+      <div className="flex flex-wrap items-center gap-3 px-5 pt-2 pb-5">
         <Button onClick={submit} disabled={!canSubmit}>
+          <ShoppingCart size={16} strokeWidth={2.4} />
           {busy ? busyLabel : submitLabel}
         </Button>
+        {onSaveDraft ? (
+          <Button variant="ghost" onClick={() => void saveDraft()} disabled={busy || draftBusy}>
+            {draftBusy ? "Saving…" : draftSavedAt ? "Update draft" : "Save as draft"}
+          </Button>
+        ) : null}
         {onCancel ? (
           <Button variant="ghost" onClick={onCancel} disabled={busy}>
             {cancelLabel ?? "Cancel"}
           </Button>
+        ) : null}
+        {draftSavedAt ? (
+          <span className="text-[12.5px] text-grey">
+            Saved to your drafts at{" "}
+            {draftSavedAt.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" }).toLowerCase()} —
+            find it under My orders → Drafts.
+          </span>
         ) : null}
       </div>
     </div>

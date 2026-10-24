@@ -5,7 +5,8 @@ import StageTabs from "@/shared/components/ui/StageTabs";
 import { useStageMode } from "@/shared/lib/useStageMode";
 import { formatDateTime } from "@/shared/lib/time";
 import { useDispatchStore } from "../../store";
-import { dmy } from "../../lib/format";
+import { dmy, STATUS_LABEL } from "../../lib/format";
+import StatusPill from "../../components/StatusPill";
 import type { DispatchOrder } from "../../types";
 
 /** What `useStageMode` needs to offer its "mine / everyone" filter. */
@@ -60,7 +61,9 @@ export default function NewCustomerOrders() {
     actorId: o.editedBy,
     atIso: o.editedAt ?? "",
   }));
-  const stage = useStageMode<DoneRow>(completed, s.userId);
+  // Everyone's by default: this tab is the register of customer orders, not "what
+  // did I just do". Mine stays one click away.
+  const stage = useStageMode<DoneRow>(completed, s.userId, "all");
 
   const orderCell = (o: DispatchOrder) => (
     <Link to={`${B}/orders/${o.id}`} className="font-semibold text-navy hover:text-orange">
@@ -89,11 +92,12 @@ export default function NewCustomerOrders() {
     {
       key: "customer",
       header: "Customer",
+      // One line (PF-20): the location follows the name, both whole on hover when cut.
       cell: (o) => (
-        <div>
-          <div className="text-ink">{o.requesterName}</div>
-          {o.customerLocation && <div className="text-[12px] text-grey-2">{o.customerLocation}</div>}
-        </div>
+        <>
+          <span className="text-ink">{o.requesterName}</span>
+          {o.customerLocation && <span className="text-[12px] text-grey-2"> · {o.customerLocation}</span>}
+        </>
       ),
       sortValue: (o) => o.requesterName,
       filter: { kind: "select", get: (o) => o.requesterName },
@@ -134,6 +138,13 @@ export default function NewCustomerOrders() {
         : undefined,
     })) as QueueColumn<DoneRow>[],
     {
+      key: "status",
+      header: "Now at",
+      cell: (r) => <StatusPill status={r.order.status} />,
+      sortValue: (r) => STATUS_LABEL[r.order.status],
+      filter: { kind: "select", get: (r) => STATUS_LABEL[r.order.status] },
+    },
+    {
       key: "completedAt",
       header: "Written up",
       cell: (r) => (r.atIso ? formatDateTime(r.atIso) : "—"),
@@ -157,6 +168,8 @@ export default function NewCustomerOrders() {
         onMode={stage.setMode}
         pendingCount={pending.length}
         completedCount={stage.rows.length}
+        scope={stage.scope}
+        onScope={stage.setScope}
       />
 
       {stage.mode === "pending" ? (
@@ -183,7 +196,7 @@ export default function NewCustomerOrders() {
           loading={s.isLoading}
           rowsLabel="orders"
           emptyTitle="Nothing written up yet"
-          emptyMessage="Completed customer orders stay here until credit check decides them."
+          emptyMessage="Every customer order that has been written up shows here, wherever it is now."
           initialSort={{ key: "completedAt", dir: "desc" }}
           actions={(r) =>
             s.canCompleteCustomerOrder(r.order) ? (

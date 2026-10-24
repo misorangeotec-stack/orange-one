@@ -201,7 +201,7 @@ export default function SavedViews() {
     );
     const target =
       view.source === "Reports"
-        ? "/outstanding-dashboard/reports"
+        ? "/reports"
         : view.source === "Risk Register"
         ? "/outstanding-dashboard/risk-register"
         : "/outstanding-dashboard";

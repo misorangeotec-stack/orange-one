@@ -190,10 +190,13 @@ export async function exportDailyReportXlsx(d: DailyXlsxInput): Promise<void> {
   /* ---- one sheet per product line -------------------------------------- */
   //
   // ⚠ EVERY CUSTOMER, UNFOLDED (decided 17-09-2026). The screen and the PDF fold
-  //   a long list to the customers making up 80% of it; this workbook is where
-  //   finance filters and pivots, so it lists them all, in the same shape — one
-  //   row per customer, the companies across the top — with the TOTAL in the
-  //   preamble, where a filter cannot hide it.
+  //   a long list to the customers making up 80% of it, plus everyone above that
+  //   list's money floor (DR-4, 21-09-2026); this workbook is where finance
+  //   filters and pivots, so it lists them all, in the same shape — one row per
+  //   customer, the companies across the top — with the TOTAL in the preamble,
+  //   where a filter cannot hide it. NOTHING HERE READS THE FLOOR, and nothing
+  //   should: a floor that reached this file would start hiding rows from the one
+  //   place that has always promised every one of them.
   const salePivots = new Map(groups.map((g) => [g.saleType, pivotSales(g.lines)] as const));
   for (const t of SALE_TYPE_ORDER) {
     const g = groups.find((x) => x.saleType === t);
@@ -371,7 +374,7 @@ export async function exportDailyReportXlsx(d: DailyXlsxInput): Promise<void> {
       "Outward includes delivery challans, which move goods but are not invoices. The Type column says SALE or DC.",
       "Goods out on approval are shown on the Summary but NOT counted as sales.",
       "Goods sent free of charge count in quantity, never in amount. A company cell that went entirely free says FOC.",
-      "The product-line sheets and the Receipts and Payments sheets list EVERY customer, one row per customer with the companies across the top. The screen and the PDF fold a list of more than 10 to the customers making up 80% of it; this workbook does not. Totals sit above each header so a filter cannot hide them.",
+      "The product-line sheets and the Receipts and Payments sheets list EVERY customer, one row per customer with the companies across the top. The screen and the PDF fold a list of more than 10 to the customers making up 80% of it plus every customer above that list's own floor; this workbook does not fold at all. Totals sit above each header so a filter cannot hide them.",
       "The headline received and paid figures count CUSTOMERS AND SUPPLIERS ONLY, the same basis as the sheet this replaces. Every other counterparty — transfers between our own accounts, inter-company movement, cash and suspense — is listed and totalled separately on the Receipts and Payments sheets. The voucher-by-voucher detail is on Receipt vouchers and Payment vouchers.",
       ...(d.rulesLoaded
         ? []

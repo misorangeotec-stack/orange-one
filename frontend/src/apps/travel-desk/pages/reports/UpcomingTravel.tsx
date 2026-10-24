@@ -8,6 +8,7 @@ import { useDirectory } from "@/core/platform/store";
 import { useTravelStore } from "../../store";
 import { money, LEG_LABEL, STATUS_LABEL } from "../../lib/format";
 import StatusPill from "../../components/StatusPill";
+import { hasLiveBooking } from "../../lib/queues";
 import type { Trip } from "../../types";
 
 /**
@@ -34,7 +35,7 @@ export default function UpcomingTravel() {
       s.trips
         .filter(
           (t) =>
-            t.status === "booked" &&
+            hasLiveBooking(t) &&
             !!t.plannedDepartureDate &&
             (t.actualReturnDate ?? t.plannedReturnDate ?? t.plannedDepartureDate) >= today,
         )
@@ -154,6 +155,7 @@ export default function UpcomingTravel() {
         align: "right",
         cell: (t) => money(t.bookingTotal),
         sortValue: (t) => t.bookingTotal ?? 0,
+        filter: { kind: "number", get: (t) => t.bookingTotal ?? 0 },
         exportValue: (t) => t.bookingTotal ?? 0,
         tdClassName: "whitespace-nowrap",
       },
@@ -163,6 +165,7 @@ export default function UpcomingTravel() {
         align: "right",
         cell: (t) => money(t.advancePaidAmount),
         sortValue: (t) => t.advancePaidAmount ?? 0,
+        filter: { kind: "number", get: (t) => t.advancePaidAmount ?? 0 },
         exportValue: (t) => t.advancePaidAmount ?? 0,
         tdClassName: "whitespace-nowrap",
         defaultHidden: true,

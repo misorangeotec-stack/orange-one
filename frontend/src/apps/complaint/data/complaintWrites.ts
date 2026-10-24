@@ -9,6 +9,7 @@ import type {
   ComplaintType,
   DocSlot,
   ResolutionType,
+  RmOrigin,
   Severity,
 } from "../types";
 
@@ -35,6 +36,13 @@ import type {
  */
 export interface RequestInput {
   complaintType: ComplaintType;
+  /**
+   * ⚠ THE BRANCH SWITCH, and the server REFUSES a raw-material complaint without
+   *   it. Null on a finished-good one, where the RPC ignores whatever is sent.
+   *   Domestic opens the complaint with Purchase; import opens it with
+   *   Management. See types/index.ts.
+   */
+  rmOrigin: RmOrigin | null;
   companyId: string | null;
   requesterName: string;
 
@@ -61,6 +69,7 @@ export async function submitRequest(input: RequestInput): Promise<string> {
   const { data, error } = await db.rpc("fms_complaint_submit_request", {
     p: {
       complaint_type: input.complaintType,
+      rm_origin: input.rmOrigin ?? "",
       company_id: input.companyId ?? "",
       requester_name: input.requesterName,
       lot_no: input.lotNo,
@@ -174,6 +183,74 @@ export async function recordApproval(requestId: string, input: ApprovalInput): P
   if (error) throw new Error(error.message);
 }
 
+/* ------------------------- the raw-material branch ------------------------ */
+
+/** Purchase department (RM domestic): remarks, then on to management. */
+export interface PurchaseInput {
+  remarks: string;
+  date: string;
+}
+
+export async function recordPurchase(requestId: string, input: PurchaseInput): Promise<void> {
+  const { error } = await db.rpc("fms_complaint_record_purchase", {
+    p_req: requestId,
+    p: { remarks: input.remarks, date: input.date },
+  });
+  if (error) throw new Error(error.message);
+}
+
+/**
+ * Management's FIRST pass on an imported-material complaint.
+ *
+ * ⚠ TWO ACTIONS, ONE CALL, mirroring the single RPC behind it: `close` ends the
+ *   complaint there and then and needs the remarks; `assign` hands it to a named
+ *   person and needs `assigneeId`, after which it lands in THAT person's queue.
+ *   One decision at one desk — see the migration for why it is not split.
+ *
+ * ⚠ THE NAME IS NOT SENT. The RPC resolves it from `profiles` and freezes it, so
+ *   a browser cannot record an assignment against a name nobody can be found by.
+ */
+export interface RmManagementInput {
+  action: "close" | "assign";
+  /** Required when assigning; ignored when closing. */
+  assigneeId: string | null;
+  /** The closing remarks when closing; the brief to the assignee when assigning. */
+  note: string | null;
+  date: string;
+}
+
+export async function recordRmManagement(
+  requestId: string,
+  input: RmManagementInput,
+): Promise<void> {
+  const { error } = await db.rpc("fms_complaint_record_rm_management", {
+    p_req: requestId,
+    p: {
+      action: input.action,
+      assignee_id: input.assigneeId ?? "",
+      note: input.note ?? "",
+      date: input.date,
+    },
+  });
+  if (error) throw new Error(error.message);
+}
+
+/** The assignee: their remarks, then back to management to be reviewed and closed. */
+export interface AssigneeInput {
+  remarks: string;
+  date: string;
+}
+
+export async function recordAssignee(requestId: string, input: AssigneeInput): Promise<void> {
+  const { error } = await db.rpc("fms_complaint_record_assignee", {
+    p_req: requestId,
+    p: { remarks: input.remarks, date: input.date },
+  });
+  if (error) throw new Error(error.message);
+}
+
+/* -------------------------------------------------------------------------- */
+
 /** Management review — one click. The note is optional by design. */
 export interface ManagementReviewInput {
   note: string | null;
@@ -280,6 +357,23 @@ export interface StepOwnerInput {
  *   `fms_complaint_is_step_owner` reads `employee_ids` and nothing else. Saving a
  *   department with no employees grants nobody, deliberately.
  */
+/**
+ * Several steps, ONE upsert — the Setup "Management Approval" row writes the
+ * same people to every management step, and must not leave them half-saved.
+ */
+export async function saveStepOwners(inputs: StepOwnerInput[]): Promise<void> {
+  const { error } = await db.from("fms_complaint_step_owners").upsert(
+    inputs.map((input) => ({
+      step_key: input.stepKey,
+      department_ids: input.departmentIds,
+      designation_id: input.designationId,
+      employee_ids: input.employeeIds,
+    })),
+    { onConflict: "step_key" },
+  );
+  if (error) throw new Error(error.message);
+}
+
 export async function saveStepOwner(input: StepOwnerInput): Promise<void> {
   const { error } = await db.from("fms_complaint_step_owners").upsert(
     {

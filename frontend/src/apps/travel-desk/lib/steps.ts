@@ -20,15 +20,15 @@ import type { StepDefBase } from "@/shared/lib/fmsQueue";
  *
  * THREE STEPS THE PRD DOES NOT HAVE, and why each is a step rather than a field:
  *
- *   director_approval — Policy §3.2 sends bands 6-9 to a Director, not to their
+ *   director_approval — Policy Section 3.2 sends bands 6-9 to a Director, not to their
  *                       HOD. Folding that into one approval step would either
  *                       spam the Directors with every field engineer's day trip
  *                       or quietly let a GM self-approve a Mumbai week.
- *   advance           — §11.1 gives it its own approver (Finance), its own
+ *   advance           — Section 11.1 gives it its own approver (Finance), its own
  *                       deadline (2 working days) and its own failure mode (the
  *                       money not arriving before departure). A field on the
  *                       trip owes nobody; a step owes Finance.
- *   finance_review    — §11.1 step 8 is a different person doing a different job
+ *   finance_review    — Section 11.1 step 8 is a different person doing a different job
  *                       from the HOD in step 7: the HOD says "yes they went and
  *                       yes that is roughly right", Finance says "and here is
  *                       what policy actually allows". Merging them is how a cap
@@ -64,7 +64,13 @@ export type StepKey =
   | "claim"
   | "claim_review"
   | "finance_review"
-  | "settlement";
+  | "settlement"
+  /**
+   * Since 2026-10-23: the raiser asks for a booked-and-closed trip to be
+   * cancelled (tickets + reason); this step's owner files the credit note.
+   * It shows on a trip's pipeline only once a cancellation has been asked for.
+   */
+  | "cancel_trip";
 
 /** One scope — no cross-scope anchor walk. */
 export type StepScope = "trip";
@@ -98,6 +104,7 @@ export const STEPS: StepDef[] = [
   { key: "claim_review",      index: 7, title: "Claim Approval",              short: "Claim Appr", scope: "trip" },
   { key: "finance_review",    index: 8, title: "Finance Verification",        short: "Finance",    scope: "trip" },
   { key: "settlement",        index: 9, title: "Settlement",                  short: "Settle",     scope: "trip" },
+  { key: "cancel_trip",       index: 10, title: "Cancel Trip",                short: "Cancel",     scope: "trip" },
 ];
 
 export const stepByKey = (key: string): StepDef | undefined => STEPS.find((s) => s.key === key);
@@ -119,7 +126,38 @@ export const STAGES: { label: string; keys: StepKey[] }[] = [
   { label: "Arrangements", keys: ["advance", "booking"] },
   { label: "Claim",        keys: ["claim", "claim_review"] },
   { label: "Settlement",   keys: ["finance_review", "settlement"] },
+  { label: "Cancellation", keys: ["cancel_trip"] },
 ];
+
+/**
+ * Steps HIDDEN by the new process (2026-10): the trip closes at booking, so
+ * everything after it is not used, and a request no longer asks for an advance.
+ *
+ * ⚠ HIDDEN, NOT DELETED. Every page, RPC, table and setting behind these steps
+ *   is still in place. A hidden step still shows wherever an older trip is
+ *   waiting at it, so that trip can finish. To bring a step back, take it out of
+ *   this list (the booking RPC also needs its old version back — see the
+ *   rollback of migration 20270124120000).
+ */
+export const HIDDEN_STEPS: StepKey[] = ["advance", "claim", "claim_review", "finance_review", "settlement"];
+
+export const isHiddenStep = (key: StepKey): boolean => HIDDEN_STEPS.includes(key);
+
+/**
+ * Menu queues hidden until an admin says otherwise in Settings → Menu queues:
+ * the hidden steps, plus the old "Cancellations" queue (replaced by Cancel Trip).
+ */
+export const MENU_HIDDEN_DEFAULT: string[] = [...HIDDEN_STEPS, "cancellations"];
+
+/** The steps to show: all but the hidden ones, plus any hidden one `inUse` says a trip still waits at. */
+export const shownSteps = (inUse: (key: StepKey) => boolean = () => false): StepDef[] =>
+  STEPS.filter((s) => !isHiddenStep(s.key) || inUse(s.key));
+
+/** `STAGES` cut down the same way; a stage left with no steps is dropped. */
+export const shownStages = (inUse: (key: StepKey) => boolean = () => false): typeof STAGES =>
+  STAGES.map((st) => ({ ...st, keys: st.keys.filter((k) => !isHiddenStep(k) || inUse(k)) })).filter(
+    (st) => st.keys.length > 0,
+  );
 
 /**
  * Steps an admin may assign owners to in Settings.

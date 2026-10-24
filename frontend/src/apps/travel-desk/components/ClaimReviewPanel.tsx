@@ -3,6 +3,9 @@ import Card from "@/shared/components/ui/Card";
 import Button from "@/shared/components/ui/Button";
 import { FieldLabel, TextArea } from "@/shared/components/ui/Form";
 import { formatDateDMY } from "@/shared/lib/date";
+import { FitCell, FitTh, ResetWidths } from "@/shared/components/ui/ColumnResizer";
+import { useColumnWidths } from "@/shared/lib/useColumnWidths";
+import { FIT } from "@/shared/lib/tableLook";
 import { useTravelStore } from "../store";
 import { money } from "../lib/format";
 import { travelDocUrl } from "../data/travelBookingWrites";
@@ -12,11 +15,11 @@ import type { Trip } from "../types";
 /**
  * The reporting manager's decision on a filed claim.
  *
- * ⚠ THE REVIEWER IS NOT ASKED TO CHECK THE ARITHMETIC. Every cap in §7, §9, §10
- *   and §15 has already been applied by the engine, and each line already
+ * ⚠ THE REVIEWER IS NOT ASKED TO CHECK THE ARITHMETIC. Every cap in Section 7, Section 9, Section 10
+ *   and Section 15 has already been applied by the engine, and each line already
  *   carries the sentence saying which rule bit. What a human is here for is the
  *   judgement no rule can make — was the journey necessary, is the business
- *   meal plausible, does the §7.3 exception actually hold. So this screen leads
+ *   meal plausible, does the Section 7.3 exception actually hold. So this screen leads
  *   with what was disallowed and why, rather than with a form to re-add columns.
  *
  * ⚠ A RETURN CLEARS `cl_at` SERVER-SIDE, which is what puts the trip back on the
@@ -30,6 +33,8 @@ import type { Trip } from "../types";
  */
 export default function ClaimReviewPanel({ trip }: { trip: Trip }) {
   const s = useTravelStore();
+  // PF-20: the seven columns drag; the widths are this panel's own.
+  const fit = useColumnWidths("tb", ["date", "cat", "city", "vendor", "claimed", "allowed", "receipt"]);
   const lines = s.claimLinesOf(trip.id);
   const daDays = s.daDaysOf(trip.id);
 
@@ -103,28 +108,39 @@ export default function ClaimReviewPanel({ trip }: { trip: Trip }) {
           </div>
         </div>
 
-        <div className="mt-3 overflow-x-auto">
+        {/* PF-20: appears only once a column here has been dragged. */}
+        <div className="mt-2 flex justify-end">
+          <ResetWidths fit={fit} cols={["date", "cat", "city", "vendor"]} />
+        </div>
+
+        <div className="mt-1 overflow-x-auto">
           <table className="w-full min-w-[640px] text-[12.5px]">
             <thead>
               <tr className="border-b border-line text-left text-[11px] uppercase tracking-wide text-grey">
-                <th className="py-1.5 pr-3 font-semibold">Date</th>
-                <th className="py-1.5 pr-3 font-semibold">Category</th>
-                <th className="py-1.5 pr-3 font-semibold">City</th>
-                <th className="py-1.5 pr-3 font-semibold">Vendor</th>
-                <th className="py-1.5 pr-3 text-right font-semibold">Claimed</th>
-                <th className="py-1.5 pr-3 text-right font-semibold">Allowed</th>
-                <th className="py-1.5 pr-3 font-semibold">Receipt</th>
+                <FitTh fit={fit} col="date" className="py-1.5 pr-3 font-semibold">Date</FitTh>
+                <FitTh fit={fit} col="cat" className="py-1.5 pr-3 font-semibold">Category</FitTh>
+                <FitTh fit={fit} col="city" className="py-1.5 pr-3 font-semibold">City</FitTh>
+                <FitTh fit={fit} col="vendor" className="py-1.5 pr-3 font-semibold">Vendor</FitTh>
+                <FitTh fit={fit} col="claimed" resize={false} className="py-1.5 pr-3 text-right font-semibold">Claimed</FitTh>
+                <FitTh fit={fit} col="allowed" resize={false} className="py-1.5 pr-3 text-right font-semibold">Allowed</FitTh>
+                <FitTh fit={fit} col="receipt" resize={false} className="py-1.5 pr-3 font-semibold">Receipt</FitTh>
               </tr>
             </thead>
-            <tbody>
+            <tbody {...fit.tbodyProps}>
               {lines.map((l) => (
                 <tr key={l.id} className="border-b border-line/60">
                   <td className="py-2 pr-3 whitespace-nowrap text-navy">
                     {l.spentOn ? formatDateDMY(l.spentOn) : "—"}
                   </td>
-                  <td className="py-2 pr-3 text-navy">{catName(l.categoryId)}</td>
-                  <td className="py-2 pr-3 text-grey-2">{cityName(l.cityId)}</td>
-                  <td className="py-2 pr-3 text-grey-2">{l.vendor ?? "—"}</td>
+                  <td className="py-2 pr-3 text-navy">
+                    <FitCell fit={fit} col="cat" cap={FIT.CUT}>{catName(l.categoryId)}</FitCell>
+                  </td>
+                  <td className="py-2 pr-3 text-grey-2">
+                    <FitCell fit={fit} col="city" cap={FIT.CUT}>{cityName(l.cityId)}</FitCell>
+                  </td>
+                  <td className="py-2 pr-3 text-grey-2">
+                    <FitCell fit={fit} col="vendor" cap={FIT.CUT}>{l.vendor ?? "—"}</FitCell>
+                  </td>
                   <td className="py-2 pr-3 text-right text-grey-2">{money(l.amount)}</td>
                   <td className="py-2 pr-3 text-right font-semibold text-navy">
                     {money(l.allowedAmount)}
@@ -188,7 +204,7 @@ export default function ClaimReviewPanel({ trip }: { trip: Trip }) {
           <div className="mt-3">
             <FieldLabel
               label="Note"
-              hint="Required to send it back — a claim returned without a reason leaves nothing to act on"
+              hint="Required to send it back"
             >
               <TextArea
                 rows={3}

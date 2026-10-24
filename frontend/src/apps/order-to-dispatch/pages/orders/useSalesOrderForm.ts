@@ -1,6 +1,7 @@
 import { useMemo, useState } from "react";
 import { todayLocalIso } from "@/shared/lib/dueBuckets";
 import { useDispatchStore, type DispatchStoreValue } from "../../store";
+import { newUid } from "@/shared/components/ui/LineGrid";
 import { isLineBlank, makeEmptyLine, type OrderLineRow } from "../../components/OrderLinesGrid";
 import type { MasterValues } from "../../lib/masterFields";
 import type { OrderInput } from "../../data/dispatchWrites";
@@ -34,6 +35,13 @@ export interface SalesOrderFormState {
   customerPoNo: string;
   orderDate: string;
   orderRemarks: string;
+}
+
+/** What "Save as draft" stores for a new order. Must stay JSON-safe. */
+export interface SalesOrderDraft {
+  form: SalesOrderFormState;
+  lines: OrderLineRow[];
+  itemType: string;
 }
 
 /**
@@ -371,5 +379,18 @@ export function useSalesOrderForm(existing?: DispatchOrder, opts: SalesOrderForm
     error, setError,
     busy, setBusy,
     validate, toInput,
+    /** The fields as a JSON-safe snapshot — what "Save as draft" stores. */
+    snapshot: (): SalesOrderDraft => ({ form, lines: filledLines, itemType }),
+    /**
+     * Put a saved snapshot back. Raw setters on purpose: setCustomer /
+     * setCompany would wipe the lines and location being restored.
+     */
+    restore: (v: SalesOrderDraft) => {
+      setForm({ ...emptyState(), ...(v.form ?? {}) });
+      setLines([...(v.lines ?? []).map((l) => ({ ...l, uid: newUid() })), makeEmptyLine()]);
+      setItemType(v.itemType ?? "");
+      setRaise(null);
+      setRequested(null);
+    },
   };
 }

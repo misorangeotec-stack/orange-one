@@ -3,6 +3,7 @@ import { Link, useNavigate, useParams } from "react-router-dom";
 import Button from "@/shared/components/ui/Button";
 import EmptyState from "@/shared/components/ui/EmptyState";
 import RequestForm from "../../components/RequestForm";
+import { uploadSourcingFiles } from "../../components/SourcingDocsCapture";
 import { useProcurementStore } from "../../store";
 import { hydrateLine, useRequestForm, type RequestFormInit } from "./useRequestForm";
 
@@ -68,6 +69,7 @@ export default function EditRequest() {
 
     setBusy(true);
     try {
+      const docs = await uploadSourcingFiles(request.id, form.files, s.uploadRequestDoc, form.setFiles);
       await s.updateRequest({
         requestId: request.id,
         note: form.note.trim() || null,
@@ -80,6 +82,7 @@ export default function EditRequest() {
           lineRemark: l.remark.trim() || null,
         })),
       });
+      await s.saveRequestDocs(request.id, docs);
       // The correction is saved — its draft is now stale, not unsaved work.
       form.draft.clear();
       navigate(`/procurement/requests/${request.id}`);

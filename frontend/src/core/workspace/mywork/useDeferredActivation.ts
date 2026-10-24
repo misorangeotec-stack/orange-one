@@ -10,9 +10,14 @@
  *      a persisted `taskData` from last visit, costs nothing and must not be
  *      artificially delayed.
  *   2. TIER 1          → active on mount. Small, single-table sources.
- *   3. TIER 2          → activated after first paint, ONE AT A TIME: the next one
- *      starts only once the previous has settled. The network never sees more
- *      than one heavy FMS payload in flight.
+ *   3. TIER 2          → activated after first paint, at most MAX_IN_FLIGHT at a
+ *      time: as each settles, the next in line starts.
+ *
+ *      It used to be ONE at a time. That was right for seven sources; at seventeen
+ *      (03-10-2026) an admin's screen waited for the SUM of every FMS's load,
+ *      one after another, and "loading takes too long" was the result. A few in
+ *      parallel keeps the network and the main thread from being flooded while
+ *      cutting the wait to roughly the slowest few rather than all of them added.
  *
  * Access gating happens before this (a provider the user can't open is never
  * rendered at all), which for most staff removes four or five sources outright.
@@ -41,6 +46,9 @@ export interface Activation {
   notifySettled: (key: string) => void;
 }
 
+/** Heavy (tier-2) sources allowed to load at the same time. */
+const MAX_IN_FLIGHT = 4;
+
 export function useDeferredActivation(providers: MyWorkProvider[]): Activation {
   const queryClient = useQueryClient();
 
@@ -53,10 +61,11 @@ export function useDeferredActivation(providers: MyWorkProvider[]): Activation {
     // A source whose data react-query already holds (in memory, or rehydrated from
     // IndexedDB) is free to read, whatever its tier.
     for (const p of providers) {
+      const roots = ([] as string[]).concat(cacheRootOf(p.key));
       const cached = queryClient
         .getQueryCache()
         .getAll()
-        .some((q) => q.queryKey[0] === cacheRootOf(p.key) && q.state.status === "success");
+        .some((q) => roots.includes(q.queryKey[0] as string) && q.state.status === "success");
       if (cached) set.add(p.key);
     }
     return set;
@@ -72,23 +81,33 @@ export function useDeferredActivation(providers: MyWorkProvider[]): Activation {
     () => providers.filter((p) => p.tier === 2 && !initiallyActive.has(p.key)).map((p) => p.key),
     [providers, initiallyActive]
   );
-  const [cursor, setCursor] = useState(0);
+  // How many of the queue have been started, and how many of those have settled.
+  // In flight = started − done; it never exceeds MAX_IN_FLIGHT.
+  const [started, setStarted] = useState(0);
+  const [done, setDone] = useState(0);
 
   useEffect(() => {
-    if (cursor >= queue.length) return;
-    const next = queue[cursor];
-    if (active.has(next)) return;
+    const upTo = Math.min(queue.length, done + MAX_IN_FLIGHT);
+    if (started >= upTo) return;
     // After paint, not during it.
-    return onIdle(() => setActive((prev) => (prev.has(next) ? prev : new Set(prev).add(next))));
-  }, [cursor, queue, active]);
+    return onIdle(() => {
+      const batch = queue.slice(started, upTo);
+      setActive((prev) => {
+        const next = new Set(prev);
+        batch.forEach((k) => next.add(k));
+        return next;
+      });
+      setStarted(upTo);
+    });
+  }, [started, done, queue]);
 
   return {
     isActive: (key: string) => active.has(key),
     notifySettled: (key: string) => {
       if (settled.current.has(key)) return;
       settled.current.add(key);
-      // Release the next heavy source only once this one is done.
-      setCursor((c) => (queue[c] === key ? c + 1 : c));
+      // Frees a slot for the next heavy source in line.
+      if (queue.includes(key)) setDone((d) => d + 1);
     },
   };
 }
@@ -99,7 +118,7 @@ export function useDeferredActivation(providers: MyWorkProvider[]): Activation {
  * optimisation detail — a wrong entry costs a slightly later fetch, never
  * incorrect data.
  */
-function cacheRootOf(providerKey: string): string {
+function cacheRootOf(providerKey: string): string | string[] {
   switch (providerKey) {
     case "tasks":
       return "taskData";
@@ -115,6 +134,30 @@ function cacheRootOf(providerKey: string): string {
       return "hrExitData";
     case "office-supplies":
       return "officeSuppliesData";
+    // The rest were missing, so their warm cache was never noticed and they always
+    // queued behind the others. Each root is that app's `*_QK` in data/*Fetch.ts.
+    case "sampling":
+      return "samplingData";
+    case "production-entry":
+      return "productionData";
+    // Its own pending-only key (PERF-2), or the module's full copy, which
+    // useDispatchOpenWork reuses without a request while it is fresh.
+    case "order-to-dispatch":
+      return ["orderToDispatchOpenWork", "orderToDispatchData"];
+    case "asset-maintenance":
+      return "assetMaintenanceData";
+    case "travel-desk":
+      return "travelDeskData";
+    case "learning-development":
+      return "learningDevelopmentData";
+    case "help-desk":
+      return "helpDeskData";
+    case "customer-onboarding":
+      return "customerOnboarding";
+    case "complaint":
+      return "complaintData";
+    case "ocpi":
+      return "ocpiData";
     default:
       return providerKey;
   }

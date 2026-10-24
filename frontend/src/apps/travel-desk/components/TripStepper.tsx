@@ -4,7 +4,7 @@ import { useOrgPersonById } from "@/core/platform/orgPeople";
 import { formatDateDMY } from "@/shared/lib/date";
 import { useTravelStore } from "../store";
 import { stepActorId, stepCompletedIso } from "../lib/queues";
-import type { StepKey } from "../lib/steps";
+import { isHiddenStep, type StepKey } from "../lib/steps";
 import { STATUS_STEP, type Trip, type TripStatus } from "../types";
 
 /**
@@ -38,10 +38,28 @@ const RAIL: { key: string; label: string; step: StepKey | null }[] = [
   { key: "claim_review",      label: "Claim Approval",   step: "claim_review" },
   { key: "finance_review",    label: "Finance",          step: "finance_review" },
   { key: "settlement",        label: "Settlement",       step: "settlement" },
+  { key: "cancel_trip",       label: "Cancel Trip",      step: "cancel_trip" },
   { key: "closed",            label: "Closed",           step: null },
 ];
 
-const idxOfStep = (step: StepKey): number => RAIL.findIndex((s) => s.step === step);
+/**
+ * The rail this trip walks.
+ *
+ * ⚠ SINCE 2026-10 A TRIP CLOSES AT BOOKING, so the claim half and the advance
+ *   are dropped from the rail — except on a trip that was booked under the old
+ *   process (it still has to finish its claim), and the advance on an older
+ *   trip that asked for one.
+ */
+function railFor(t: Trip): typeof RAIL {
+  // ⚠ CANCEL TRIP APPEARS ONLY ONCE "Cancel booking" HAS BEEN CLICKED, and then
+  //   stays — waiting while the credit note is owed, done once it is filed.
+  const rail = RAIL.filter((r) => r.step !== "cancel_trip" || t.cancelRequestedAt !== null);
+  const legacy = t.bkAt !== null && !t.closedAtBooking;
+  if (legacy) return rail;
+  return rail.filter(
+    (r) => !r.step || !isHiddenStep(r.step) || (r.step === "advance" && t.advanceRequested),
+  );
+}
 
 /**
  * Which node the trip is sitting on.
@@ -55,8 +73,9 @@ const idxOfStep = (step: StepKey): number => RAIL.findIndex((s) => s.step === st
  *   step it had already skipped, and a rail that guessed the next step would be
  *   the first place that lie appeared.
  */
-function activeIndex(t: Trip): number {
-  if (t.status === "closed") return RAIL.length - 1;
+function activeIndex(t: Trip, rail: typeof RAIL): number {
+  const idxOfStep = (step: StepKey): number => rail.findIndex((s) => s.step === step);
+  if (t.status === "closed") return rail.length - 1;
   if (t.status === "draft") return 0;
 
   const live = STATUS_STEP[t.status];
@@ -76,7 +95,7 @@ function activeIndex(t: Trip): number {
 
   // Nothing recorded: the first step that neither completed nor was skipped.
   // Capped below Closed, which only a settled trip may sit on.
-  const first = RAIL.findIndex(
+  const first = rail.findIndex(
     (s) =>
       s.step !== null &&
       !stepCompletedIso(t, s.step) &&
@@ -84,7 +103,7 @@ function activeIndex(t: Trip): number {
       !(s.step === "director_approval" && t.directorApprovalSkipped) &&
       !(s.step === "advance" && t.advanceSkipped),
   );
-  return first < 0 ? RAIL.length - 2 : first;
+  return first < 0 ? rail.length - 2 : first;
 }
 
 /** Statuses in which the trip is not moving, and the rail should say so. */
@@ -100,14 +119,15 @@ export default function TripStepper({ trip, fit }: { trip: Trip; fit?: boolean }
   const s = useTravelStore();
   const personById = useOrgPersonById();
 
-  const active = activeIndex(trip);
+  const rail = railFor(trip);
+  const active = activeIndex(trip, rail);
   const finished = trip.status === "closed";
   const haltedLabel = HALTED[trip.status];
 
   const nodes: PoStageRailNode[] = useMemo(() => {
     const name = (id: string | null): string | null => personById(id)?.name ?? null;
 
-    return RAIL.map((st, i) => {
+    return rail.map((st, i) => {
       if (!st.step) {
         return { key: st.key, label: st.label, departments: [], people: [], hasStep: false };
       }
@@ -127,7 +147,7 @@ export default function TripStepper({ trip, fit }: { trip: Trip; fit?: boolean }
           skipped: true,
           note:
             st.step === "director_approval"
-              ? `Band ${trip.snapBandNo ?? "—"} — §3.2`
+              ? `Band ${trip.snapBandNo ?? "—"} — Section 3.2`
               : st.step === "manager_approval"
                 ? "Straight to a Director"
                 : "No advance drawn",
@@ -168,7 +188,10 @@ export default function TripStepper({ trip, fit }: { trip: Trip; fit?: boolean }
         key: st.key,
         label: st.label,
         departments: [],
-        people: actor ? [actor] : pending(),
+        // A done step's actor goes to `doneBy`, which the rail shows in place of the
+        // owners; with no actor on record the owner list still shows.
+        people: actor && !isDone ? [actor] : pending(),
+        doneBy: actor && isDone ? [actor] : undefined,
         hasStep: true,
         note: isDone && doneAt ? formatDateDMY(doneAt) : undefined,
       };

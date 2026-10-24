@@ -28,9 +28,14 @@
  * reflect every filter EXCEPT the bucket selection itself — otherwise clicking
  * "Overdue" would zero the other three tiles and you could never get back.
  */
-import { useMemo, useState } from "react";
-import { Link } from "react-router-dom";
+import { useMemo, useRef, useState, type ReactNode } from "react";
+import { Link, useSearchParams } from "react-router-dom";
 import Card from "@/shared/components/ui/Card";
+import MyProbationCard from "@/core/probation/MyProbationCard";
+import Tabs from "@/shared/components/ui/Tabs";
+import RankingPanel from "@/apps/fms-control-center/components/ranking/RankingPanel";
+import HomeRankChip from "@/apps/fms-control-center/components/ranking/HomeRankChip";
+import { canSeeRanking } from "@/apps/fms-control-center/ranking/visibility";
 import EmptyState from "@/shared/components/ui/EmptyState";
 import DueCell from "@/shared/components/ui/DueCell";
 import MultiSelect from "@/shared/components/ui/MultiSelect";
@@ -39,21 +44,25 @@ import { ScrollableTable } from "@/core/shared/components/ScrollableTable";
 import Pagination from "@/shared/components/ui/Pagination";
 import { usePagination } from "@/shared/lib/usePagination";
 import { matchesSearch } from "@/shared/lib/search";
-import { bucketOf, todayLocalIso, type Bucket } from "@/shared/lib/dueBuckets";
+import { useBackState, useLastOpened } from "@/shared/lib/backState";
+import { bucketOf, holdAwareBucketOf, todayLocalIso, type Bucket, type WorkBucket } from "@/shared/lib/dueBuckets";
 import { useSession } from "@/core/platform/session";
 import { cn } from "@/shared/lib/cn";
+import { FitResizer, ResetWidths, thFitStyle } from "@/shared/components/ui/ColumnResizer";
+import { useColumnWidths, type FitTable } from "@/shared/lib/useColumnWidths";
 import { useMyWork, type AggregateState } from "./mywork/MyWorkAggregator";
 import type { WorkItem } from "./mywork/types";
+import { useOpenWorkItem } from "./WorkPanel";
+import BucketBoard from "./BucketBoard";
 
-/** Sort weight per bucket: most urgent first, undated last. */
-const BUCKET_RANK: Record<Bucket, number> = { delayed: 0, today: 1, tomorrow: 2, dayAfter: 3, noDate: 4 };
+/** Sort weight per bucket: most urgent first, undated last, parked last of all. */
+const BUCKET_RANK: Record<WorkBucket, number> = { delayed: 0, today: 1, tomorrow: 2, dayAfter: 3, noDate: 4, hold: 5 };
 const LATER_RANK = 3.5; // bucketOf() returns null beyond the day after — real work, just not in a tile
 
 type SortKey = "urgency" | "ref" | "source" | "stage" | "due";
 type SortDir = "asc" | "desc";
 
 const GROUP_KEY = "orangeone.home.groupBySource";
-const EXPANDED_KEY = "orangeone.home.expandedSources";
 
 function readPref<T>(key: string, fallback: T): T {
   try {
@@ -80,10 +89,10 @@ const SORTS: { value: SortKey; label: string }[] = [
 ];
 
 interface Tile {
-  bucket: Bucket;
+  bucket: WorkBucket;
   label: string;
   hint: string;
-  tone: "red" | "amber" | "blue" | "grey";
+  tone: "red" | "amber" | "blue" | "grey" | "teal";
   icon: React.ReactNode;
 }
 
@@ -92,6 +101,21 @@ const TILES: Tile[] = [
   { bucket: "today", label: "Due today", hint: "Needs closing today", tone: "amber", icon: <IconClock /> },
   { bucket: "tomorrow", label: "Next 2 days", hint: "Tomorrow + day after", tone: "blue", icon: <IconHorizon /> },
   { bucket: "noDate", label: "No date set", hint: "Untimed work", tone: "grey", icon: <IconInfinity /> },
+  /*
+   * ON HOLD / PARTIAL sits apart from the four, and the separation is the point.
+   * Somebody with the right to park these has already looked at them — a vendor
+   * who has gone quiet, a lab that is shut, a credit balance part-approved. They
+   * are not owed today, so counting them as due asked people to chase work they
+   * had already dealt with, and dropping them (which most modules used to do) hid
+   * it instead.
+   *
+   * ONE TILE FOR BOTH, because the question it answers is the same one: what have
+   * I put down rather than not got to? The row's own chip says which it is.
+   *
+   * Teal, because none of the four due tones is free and red/amber would put the
+   * alarm back that this tile exists to remove.
+   */
+  { bucket: "hold", label: "On hold / Partial", hint: "Parked — not due", tone: "teal", icon: <IconPause /> },
 ];
 
 const TONE: Record<Tile["tone"], { ring: string; chip: string; value: string; glow: string }> = {
@@ -99,6 +123,7 @@ const TONE: Record<Tile["tone"], { ring: string; chip: string; value: string; gl
   amber: { ring: "ring-yellow/45", chip: "bg-[#FFF7E6] text-yellow", value: "text-navy", glow: "from-yellow/10" },
   blue: { ring: "ring-navy/25", chip: "bg-[#EAF0FA] text-navy", value: "text-navy", glow: "from-navy/[0.07]" },
   grey: { ring: "ring-grey-2/30", chip: "bg-page text-grey-2", value: "text-grey", glow: "from-grey-2/[0.07]" },
+  teal: { ring: "ring-teal/45", chip: "bg-[#E6F8F6] text-teal", value: "text-teal", glow: "from-teal/10" },
 };
 
 function greeting(): string {
@@ -112,7 +137,7 @@ const longDate = () =>
   new Date().toLocaleDateString("en-GB", { weekday: "long", day: "2-digit", month: "short", year: "numeric" });
 
 /** "Next 2 days" is one tile covering two buckets. */
-const inTile = (bucket: Bucket | null, tile: Bucket) =>
+const inTile = (bucket: WorkBucket | null, tile: WorkBucket) =>
   tile === "tomorrow" ? bucket === "tomorrow" || bucket === "dayAfter" : bucket === tile;
 
 export default function MyWorkToday() {
@@ -136,11 +161,41 @@ export function MyWorkView({ state }: { state: AggregateState }) {
   const { user, isAdmin } = useSession();
   const today = todayLocalIso();
 
-  const [bucketFilter, setBucketFilter] = useState<Bucket | null>(null);
-  const [sources, setSources] = useState<string[]>([]);
-  const [stages, setStages] = useState<string[]>([]);
-  const [assignment, setAssignment] = useState<string[]>([]);
-  const [q, setQ] = useState("");
+  /*
+   * My work | Ranking (CC-1). The monthly FMS ranking lives here, on the one screen
+   * every employee already has, rather than behind the Control Center grant. The tab
+   * is in the URL (?view=ranking) so the banner's rank chip — and a link in a message —
+   * can open it directly. Temporarily limited to one viewer — see ranking/visibility.ts.
+   */
+  const showRanking = canSeeRanking(user);
+  const [params, setParams] = useSearchParams();
+  const view: "work" | "ranking" = showRanking && params.get("view") === "ranking" ? "ranking" : "work";
+  const setView = (v: string) =>
+    setParams(
+      (p) => {
+        const next = new URLSearchParams(p);
+        if (v === "ranking") next.set("view", "ranking");
+        else next.delete("view");
+        return next;
+      },
+      { replace: true },
+    );
+
+  // The search and filters come back with the browser's Back button (shared/lib/backState):
+  // search, open a row in its FMS, press Back, and this list is the one you left.
+  const [bucketFilter, setBucketFilter] = useBackState<WorkBucket | null>("bucket", null);
+  const [sources, setSources] = useBackState<string[]>("sources", []);
+  const [stages, setStages] = useBackState<string[]>("stages", []);
+  const [assignment, setAssignment] = useBackState<string[]>("assignment", []);
+  const [q, setQ] = useBackState("q", "");
+  // Rows open in the side panel (WorkPanel) — the FMS's own page, beside this one.
+  const openInPanel = useOpenWorkItem();
+  // The row you last opened stays highlighted until you open another one.
+  const [lastOpenedId, markOpened] = useLastOpened("core.my-work-today");
+  const setOpenItem = (item: WorkItem) => {
+    markOpened(item.id);
+    openInPanel(item);
+  };
 
   // Admins receive the whole book (they own no workflow steps, so a strict
   // personal filter would otherwise leave them empty). This tab lets them widen
@@ -157,36 +212,53 @@ export function MyWorkView({ state }: { state: AggregateState }) {
   //
   // Non-admins are already scoped to their own work by each provider, so the tab
   // is hidden for them and scope is pinned to "all" (a no-op on their data).
-  const [adminScope, setAdminScope] = useState<"mine" | "all">("mine");
+  const [adminScope, setAdminScope] = useBackState<"mine" | "all">("adminScope", "mine");
   const scope: "mine" | "all" = isAdmin ? adminScope : "all";
   const setScopePref = (s: "mine" | "all") => {
     setAdminScope(s);
     if (s === "mine") setAssignment([]); // drop any stale You/Team chip
   };
+  // PF-20: the column widths for this one table, remembered per browser. The cells are untouched
+  // — only the header edges drag.
+  const fit = useColumnWidths("tb", ["source", "ref", "stage", "due", "assigned"], "core.my-work-today");
   const [sort, setSort] = useState<SortKey>("urgency");
   const [dir, setDir] = useState<SortDir>("asc");
 
-  // Grouping is a persisted preference: which sources you care to see open is a
-  // stable habit, not a per-visit decision.
-  const [groupBySource, setGroupBySource] = useState<boolean>(() => readPref(GROUP_KEY, true));
-  const [expanded, setExpanded] = useState<Set<string>>(() => new Set(readPref<string[]>(EXPANDED_KEY, [])));
+  // Grouping on/off is a persisted preference — a stable habit, not a per-visit
+  // decision. Which groups are OPEN is not (see `expanded` below).
+  const [groupPref, setGroupBySource] = useState<boolean>(() => readPref(GROUP_KEY, true));
+  // Every FMS group starts CLOSED on each visit (asked 03-10-2026): the screen opens
+  // as a list of FMS headers, and a group opens only when its header is clicked or
+  // its FMS is picked on the bucket board. Which groups are open is therefore not
+  // remembered between visits — it used to be, and a group left open last time
+  // greeted the reader already expanded.
+  // (Back onto this screen is not a visit: it reopens the groups you had open.)
+  const [expanded, setExpanded] = useBackState<Set<string>>("expanded", () => new Set());
 
   const setGrouping = (on: boolean) => {
     setGroupBySource(on);
     writePref(GROUP_KEY, on);
   };
+  // Narrowed to ONE FMS (a bucket on the board, or the Source filter), grouping has
+  // nothing to group: it would only wrap the rows in one collapsed header the reader
+  // then has to open. The rows show directly instead. The saved preference is kept
+  // and comes back the moment the filter widens again.
+  const groupBySource = groupPref && sources.length !== 1;
+  // Where a bucket pick scrolls to, so its rows come into view under the board.
+  const listRef = useRef<HTMLDivElement>(null);
+
   const toggleSource = (key: string) =>
     setExpanded((prev) => {
       const next = new Set(prev);
       if (next.has(key)) next.delete(key);
       else next.add(key);
-      writePref(EXPANDED_KEY, [...next]);
       return next;
     });
 
-  // Every item, tagged with its bucket once.
+  // Every item, tagged with its bucket once. `holdAwareBucketOf` sends a held row
+  // to `hold` whatever its due date says — see shared/lib/dueBuckets.
   const tagged = useMemo(
-    () => state.items.map((item) => ({ item, bucket: bucketOf(item.dueIso, today) })),
+    () => state.items.map((item) => ({ item, bucket: holdAwareBucketOf(item, today) })),
     [state.items, today]
   );
 
@@ -205,25 +277,43 @@ export function MyWorkView({ state }: { state: AggregateState }) {
     [tagged, scope, sources, stages, assignment, q]
   );
 
+  // What the bucket board counts: everything in scope, whatever the filters say —
+  // it is the map of the reader's FMS buckets, and narrowing it would hide the
+  // very buckets it exists to show.
+  const boardItems = useMemo(
+    () => (scope === "mine" ? state.items.filter((i) => i.assignment === "direct") : state.items),
+    [state.items, scope]
+  );
+
   const counts = useMemo(() => {
-    const c: Record<Bucket, number> = { delayed: 0, today: 0, tomorrow: 0, dayAfter: 0, noDate: 0 };
+    const c: Record<WorkBucket, number> = { delayed: 0, today: 0, tomorrow: 0, dayAfter: 0, noDate: 0, hold: 0 };
     for (const { bucket } of preBucket) if (bucket) c[bucket]++;
     return c;
   }, [preBucket]);
 
-  const tileCount = (t: Bucket) => (t === "tomorrow" ? counts.tomorrow + counts.dayAfter : counts[t]);
+  const tileCount = (t: WorkBucket) => (t === "tomorrow" ? counts.tomorrow + counts.dayAfter : counts[t]);
 
   // In Mine mode the "N of M items" denominator should be the scoped total, not
   // the whole book — otherwise an admin sees "3 of 250".
-  const scopedTotal = useMemo(
-    () => (scope === "mine" ? tagged.filter((t) => t.item.assignment === "direct").length : state.items.length),
-    [tagged, scope, state.items.length]
-  );
+  // Held rows are excluded here too: they are not in `rows` unless the HOLD tile is
+  // selected, so counting them in the denominator would read "8 of 15 items" on a
+  // list that can only ever reach 8.
+  const scopedTotal = useMemo(() => {
+    const live = tagged.filter((t) => (bucketFilter === "hold" ? t.item.isHeld : !t.item.isHeld));
+    return scope === "mine" ? live.filter((t) => t.item.assignment === "direct").length : live.length;
+  }, [tagged, scope, bucketFilter]);
 
   const rows = useMemo(() => {
-    const filtered = bucketFilter ? preBucket.filter((r) => inTile(r.bucket, bucketFilter)) : preBucket;
+    /*
+     * HELD ROWS ARE HIDDEN UNTIL THE HOLD TILE IS CLICKED, and that is what keeps
+     * this list honest: everything in it by default is something the reader still
+     * owes. Clicking HOLD filters TO them, exactly as clicking Overdue filters to
+     * overdue — the tile is a filter, not just a readout, like the other four.
+     */
+    const visible = bucketFilter === "hold" ? preBucket : preBucket.filter((r) => !r.item.isHeld);
+    const filtered = bucketFilter ? visible.filter((r) => inTile(r.bucket, bucketFilter)) : visible;
     const sign = dir === "asc" ? 1 : -1;
-    const rank = (b: Bucket | null) => (b ? BUCKET_RANK[b] : LATER_RANK);
+    const rank = (b: WorkBucket | null) => (b ? BUCKET_RANK[b] : LATER_RANK);
 
     return [...filtered]
       .sort((a, b) => {
@@ -250,7 +340,10 @@ export function MyWorkView({ state }: { state: AggregateState }) {
       .map((r) => r.item);
   }, [preBucket, bucketFilter, sort, dir]);
 
-  const approvals = useMemo(() => rows.filter((i) => i.isApproval), [rows]);
+  // Never a held row: the strip says "waiting for your approval", and a parked one
+  // is precisely what is NOT. Without this it would reappear the moment someone
+  // clicked the HOLD tile.
+  const approvals = useMemo(() => rows.filter((i) => i.isApproval && !i.isHeld), [rows]);
 
   const sourceOptions = useMemo(
     () =>
@@ -279,7 +372,7 @@ export function MyWorkView({ state }: { state: AggregateState }) {
         byKey.set(item.source, g);
       }
       g.items.push(item);
-      if (bucketOf(item.dueIso, today) === "delayed") g.overdue++;
+      if (!item.isHeld && bucketOf(item.dueIso, today) === "delayed") g.overdue++;
     }
     return [...byKey.values()].sort(
       (a, b) => b.overdue - a.overdue || b.items.length - a.items.length || a.label.localeCompare(b.label)
@@ -299,7 +392,17 @@ export function MyWorkView({ state }: { state: AggregateState }) {
 
   const activeFilters: ActiveFilter[] = [
     ...(bucketFilter
-      ? [{ key: "bucket", label: `Due: ${TILES.find((t) => t.bucket === bucketFilter)?.label}`, onClear: () => setBucketFilter(null) }]
+      ? [
+          {
+            key: "bucket",
+            // "Due: On hold" is a contradiction — parked is not a due state.
+            label:
+              bucketFilter === "hold"
+                ? "On hold / Partial"
+                : `Due: ${TILES.find((t) => t.bucket === bucketFilter)?.label}`,
+            onClear: () => setBucketFilter(null),
+          },
+        ]
       : []),
     ...sources.map((s) => ({
       key: `src-${s}`,
@@ -348,9 +451,29 @@ export function MyWorkView({ state }: { state: AggregateState }) {
         isAdmin={isAdmin}
         scope={scope}
         onScopeChange={setScopePref}
+        rank={showRanking ? <HomeRankChip onOpen={() => setView("ranking")} /> : undefined}
       />
 
-      <div className="grid gap-3 grid-cols-2 lg:grid-cols-4">
+      <Tabs
+        tabs={[
+          { key: "work", label: "My work", count: state.isSettling ? undefined : pending },
+          ...(showRanking ? [{ key: "ranking", label: "Ranking" }] : []),
+        ]}
+        active={view}
+        onChange={setView}
+      />
+
+      {view === "ranking" ? (
+        <RankingPanel />
+      ) : (
+      <>
+      {/* NR-10 · A new joiner's own check-in, when one is owed. It appears HERE
+          rather than in the sidebar because the sidebar cannot know who is on
+          probation: a permanent menu item would lead ~67 of 68 people to an empty
+          page, and the one person who needs it would find it no faster. */}
+      <MyProbationCard />
+
+      <div className="grid gap-3 grid-cols-2 md:grid-cols-3 lg:grid-cols-5">
         {TILES.map((t) => (
           <KpiTile
             key={t.bucket}
@@ -363,10 +486,33 @@ export function MyWorkView({ state }: { state: AggregateState }) {
         ))}
       </div>
 
+      <BucketBoard
+        items={boardItems}
+        today={today}
+        settling={state.isSettling}
+        selectedSource={sources.length === 1 ? sources[0] : null}
+        selectedStage={stages.length === 1 ? stages[0] : null}
+        onPick={(source, stage, held) => {
+          const same = sources.length === 1 && sources[0] === source && (stage == null ? stages.length === 0 : stages.length === 1 && stages[0] === stage);
+          if (same) {
+            setSources([]);
+            setStages([]);
+            setBucketFilter(null);
+            return;
+          }
+          setSources([source]);
+          setStages(stage == null ? [] : [stage]);
+          // A bucket whose every row is parked would otherwise open on an empty list.
+          setBucketFilter(held ? "hold" : null);
+          requestAnimationFrame(() => listRef.current?.scrollIntoView({ behavior: "smooth", block: "start" }));
+        }}
+      />
+
       {/* Only an admin in All-work mode sees approvals that are not their own —
           non-admins are scoped to themselves by every provider. */}
-      {approvals.length > 0 && <ApprovalStrip items={approvals} mine={!isAdmin || scope === "mine"} />}
+      {approvals.length > 0 && <ApprovalStrip items={approvals} mine={!isAdmin || scope === "mine"} onOpen={setOpenItem} />}
 
+      <div ref={listRef} className="scroll-mt-4">
       <Card className="overflow-hidden">
         <div className="px-4 pt-4 pb-3 border-b border-line space-y-3">
           <div className="flex flex-wrap items-center gap-2">
@@ -379,23 +525,25 @@ export function MyWorkView({ state }: { state: AggregateState }) {
             </div>
 
             <div className="ml-auto flex items-center gap-2">
-              <GroupToggle on={groupBySource} onChange={setGrouping} />
+              <GroupToggle on={groupPref} onChange={setGrouping} />
               <SortControl sort={sort} dir={dir} onSort={setSort} onDir={setDir} />
             </div>
           </div>
 
           <ActiveFilters filters={activeFilters} onClearAll={clearAll} />
+          {/* PF-20: appears only once a column here has been dragged. */}
+          <ResetWidths fit={fit} cols={["source", "ref", "stage", "due", "assigned"]} className="mt-1 inline-flex items-center gap-1.5 text-[11.5px] font-semibold text-grey-2 hover:text-orange" />
         </div>
 
         <ScrollableTable>
           <table className="w-full border-collapse">
             <thead>
               <tr className="border-b border-line bg-page/60">
-                <Th sortKey="source" active={sort} dir={dir} onSort={toggleSort}>Source</Th>
-                <Th sortKey="ref" active={sort} dir={dir} onSort={toggleSort}>Reference</Th>
-                <Th sortKey="stage" active={sort} dir={dir} onSort={toggleSort}>Stage</Th>
-                <Th sortKey="due" active={sort} dir={dir} onSort={toggleSort}>Due</Th>
-                <Th>Assigned</Th>
+                <Th fit={fit} col="source" sortKey="source" active={sort} dir={dir} onSort={toggleSort}>Source</Th>
+                <Th fit={fit} col="ref" sortKey="ref" active={sort} dir={dir} onSort={toggleSort}>Reference</Th>
+                <Th fit={fit} col="stage" sortKey="stage" active={sort} dir={dir} onSort={toggleSort}>Stage</Th>
+                <Th fit={fit} col="due" sortKey="due" active={sort} dir={dir} onSort={toggleSort}>Due</Th>
+                <Th fit={fit} col="assigned">Assigned</Th>
               </tr>
               {/* Filter row, one control per column so each sits over the data it
                   narrows. Lives inside <thead> rather than in the toolbar above:
@@ -453,10 +601,12 @@ export function MyWorkView({ state }: { state: AggregateState }) {
                       onToggle={() => toggleSource(g.key)}
                       pageIds={pageIds}
                       today={today}
+                      onOpen={setOpenItem}
+                      lastOpenedId={lastOpenedId}
                     />
                   ))
                 ) : (
-                  pg.pageItems.map((item) => <WorkRow key={item.id} item={item} today={today} />)
+                  pg.pageItems.map((item) => <WorkRow key={item.id} item={item} today={today} onOpen={setOpenItem} lastOpened={item.id === lastOpenedId} />)
                 )
               ) : (
                 // Kept inside the table so the filter row stays on screen — an
@@ -498,12 +648,28 @@ export function MyWorkView({ state }: { state: AggregateState }) {
           </div>
         )}
       </Card>
+      </div>
 
       {/* An all-work readout — its raw per-source counts are unscoped, so hide it
           in Mine mode to keep the screen self-consistent. */}
       {scope === "all" && <SourceStrip sources={state.sources} hasStepUnits={state.hasStepUnits} />}
+      </>
+      )}
+
     </div>
   );
+}
+
+/**
+ * A row's link opens the side panel; a modified click (Ctrl/⌘/Shift, middle
+ * button) still goes to the FMS page as an ordinary link would.
+ */
+function panelClick(item: WorkItem, onOpen: (i: WorkItem) => void) {
+  return (e: React.MouseEvent) => {
+    if (e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
+    e.preventDefault();
+    onOpen(item);
+  };
 }
 
 /* -------------------------------------------------------------------------- */
@@ -519,6 +685,7 @@ function Hero({
   isAdmin,
   scope,
   onScopeChange,
+  rank,
 }: {
   greeting: string;
   name: string;
@@ -530,6 +697,8 @@ function Hero({
   isAdmin: boolean;
   scope: "mine" | "all";
   onScopeChange: (s: "mine" | "all") => void;
+  /** The viewer's monthly rank (CC-1), shown in the banner's right column. */
+  rank?: ReactNode;
 }) {
   return (
     <div className="relative overflow-hidden rounded-card bg-navy text-white px-5 py-5 sm:px-6 sm:py-6">
@@ -567,6 +736,7 @@ function Hero({
 
         <div className="flex flex-col items-end gap-2">
           {isAdmin && <ScopeTabs scope={scope} onChange={onScopeChange} />}
+          {rank}
           {!settling && pending > 0 && (
             <div className="flex items-center gap-2">
               {overdue > 0 && <HeroPill tone="red" value={overdue} label={overdue === 1 ? "overdue" : "overdue"} />}
@@ -675,7 +845,7 @@ function KpiTile({
  * were never assigned. In that mode the title drops the possessive and each row
  * that genuinely is theirs is tagged instead.
  */
-function ApprovalStrip({ items, mine }: { items: WorkItem[]; mine: boolean }) {
+function ApprovalStrip({ items, mine, onOpen }: { items: WorkItem[]; mine: boolean; onOpen: (i: WorkItem) => void }) {
   return (
     <Card className="p-4 border-orange/30 bg-orange-soft/25">
       <div className="flex items-center gap-2 mb-2.5">
@@ -694,6 +864,7 @@ function ApprovalStrip({ items, mine }: { items: WorkItem[]; mine: boolean }) {
           <Link
             key={item.id}
             to={item.to}
+            onClick={panelClick(item, onOpen)}
             className="group inline-flex items-center gap-2 bg-white border border-line rounded-xl px-3 py-2 hover:border-orange hover:shadow-soft transition"
           >
             <span className="text-[13px] font-semibold text-navy group-hover:text-orange transition-colors">
@@ -734,12 +905,16 @@ function SourceGroup({
   onToggle,
   pageIds,
   today,
+  onOpen,
+  lastOpenedId,
 }: {
   group: { key: string; label: string; items: WorkItem[]; overdue: number };
   open: boolean;
   onToggle: () => void;
   pageIds: Set<string>;
   today: string;
+  onOpen: (i: WorkItem) => void;
+  lastOpenedId: string | null;
 }) {
   // Only the slice of this group that landed on the current page renders.
   const visible = open ? group.items.filter((i) => pageIds.has(i.id)) : [];
@@ -774,7 +949,7 @@ function SourceGroup({
         </td>
       </tr>
       {visible.map((item) => (
-        <WorkRow key={item.id} item={item} today={today} grouped />
+        <WorkRow key={item.id} item={item} today={today} grouped onOpen={onOpen} lastOpened={item.id === lastOpenedId} />
       ))}
       {open && visible.length === 0 && (
         <tr className="border-b border-line">
@@ -787,15 +962,48 @@ function SourceGroup({
   );
 }
 
-function WorkRow({ item, today, grouped }: { item: WorkItem; today: string; grouped?: boolean }) {
-  const bucket = bucketOf(item.dueIso, today);
+function WorkRow({
+  item,
+  today,
+  grouped,
+  onOpen,
+  lastOpened,
+}: {
+  item: WorkItem;
+  today: string;
+  grouped?: boolean;
+  onOpen: (i: WorkItem) => void;
+  /** The row this reader opened last — tinted so they can see where they were. */
+  lastOpened?: boolean;
+}) {
+  /*
+   * A HELD ROW IS NEVER RED. Its due date has usually long gone — that is normally
+   * what puts a row on hold — so bucketing it by date alone would paint the red
+   * stripe and pink wash back onto exactly the rows this tile exists to calm down.
+   * It gets the teal stripe of its own tile instead.
+   */
+  const bucket = holdAwareBucketOf(item, today);
   const accent =
-    bucket === "delayed" ? "before:bg-ryg-red" : bucket === "today" ? "before:bg-yellow" : "before:bg-transparent";
+    bucket === "hold"
+      ? "before:bg-teal"
+      : bucket === "delayed"
+        ? "before:bg-ryg-red"
+        : bucket === "today"
+          ? "before:bg-yellow"
+          : "before:bg-transparent";
   return (
     <tr
+      // The whole row opens the panel, not just the reference — it is the thing
+      // people click. The link inside still handles modified clicks itself.
+      onClick={(e) => {
+        if ((e.target as HTMLElement).closest("a,button")) return;
+        onOpen(item);
+      }}
       className={cn(
-        "group border-b border-line last:border-0 transition-colors hover:bg-orange-soft/20",
-        bucket === "delayed" && "bg-[#FDECEC]/35"
+        "group cursor-pointer border-b border-line last:border-0 transition-colors hover:bg-orange-soft/20",
+        bucket === "delayed" && "bg-[#FDECEC]/35",
+        bucket === "hold" && "bg-page/60",
+        lastOpened && "!bg-orange-soft"
       )}
     >
       <td
@@ -809,22 +1017,45 @@ function WorkRow({ item, today, grouped }: { item: WorkItem; today: string; grou
         {grouped ? <span className="pl-4 text-grey-2/70">↳</span> : item.sourceLabel}
       </td>
       <td className="px-4 py-3">
-        <Link to={item.to} className="text-[13.5px] font-medium text-navy group-hover:text-orange transition-colors">
+        <Link to={item.to} onClick={panelClick(item, onOpen)} className="text-[13.5px] font-medium text-navy group-hover:text-orange transition-colors">
           {item.ref}
         </Link>
         {item.detail && <div className="text-[11.5px] text-grey-2 truncate max-w-[340px]">{item.detail}</div>}
       </td>
       <td className="px-4 py-3 whitespace-nowrap">
-        {item.stage ? (
-          <span className="text-[11.5px] font-medium text-navy bg-page border border-line rounded-pill px-2 py-0.5">
-            {item.stage}
-          </span>
-        ) : (
-          <span className="text-grey-2">—</span>
+        <div className="flex items-center gap-1.5">
+          {item.stage ? (
+            <span className="text-[11.5px] font-medium text-navy bg-page border border-line rounded-pill px-2 py-0.5">
+              {item.stage}
+            </span>
+          ) : (
+            <span className="text-grey-2">—</span>
+          )}
+          {item.isHeld && (
+            <span
+              className="text-[10px] font-semibold uppercase tracking-wide rounded-pill px-2 py-0.5 bg-[#E6F8F6] text-teal"
+              title={
+                item.holdReason
+                  ? `${item.holdLabel ?? "On hold"} — ${item.holdReason}`
+                  : (item.holdLabel ?? "On hold")
+              }
+            >
+              {item.holdLabel ?? "On hold"}
+            </span>
+          )}
+        </div>
+        {item.isHeld && item.holdReason && (
+          <div className="mt-1 text-[11px] text-grey-2 truncate max-w-[260px]">{item.holdReason}</div>
         )}
       </td>
       <td className="px-4 py-3 text-[12.5px] whitespace-nowrap">
-        <DueCell dueIso={item.dueIso} />
+        {/* The date it WAS due is worth seeing, but greyed: it is not a deadline
+            while the row is parked, and DueCell would otherwise shout "3 days late". */}
+        {item.isHeld ? (
+          <span className="text-grey-2">{item.dueIso ? `was due ${item.dueIso}` : "—"}</span>
+        ) : (
+          <DueCell dueIso={item.dueIso} />
+        )}
       </td>
       <td className="px-4 py-3 whitespace-nowrap">
         <span
@@ -844,12 +1075,17 @@ function WorkRow({ item, today, grouped }: { item: WorkItem; today: string; grou
  * Which sources have reported in. Visible always, not just while loading: it is
  * also the mixed-unit disclosure — the reader can see that one total is the sum
  * of several differently-counted things.
+ *
+ * HELD ROWS ARE NOT COUNTED HERE, because this strip explains the number above
+ * it. The tiles and the list both exclude parked work, so a source reporting "5"
+ * beside a list showing 3 would read as two missing rows rather than as two
+ * things somebody has deliberately put down.
  */
 function SourceStrip({
   sources,
   hasStepUnits,
 }: {
-  sources: { key: string; label: string; items: unknown[]; isLoading: boolean; error: unknown }[];
+  sources: { key: string; label: string; items: WorkItem[]; isLoading: boolean; error: unknown }[];
   hasStepUnits: boolean;
 }) {
   if (sources.length === 0) return null;
@@ -867,7 +1103,7 @@ function SourceStrip({
             ) : s.isLoading ? (
               <span className="inline-block h-[10px] w-5 rounded bg-line animate-pulse align-middle" />
             ) : (
-              <span className="text-navy font-semibold tabular-nums">{s.items.length}</span>
+              <span className="text-navy font-semibold tabular-nums">{s.items.filter((i) => !i.isHeld).length}</span>
             )}
           </span>
         ))}
@@ -980,23 +1216,35 @@ function Th({
   active,
   dir,
   onSort,
+  fit,
+  col,
 }: {
   children: React.ReactNode;
   sortKey?: SortKey;
   active?: SortKey;
   dir?: SortDir;
   onSort?: (k: SortKey) => void;
+  /**
+   * PF-20 — the drag, and ONLY the drag. The cells below are left exactly as they were: this is
+   * the first screen everyone opens, and the rule the user set for the screens people live in
+   * (20-09-2026) is that nothing should look different until somebody drags an edge.
+   */
+  fit?: FitTable;
+  col?: string;
 }) {
   const isActive = !!sortKey && active === sortKey;
+  const drag = fit && col ? <FitResizer fit={fit} col={col} label={col} /> : null;
+  const fitStyle = fit && col ? thFitStyle(fit, col) : undefined;
   if (!sortKey || !onSort) {
     return (
-      <th className="text-left text-[11.5px] font-semibold text-grey-2 uppercase tracking-wide px-4 py-2.5 whitespace-nowrap">
+      <th style={fitStyle} className="relative text-left text-[11.5px] font-semibold text-grey-2 uppercase tracking-wide px-4 py-2.5 whitespace-nowrap">
         {children}
+        {drag}
       </th>
     );
   }
   return (
-    <th className="text-left px-4 py-2.5 whitespace-nowrap">
+    <th style={fitStyle} className="relative text-left px-4 py-2.5 whitespace-nowrap">
       <button
         type="button"
         onClick={() => onSort(sortKey)}
@@ -1020,6 +1268,7 @@ function Th({
           <path d="M12 19V5M5 12l7-7 7 7" />
         </svg>
       </button>
+      {drag}
     </th>
   );
 }
@@ -1068,6 +1317,13 @@ function IconInfinity() {
   return (
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
       <path d="M6.5 9a3 3 0 1 0 0 6c2.5 0 3.5-6 6-6a3 3 0 1 1 0 6c-2.5 0-3.5-6-6-6Z" />
+    </svg>
+  );
+}
+function IconPause() {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M10 5v14M14 5v14" />
     </svg>
   );
 }

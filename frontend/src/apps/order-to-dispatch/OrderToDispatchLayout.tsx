@@ -5,6 +5,9 @@ import { roleLabel, useSession } from "@/core/platform/session";
 import { useOrgPersonById } from "@/core/platform/orgPeople";
 import { buildDispatchNav, QUEUE_PATH } from "./nav";
 import { useDispatchStore } from "./store";
+import { mapNotification } from "./data/dispatchFetch";
+import { useFmsBell } from "@/shared/lib/fmsBell";
+import { useInPanel } from "@/shared/lib/embedded";
 import { STEPS } from "./lib/steps";
 import { STEP_HOLD } from "./lib/format";
 import type { QueueStep } from "./lib/queues";
@@ -24,6 +27,13 @@ export default function OrderToDispatchLayout() {
   const { user, role, isAdmin } = useSession();
   const s = useDispatchStore();
   const orgPersonById = useOrgPersonById();
+  /*
+    THE BELL'S OWN SMALL QUERY (PERF-2 Step 2): the newest 100 unread for the
+    signed-in person, held here - its only reader - not in the store. Not loaded
+    inside the home side panel, where AppShell hides the top bar.
+  */
+  const inPanel = useInPanel();
+  const bell = useFmsBell("fms_dispatch_notifications", user?.id ?? null, mapNotification, !inPanel);
 
   const queueSteps = STEPS.filter((st) => !st.noQueue).map((st) => st.key as QueueStep);
 
@@ -54,7 +64,10 @@ export default function OrderToDispatchLayout() {
     record would give `undefined` and silently hide the link for its own owners.
   */
   const canSeeSalesReturn = s.canSeeQueue("sales_return");
-  const salesReturnPending = canSeeSalesReturn ? s.salesReturnPending.length : 0;
+  // Both kinds of Sales Return work: cancellations, and returns against a finished invoice.
+  const salesReturnPending = canSeeSalesReturn
+    ? s.salesReturnPending.length + s.roundReturnsPending.length
+    : 0;
 
   const canSeeCustomerOrders = s.canSeeCustomerOrders;
   const customerOrdersPending = canSeeCustomerOrders ? s.customerOrdersPending.length : 0;
@@ -66,6 +79,9 @@ export default function OrderToDispatchLayout() {
     canSeeQueue — because a side effect is not a reason, and the next person to
     touch canSeeQueue would silently take these two links away again.
   */
+  // Who may raise a sales return at all — the request modal then narrows it per invoice.
+  const canRaiseReturn = s.canEdit && s.orders.some((o) => s.canRequestRoundReturn(o));
+
   const hasOrders = s.isModuleViewer || s.orders.length > 0 || s.isProcessCoordinator || anyQueue;
 
   /*
@@ -94,6 +110,7 @@ export default function OrderToDispatchLayout() {
         canMonitor: s.canMonitor,
         hasOrders,
         canRaise: s.canRaise,
+        canRaiseReturn,
         pendingReviews: s.resolvableRequests.length,
         heldByStep,
         queues,
@@ -102,10 +119,10 @@ export default function OrderToDispatchLayout() {
         customerOrdersPending,
         salesReturnPending,
       }),
-    [isAdmin, s.isAnyMasterManager, s.canMonitor, hasOrders, s.canRaise, s.resolvableRequests.length, heldByStep, queues, canSeeSalesReturn, salesReturnPending, canSeeCustomerOrders, customerOrdersPending],
+    [isAdmin, s.isAnyMasterManager, s.canMonitor, hasOrders, s.canRaise, canRaiseReturn, s.resolvableRequests.length, heldByStep, queues, canSeeSalesReturn, salesReturnPending, canSeeCustomerOrders, customerOrdersPending],
   );
 
-  const notifItems: NotificationItem[] = s.notifications.map((n) => {
+  const notifItems: NotificationItem[] = bell.notifications.map((n) => {
     const actor = n.actorId ? s.profiles.find((p) => p.id === n.actorId) ?? orgPersonById(n.actorId) : undefined;
     return {
       id: n.id,
@@ -124,8 +141,21 @@ export default function OrderToDispatchLayout() {
       role={role}
       user={{ name: user.name, designation: user.designation, color: user.avatarColor, roleLabel: roleLabel(role) }}
       notifications={notifItems}
+      onMarkAllRead={() => {
+        void bell.markAllRead();
+      }}
       onMarkRead={(ids) => {
-        void s.markNotificationsRead(ids);
+        void bell.markRead(ids);
+        /*
+          A click on a notification about an order this copy does not hold yet (a
+          brand-new order): fetch what changed, so the order page shows "Loading…"
+          and then the order, never "Order not found".
+        */
+        const wanted = new Set(ids);
+        const missing = bell.notifications.some(
+          (n) => wanted.has(n.id) && n.entityType === "order" && !s.orderById(n.entityId),
+        );
+        if (missing) void s.refreshOrders();
       }}
     />
   );

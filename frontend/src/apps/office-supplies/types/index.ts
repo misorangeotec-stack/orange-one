@@ -105,6 +105,13 @@ export interface SupplyRequest {
    * holder can still revise it.
    */
   assignedApproverId: string | null;
+  /**
+   * The same thing for the SECOND (Management) approval: set while it has been
+   * handed to one person, who then replaces the second-approval step owners
+   * rather than joining them. Its own column so a first-approval handover is
+   * never overwritten - both are kept for the revise-after-deciding path.
+   */
+  secondAssignedApproverId: string | null;
   firstRemarks: string | null;
   secondApprovedAt: string | null;
   secondApproverId: string | null;

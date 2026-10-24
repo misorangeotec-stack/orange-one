@@ -47,7 +47,7 @@ export function outstandingAdvanceFor(
     );
 }
 
-/** §11.1 — the most that may be advanced on this trip. Null without an estimate. */
+/** Section 11.1 — the most that may be advanced on this trip. Null without an estimate. */
 export function advanceCeiling(trip: Trip, maxPct: number): number | null {
   if (trip.estimatedCost === null || trip.estimatedCost === undefined) return null;
   return Math.round(((trip.estimatedCost * maxPct) / 100) * 100) / 100;

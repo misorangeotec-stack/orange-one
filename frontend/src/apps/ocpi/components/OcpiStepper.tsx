@@ -4,7 +4,7 @@ import { useOrgPersonById } from "@/core/platform/orgPeople";
 import { useOcpiStore } from "../store";
 import { stepActorId, stepCompletedIso } from "../lib/queues";
 import { dmy } from "../lib/format";
-import { LIVE_STEPS, STEPS, isRetiredStep, stepByKey, type StepDef, type StepKey } from "../lib/steps";
+import { LIVE_STEPS, PARALLEL_STEPS, STEPS, isRetiredStep, stepByKey, type StepDef, type StepKey } from "../lib/steps";
 import { STATUS_STEP, type OcpiDeal, type OcpiStatus } from "../types";
 
 /**
@@ -51,7 +51,7 @@ const stageOf = (st: StepDef): Stage => ({ key: st.key, label: st.short, step: s
  *   no caption, and `STAGE_LABEL` guards on it (see below).
  */
 const LIVE_STAGES: Stage[] = [
-  ...LIVE_STEPS.map(stageOf),
+  ...LIVE_STEPS.filter((st) => !PARALLEL_STEPS.includes(st.key)).map(stageOf),
   { key: "closed", label: "Closed", step: null },
 ];
 
@@ -229,12 +229,16 @@ export default function OcpiStepper({ deal, fit }: { deal: OcpiDeal; fit?: boole
         key: st.key,
         label: st.label,
         departments: [],
-        // Falling back to the owner list when a finished step has no actor on
-        // record keeps the column from reading "Unassigned" for work that was
-        // demonstrably done.
-        people: actor
-          ? [actor]
-          : (s.ownersOf(st.step).map(name).filter(Boolean) as string[]),
+        // A done step's actor goes to `doneBy`, which the rail shows in place of the
+        // owners. Falling back to the owner list when it has no actor on record keeps
+        // the column from reading "Unassigned" for work that was demonstrably done.
+        people:
+          actor && !isDone
+            ? [actor]
+            : ((st.step === "quotation_approval" ? s.approversFor(deal) : s.ownersOf(st.step))
+                .map(name)
+                .filter(Boolean) as string[]),
+        doneBy: actor && isDone ? [actor] : undefined,
         hasStep: true,
         note: isDone && doneAt ? dmy(doneAt) : undefined,
       };
@@ -243,7 +247,7 @@ export default function OcpiStepper({ deal, fit }: { deal: OcpiDeal; fit?: boole
     // result), so it is deliberately not a dependency — including it would make
     // this memo run every render and defeat the point.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [deal, stages, active, finished, s.stepOwners]);
+  }, [deal, stages, active, finished, s.stepOwners, s.approvalLocations]);
 
   return (
     <div className="space-y-2.5">

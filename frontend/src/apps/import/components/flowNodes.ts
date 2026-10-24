@@ -1,6 +1,7 @@
 import type { PoStageRailNode } from "@/shared/components/ui/PoStageRail";
 import { stageStepKey } from "../lib/steps";
 import type { useImportStore } from "../store";
+import type { RequestItem } from "../types";
 
 type Store = ReturnType<typeof useImportStore>;
 
@@ -38,6 +39,11 @@ export const FLOW_STAGES = [
   { key: "closed", label: "Closed" },
 ] as const;
 
+export type FlowStageKey = (typeof FLOW_STAGES)[number]["key"];
+
+/** Who actually did each stage — resolved display names, keyed by stage. */
+export type FlowDoneBy = Partial<Record<FlowStageKey, string[]>>;
+
 /** Position of a stage key within FLOW_STAGES (-1 if unknown). */
 export const flowIndex = (key: string): number => FLOW_STAGES.findIndex((st) => st.key === key);
 
@@ -56,7 +62,7 @@ const visibleStages = (showReturnBranch: boolean) =>
  * personName (not profileById), because the directory is RLS-scoped to self +
  * downline + same-department peers, so cross-department owners would render blank.
  */
-export function buildFlowNodes(s: Store, showReturnBranch = false): PoStageRailNode[] {
+export function buildFlowNodes(s: Store, showReturnBranch = false, doneBy: FlowDoneBy = {}): PoStageRailNode[] {
   return visibleStages(showReturnBranch).map((st) => {
     const stepKey = stageStepKey(st.key);
     // `closed` has no backing step, so it has no owners to show.
@@ -74,8 +80,50 @@ export function buildFlowNodes(s: Store, showReturnBranch = false): PoStageRailN
         .map((id) => s.personName(id))
         .filter((n) => n !== "—"),
       hasStep: true,
+      doneBy: doneBy[st.key],
     };
   });
+}
+
+/**
+ * Who actually did each stage for a slice of the flow: the requisition lines in
+ * view and the POs they landed on. A requisition split across POs can have a
+ * stage done by different people, so each stage is the de-duplicated union.
+ *
+ * Built for every stage regardless of progress — PoStageRail only reads
+ * `doneBy` on a node it renders DONE, so a stage still open keeps its owner list.
+ * Every actor here is a column the RPC stamps with auth.uid() when the step is
+ * actioned (approver_id on decide/override, created_by on the PO/PI/follow-up,
+ * received_by, booked_by, inspected_by, returned_by, gate_out_by). Names go
+ * through personName for the same RLS reason as the owner captions.
+ */
+export function flowDoneBy(s: Store, lines: RequestItem[], poIds: string[]): FlowDoneBy {
+  const ids = new Set(poIds);
+  const names = (actors: (string | null)[]): string[] => [
+    ...new Set(
+      actors
+        .filter((id): id is string => !!id)
+        .map((id) => s.personName(id))
+        .filter((n) => !!n && n !== "—"),
+    ),
+  ];
+  const pos = poIds.map((id) => s.poById(id)).filter((po): po is NonNullable<typeof po> => !!po);
+  const qcs = s.qcInspections.filter((q) => ids.has(q.poId));
+  return {
+    request: names(
+      [...new Set(lines.map((l) => l.requestId))].map((id) => s.requestById(id)?.requesterId ?? null),
+    ),
+    approval: names(lines.map((l) => l.approverId)),
+    generated: names(pos.map((po) => po.createdBy)),
+    share_po: names(pos.map((po) => po.sharedBy)),
+    collect_pi: names(s.pis.filter((p) => ids.has(p.poId)).map((p) => p.createdBy)),
+    follow_up: names(s.followups.filter((f) => ids.has(f.poId)).map((f) => f.createdBy)),
+    inward: names(s.grns.filter((g) => ids.has(g.poId)).map((g) => g.receivedBy)),
+    tally: names(s.tallyBookings.filter((b) => ids.has(b.poId)).map((b) => b.bookedBy)),
+    qc_inspection: names(qcs.map((q) => q.inspectedBy)),
+    purchase_return: names(qcs.map((q) => q.returnedBy)),
+    gate_outward: names(qcs.map((q) => q.gateOutBy)),
+  };
 }
 
 /**

@@ -16,6 +16,7 @@
  *   correction dialog would be a second place for each step's rules to live,
  *   and the two would drift the first time a field moved.
  */
+import { useBack } from "@/shared/components/ui/BackLink";
 import { Link, useParams, useSearchParams } from "react-router-dom";
 import { ArrowLeft, AlertTriangle, Pencil } from "lucide-react";
 import { Button } from "@hub/components/ui/button";
@@ -50,6 +51,7 @@ export default function RequestDetail() {
   const { id = "" } = useParams();
   const [params, setParams] = useSearchParams();
   const s = useCustomerStore();
+  const back = useBack(allHref());
   const r = s.requestById(id);
 
   if (s.loading) return <div className="p-6 text-sm text-muted-foreground">Loading…</div>;
@@ -103,7 +105,7 @@ export default function RequestDetail() {
       <div className="flex items-start justify-between gap-4 flex-wrap">
         <div className="min-w-0">
           <Button variant="ghost" size="sm" asChild className="-ml-2 mb-1 gap-1 text-muted-foreground">
-            <Link to={allHref()}><ArrowLeft className="h-4 w-4" /> All requests</Link>
+            <Link to={allHref()} onClick={back.onClick}><ArrowLeft className="h-4 w-4" /> {back.canGoBack ? "Back" : "All requests"}</Link>
           </Button>
           <h1 className="text-2xl font-bold text-foreground">{requestSubject(r)}</h1>
           {/* ⚠ IN THE HEADER, not buried in the step-2 card, because this page is

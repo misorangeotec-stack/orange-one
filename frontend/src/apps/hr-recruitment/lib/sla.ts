@@ -54,11 +54,24 @@ const OVERRIDES: Partial<Record<StepKey, Partial<StepSla>>> = {
   interview_3: { anchor: "interview_2", days: 2 },
   final_decision: { anchor: "interview_3", days: 2 },
   onboarding: { anchor: "final_decision", days: 7 },
+  // NR-10 · the Day 7/15/30/60/90 cadence. `days` here is DISPLAY ONLY — the real
+  // due date is stamped on the check-in row (`due_on`) when the probation opens,
+  // in CALENDAR days from the joining date, and lib/queues.ts reads it from there.
+  //
+  // ⚠ It cannot be expressed in this model at all: a day-unit SLA counts WORKING
+  // days (Mon–Sat), so `days: 7` would land Day 7 on the 8th calendar day. That
+  // is exactly why the cadence is stamped in SQL and only mirrored here.
+  probation_d7: { anchor: "onboarding", days: 7 },
+  probation_d15: { anchor: "onboarding", days: 15 },
+  probation_d30: { anchor: "onboarding", days: 30 },
+  probation_d60: { anchor: "onboarding", days: 60 },
+  probation_d90: { anchor: "onboarding", days: 90 },
+  probation_final: { anchor: "onboarding", days: 3, unit: "months" },
+  probation_extension: { anchor: "onboarding", days: 4, unit: "months" },
+  // Retired by NR-10; kept so an old row still resolves.
   probation_m1: { anchor: "onboarding", days: 1, unit: "months" },
   probation_m2: { anchor: "onboarding", days: 2, unit: "months" },
   probation_m3: { anchor: "onboarding", days: 3, unit: "months" },
-  probation_final: { anchor: "onboarding", days: 3, unit: "months" },
-  probation_extension: { anchor: "onboarding", days: 4, unit: "months" },
 };
 
 const model = createStepSlaModel<StepKey>(STEPS, OVERRIDES);
@@ -80,7 +93,12 @@ export const TRIGGER_STEPS: Partial<Record<StepKey, { dueAfter: string; rule: st
     dueAfter: "Sent-back date",
     rule: "The requester has this long to revise and resubmit an MRF that was sent back.",
   },
-  probation_m1: { dueAfter: "Joining date", rule: "Reviewed a month after the person actually joined.", unit: "months" },
+  probation_d7: { dueAfter: "Joining date", rule: "Day 7 — calendar days after the person actually joined. Fixed by the cadence, not configurable here." },
+  probation_d15: { dueAfter: "Joining date", rule: "Day 15 — calendar days after joining." },
+  probation_d30: { dueAfter: "Joining date", rule: "Day 30 — calendar days after joining." },
+  probation_d60: { dueAfter: "Joining date", rule: "Day 60 — calendar days after joining." },
+  probation_d90: { dueAfter: "Joining date", rule: "Day 90 — the confirmation review. The DECISION that follows it is a separate step." },
+  probation_m1: { dueAfter: "Joining date", rule: "Retired by NR-10 — the monthly cadence was replaced by Day 7/15/30/60/90.", unit: "months" },
   probation_m2: { dueAfter: "Joining date", rule: "Reviewed two months after joining.", unit: "months" },
   probation_m3: { dueAfter: "Joining date", rule: "Reviewed three months after joining.", unit: "months" },
   probation_final: { dueAfter: "Joining date", rule: "Confirm / reject / extend, once the three monthly reviews are in.", unit: "months" },

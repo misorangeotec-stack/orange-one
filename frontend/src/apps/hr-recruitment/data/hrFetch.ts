@@ -9,6 +9,9 @@ import {
   mapOnboardingCheck,
   mapProbation,
   mapProbationReview,
+  mapProbationCheckin,
+  mapBuddy,
+  mapBuddyInteraction,
 } from "./hrMap";
 import { resolveStepSla, type StepSlaMap } from "../lib/sla";
 import type {
@@ -44,6 +47,9 @@ import type {
   ProbationFinalStatus,
   ProbationOutcome,
   ProbationReview,
+  ProbationCheckin,
+  Buddy,
+  BuddyInteraction,
   ProbationReviewStatus,
   Requisition,
   RequisitionPlatform,
@@ -122,6 +128,9 @@ type Tbl =
   | "fms_hr_onboarding_checks"
   | "fms_hr_probations"
   | "fms_hr_probation_reviews"
+  | "fms_hr_probation_checkins"
+  | "fms_hr_buddies"
+  | "fms_hr_buddy_interactions"
   | "fms_hr_activity"
   | "fms_hr_candidate_scores"
   | "fms_hr_notifications"
@@ -170,6 +179,11 @@ async function fetchCandidatesInScope(liveRequisitionIds: string[]): Promise<any
     // offered candidate who is later marked `hired` must not fall out of the read,
     // or their onboarding and probation rows lose the person's name.
     fetchAll("fms_hr_candidates", "created_at", (q) => q.in("stage", ["finalized", "hired"])),
+    // D — every candidate saved for future reference, whatever the window. The bucket
+    // exists precisely for CVs from vacancies long closed. Fails SOFT: before
+    // 20270116120000 is applied the column does not exist, and one missing extra must
+    // not blank the whole app.
+    fetchAll("fms_hr_candidates", "created_at", (q) => q.not("future_ref_at", "is", null)).catch(() => []),
   ]);
 
   const byId = new Map<string, any>();
@@ -203,6 +217,11 @@ export interface HrConfig {
    * on top — fms_hr_can_act() ANDs module_can_edit(). Two grants, both required.
    */
   pipelineViewerIds: string[];
+  /**
+   * Who may see the Future Reference bucket. Read in SQL by
+   * fms_hr_is_future_ref_viewer() — a READ grant over SAVED candidates only.
+   */
+  futureRefViewerIds: string[];
 }
 
 /**
@@ -229,12 +248,24 @@ export interface HrData {
   qualifications: Qualification[];
   requisitions: Requisition[];
   requisitionPlatforms: RequisitionPlatform[];
+  /**
+   * The candidates IN THE PIPELINE. A candidate parked in Future Reference is NOT here
+   * — it has left the pipeline, so the board, the queues, the counts, the Control
+   * Center and My Work (all of which read this array) must not see it.
+   */
   candidates: Candidate[];
+  /** Parked in the Future Reference bucket — out of the pipeline. */
+  futureRefCandidates: Candidate[];
   interviews: Interview[];
   onboardings: Onboarding[];
   onboardingChecks: OnboardingCheck[];
   probations: Probation[];
   probationReviews: ProbationReview[];
+  /** NR-10 — the Day 7/15/30/60/90 check-ins that replaced them. */
+  probationCheckins: ProbationCheckin[];
+  /** NR-9 — the buddy programmes and their logged interactions. */
+  buddies: Buddy[];
+  buddyInteractions: BuddyInteraction[];
   activity: HrActivity[];
   candidateScores: CandidateFit[];
   notifications: HrNotification[];
@@ -419,6 +450,9 @@ export async function fetchHrData(): Promise<HrData> {
     onboardingChecks,
     probations,
     probationReviews,
+    probationCheckins,
+    buddies,
+    buddyInteractions,
     activity,
     candidateScores,
     notifications,
@@ -449,6 +483,9 @@ export async function fetchHrData(): Promise<HrData> {
     fetchAll("fms_hr_onboarding_checks"),
     fetchAll("fms_hr_probations"),
     fetchAll("fms_hr_probation_reviews"),
+    fetchAll("fms_hr_probation_checkins", "created_at"),
+    fetchAll("fms_hr_buddies", "created_at"),
+    fetchAll("fms_hr_buddy_interactions", "created_at"),
     // The trail used to come back whole, which was fine while it was pure audit —
     // a few dozen rows. Team comments live in this table too now, so it grows with
     // the conversation rather than with the process, and it is read on EVERY app load.
@@ -474,6 +511,9 @@ export async function fetchHrData(): Promise<HrData> {
     fetchAll("fms_hr_department_hods", "department_id"),
   ]);
 
+  // Split once, here, so every consumer of the cache sees the same pipeline.
+  const mappedCandidates = (candidates as any[]).map(mapCandidate);
+
   const byKey = new Map<string, any>(configRows.map((r) => [r.key, r.value ?? {}]));
   const config: HrConfig = {
     processCoordinatorIds: (byKey.get("process_coordinators")?.user_ids ?? []) as string[],
@@ -486,6 +526,7 @@ export async function fetchHrData(): Promise<HrData> {
     reassignPoolDepartmentIds: (byKey.get("reassign_pool")?.department_ids ?? []) as string[],
     reassignPoolUserIds: (byKey.get("reassign_pool")?.user_ids ?? []) as string[],
     pipelineViewerIds: (byKey.get("pipeline_viewers")?.user_ids ?? []) as string[],
+    futureRefViewerIds: (byKey.get("future_ref_viewers")?.user_ids ?? []) as string[],
   };
 
   return {
@@ -503,12 +544,16 @@ export async function fetchHrData(): Promise<HrData> {
     qualifications: qualifications.map(mapMaster),
     requisitions: requisitions.map(mapRequisition),
     requisitionPlatforms: requisitionPlatforms.map(mapRequisitionPlatform),
-    candidates: candidates.map(mapCandidate),
+    candidates: mappedCandidates.filter((c) => !c.futureRefAt),
+    futureRefCandidates: mappedCandidates.filter((c) => !!c.futureRefAt),
     interviews: interviews.map(mapInterview),
     onboardings: onboardings.map(mapOnboarding),
     onboardingChecks: onboardingChecks.map(mapOnboardingCheck),
     probations: probations.map(mapProbation),
     probationReviews: probationReviews.map(mapProbationReview),
+    probationCheckins: probationCheckins.map(mapProbationCheckin),
+    buddies: buddies.map(mapBuddy),
+    buddyInteractions: buddyInteractions.map(mapBuddyInteraction),
     activity: activity.map(mapActivity),
     candidateScores: candidateScores.map(mapCandidateScore),
     notifications: notifications.map(mapNotification),

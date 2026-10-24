@@ -34,6 +34,7 @@
  * Quantities are only totalled when the filtered set has ONE base unit. Summing KGS + MTR + PCS is
  * not a number anybody can use, which is what earns the Base Unit filter its slot.
  */
+import { useBackState } from "@/shared/lib/backState";
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { CSSProperties } from "react";
 import { Link, useSearchParams } from "react-router-dom";
@@ -59,8 +60,14 @@ import {
   ymdToIso, type StockSummaryRow,
 } from "@hub/lib/stockSummary";
 import { exportStockSummaryXlsx } from "@hub/lib/exportStockSummary";
+import { appBasePath } from "@/apps/appInfo";
 
-const BASE = "/outstanding-dashboard";
+/**
+ * This screen's own links, rooted at the app that serves it. It moved out of the Outstanding
+ * Dashboard with the rest of the reporting (apps/reports/), so a hard-coded
+ * "/outstanding-dashboard" here would now point every in-page link at a redirect.
+ */
+const BASE = appBasePath("reports");
 
 /* ------------------------------------------------------------------ columns */
 
@@ -199,8 +206,8 @@ export default function StockSummary() {
   const [categories, setCategories] = useState<string[]>([]);
   const [units, setUnits] = useState<string[]>([]);
   const [show, setShow] = useState<ShowMode>("all");
-  const [searchRaw, setSearchRaw] = useState("");
-  const [search, setSearch] = useState("");
+  const [searchRaw, setSearchRaw] = useBackState("StockSummary.searchRaw", "");
+  const [search, setSearch] = useBackState("StockSummary.search", "");
   const [panelOpen, setPanelOpen] = useState(false);
 
   // 8,000 items × every keystroke is the one place this page can feel slow.
@@ -465,7 +472,7 @@ export default function StockSummary() {
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
         <div>
-          <Link to={`${BASE}/reports?cat=tally`} className="inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground mb-1">
+          <Link to={`${BASE}?cat=tally`} className="inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground mb-1">
             <ArrowLeft className="h-3 w-3" /> Tally Reports
           </Link>
           <h1 className="text-2xl font-bold text-foreground flex items-center gap-2">

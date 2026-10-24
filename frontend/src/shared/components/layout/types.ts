@@ -32,6 +32,11 @@ export interface NavItem {
    * mark, which is legible but tells the reader nothing.
    */
   groupIcon?: ReactNode;
+  /**
+   * Keep this item's group as a heading even when it is the group's only link,
+   * instead of the sidebar folding it into a plain row. Set on any item of the group.
+   */
+  keepGroup?: boolean;
 }
 
 /**
@@ -73,6 +78,29 @@ export interface NotificationItem {
  */
 export const HOME_PATH = "/home";
 export const HOME_LABEL = "My Control Center";
+
+/**
+ * PF-18 · The announcement history page, open to all staff. Named here, beside the
+ * home, because the leaf-only modules that build menus and breadcrumbs need it too.
+ * It must never sit under the Announcements module's own basePath, which is gated.
+ */
+export const ANNOUNCEMENTS_PATH = "/announcements";
+export const ANNOUNCEMENTS_LABEL = "Announcements";
+
+/**
+ * KB-1 · The HR handbook, readable by every member of staff with no grant. Named here
+ * beside the announcement history for exactly the same reason: `core/workspace/homeNav.tsx`
+ * and `apps/currentApp.ts` both need the path, and neither should have to import
+ * `core/knowledge-base/data.ts`, which pulls in the Supabase client and react-query to
+ * read one string.
+ *
+ * ⚠ It WAS deliberately in no menu (KB-1 §0), on the reasoning that the way in is the
+ * floating Ask HR bubble. That was reversed on 30-09-2026: not being able to simply browse
+ * the manual was the first thing raised after the module went in front of anyone. Asking
+ * still has no menu item; READING now does.
+ */
+export const HANDBOOK_PATH = "/handbook/read";
+export const HANDBOOK_LABEL = "HR Handbook";
 
 /** Minimal current-user info the shell needs to render. */
 export interface ShellUser {

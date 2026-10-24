@@ -1,3 +1,4 @@
+import BackLink from "@/shared/components/ui/BackLink";
 import { useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import Card from "@/shared/components/ui/Card";
@@ -6,6 +7,9 @@ import Kpi from "@/shared/components/ui/Kpi";
 import Tabs from "@/shared/components/ui/Tabs";
 import EmptyState from "@/shared/components/ui/EmptyState";
 import { ScrollableTable } from "@/core/shared/components/ScrollableTable";
+import { FitCell, FitTh, ResetWidths } from "@/shared/components/ui/ColumnResizer";
+import { FIT } from "@/shared/lib/tableLook";
+import { useColumnWidths } from "@/shared/lib/useColumnWidths";
 import { formatDate } from "@/shared/lib/time";
 import { useProcurementStore } from "../../store";
 import { inr, poStageBadge, PO_STAGE_LABEL } from "../../lib/format";
@@ -17,10 +21,32 @@ import { PiDocLink, GrnPhotoLink, TallyDocLink, PoDocLink } from "../../componen
 import type { PurchaseOrder } from "../../types";
 
 /** PO Detail — header + lifecycle stepper + action bar + PIs / GRNs / Payments tabs. */
+/** The four tab tables' columns, for their remembered widths (PF-20). */
+const ITEM_COLS = ["item", "source", "qty", "received", "rate", "value"];
+const PI_COLS = ["piNo", "items", "value", "status", "doc"];
+const GRN_COLS = ["poRef", "gate", "date", "items", "condition", "piRef", "photo"];
+const PAY_COLS = ["kind", "ref", "amount", "date", "utr"];
+const TH = "font-medium px-4 py-3";
+
 export default function PoDetail() {
   const { id } = useParams();
   const s = useProcurementStore();
   const [tab, setTab] = useState("items");
+  /**
+   * PF-20: every tab table is one line per row and its columns drag. Above the guard below, like
+   * every hook. Text is cut with "…" and shown whole on hover; numbers, dates and the document
+   * buttons are never cut. The widths are shared by every PO (the key folds the id).
+   */
+  const itemsFit = useColumnWidths("tb", ITEM_COLS);
+  const pisFit = useColumnWidths("tb", PI_COLS);
+  const grnsFit = useColumnWidths("tb", GRN_COLS);
+  const payFit = useColumnWidths("tb", PAY_COLS);
+  const tabFit =
+    tab === "items" ? ([itemsFit, ITEM_COLS] as const)
+    : tab === "pis" ? ([pisFit, PI_COLS] as const)
+    : tab === "grns" ? ([grnsFit, GRN_COLS] as const)
+    : tab === "payments" ? ([payFit, PAY_COLS] as const)
+    : null;
   const [modal, setModal] = useState<"share" | "pi" | "advance" | "payment" | "followup" | "grn" | "tally" | "qc" | "return" | "gateout" | "reqcancel" | "cancel" | "declinecancel" | null>(null);
 
   const po = s.poById(id ?? null);
@@ -90,13 +116,13 @@ export default function PoDetail() {
 
   return (
     <div className="space-y-5">
-      <Link to="/procurement/pos" className="text-[12.5px] text-grey hover:text-navy">← Purchase Orders</Link>
+      <BackLink to="/procurement/pos" label="Purchase Orders" className="text-[12.5px] text-grey hover:text-navy" />
 
       <div className="flex items-start justify-between gap-3 flex-wrap">
         <div>
           <h1 className="text-[22px] font-bold text-navy">{po.poNo}</h1>
           <p className="text-[13.5px] text-grey-2 mt-1">
-            {s.vendorById(po.vendorId)?.name ?? "—"} · {co ? (co.location ? `${co.name} — ${co.location}` : co.name) : "—"} · {formatDate(po.createdAt)}
+            {s.vendorById(po.vendorId)?.name ?? "—"} · {co ? (co.location ? `${co.name} — ${co.location}` : co.name) : "—"} · {s.categoryLabelForPo(po.id)} · {formatDate(po.createdAt)}
             {po.tallyPoNo ? <> · Tally PO: <span className="font-medium text-navy">{po.tallyPoNo}</span></> : null}
             {po.paymentTerms ? <> · Terms: <span className="font-medium text-navy capitalize">{po.paymentTerms.replace(/_/g, " ")}</span></> : null}
             {po.dispatchDate ? <> · Dispatch: <span className="font-medium text-navy">{formatDate(po.dispatchDate)}</span></> : null}
@@ -162,6 +188,8 @@ export default function PoDetail() {
           {s.canRecordPayment && po.currentStage === "advance_payment" && pending > 0 && <Button size="sm" onClick={() => setModal("advance")}>Record Advance</Button>}
           {s.canFollowup && po.currentStage === "follow_up" && <Button size="sm" variant="ghost" onClick={() => setModal("followup")}>Follow-up</Button>}
           {s.canInward && po.currentStage === "inward" && !allReceived && <Button size="sm" variant="ghost" onClick={() => setModal("grn")}>Record GRN</Button>}
+          {/* Partial dispatch: a lot has left the vendor while the PO stays on Follow-up — its goods can be received now. */}
+          {s.canInward && po.currentStage === "follow_up" && items.some((it) => (s.receiveCapForPoItem(it.id) ?? 0) > it.receivedQty + 0.0005) && <Button size="sm" variant="ghost" onClick={() => setModal("grn")}>Record GRN (dispatched lot)</Button>}
           {s.canTally && po.currentStage === "tally" && !tallyBooked && <Button size="sm" variant="ghost" onClick={() => setModal("tally")}>Book in Tally</Button>}
           {s.canQc && qcPending && <Button size="sm" variant="ghost" onClick={() => setModal("qc")}>Record QC</Button>}
           {s.canPurchaseReturn && pendingReturn && <Button size="sm" variant="ghost" onClick={() => setModal("return")}>Book purchase return</Button>}
@@ -187,23 +215,30 @@ export default function PoDetail() {
 
       <Card className="overflow-hidden">
         <div className="px-4 pt-3"><Tabs tabs={tabs} active={tab} onChange={setTab} /></div>
+        {/* PF-20: "Reset widths" for the table on screen, on its own row and only once one of its
+            columns has been dragged — beside the tabs it would cut their underline short. */}
+        {tabFit && tabFit[0].anyCustom(tabFit[1]) && (
+          <div className="flex justify-end px-4 pt-2">
+            <ResetWidths fit={tabFit[0]} cols={tabFit[1]} />
+          </div>
+        )}
 
         {tab === "items" && (
           <ScrollableTable>
             <table className="w-full text-[13.5px]">
-              <thead><tr className="text-left text-grey-2 border-b border-line"><th className="font-medium px-4 py-3">Item</th><th className="font-medium px-4 py-3">Source Request</th><th className="font-medium px-4 py-3">Qty</th><th className="font-medium px-4 py-3">Received</th><th className="font-medium px-4 py-3">Rate</th><th className="font-medium px-4 py-3">Line Value</th></tr></thead>
-              <tbody>
+              <thead><tr className="text-left text-grey-2 border-b border-line"><FitTh fit={itemsFit} col="item" className={TH}>Item</FitTh><FitTh fit={itemsFit} col="source" className={TH}>Source Request</FitTh><FitTh fit={itemsFit} col="qty" className={TH}>Qty</FitTh><FitTh fit={itemsFit} col="received" className={TH}>Received</FitTh><FitTh fit={itemsFit} col="rate" className={TH}>Rate</FitTh><FitTh fit={itemsFit} col="value" className={TH}>Line Value</FitTh></tr></thead>
+              <tbody {...itemsFit.tbodyProps}>
                 {items.map((pi) => {
                   const line = s.lineById(pi.requestItemId);
                   const req = line ? s.requestById(line.requestId) : undefined;
                   return (
                     <tr key={pi.id} className="border-b border-line/70 last:border-0 hover:bg-page/60">
-                      <td className="px-4 py-3 font-medium text-navy">{line ? s.itemLabel(line.itemId) : "—"}</td>
-                      <td className="px-4 py-3 whitespace-nowrap">{req ? <Link to={`/procurement/requests/${req.id}`} className="text-orange hover:underline">{req.requestNo}</Link> : "—"}</td>
-                      <td className="px-4 py-3">{pi.qty}</td>
-                      <td className="px-4 py-3">{pi.receivedQty}{pi.receivedQty >= pi.qty ? " ✓" : ""}</td>
-                      <td className="px-4 py-3 whitespace-nowrap">{inr(pi.rate)}</td>
-                      <td className="px-4 py-3 whitespace-nowrap">{inr(pi.lineValue)}</td>
+                      <td className="px-4 py-3 font-medium text-navy"><FitCell fit={itemsFit} col="item" cap={FIT.CUT}>{line ? s.itemLabel(line.itemId) : "—"}</FitCell></td>
+                      <td className="px-4 py-3 whitespace-nowrap"><FitCell fit={itemsFit} col="source" cap={FIT.CUT}>{req ? <Link to={`/procurement/requests/${req.id}`} className="text-orange hover:underline">{req.requestNo}</Link> : "—"}</FitCell></td>
+                      <td className="px-4 py-3"><FitCell fit={itemsFit} col="qty" cap={null}>{pi.qty}</FitCell></td>
+                      <td className="px-4 py-3"><FitCell fit={itemsFit} col="received" cap={null}>{pi.receivedQty}{pi.receivedQty >= pi.qty ? " ✓" : ""}</FitCell></td>
+                      <td className="px-4 py-3 whitespace-nowrap"><FitCell fit={itemsFit} col="rate" cap={null}>{inr(pi.rate)}</FitCell></td>
+                      <td className="px-4 py-3 whitespace-nowrap"><FitCell fit={itemsFit} col="value" cap={null}>{inr(pi.lineValue)}</FitCell></td>
                     </tr>
                   );
                 })}
@@ -234,14 +269,16 @@ export default function PoDetail() {
           pis.length === 0 ? <EmptyState title="No PIs yet" message="Add a PI from the action bar." /> : (
             <ScrollableTable>
               <table className="w-full text-[13.5px]">
-                <thead><tr className="text-left text-grey-2 border-b border-line"><th className="font-medium px-4 py-3">Vendor PI No.</th><th className="font-medium px-4 py-3">Items</th><th className="font-medium px-4 py-3">Value</th><th className="font-medium px-4 py-3">Status</th><th className="font-medium px-4 py-3">Document</th></tr></thead>
-                <tbody>
+                <thead><tr className="text-left text-grey-2 border-b border-line"><FitTh fit={pisFit} col="piNo" className={TH}>Vendor PI No.</FitTh><FitTh fit={pisFit} col="items" className={TH}>Items</FitTh><FitTh fit={pisFit} col="value" className={TH}>Value</FitTh><FitTh fit={pisFit} col="status" className={TH}>Status</FitTh><FitTh fit={pisFit} col="doc" resize={false} className={TH}>Document</FitTh></tr></thead>
+                <tbody {...pisFit.tbodyProps}>
                   {pis.map((p) => (
                     <tr key={p.id} className="border-b border-line/70 last:border-0 hover:bg-page/60">
-                      <td className="px-4 py-3 font-medium text-navy">{p.vendorPiNo}</td>
-                      <td className="px-4 py-3 text-navy min-w-[150px] max-w-[260px]"><span title={piItemNames(p)}>{piItemNames(p) || "—"}</span></td>
-                      <td className="px-4 py-3 whitespace-nowrap">{inr(p.piValue)}</td>
-                      <td className="px-4 py-3 whitespace-nowrap">{p.status.replace("_", " ")}</td>
+                      <td className="px-4 py-3 font-medium text-navy"><FitCell fit={pisFit} col="piNo" cap={FIT.CUT}>{p.vendorPiNo}</FitCell></td>
+                      {/* PF-20: the hand-set 150–260 px box and its always-on title are gone — the
+                          table now cuts at its own width and shows the whole list on hover. */}
+                      <td className="px-4 py-3 text-navy"><FitCell fit={pisFit} col="items" cap={FIT.CUT}>{piItemNames(p) || "—"}</FitCell></td>
+                      <td className="px-4 py-3 whitespace-nowrap"><FitCell fit={pisFit} col="value" cap={null}>{inr(p.piValue)}</FitCell></td>
+                      <td className="px-4 py-3 whitespace-nowrap"><FitCell fit={pisFit} col="status" cap={null}>{p.status.replace("_", " ")}</FitCell></td>
                       <td className="px-4 py-3 whitespace-nowrap"><PiDocLink pi={p} /></td>
                     </tr>
                   ))}
@@ -265,18 +302,18 @@ export default function PoDetail() {
           grns.length === 0 ? <EmptyState title="No receipts yet" message="Record a GRN from the action bar." /> : (
             <ScrollableTable>
               <table className="w-full text-[13.5px]">
-                <thead><tr className="text-left text-grey-2 border-b border-line"><th className="font-medium px-4 py-3">PO Ref</th><th className="font-medium px-4 py-3">Gate Reg No.</th><th className="font-medium px-4 py-3">Date</th><th className="font-medium px-4 py-3">Items</th><th className="font-medium px-4 py-3">Condition</th><th className="font-medium px-4 py-3">PI Ref</th><th className="font-medium px-4 py-3">Photo</th></tr></thead>
-                <tbody>
+                <thead><tr className="text-left text-grey-2 border-b border-line"><FitTh fit={grnsFit} col="poRef" className={TH}>PO Ref</FitTh><FitTh fit={grnsFit} col="gate" className={TH}>Gate Reg No.</FitTh><FitTh fit={grnsFit} col="date" className={TH}>Date</FitTh><FitTh fit={grnsFit} col="items" className={TH}>Items</FitTh><FitTh fit={grnsFit} col="condition" className={TH}>Condition</FitTh><FitTh fit={grnsFit} col="piRef" className={TH}>PI Ref</FitTh><FitTh fit={grnsFit} col="photo" resize={false} className={TH}>Photo</FitTh></tr></thead>
+                <tbody {...grnsFit.tbodyProps}>
                   {grns.map((g) => {
                     const gi = s.grnItemsForGrn(g.id);
                     return (
                       <tr key={g.id} className="border-b border-line/70 last:border-0 hover:bg-page/60">
-                        <td className="px-4 py-3 font-medium text-navy whitespace-nowrap">{g.poRef || po.tallyPoNo || po.poNo}</td>
-                        <td className="px-4 py-3">{g.gateRegisterNo || "—"}</td>
-                        <td className="px-4 py-3 whitespace-nowrap">{formatDate(g.createdAt)}</td>
-                        <td className="px-4 py-3">{gi.map((x) => { const l = s.lineById(s.poItemsForPo(po.id).find((p) => p.id === x.poItemId)?.requestItemId ?? null); return l ? `${s.itemLabel(l.itemId)} ×${x.receivedQty}` : `×${x.receivedQty}`; }).join(", ")}</td>
-                        <td className="px-4 py-3 whitespace-nowrap">{g.condition.replace("_", " ")}</td>
-                        <td className="px-4 py-3 whitespace-nowrap">{g.piRef || "—"}</td>
+                        <td className="px-4 py-3 font-medium text-navy whitespace-nowrap"><FitCell fit={grnsFit} col="poRef" cap={FIT.CUT}>{g.poRef || po.tallyPoNo || po.poNo}</FitCell></td>
+                        <td className="px-4 py-3"><FitCell fit={grnsFit} col="gate" cap={FIT.CUT}>{g.gateRegisterNo || "—"}</FitCell></td>
+                        <td className="px-4 py-3 whitespace-nowrap"><FitCell fit={grnsFit} col="date" cap={null}>{formatDate(g.createdAt)}</FitCell></td>
+                        <td className="px-4 py-3"><FitCell fit={grnsFit} col="items" cap={FIT.CUT}>{gi.map((x) => { const l = s.lineById(s.poItemsForPo(po.id).find((p) => p.id === x.poItemId)?.requestItemId ?? null); return l ? `${s.itemLabel(l.itemId)} ×${x.receivedQty}` : `×${x.receivedQty}`; }).join(", ")}</FitCell></td>
+                        <td className="px-4 py-3 whitespace-nowrap"><FitCell fit={grnsFit} col="condition" cap={null}>{g.condition.replace("_", " ")}</FitCell></td>
+                        <td className="px-4 py-3 whitespace-nowrap"><FitCell fit={grnsFit} col="piRef" cap={FIT.CUT}>{g.piRef || "—"}</FitCell></td>
                         <td className="px-4 py-3 whitespace-nowrap"><GrnPhotoLink grn={g} /></td>
                       </tr>
                     );
@@ -291,15 +328,15 @@ export default function PoDetail() {
           payments.length === 0 ? <EmptyState title="No payments yet" message="Record advance or installments from the action bar." /> : (
             <ScrollableTable>
               <table className="w-full text-[13.5px]">
-                <thead><tr className="text-left text-grey-2 border-b border-line"><th className="font-medium px-4 py-3">Kind</th><th className="font-medium px-4 py-3">PI ref / remarks</th><th className="font-medium px-4 py-3">Amount</th><th className="font-medium px-4 py-3">Date</th><th className="font-medium px-4 py-3">UTR / Ref</th></tr></thead>
-                <tbody>
+                <thead><tr className="text-left text-grey-2 border-b border-line"><FitTh fit={payFit} col="kind" className={TH}>Kind</FitTh><FitTh fit={payFit} col="ref" className={TH}>PI ref / remarks</FitTh><FitTh fit={payFit} col="amount" className={TH}>Amount</FitTh><FitTh fit={payFit} col="date" className={TH}>Date</FitTh><FitTh fit={payFit} col="utr" className={TH}>UTR / Ref</FitTh></tr></thead>
+                <tbody {...payFit.tbodyProps}>
                   {payments.map((p) => (
                     <tr key={p.id} className="border-b border-line/70 last:border-0 hover:bg-page/60">
-                      <td className="px-4 py-3 capitalize">{p.kind}</td>
-                      <td className="px-4 py-3 whitespace-nowrap">{p.piRemarks || (p.piId ? pis.find((x) => x.id === p.piId)?.vendorPiNo : null) || "—"}</td>
-                      <td className="px-4 py-3 whitespace-nowrap font-medium text-navy">{inr(p.amount)}</td>
-                      <td className="px-4 py-3 whitespace-nowrap">{formatDate(p.paidOn)}</td>
-                      <td className="px-4 py-3">{p.utrRef || "—"}</td>
+                      <td className="px-4 py-3 capitalize"><FitCell fit={payFit} col="kind" cap={FIT.CUT}>{p.kind}</FitCell></td>
+                      <td className="px-4 py-3 whitespace-nowrap"><FitCell fit={payFit} col="ref" cap={FIT.CUT}>{p.piRemarks || (p.piId ? pis.find((x) => x.id === p.piId)?.vendorPiNo : null) || "—"}</FitCell></td>
+                      <td className="px-4 py-3 whitespace-nowrap font-medium text-navy"><FitCell fit={payFit} col="amount" cap={null}>{inr(p.amount)}</FitCell></td>
+                      <td className="px-4 py-3 whitespace-nowrap"><FitCell fit={payFit} col="date" cap={null}>{formatDate(p.paidOn)}</FitCell></td>
+                      <td className="px-4 py-3"><FitCell fit={payFit} col="utr" cap={FIT.CUT}>{p.utrRef || "—"}</FitCell></td>
                     </tr>
                   ))}
                 </tbody>

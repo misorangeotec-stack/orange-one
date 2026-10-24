@@ -55,15 +55,16 @@ export default function JobsList() {
     {
       key: "due",
       header: "Service due",
+      // One line (PF-20): how far off follows the date instead of sitting under it.
       cell: (j) => (
-        <div className="min-w-0">
-          <div className={`whitespace-nowrap ${isOverdue(j, s.todayIso) ? "font-semibold text-ryg-red" : "text-navy"}`}>
+        <span className="block whitespace-nowrap">
+          <span className={isOverdue(j, s.todayIso) ? "font-semibold text-ryg-red" : "text-navy"}>
             {dmy(j.dueDate)}
-          </div>
+          </span>
           {!!j.dueDate && j.status !== "closed" && (
-            <div className="text-[12px] text-grey-2">{duePhrase(j.dueDate, s.todayIso)}</div>
+            <span className="ml-1.5 text-[12px] text-grey-2">{duePhrase(j.dueDate, s.todayIso)}</span>
           )}
-        </div>
+        </span>
       ),
       sortValue: (j) => j.dueDate ?? "9999-12-31",
       filter: { kind: "date", get: (j) => j.dueDate ?? "" },
@@ -74,6 +75,7 @@ export default function JobsList() {
       header: "Done on",
       cell: (j) => <span className="text-grey whitespace-nowrap">{dmy(j.sdActualDate)}</span>,
       sortValue: (j) => j.sdActualDate ?? "",
+      filter: { kind: "date", get: (j) => j.sdActualDate ?? "" },
     },
     {
       key: "cost",
@@ -81,6 +83,7 @@ export default function JobsList() {
       align: "right",
       cell: (j) => <span className="text-grey whitespace-nowrap">{inr(j.sdCost)}</span>,
       sortValue: (j) => j.sdCost ?? 0,
+      filter: { kind: "number", get: (j) => j.sdCost ?? 0 },
     },
     {
       key: "source",

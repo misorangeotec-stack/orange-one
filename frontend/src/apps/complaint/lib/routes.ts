@@ -24,6 +24,16 @@ export const mastersHref = () => `${B}/masters`;
 export const monitoringHref = () => `${B}/monitoring`;
 export const settingsHref = () => `${B}/settings`;
 
+/** The Tally Entry page (customer compensations). `tab` = pending | done; `open` opens one. */
+export type CreditNoteTab = "pending" | "done";
+export const creditNotesHref = (opts: { tab?: CreditNoteTab; open?: string } = {}) => {
+  const q = new URLSearchParams();
+  if (opts.tab) q.set("tab", opts.tab);
+  if (opts.open) q.set("open", opts.open);
+  const qs = q.toString();
+  return `${B}/credit-notes${qs ? `?${qs}` : ""}`;
+};
+
 /**
  * A step's queue. The slugs are deliberately the STEP KEYS with underscores
  * turned to hyphens, so a reader landing on `/complaint/queues/capa` can find
@@ -33,6 +43,9 @@ export type QueueSlug =
   | "plant"
   | "service"
   | "approval"
+  | "purchase"
+  | "rm-management"
+  | "assignee"
   | "management-review";
 
 export const queueHref = (step: QueueSlug) => `${B}/queues/${step}`;

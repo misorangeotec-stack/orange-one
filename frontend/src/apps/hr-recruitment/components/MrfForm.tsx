@@ -4,6 +4,8 @@ import Button from "@/shared/components/ui/Button";
 import Combobox, { type ComboOption } from "@/shared/components/ui/Combobox";
 import MultiSelect, { type MultiOption } from "@/shared/components/ui/MultiSelect";
 import DraftBar from "@/shared/components/ui/DraftBar";
+import SavedDraftsPanel, { SaveDraftButton } from "@/shared/components/ui/SavedDraftsPanel";
+import type { SavedDraftsApi } from "@/shared/lib/useSavedDrafts";
 import { FieldLabel, TextArea, TextInput } from "@/shared/components/ui/Form";
 import { useStepDraft } from "@/shared/lib/useStepDraft";
 import { cn } from "@/shared/lib/cn";
@@ -57,8 +59,9 @@ import {
  *    the replacement's name when it is one). Step 3 is optional in its entirety
  *    and says so.
  *
- *  • NOTHING IS LOST. The whole form drafts to localStorage; close the tab and it
- *    comes back with a restore bar.
+ *  • NOTHING IS LOST. A NEW requisition has server drafts ("Save as draft" on
+ *    every step, the saved list above the form, JD file included). Edit &
+ *    resubmit still drafts to localStorage, with a restore bar.
  *
  * Two fields are deliberately not what the sheet columns suggest, and both
  * predate this rebuild:
@@ -82,7 +85,7 @@ const STEPS = [
 ] as const;
 
 /** Everything the draft carries. Files are not serialisable, so `jdFile` is out. */
-interface DraftShape {
+export interface DraftShape {
   step: number;
   jobTitleId: string;
   jobTitleText: string;
@@ -116,6 +119,9 @@ interface DraftShape {
   jdFilled: string[];
 }
 
+/** What "Save as draft" stores for a new MRF. */
+export type MrfDraft = DraftShape;
+
 export default function MrfForm({
   existing,
   busy,
@@ -123,6 +129,7 @@ export default function MrfForm({
   submitLabel,
   onSubmit,
   onCancel,
+  drafts,
 }: {
   existing?: Requisition;
   busy: boolean;
@@ -131,6 +138,8 @@ export default function MrfForm({
   /** `jdFile` is the newly-picked JD, if any — the parent uploads it (a new MRF has no id yet). */
   onSubmit: (input: MrfInput, jdFile: File | null) => void;
   onCancel: () => void;
+  /** New MRF only: server drafts. Their list sits above the form, the button on every step. */
+  drafts?: SavedDraftsApi<MrfDraft>;
 }) {
   const s = useHrStore();
 
@@ -575,8 +584,14 @@ export default function MrfForm({
     setJdFilled(new Set(v.jdFilled ?? []));
   };
 
+  // The form as it opened — what "nothing to save yet" is judged against.
+  const blank = useRef<DraftShape | null>(null);
+  if (blank.current === null) blank.current = snapshot();
+
+  // A NEW MRF no longer autosaves to the browser: it has server drafts, and two
+  // draft systems on one form would restore over each other.
   const draft = useStepDraft<DraftShape>({
-    key: existing ? `hr:mrf:${existing.id}` : "hr:mrf:new",
+    key: existing ? `hr:mrf:${existing.id}` : drafts ? null : "hr:mrf:new",
     values: snapshot(),
     apply: applyDraft,
     // `step`, `touched` and `jdFilled` are bookkeeping — moving between steps is
@@ -651,6 +666,31 @@ export default function MrfForm({
     draft.clear();
   };
 
+  /* ----------------------------- server drafts ---------------------------- */
+
+  const bookless = ({ step: _s, touched: _t, jdFilled: _j, ...rest }: DraftShape) => JSON.stringify(rest);
+
+  const saveDraft = () => {
+    if (!drafts) return Promise.resolve();
+    if (!jdFile && blank.current && bookless(snapshot()) === bookless(blank.current)) {
+      return Promise.reject(new Error("Nothing to save yet."));
+    }
+    const dept = s.departments.find((d) => d.id === departmentId)?.name;
+    return drafts.save({
+      title: [titleName || "No job title yet", dept].filter(Boolean).join(" · "),
+      payload: snapshot(),
+      files: jdFile ? [jdFile] : [],
+    });
+  };
+
+  /** Continue: the fields, the step it was saved on, and the JD — without re-reading the JD. */
+  const continueDraft = (v: MrfDraft, files: File[]) => {
+    applyDraft({ ...(blank.current ?? snapshot()), ...v });
+    setJdFile(files[0] ?? null);
+    setJdNote(null);
+    setPreJd(null);
+  };
+
   const goNext = () => {
     if (blocking) return;
     setStep((p) => Math.min(3, p + 1));
@@ -661,6 +701,7 @@ export default function MrfForm({
   return (
     <div className="space-y-5 max-w-4xl">
       <DraftBar draft={draft} fileHint />
+      {drafts && <SavedDraftsPanel api={drafts} onContinue={continueDraft} noun="MRF" />}
 
       {/* ---- Step rail. Completed steps click back; ahead of you does not. ---- */}
       <div className="flex items-center gap-1.5">
@@ -752,6 +793,13 @@ export default function MrfForm({
               <p className="rounded-xl border border-line bg-page px-3.5 py-2.5 text-[12.5px] leading-relaxed text-grey">
                 {jdNote.text}
               </p>
+            )}
+
+            {/* A JD put back by Continue — the file input itself can't show it. */}
+            {!jdBusy && !jdNote && jdFile && (
+              <span className="block text-[11.5px] leading-snug text-grey-2">
+                Attached: {jdFile.name} — pick a file to replace it.
+              </span>
             )}
 
             {existing?.jdName && !jdFile && (
@@ -1201,7 +1249,7 @@ export default function MrfForm({
       )}
 
       {/* -------------------------------- actions ------------------------------- */}
-      <div className="flex items-center gap-3">
+      <div className="flex flex-wrap items-center gap-3">
         {step > 1 && (
           <Button variant="ghost" onClick={() => setStep((p) => p - 1)} disabled={busy}>
             Back
@@ -1219,6 +1267,7 @@ export default function MrfForm({
         <Button variant="ghost" onClick={onCancel} disabled={busy}>
           Cancel
         </Button>
+        {drafts && <SaveDraftButton api={drafts} onSave={saveDraft} disabled={busy || jdBusy} />}
         {blocking && <span className="text-[12.5px] text-grey-2">{blocking}</span>}
         {step === 3 && invalid && (
           <span className="text-[12.5px] text-grey-2">{step1Error ?? step2Error}</span>

@@ -1,3 +1,4 @@
+import { useBackState } from "@/shared/lib/backState";
 import {
   useState, useMemo, useEffect, useRef, useLayoutEffect, useCallback, Fragment,
   type ReactNode, type CSSProperties,
@@ -174,7 +175,7 @@ function OverdueAgingInner() {
   const horizonStart = useMemo(() => horizonStartFrom(months), [months]);
 
   // ── Filters ───────────────────────────────────────────────────────────────────────
-  const [search, setSearch] = useState("");
+  const [search, setSearch] = useBackState("OverdueAgingReport.search", "");
   const [customerNames, setCustomerNames] = useState<string[]>([]);
   const [groupNamesSel, setGroupNamesSel] = useState<string[]>([]);
   const [salespersons, setSalespersons] = useState<string[]>([]);
@@ -956,7 +957,7 @@ function OverdueAgingInner() {
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
         <div>
-          <Link to="/outstanding-dashboard/reports" className="inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground mb-1">
+          <Link to="/reports" className="inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground mb-1">
             <ArrowLeft className="h-3.5 w-3.5" /> Reports
           </Link>
           <h1 className="text-2xl font-bold text-foreground flex items-center gap-2">

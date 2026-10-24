@@ -16,6 +16,7 @@
  * by its invoice line. So Pending appears in both reports and reconciles between them; Converted
  * and Rejected appear only here.
  */
+import { useBackState } from "@/shared/lib/backState";
 import { useMemo, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
@@ -34,8 +35,14 @@ import {
 } from "@hub/lib/soaRegister";
 import { exportSoaRegisterXlsx } from "@hub/lib/exportSoaRegister";
 import { useScopedParties } from "@hub/lib/scopeParties";
+import { appBasePath } from "@/apps/appInfo";
 
-const BASE = "/outstanding-dashboard";
+/**
+ * This screen's own links, rooted at the app that serves it. It moved out of the Outstanding
+ * Dashboard with the rest of the reporting (apps/reports/), so a hard-coded
+ * "/outstanding-dashboard" here would now point every in-page link at a redirect.
+ */
+const BASE = appBasePath("reports");
 
 const nf = (max: number) => new Intl.NumberFormat("en-IN", { minimumFractionDigits: 0, maximumFractionDigits: max });
 const fmtQty = (n: number) => (n === 0 ? "—" : nf(4).format(n));
@@ -80,7 +87,7 @@ export default function SOARegister() {
   /* -------- tab + filters -------- */
   const [tab, setTab] = useState<SoaTab>("all");
   const [sel, setSel] = useState<Record<FilterKey, string[]>>(NO_FILTERS);
-  const [search, setSearch] = useState("");
+  const [search, setSearch] = useBackState("SOARegister.search", "");
 
   // Tab counts are of the WHOLE window, not of the current filters — they are a map of what is
   // there, and recomputing them under the filters would make them move as you narrow.
@@ -199,7 +206,7 @@ export default function SOARegister() {
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
         <div>
-          <Link to={`${BASE}/reports?cat=tally`} className="inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground mb-1">
+          <Link to={`${BASE}?cat=tally`} className="inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground mb-1">
             <ArrowLeft className="h-3 w-3" /> Tally Reports
           </Link>
           <h1 className="text-2xl font-bold text-foreground flex items-center gap-2">

@@ -4,9 +4,10 @@ import { Upload, X } from "lucide-react";
 import Modal from "@/shared/components/ui/Modal";
 import Button from "@/shared/components/ui/Button";
 import DraftBar from "@/shared/components/ui/DraftBar";
-import { FieldLabel, TextInput } from "@/shared/components/ui/Form";
+import { FieldLabel, TextArea, TextInput } from "@/shared/components/ui/Form";
 import { SECTION_HEADING_CLASS } from "@/shared/components/ui/Readout";
 import { useStepDraft } from "@/shared/lib/useStepDraft";
+import { formatDate } from "@/shared/lib/time";
 import { usePoStepDraftKey } from "../lib/draftKeys";
 import { useProcurementStore } from "../store";
 import { inr } from "../lib/format";
@@ -60,8 +61,15 @@ export default function PoModal({
   const [entries, setEntries] = useState<Record<string, PoEntry>>({});
   const [busyVendorId, setBusyVendorId] = useState<string | null>(null);
   const [err, setErr] = useState<string | null>(null);
+  const [remarks, setRemarks] = useState("");
+  const [holdBusy, setHoldBusy] = useState(false);
+  const [holdErr, setHoldErr] = useState<string | null>(null);
 
   const requestId = request?.id ?? null;
+  // Read live, so saving a hold or remarks shows here without reopening the dialog.
+  const liveRequest = s.requestById(requestId) ?? request;
+  const onHold = !!liveRequest?.poOnHoldAt;
+  const savedRemarks = liveRequest?.poRemarks ?? "";
   const lines = useMemo(() => (requestId ? s.poDeskLinesForRequest(requestId) : []), [requestId, s]);
 
   const groups: VendorGroup[] = useMemo(() => {
@@ -95,6 +103,13 @@ export default function PoModal({
     if (!open) return;
     setEntries({});
   }, [open, requestId]);
+
+  // The remarks box starts from what is saved, and follows it after each save.
+  useEffect(() => {
+    if (!open) return;
+    setRemarks(savedRemarks);
+    setHoldErr(null);
+  }, [open, requestId, savedRemarks]);
 
   /**
    * Autosave. Only the typed PO number survives — a `File` is not serialisable,
@@ -166,8 +181,35 @@ export default function PoModal({
   const patchEntry = (vendorId: string, patch: Partial<PoEntry>) =>
     setEntries((prev) => ({ ...prev, [vendorId]: { ...(prev[vendorId] ?? EMPTY_ENTRY), ...patch } }));
 
+  /**
+   * The PO Desk's hold and remarks, on the REQUISITION: before a PO exists there
+   * is nothing else to hang them on. A hold needs remarks, because the requester
+   * is notified with exactly this text.
+   */
+  const saveHold = async (nextOnHold: boolean) => {
+    setHoldErr(null);
+    if (nextOnHold && !remarks.trim()) {
+      setHoldErr("Write the remarks first. A hold must say why.");
+      return;
+    }
+    setHoldBusy(true);
+    try {
+      await s.setPoHold({ requestId: request.id, onHold: nextOnHold, remarks: remarks.trim() || null });
+    } catch (e) {
+      setHoldErr((e as Error).message);
+    } finally {
+      setHoldBusy(false);
+    }
+  };
+  const canHold = !readOnly && s.canHoldPo && lines.length > 0;
+  const remarksDirty = remarks.trim() !== savedRemarks.trim();
+
   const generate = async (g: VendorGroup) => {
     if (!g.vendorId) return;
+    if (onHold) {
+      setErr("This requisition is on hold. Resume it before generating the PO.");
+      return;
+    }
     const ids = g.lines.filter((l) => selected.has(l.id)).map((l) => l.id);
     if (ids.length === 0) {
       setErr("Tick at least one item for this vendor.");
@@ -256,7 +298,7 @@ export default function PoModal({
           const actionable = !readOnly && !!g.vendorId;
           const busy = busyVendorId === g.vendorId;
           const entry = g.vendorId ? entryOf(g.vendorId) : EMPTY_ENTRY;
-          const ready = picked.length > 0 && !!entry.tallyPoNo.trim() && !!entry.file;
+          const ready = !onHold && picked.length > 0 && !!entry.tallyPoNo.trim() && !!entry.file;
 
           return (
             <div key={g.vendorId ?? "__none"} className="space-y-1.5">
@@ -388,7 +430,8 @@ export default function PoModal({
                       </div>
                     </FieldLabel>
                   </div>
-                  <div className="flex justify-end">
+                  <div className="flex items-center justify-end gap-3">
+                    {onHold && <span className="text-[12px] text-[#8A6100]">On hold. Resume it below to generate.</span>}
                     <Button size="sm" onClick={() => generate(g)} disabled={busy || !ready}>
                       {busy ? "Generating…" : "Generate PO"}
                     </Button>
@@ -398,6 +441,56 @@ export default function PoModal({
             </div>
           );
         })}
+
+        {/* PO remarks & hold: the PO Desk can stop here before raising the PO. Sits below Generate PO. */}
+        {(canHold || onHold || savedRemarks) && (
+          <div
+            className={`space-y-2.5 rounded-xl border px-3.5 py-3 ${
+              onHold ? "border-yellow/40 bg-[#FFF8E1]" : "border-line bg-page"
+            }`}
+          >
+            <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
+              <span className={SECTION_HEADING_CLASS}>PO remarks &amp; hold</span>
+              {onHold ? (
+                <span className="text-[12px] text-[#8A6100]">
+                  <span className="font-semibold">On hold</span>
+                  {liveRequest?.poOnHoldBy ? <> by {s.profileById(liveRequest.poOnHoldBy)?.name ?? "—"}</> : null}
+                  {liveRequest?.poOnHoldAt ? <> on {formatDate(liveRequest.poOnHoldAt)}</> : null}
+                  <span className="text-grey-2"> · no PO can be generated until it is resumed</span>
+                </span>
+              ) : liveRequest?.poRemarksUpdatedAt ? (
+                <span className="text-[11.5px] text-grey-2">Remarks updated {formatDate(liveRequest.poRemarksUpdatedAt)}</span>
+              ) : null}
+            </div>
+            {canHold ? (
+              <>
+                <TextArea
+                  rows={2}
+                  value={remarks}
+                  onChange={(e) => setRemarks(e.target.value)}
+                  placeholder="e.g. Hold until the vendor confirms the revised rate"
+                />
+                <div className="flex flex-wrap items-center justify-end gap-2">
+                  <Button size="sm" variant="ghost" onClick={() => saveHold(onHold)} disabled={holdBusy || !remarksDirty || (onHold && !remarks.trim())}>
+                    Save remarks
+                  </Button>
+                  {onHold ? (
+                    <Button size="sm" onClick={() => saveHold(false)} disabled={holdBusy}>
+                      {holdBusy ? "Saving…" : "Resume"}
+                    </Button>
+                  ) : (
+                    <Button size="sm" variant="ghost" className="!text-[#8A6100] hover:!border-yellow" onClick={() => saveHold(true)} disabled={holdBusy || !remarks.trim()}>
+                      {holdBusy ? "Saving…" : "Put on hold"}
+                    </Button>
+                  )}
+                </div>
+              </>
+            ) : (
+              <p className="whitespace-pre-wrap text-[13px] text-navy">{savedRemarks || "—"}</p>
+            )}
+            {holdErr && <p className="text-[12.5px] text-ryg-red">{holdErr}</p>}
+          </div>
+        )}
 
         {groups.length === 0 && (
           <p className="px-3 py-4 text-center text-[12.5px] text-grey-2">

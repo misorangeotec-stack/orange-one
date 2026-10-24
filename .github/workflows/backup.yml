@@ -1,0 +1,115 @@
+# =============================================================================
+# The nightly backup to Google Drive (PF-16).
+#
+# WHAT: every uploaded document (new ones only, never deleted), a complete copy
+#   of the Orange One database every night (newest 7 kept), and of the Tally
+#   (ConnectWave) mirror every Sunday (newest 4 kept) — into the "Orange One
+#   Backup" folder of backup@orangeonehub.com. The work is supabase/backup/run.py;
+#   read its header for the steps and the guarantees.
+#
+# WHO WAKES IT: pg_cron, not this file. `backup-kick` asks public.backup_due()
+#   every 15 minutes and dispatches this workflow with mode=scheduled when it
+#   says yes. The schedule, the retention counts and the on/off switch all live
+#   in private.backup_config — changing them needs no edit here.
+#
+#   The `schedule:` below is only a BACKSTOP: GitHub's own cron decayed on this
+#   repo to one tick a day in Aug-2026 (see collections-report.yml), so it is
+#   not trusted as the clock. If pg_cron's poke was lost, this tick catches the
+#   night; if the night is already done, run.py asks the database and exits.
+#
+# WHY NOT AN EDGE FUNCTION: 2 seconds of CPU per request; a dump is minutes.
+#
+# ⚠ MODE DEFAULTS TO dry-run for a hand-started run: it connects to everything
+#   and copies nothing. The database always sends mode explicitly.
+# ⚠ A workflow_dispatch only finds this file once it is on `master`.
+# =============================================================================
+
+name: Backup
+
+on:
+  schedule:
+    # 04:10 IST — after the 03:00 slot, inside the 06:30 latest-start window.
+    - cron: "40 22 * * *"
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: "dry-run connects and copies nothing · scheduled is the nightly run · full takes everything now (all new files + both databases)"
+        type: choice
+        default: dry-run
+        options: [dry-run, scheduled, full]
+      skip_tally:
+        description: "Leave the Tally database out of this run. Its ~6 GB read loads a small server, so a daytime run should skip it; the next 03:00 run then takes it automatically (no good Tally copy in 7 days)."
+        type: boolean
+        default: false
+
+# Two runs must never interleave: the file log and the retention step assume
+# one writer. Never cancel a running backup to start another.
+concurrency:
+  group: backup
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  backup:
+    runs-on: ubuntu-latest
+    # The first run copies every file there is (~1.8 GB in Sep-2026); later
+    # nights take minutes. Sunday adds the Tally dump (~6 GB read).
+    timeout-minutes: 300
+    env:
+      MODE: ${{ github.event_name == 'schedule' && 'scheduled' || inputs.mode }}
+      SKIP_TALLY: ${{ inputs.skip_tally && '1' || '' }}
+      RUNNER_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+      # ⚠ Not ${{ runner.temp }}: the `runner` context does not exist at job
+      #   level, and GitHub rejects the whole file if it is used here.
+      WORK_DIR: /home/runner/backup-work
+      RCLONE_BIN: /usr/local/bin/rclone
+      PG_DUMP_BIN: /usr/lib/postgresql/17/bin/pg_dump
+      AGE_BIN: age
+      # Where the portal's files live (Supabase Storage, S3 protocol).
+      S3_ENDPOINT: https://icutjkrqkbzwvmnfbzpr.storage.supabase.co/storage/v1/s3
+      S3_REGION: ap-south-1
+
+    steps:
+      - name: Check out
+        uses: actions/checkout@v4
+        with:
+          sparse-checkout: supabase/backup
+
+      # pg_dump must be version 17 or newer to read a Postgres 17.6 server, and
+      # ubuntu-latest ships an older client. rclone is pinned and its checksum
+      # checked, because this job holds the keys to every file the company has.
+      - name: Tools
+        run: |
+          set -euo pipefail
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq postgresql-common age > /dev/null
+          sudo /usr/share/postgresql-common/pgdg/apt.postgresql.org.sh -y > /dev/null
+          sudo apt-get install -y -qq postgresql-client-17 > /dev/null
+          "$PG_DUMP_BIN" --version
+          age --version
+
+          RCLONE_VERSION=v1.75.1
+          RCLONE_SHA256=982b5aa772841168f8e380f139e9e787b2a105403e32b94da8676a0e1c0a13ab
+          cd "$RUNNER_TEMP"
+          curl -sSfL -o rclone.zip "https://downloads.rclone.org/${RCLONE_VERSION}/rclone-${RCLONE_VERSION}-linux-amd64.zip"
+          echo "${RCLONE_SHA256}  rclone.zip" | sha256sum -c -
+          unzip -q rclone.zip
+          sudo install -m 0755 "rclone-${RCLONE_VERSION}-linux-amd64/rclone" "$RCLONE_BIN"
+          "$RCLONE_BIN" version | head -1
+
+      - name: Back up
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          APP_DB_URL: ${{ secrets.BACKUP_APP_DB_URL }}
+          TALLY_DB_URL: ${{ secrets.BACKUP_TALLY_DB_URL }}
+          S3_ACCESS_KEY_ID: ${{ secrets.BACKUP_S3_ACCESS_KEY_ID }}
+          S3_SECRET_ACCESS_KEY: ${{ secrets.BACKUP_S3_SECRET_ACCESS_KEY }}
+          GDRIVE_CLIENT_ID: ${{ secrets.BACKUP_GDRIVE_CLIENT_ID }}
+          GDRIVE_CLIENT_SECRET: ${{ secrets.BACKUP_GDRIVE_CLIENT_SECRET }}
+          GDRIVE_TOKEN: ${{ secrets.BACKUP_GDRIVE_TOKEN }}
+          GDRIVE_ROOT_FOLDER_ID: ${{ secrets.BACKUP_GDRIVE_ROOT_FOLDER_ID }}
+          AGE_RECIPIENT: ${{ secrets.BACKUP_AGE_RECIPIENT }}
+        run: python3 supabase/backup/run.py

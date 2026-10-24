@@ -3,6 +3,9 @@
 interface ImportMetaEnv {
   readonly VITE_SUPABASE_URL: string;
   readonly VITE_SUPABASE_ANON_KEY: string;
+  /** Machine Resale portal project (MR-1C). Optional: the module says it is not set up without them. */
+  readonly VITE_MR_SUPABASE_URL?: string;
+  readonly VITE_MR_SUPABASE_PUBLISHABLE_KEY?: string;
 }
 
 interface ImportMeta {

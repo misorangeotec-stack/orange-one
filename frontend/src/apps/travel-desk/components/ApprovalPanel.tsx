@@ -102,14 +102,14 @@ export default function ApprovalPanel({
           </p>
 
           {/*
-            §3.5's consequence, surfaced at the moment somebody is deciding. The
+            Section 3.5's consequence, surfaced at the moment somebody is deciding. The
             downgrade already happened at submit; an approver who does not know
             it happened would read the TC-D caps as this person's normal
             entitlement and wonder why a band-7 traveller is on the bottom rate.
           */}
           {trip.tcDowngradedFrom && (
             <p className="mt-2 rounded-lg bg-[#FFF7E6] px-3 py-2 text-[12.5px] text-navy">
-              This trip was regularised after departure, so §3.5 has already reduced it from{" "}
+              This trip was regularised after departure, so Section 3.5 has already reduced it from{" "}
               <strong>{trip.tcDowngradedFrom}</strong> to <strong>TC-D</strong>. Approving it does
               not restore the original rate.
             </p>
@@ -204,7 +204,7 @@ export function ApprovalHistory({ trip }: { trip: Trip }) {
       by: personById(trip.daBy)?.name ?? null,
       decision: trip.daDecision,
       note: trip.daNote,
-      why: `Band ${trip.snapBandNo ?? "—"} does not need one (§3.2).`,
+      why: `Band ${trip.snapBandNo ?? "—"} does not need one (Section 3.2).`,
     },
   ];
 

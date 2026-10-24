@@ -73,11 +73,12 @@ export default function PoWorkbench() {
   const itemsCell = (lines: RequestItem[]) => {
     const names = lines.slice(0, 2).map((l) => s.itemById(l.itemId)?.name ?? "—");
     const rest = lines.length - names.length;
+    // Inline, not a <div> (PF-20): a block wrapper is clipped with no "…".
     return (
-      <div className="min-w-0">
+      <>
         <span className="font-medium text-navy">{lines.length} item{lines.length === 1 ? "" : "s"}</span>
         <span className="ml-1.5 text-[11.5px] text-grey-2">{names.join(", ")}{rest > 0 ? ` +${rest} more` : ""}</span>
-      </div>
+      </>
     );
   };
   const itemsText = (r: PurchaseRequest) => poolLines(r).map((l) => s.itemById(l.itemId)?.name ?? "").join(", ");
@@ -116,7 +117,7 @@ export default function PoWorkbench() {
     { key: "company", header: "Company", cell: (e) => companyName(e.companyId ?? ""), sortValue: (e) => companyName(e.companyId ?? ""), filter: { kind: "select", get: (e) => companyName(e.companyId ?? "") }, tdClassName: "whitespace-nowrap" },
     { key: "po", header: "PO No.", cell: (e) => <Link to={`/import/pos/${e.poId}`} className="font-semibold text-navy hover:text-orange">{e.ref}</Link>, sortValue: (e) => e.ref, filter: { kind: "text", get: (e) => e.ref }, tdClassName: "whitespace-nowrap" },
     { key: "tallyPo", header: "Tally PO No.", cell: (e) => e.row.tallyPoNo ?? "—", sortValue: (e) => e.row.tallyPoNo ?? "", filter: { kind: "text", get: (e) => e.row.tallyPoNo ?? "" }, tdClassName: "whitespace-nowrap" },
-    { key: "pdf", header: "PO PDF", cell: (e) => (e.row.documentPath ? <PoDocLink po={e.row} /> : <span className="text-grey-2">—</span>), tdClassName: "whitespace-nowrap" },
+    { key: "pdf", header: "PO PDF", cell: (e) => (e.row.documentPath ? <PoDocLink po={e.row} /> : <span className="text-grey-2">—</span>), tdClassName: "whitespace-nowrap", resize: false /* a document button: never cut (PF-20) */ },
     { key: "vendor", header: "Vendor", cell: (e) => s.vendorById(e.row.vendorId)?.name ?? "—", sortValue: (e) => s.vendorById(e.row.vendorId)?.name ?? "", filter: { kind: "select", get: (e) => s.vendorById(e.row.vendorId)?.name ?? "—" }, tdClassName: "whitespace-nowrap" },
     { key: "lines", header: "Lines", cell: (e) => s.poItemsForPo(e.row.id).length, sortValue: (e) => s.poItemsForPo(e.row.id).length, tdClassName: "whitespace-nowrap" },
     { key: "stage", header: "Now At", cell: (e) => <span className="text-grey-2">{e.row.currentStage.replace(/_/g, " ")}</span>, sortValue: (e) => e.row.currentStage, filter: { kind: "select", get: (e) => e.row.currentStage.replace(/_/g, " ") }, tdClassName: "whitespace-nowrap" },

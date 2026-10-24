@@ -35,6 +35,7 @@ export const QUEUE_PATH: Record<QueueStep, string> = {
   claim_review: "approve-claim",
   finance_review: "finance-check",
   settlement: "settlement",
+  cancel_trip: "cancel-trip",
 };
 
 export function buildTravelNav(opts: {
@@ -46,6 +47,8 @@ export function buildTravelNav(opts: {
   canManageAnyMaster: boolean;
   /** How many master requests are still waiting, for the badge. */
   pendingMasterRequests: number;
+  /** The old Cancellations queue — shown only when Settings → Menu queues says so. */
+  showCancellations: boolean;
 }): NavItem[] {
   const nav: NavItem[] = [
     { label: "Dashboard", to: B, icon: ic.dashboard, section: "Workspace" },
@@ -76,7 +79,10 @@ export function buildTravelNav(opts: {
     // Cancellations are the booking step's other job, and they need their own
     // destination: unwinding a booking is the opposite work from making one, and
     // it is the urgent one because a refund window closes.
-    if (step === "booking") {
+    //
+    // Since 2026-10 cancellations go through the Cancel Trip bucket, so this old
+    // queue is hidden unless Settings → Menu queues shows it.
+    if (step === "booking" && opts.showCancellations) {
       nav.push({ label: "Cancellations", to: `${B}/queues/cancellations`, icon: ic.step });
     }
   }
@@ -87,16 +93,23 @@ export function buildTravelNav(opts: {
   nav.push(
     { label: "Control Center", to: `${B}/monitoring`, icon: ic.board, section: "Reports" },
     { label: "Trip Register", to: `${B}/reports`, icon: ic.report },
-    // §11.2 is unenforceable without this list, so it sits beside the register
+    // Section 11.2 is unenforceable without this list, so it sits beside the register
     // rather than behind it.
     { label: "Upcoming Travel", to: `${B}/reports/upcoming`, icon: ic.report },
-    { label: "Outstanding Advances", to: `${B}/reports/outstanding-advances`, icon: ic.report },
     { label: "Cancelled Travel", to: `${B}/reports/cancelled`, icon: ic.report },
-    { label: "Policy Exceptions", to: `${B}/reports/exceptions`, icon: ic.report },
-    { label: "GST Input Credit", to: `${B}/reports/gst-itc`, icon: ic.report },
     { label: "Spend Summary", to: `${B}/reports/spend`, icon: ic.report },
     { label: "Desk Performance", to: `${B}/reports/performance`, icon: ic.report },
   );
+
+  // The claim-based reports are not part of the new process (2026-10, there is
+  // no claim). Admins keep them for the older trips that went through one.
+  if (opts.isAdmin) {
+    nav.push(
+      { label: "Outstanding Advances", to: `${B}/reports/outstanding-advances`, icon: ic.report },
+      { label: "Policy Exceptions", to: `${B}/reports/exceptions`, icon: ic.report },
+      { label: "GST Input Credit", to: `${B}/reports/gst-itc`, icon: ic.report },
+    );
+  }
 
   // Master requests is NOT admin-only: anyone with edit access raises one (a
   // city that is not on the list, a hotel nobody has used before) and wants to

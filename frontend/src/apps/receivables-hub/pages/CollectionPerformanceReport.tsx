@@ -1,3 +1,4 @@
+import { useBackState } from "@/shared/lib/backState";
 import {
   useState, useMemo, useEffect, useRef, useLayoutEffect, useCallback, Fragment,
   type ReactNode, type CSSProperties,
@@ -382,7 +383,7 @@ function CollectionPerformanceInner({ variant }: { variant?: "dormant" }) {
   const [countJournalSettlements, setCountJournalSettlements] = useState(true);
 
   // ── Filters (the bar; the rest behind "More") ─────────────────────────────────────
-  const [search, setSearch] = useState("");
+  const [search, setSearch] = useBackState("CollectionPerformanceReport.search", "");
   const [salespersons, setSalespersons] = useState<string[]>([]);
   const [collectionTeams, setCollectionTeams] = useState<string[]>([]);
   const [companies, setCompanies] = useState<string[]>([]);
@@ -1136,7 +1137,7 @@ function CollectionPerformanceInner({ variant }: { variant?: "dormant" }) {
           doesn't repeat them. */}
       <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
         <div className="min-w-0">
-          <Link to="/outstanding-dashboard/reports" className="inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground mb-2">
+          <Link to="/reports" className="inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground mb-2">
             <ArrowLeft className="h-3.5 w-3.5" /> Reports
           </Link>
           <h1 className="text-2xl font-bold text-foreground flex items-center gap-2.5">

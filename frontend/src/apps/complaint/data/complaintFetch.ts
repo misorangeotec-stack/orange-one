@@ -5,6 +5,8 @@ import { supabase } from "@/core/platform/supabase";
 // below already treat rows as any.
 const db = supabase as any;
 import { resolveStepSla, type StepSlaMap } from "../lib/sla";
+import { mapCreditNote, mapCreditNoteDoc } from "./creditNotes";
+import type { CreditNote, CreditNoteDoc } from "../types/creditNote";
 import type {
   AckDecision,
   CauseGroup,
@@ -24,6 +26,7 @@ import type {
   MasterRequestStatus,
   RequestStatus,
   ResolutionType,
+  RmOrigin,
   RootCause,
   Severity,
   StepOwner,
@@ -54,6 +57,8 @@ type Tbl =
   | "fms_complaint_docs"
   | "fms_complaint_activity"
   | "fms_complaint_notifications"
+  | "fms_complaint_credit_notes"
+  | "fms_complaint_credit_note_docs"
   | "designations";
 
 /**
@@ -85,6 +90,21 @@ async function fetchAll(table: Tbl, orderBy = "created_at", tiebreak: string | n
   return out;
 }
 
+/**
+ * fetchAll, but an error yields [] instead of failing the module.
+ *
+ * ⚠ FOR THE CREDIT-NOTE TABLES ONLY. If the frontend ever reaches live before
+ *   migration 20270201120000, a missing table would otherwise reject the whole
+ *   Promise.all below and empty every complaint screen.
+ */
+async function fetchOptional(table: Tbl, orderBy = "created_at"): Promise<any[]> {
+  try {
+    return await fetchAll(table, orderBy);
+  } catch {
+    return [];
+  }
+}
+
 export interface ComplaintConfig {
   processCoordinatorIds: string[];
   stepSla: StepSlaMap;
@@ -108,6 +128,9 @@ export interface ComplaintData {
   docs: ComplaintDoc[];
   activity: ComplaintActivity[];
   notifications: ComplaintNotification[];
+  /** Customer credit notes — the fourth option on the raise page. */
+  creditNotes: CreditNote[];
+  creditNoteDocs: CreditNoteDoc[];
 }
 
 /* --------------------------------- mappers -------------------------------- */
@@ -183,6 +206,9 @@ const mapRequest = (r: any): ComplaintRequest => ({
   id: r.id,
   complaintNo: r.complaint_no,
   complaintType: r.complaint_type as ComplaintType,
+  // Null on every FG row, and on RM rows raised before the branch existed —
+  // which is why it is `?? null` rather than defaulted to a side.
+  rmOrigin: (r.rm_origin ?? null) as RmOrigin | null,
   status: r.status as RequestStatus,
   currentStep: r.current_step ?? "",
   raisedBy: r.raised_by ?? null,
@@ -229,6 +255,22 @@ const mapRequest = (r: any): ComplaintRequest => ({
   svcCloseDate: r.svc_close_date ?? null,
   svcCloseAt: r.svc_close_at ?? null,
   svcCloseBy: r.svc_close_by ?? null,
+
+  purRemarks: r.pur_remarks ?? null,
+  purDate: r.pur_date ?? null,
+  purAt: r.pur_at ?? null,
+  purBy: r.pur_by ?? null,
+
+  rmAssigneeId: r.rm_assignee_id ?? null,
+  rmAssigneeName: r.rm_assignee_name ?? null,
+  rmAssignNote: r.rm_assign_note ?? null,
+  rmAssignedAt: r.rm_assigned_at ?? null,
+  rmAssignedBy: r.rm_assigned_by ?? null,
+
+  asgRemarks: r.asg_remarks ?? null,
+  asgDate: r.asg_date ?? null,
+  asgAt: r.asg_at ?? null,
+  asgBy: r.asg_by ?? null,
 
   mgmtNote: r.mgmt_note ?? null,
   mgmtDate: r.mgmt_date ?? null,
@@ -348,6 +390,8 @@ export async function fetchComplaintData(): Promise<ComplaintData> {
     docs,
     activity,
     notifications,
+    creditNotes,
+    creditNoteDocs,
   ] = await Promise.all([
     fetchAll("fms_complaint_step_owners"),
     fetchAll("fms_complaint_config", "key", null),   // keyed on `key`; no id column
@@ -360,6 +404,8 @@ export async function fetchComplaintData(): Promise<ComplaintData> {
     fetchAll("fms_complaint_docs"),
     fetchAll("fms_complaint_activity"),
     fetchAll("fms_complaint_notifications"),
+    fetchOptional("fms_complaint_credit_notes", "submitted_at"),
+    fetchOptional("fms_complaint_credit_note_docs"),
   ]);
 
   const byKey = new Map<string, any>(configRows.map((r) => [r.key, r.value ?? {}]));
@@ -381,5 +427,7 @@ export async function fetchComplaintData(): Promise<ComplaintData> {
     docs: docs.map(mapDoc),
     activity: activity.map(mapActivity),
     notifications: notifications.map(mapNotification),
+    creditNotes: creditNotes.map(mapCreditNote),
+    creditNoteDocs: creditNoteDocs.map(mapCreditNoteDoc),
   };
 }

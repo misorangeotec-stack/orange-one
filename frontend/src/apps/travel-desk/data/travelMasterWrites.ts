@@ -57,7 +57,7 @@ function rowFor(type: Exclude<TravelMasterType, "rate_card">, v: MasterValues, a
         ...base,
         state: orNull(v.state),
         // Tier 3 is the policy's own default for anything it does not name
-        // (§1.3: "All other cities, towns, and locations"), so an unparseable
+        // (Section 1.3: "All other cities, towns, and locations"), so an unparseable
         // value falls there rather than failing the save.
         tier: numOrNull(v.tier) ?? 3,
       };
@@ -222,7 +222,7 @@ export async function addRate(input: {
 /**
  * Start next year's card by copying this one.
  *
- * §7.2 asks for an annual review every January. Copying rather than editing in
+ * Section 7.2 asks for an annual review every January. Copying rather than editing in
  * place is what keeps a March claim priced on March's figures after an April
  * revision — the trip froze the old card's id, and the old card still resolves.
  */

@@ -12,6 +12,7 @@ export const UNCATEGORIZED = "Uncategorized";
 //   and the scheduled report has to call them on a server, where importing a component would drag
 //   React into the bundle. Import them from the lib in new code.
 export { customerCategoryTokens, matchesCategory } from "@hub/lib/customerCategory";
+import { MARK_LABEL } from "@hub/lib/markType";
 
 export const CATEGORY_OPTIONS = [
   { value: "A",  label: "A" },
@@ -21,7 +22,12 @@ export const CATEGORY_OPTIONS = [
   { value: "E",  label: "E" },
   { value: "AA", label: "AA (internal)" },
   { value: UNCATEGORIZED, label: "Uncategorized" },
+  // Not tiers: the Red Mark + Legal master (Settings → Masters). A customer is in one of these AS
+  // WELL AS its tier, so ticking one narrows to just those customers.
+  { value: MARK_LABEL.redmark, label: "Red Mark" },
+  { value: MARK_LABEL.legal, label: "Legal" },
 ];
+const FIRST_MARK_OPTION = MARK_LABEL.redmark;
 
 interface Props {
   value: string[];
@@ -29,13 +35,26 @@ interface Props {
   triggerClassName?: string;
 }
 
+/**
+ * What an EMPTY selection means, drawn as ticks: every option except Legal (user, 22-10-2026).
+ * `[]` stays the stored value for it, so pages show no filter chip for the default.
+ */
+const DEFAULT_TICKS = CATEGORY_OPTIONS.map((o) => o.value).filter((v) => v !== MARK_LABEL.legal);
+const sameSet = (a: string[], b: string[]) => a.length === b.length && a.every((v) => b.includes(v));
+
 export function CustomerCategoryMultiSelect({ value, onChange, triggerClassName }: Props) {
+  // The ticks on screen. An empty value is the default (everything but Legal), never "nothing".
+  const ticked = value.length ? value : DEFAULT_TICKS;
+  /** Store the default as [] again, so a page reads "no filter chip" for it. */
+  const emit = (next: string[]) => onChange(next.length === 0 || sameSet(next, DEFAULT_TICKS) ? [] : next);
   const toggle = (cat: string) => {
-    onChange(value.includes(cat) ? value.filter((v) => v !== cat) : [...value, cat]);
+    emit(ticked.includes(cat) ? ticked.filter((v) => v !== cat) : [...ticked, cat]);
   };
 
   const label =
-    value.length === 0 || value.length === CATEGORY_OPTIONS.length
+    value.length === 0
+      ? "All except Legal"
+      : value.length === CATEGORY_OPTIONS.length
       ? "All Categories"
       : value.length <= 3
       ? value.map((v) => CATEGORY_OPTIONS.find((o) => o.value === v)?.label ?? v).join(", ")
@@ -54,32 +73,33 @@ export function CustomerCategoryMultiSelect({ value, onChange, triggerClassName 
       </PopoverTrigger>
       <PopoverContent className="w-48 p-2" align="start">
         <div className="space-y-1">
-          {CATEGORY_OPTIONS.map((opt) => (
+          {CATEGORY_OPTIONS.map((opt) => (<div key={opt.value || "_uncat"}>
+            {opt.value === FIRST_MARK_OPTION && <div className="border-t border-border my-1" />}
             <label
-              key={opt.value || "_uncat"}
               className="flex items-center gap-2 px-2 py-1.5 rounded-md cursor-pointer hover:bg-muted/60 text-sm select-none"
             >
               <Checkbox
-                checked={value.includes(opt.value)}
+                checked={ticked.includes(opt.value)}
                 onCheckedChange={() => toggle(opt.value)}
               />
               {opt.label}
             </label>
-          ))}
+          </div>))}
           <div className="border-t border-border my-1" />
-          {value.length < CATEGORY_OPTIONS.length ? (
+          {ticked.length < CATEGORY_OPTIONS.length && (
             <button
               className="w-full text-left px-2 py-1.5 text-xs text-muted-foreground hover:text-foreground rounded-md hover:bg-muted/60"
               onClick={() => onChange(CATEGORY_OPTIONS.map((o) => o.value))}
             >
-              Select all
+              Select all (include Legal)
             </button>
-          ) : (
+          )}
+          {value.length > 0 && (
             <button
               className="w-full text-left px-2 py-1.5 text-xs text-muted-foreground hover:text-foreground rounded-md hover:bg-muted/60"
               onClick={() => onChange([])}
             >
-              Clear selection
+              Reset (all except Legal)
             </button>
           )}
         </div>

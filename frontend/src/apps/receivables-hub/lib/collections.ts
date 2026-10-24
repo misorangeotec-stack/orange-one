@@ -315,6 +315,41 @@ export function buildLastReceiptAmounts(
   return out;
 }
 
+export interface LastReceipt {
+  date: string;
+  /** null when any ledger that paid on `date` has no known amount — never a quietly short sum. */
+  amount: number | null;
+}
+
+/** ledgerId → its last receipt, for every ledger that has one. Pairs the two maps above. */
+export function buildLastReceipts(
+  ledgers: Customer[],
+  detail: Record<string, CustomerDetail>,
+  source: CollectionsSource,
+): Map<string, LastReceipt> {
+  const dates = buildLastReceiptDates(ledgers, detail, source);
+  const amounts = buildLastReceiptAmounts(ledgers, detail, source);
+  const out = new Map<string, LastReceipt>();
+  for (const [id, date] of dates) if (date) out.set(id, { date, amount: amounts.get(id) ?? null });
+  return out;
+}
+
+/**
+ * The last receipt of a set of ledgers (a customer group, a salesperson's book): the latest date
+ * across them, and everything they received on that date added together — so a roll-up reads
+ * "₹5 L on 26-09" when three of its customers paid that day. null when none has paid.
+ */
+export function latestReceiptAcross(ids: Iterable<string>, byLedger: Map<string, LastReceipt>): LastReceipt | null {
+  let best: LastReceipt | null = null;
+  for (const id of ids) {
+    const r = byLedger.get(id);
+    if (!r) continue;
+    if (!best || r.date > best.date) best = { ...r };
+    else if (r.date === best.date) best.amount = best.amount === null || r.amount === null ? null : best.amount + r.amount;
+  }
+  return best;
+}
+
 // ── Dominant sale type (the dormant report's scope filter) ──────────────────────────
 
 export const SALE_TYPES: SaleType[] = ["ink", "paper", "spare_parts", "machine", "head", "other"];

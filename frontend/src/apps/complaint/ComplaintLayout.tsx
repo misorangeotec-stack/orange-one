@@ -4,12 +4,18 @@ import type { NotificationItem } from "@/shared/components/layout/types";
 import { roleLabel, useSession } from "@/core/platform/session";
 import { useOrgPersonById } from "@/core/platform/orgPeople";
 import { buildComplaintNav } from "./nav";
+import { MANAGEMENT_STEPS } from "./lib/steps";
 import { useComplaintStore } from "./store";
-import { B, requestHref } from "./lib/routes";
+import { B, requestHref, requestsHref } from "./lib/routes";
 import type { ComplaintNotification } from "./types";
 
 const linkFor = (n: ComplaintNotification): string =>
-  n.entityType === "request" ? requestHref(n.entityId) : B;
+  n.entityType === "request"
+    ? requestHref(n.entityId)
+    : n.entityType === "credit_note"
+      // All Complaints opens a compensation's popup — every recipient can see it.
+      ? `${requestsHref()}?open=${n.entityId}`
+      : B;
 
 /**
  * Wires the portal session + complaint store into the shared AppShell.
@@ -29,18 +35,26 @@ export default function ComplaintLayout() {
 
   const canPlant = s.canSeeQueue("plant");
   const canService = s.canSeeQueue("service");
-  const canApprove = s.canSeeQueue("approval");
-  const canReview = s.canSeeQueue("management_review");
+  // ONE management desk: FG approval, RM / other-supplier review, final review
+  // and customer compensation all live on the Management Approval page.
+  const canApprove =
+    MANAGEMENT_STEPS.some((st) => s.canSeeQueue(st)) || s.isStepOwner("cn_approval");
+  const canPurchase = s.canSeeQueue("purchase");
+  // No Setup owners: this one appears only for the person management handed a
+  // complaint to. See store.canSeeQueue.
+  const canAssignee = s.canSeeQueue("assignee");
   const canMonitor = s.canMonitor;
 
   const hasRequests =
     s.isModuleViewer ||
     s.isProcessCoordinator ||
     s.requests.length > 0 ||
+    s.creditNotes.length > 0 ||
     canPlant ||
     canService ||
     canApprove ||
-    canReview;
+    canPurchase ||
+    canAssignee;
 
   const nav = useMemo(
     () =>
@@ -50,11 +64,13 @@ export default function ComplaintLayout() {
         canPlant,
         canService,
         canApprove,
-        canReview,
+        canPurchase,
+        canAssignee,
         canMonitor,
         canRaise: s.canRaise,
         canEdit: s.canEdit,
         hasRequests,
+        canSeeCreditNotes: s.canSeeCreditNotes,
       }),
     [
       isAdmin,
@@ -62,11 +78,13 @@ export default function ComplaintLayout() {
       canPlant,
       canService,
       canApprove,
-      canReview,
+      canPurchase,
+      canAssignee,
       canMonitor,
       s.canRaise,
       s.canEdit,
       hasRequests,
+      s.canSeeCreditNotes,
     ],
   );
 

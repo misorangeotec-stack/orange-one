@@ -72,7 +72,7 @@ export async function cancelTrip(tripId: string, reason: string): Promise<void> 
   if (error) throw new Error(error.message);
 }
 
-/** The approval matrix (§3.2 / H10). Admin only, enforced by RLS on the config table. */
+/** The approval matrix (Section 3.2 / H10). Admin only, enforced by RLS on the config table. */
 export async function setApprovalMatrix(m: ApprovalMatrix): Promise<void> {
   const { error } = await db.from("fms_travel_config").upsert(
     {

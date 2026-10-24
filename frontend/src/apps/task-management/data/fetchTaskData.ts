@@ -1,4 +1,5 @@
 import { supabase } from "@/core/platform/supabase";
+import { kraFieldsFromRow } from "../lib/kraColumns";
 import type {
   ActivityType,
   Location,
@@ -68,6 +69,10 @@ const mapTask = (r: any): Task => ({
   notApplicableAt: r.not_applicable_at ?? null,
   isPersonal: r.is_personal ?? false,
   isPeerAssignment: r.is_peer_assignment ?? false,
+  peerClosedAt: r.peer_closed_at ?? null,
+  peerClosedBy: r.peer_closed_by ?? null,
+  peerReopenCount: r.peer_reopen_count ?? 0,
+  ...kraFieldsFromRow(r),
   createdAt: r.created_at,
   updatedAt: r.updated_at,
   lastRemarkAt: r.last_remark_at,
@@ -112,7 +117,10 @@ const mapNotification = (r: any): Notification => ({
   // PostgREST returns the embedded row as an object (or null when the task is no
   // longer readable under RLS). Older callers that didn't request the join get
   // undefined, which normalises to null too.
-  taskTitle: r.tasks?.title ?? null,
+  // A recurring reminder has no task yet, so its title comes from the template.
+  taskTitle: r.tasks?.title ?? r.recurring_tasks?.title ?? null,
+  recurringTaskId: r.recurring_task_id ?? null,
+  reminderDate: r.reminder_date ?? null,
   readAt: r.read_at,
   createdAt: r.created_at,
 });
@@ -126,12 +134,16 @@ const mapRecurring = (r: any): RecurringTask => ({
   monthlyDays: r.monthly_days ?? [],
   monthlyNth: r.monthly_nth ?? null,
   monthlyWeekday: r.monthly_weekday ?? null,
+  yearlyMonth: r.yearly_month ?? null,
   assignedTo: r.assigned_to,
   createdBy: r.created_by,
   departmentId: r.department_id,
   active: r.active,
   createdAt: r.created_at,
   locationIds: [], // attached after the fetch from recurring_task_locations
+  notifyRequired: r.notify_required ?? false,
+  notifyDaysBefore: r.notify_days_before ?? null,
+  kraId: r.kra_id ?? null,
 });
 
 const mapPlan = (r: any): WeeklyPlan => ({
@@ -229,6 +241,20 @@ export async function fetchTaskData(): Promise<TaskData> {
 }
 
 /**
+ * Just the tasks and their recurring templates, mapped exactly as `fetchTaskData`
+ * maps them, for the KRA / KPI job (KPI-1) that scores them on the server.
+ *
+ * A narrower sibling rather than a second loader: the same paging and the same
+ * row mapping, minus the location checklists, weekly plans and settings that a
+ * score never reads. `task_locations` alone is the org's largest task table, and
+ * the job runs inside an edge function's ~2 s CPU budget.
+ */
+export async function fetchTaskScoringData(): Promise<Pick<TaskData, "tasks" | "recurringTasks">> {
+  const [tasksData, recData] = await Promise.all([fetchAll("tasks"), fetchAll("recurring_tasks")]);
+  return { tasks: tasksData.map(mapTask), recurringTasks: recData.map(mapRecurring) };
+}
+
+/**
  * Re-read JUST the tasks a write touched, with their location checklists.
  *
  * `fetchTaskData` above is the whole-dataset loader; awaiting it after every
@@ -322,13 +348,23 @@ export async function fetchTaskActivity(): Promise<TaskActivityData> {
  */
 export async function fetchMyNotifications(userId: string): Promise<Notification[]> {
   const out: any[] = []; // eslint-disable-line @typescript-eslint/no-explicit-any
+  const BASE = "id,user_id,type,task_id,activity_id,actor_id,read_at,created_at,tasks(title)";
+  // The reminder columns arrive with migration 20270106120100. Until it has run the
+  // wider select errors, so fall back to the old one and the bell never breaks.
+  let select = `${BASE},recurring_task_id,reminder_date,recurring_tasks(title)`;
   for (let from = 0; ; from += PAGE_SIZE) {
-    const { data, error } = await supabase
-      .from("notifications")
-      .select("id,user_id,type,task_id,activity_id,actor_id,read_at,created_at,tasks(title)")
-      .eq("user_id", userId)
-      .order("id", { ascending: true })
-      .range(from, from + PAGE_SIZE - 1);
+    const page = () =>
+      supabase
+        .from("notifications")
+        .select(select)
+        .eq("user_id", userId)
+        .order("id", { ascending: true })
+        .range(from, from + PAGE_SIZE - 1);
+    let { data, error } = await page();
+    if (error && select !== BASE) {
+      select = BASE;
+      ({ data, error } = await page());
+    }
     if (error) throw new Error(error.message);
     const rows = data ?? [];
     out.push(...rows);

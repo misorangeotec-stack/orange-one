@@ -224,30 +224,32 @@ export default function PipelineMatrix({
           {rows.map(({ requisition: r, counts, columnCounts, total }) => (
             <tr key={r.id} className="border-b border-line/70 last:border-0 hover:bg-page/40">
               <td className="sticky left-0 z-10 bg-white px-3 py-2 hover:bg-page/40">
-                <Link
-                  to={`/hr-recruitment/positions/${r.id}`}
-                  className="block max-w-[260px] truncate font-medium text-navy hover:text-orange hover:underline"
-                  title={`${r.jobTitle} · ${r.mrfNo}`}
+                {/* One line (PF-20): the position, then its MRF no., state and seats after it,
+                    cut at 320 px with the whole of it on hover. */}
+                <span
+                  className="block max-w-[320px] truncate"
+                  title={`${r.jobTitle} · ${r.mrfNo} · ${statusLabelOf(r)} · ${r.positionsRequired} ${r.positionsRequired === 1 ? "seat" : "seats"}`}
                 >
-                  {r.jobTitle}
-                </Link>
-                <div className="mt-0.5 flex items-center gap-1.5 text-[11px] text-grey-2">
-                  <span>{r.mrfNo}</span>
-                  <span aria-hidden="true">·</span>
-                  <span>{statusLabelOf(r)}</span>
-                  <span aria-hidden="true">·</span>
-                  <span>
-                    {r.positionsRequired} {r.positionsRequired === 1 ? "seat" : "seats"}
+                  <Link
+                    to={`/hr-recruitment/positions/${r.id}`}
+                    className="font-medium text-navy hover:text-orange hover:underline"
+                  >
+                    {r.jobTitle}
+                  </Link>
+                  <span className="ml-1.5 text-[11px] text-grey-2">
+                    {r.mrfNo} · {statusLabelOf(r)} · {r.positionsRequired}{" "}
+                    {r.positionsRequired === 1 ? "seat" : "seats"}
                   </span>
-                </div>
+                </span>
               </td>
 
               <td className={`${RULE} whitespace-nowrap px-3 py-2`}>
                 {openedIso(r) ? (
                   <>
-                    <div className="text-[12.5px] text-grey">{formatDateDMY(openedIso(r))}</div>
+                    {/* One line (PF-20): "12-09-2026 · 9d open". */}
+                    <span className="text-[12.5px] text-grey">{formatDateDMY(openedIso(r))}</span>
                     {daysOpen(r) !== null && (
-                      <div className="mt-0.5 text-[11px] text-grey-2">{daysOpen(r)}d open</div>
+                      <span className="ml-1.5 text-[11px] text-grey-2">{daysOpen(r)}d open</span>
                     )}
                   </>
                 ) : (

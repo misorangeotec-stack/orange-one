@@ -10,13 +10,15 @@ import {
   setOcSeries as setOcSeriesWrite,
 } from "./data/ocpiWrites";
 import { buildQueueEntries, type QueueEntry, type QueueStep } from "./lib/queues";
+import { RAISER_STEPS, quotationApproverIds } from "./lib/owners";
 import { resolveStepSla, type StepSlaMap } from "./lib/sla";
 import type { StepKey } from "./lib/steps";
 import type {
   OcpiCompanyProfile, OcpiDeal, OcpiMachine, OcpiMachineSection, OcpiNotification,
   OcpiStepOwner, QuotationVersion,
   OcpiMasterManager, OcpiMasterRequest, OcpiMasterType, OcpiNamedMaster,
-  OcpiDryer, OcpiMachineHead, OcpiSalesPage,
+  OcpiDryer, OcpiMachineHead, OcpiSalesPage, OcpiServiceCheckpoint, OcpiServiceChecklist,
+  OcpiApprovalLocation,
 } from "./types";
 
 /**
@@ -67,6 +69,8 @@ interface OcpiStoreValue {
   salespersonTags: string[];
 
   stepOwners: OcpiStepOwner[];
+  /** Quotation approval by location (Surat / Noida) — Setup → Who does what. */
+  approvalLocations: OcpiApprovalLocation[];
   config: OcpiConfig;
   /**
    * The live per-step due-date rules, defaults already merged in.
@@ -94,6 +98,12 @@ interface OcpiStoreValue {
   machineHeads: OcpiMachineHead[];
   masterManagers: OcpiMasterManager[];
   masterRequests: OcpiMasterRequest[];
+  /** Masters → Service check points, all rows (active and not). */
+  serviceCheckpoints: OcpiServiceCheckpoint[];
+  /** Masters → Service checklists (PDF), one row per machine that has one. */
+  serviceChecklists: OcpiServiceChecklist[];
+  /** The checklist PDF for a machine, or undefined when none is uploaded. */
+  serviceChecklistFor: (machineId: string | null) => OcpiServiceChecklist | undefined;
 
   /**
    * May this person EDIT this master directly, and resolve requests against it?
@@ -111,8 +121,21 @@ interface OcpiStoreValue {
 
   /** May this person raise a new deal? */
   canRaise: boolean;
+  /**
+   * Owns the Service Check and nothing else in OCPI. Mirrors
+   * fms_ocpi_is_service_only: such a user sees only the Service Check queue
+   * and its customer + machine view — no values, terms or documents.
+   */
+  serviceOnly: boolean;
   /** May this person ACTION this step? */
   canActOn: (step: StepKey) => boolean;
+  /**
+   * Who approves THIS quotation: its location's approvers, else the Approve
+   * Quotation owners. Mirrors fms_ocpi_quotation_approver_ids.
+   */
+  approversFor: (deal: OcpiDeal) => string[];
+  /** May this person approve THIS quotation? Mirrors fms_ocpi_can_act on the deal. */
+  canApprove: (deal: OcpiDeal) => boolean;
   /** May this person OPEN this step's queue? Viewers included. */
   canSeeQueue: (step: QueueStep) => boolean;
   /** May this person open the settings screens? */
@@ -196,6 +219,7 @@ export function OcpiStoreProvider({ children }: { children: ReactNode }) {
 
   const value = useMemo<OcpiStoreValue>(() => {
     const stepOwners = data?.stepOwners ?? [];
+    const approvalLocations = data?.approvalLocations ?? [];
     const config = data?.config ?? EMPTY_CONFIG;
     const deals = data?.deals ?? [];
     const machines = data?.machines ?? [];
@@ -213,6 +237,14 @@ export function OcpiStoreProvider({ children }: { children: ReactNode }) {
 
     const isOwner = (step: StepKey): boolean => ownersOf(step).includes(userId);
 
+    // Named on a location's approver list (Surat / Noida) — an approver for
+    // that location's quotations even when not on the general list.
+    const isLocationApprover = approvalLocations.some((l) => l.employeeIds.includes(userId));
+    const approversFor = (deal: OcpiDeal): string[] =>
+      quotationApproverIds(deal, stepOwners, approvalLocations);
+    const canApprove = (deal: OcpiDeal): boolean =>
+      canEdit && (isProcessCoordinator || approversFor(deal).includes(userId));
+
     // Mirrors fms_ocpi_can_act. The origin step is open to any editor while it
     // has no owners; naming owners closes it to them, admins and coordinators.
     const canActOn = (step: StepKey): boolean => {
@@ -222,7 +254,17 @@ export function OcpiStoreProvider({ children }: { children: ReactNode }) {
       return step === "quotation" && ownersOf("quotation").length === 0;
     };
 
-    const canRaise = canActOn("quotation");
+    const serviceOnly =
+      !!userId &&
+      isOwner("service_check") &&
+      !isAdmin &&
+      !isProcessCoordinator &&
+      !isViewer &&
+      !isLocationApprover &&
+      stepOwners.every((o) => o.stepKey === "service_check" || !o.employeeIds.includes(userId)) &&
+      !deals.some((d) => d.raisedBy === userId);
+
+    const canRaise = !serviceOnly && canActOn("quotation");
 
     /**
      * A queue OPENS for its owners, for coordinators, and for a module viewer —
@@ -236,11 +278,11 @@ export function OcpiStoreProvider({ children }: { children: ReactNode }) {
      *   they can SEE: the deals policy still hands a non-owner only their own
      *   deals, so the list they open is their own.
      */
-    const RAISER_STEPS: QueueStep[] = ["customer_signoff", "finance_handover"];
     const canSeeQueue = (step: QueueStep): boolean =>
       isProcessCoordinator ||
       isViewer ||
       isOwner(step) ||
+      (step === "quotation_approval" && isLocationApprover) ||
       (RAISER_STEPS.includes(step) && canRaise);
 
     // ⚠ The SLA map is passed IN rather than read inside the builder, which is
@@ -257,6 +299,10 @@ export function OcpiStoreProvider({ children }: { children: ReactNode }) {
     const machineHeads = data?.machineHeads ?? [];
     const masterManagers = data?.masterManagers ?? [];
     const masterRequests = data?.masterRequests ?? [];
+    const serviceCheckpoints = data?.serviceCheckpoints ?? [];
+    const serviceChecklists = data?.serviceChecklists ?? [];
+    const serviceChecklistFor = (machineId: string | null) =>
+      machineId ? serviceChecklists.find((c) => c.machineId === machineId) : undefined;
 
     // Mirrors fms_ocpi_is_master_manager, plus the admin bypass every table
     // policy carries. NOT gated on canEdit: master ownership is granted
@@ -362,6 +408,7 @@ export function OcpiStoreProvider({ children }: { children: ReactNode }) {
       salespersonTags: session.user?.receivablesSalespersons ?? [],
 
       stepOwners,
+      approvalLocations,
       config,
       stepSla,
       companyProfiles,
@@ -380,13 +427,19 @@ export function OcpiStoreProvider({ children }: { children: ReactNode }) {
       machineHeads,
       masterManagers,
       masterRequests,
+      serviceCheckpoints,
+      serviceChecklists,
+      serviceChecklistFor,
       canManageMaster,
       pendingMasterRequests: masterRequests.filter((r) => r.status === "pending"),
 
       entries,
 
       canRaise,
+      serviceOnly,
       canActOn,
+      approversFor,
+      canApprove,
       canSeeQueue,
       canSetup: isAdmin,
 

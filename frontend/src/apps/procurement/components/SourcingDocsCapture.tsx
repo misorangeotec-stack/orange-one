@@ -119,6 +119,9 @@ export default function SourcingDocsCapture({
   onError,
   onOpenStored,
   disabled = false,
+  label = "Attachments",
+  hint = "Quotations, rate comparison, a photo of the sheet — the approver sees these",
+  acceptAny = false,
 }: {
   value: SourcingFile[];
   onChange: (next: SourcingFile[]) => void;
@@ -126,6 +129,10 @@ export default function SourcingDocsCapture({
   /** Opens an already-stored file — mints a fresh signed URL, so it must be a button. */
   onOpenStored?: (doc: StoredDoc) => void;
   disabled?: boolean;
+  label?: string;
+  hint?: string;
+  /** Any file type in the picker, not just images / PDF / Office files. */
+  acceptAny?: boolean;
 }) {
   const cameraRef = useRef<HTMLInputElement>(null);
   const filesRef = useRef<HTMLInputElement>(null);
@@ -190,11 +197,11 @@ export default function SourcingDocsCapture({
   return (
     <div className="space-y-2">
       <div className="flex items-baseline justify-between">
-        <span className={SECTION_HEADING_CLASS}>Attachments</span>
+        <span className={SECTION_HEADING_CLASS}>{label}</span>
         <span className="text-[11.5px] text-grey-2">
           {disabled
             ? `${value.length} file${value.length === 1 ? "" : "s"}`
-            : "Quotations, rate comparison, a photo of the sheet — the approver sees these"}
+            : hint}
         </span>
       </div>
 
@@ -281,7 +288,7 @@ export default function SourcingDocsCapture({
       <input
         ref={filesRef}
         type="file"
-        accept="image/*,application/pdf,.doc,.docx,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document,.xls,.xlsx,.csv,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+        accept={acceptAny ? undefined : "image/*,application/pdf,.doc,.docx,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document,.xls,.xlsx,.csv,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"}
         multiple
         className="hidden"
         onChange={(e) => { void add(e.target.files); e.target.value = ""; }}

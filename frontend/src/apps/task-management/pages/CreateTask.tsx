@@ -1,5 +1,6 @@
 import { useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
+import { useQuery } from "@tanstack/react-query";
 import Card from "@/shared/components/ui/Card";
 import Button from "@/shared/components/ui/Button";
 import { FieldLabel, TextInput } from "@/shared/components/ui/Form";
@@ -10,6 +11,13 @@ import { useTaskStore } from "../mock/store";
 import LocationPicker from "../components/LocationPicker";
 import MentionTextArea from "../components/MentionTextArea";
 import { useReportsToSuffix } from "../components/ReportsToTag";
+import { fetchKras, KRAS_QUERY_KEY, reviewWeightOf } from "@/core/admin/kras";
+import { pctLabel, seesKraWeights } from "../lib/kraTasks";
+
+/** Task Category value for the ordinary task — no KRA, no review, scored as today. */
+const OTHERS = "others";
+/** A Director's Task Category "KRA": the KRA itself is picked later (20270130120000). */
+const KRA_OPEN = "kra-open";
 
 /** Create a one-time task. Assignee options depend on the current user's role. */
 export default function CreateTask() {
@@ -19,28 +27,38 @@ export default function CreateTask() {
   const canAssign = assignableUsers(role, user.id);
   const reportsToSuffix = useReportsToSuffix();
 
-  // TM-1: a HOD may also hand a one-off task sideways, to another HOD.
+  // TM-1: a HOD or Sub-HOD may also hand a one-off task sideways, to a peer.
+  // One pool for both roles — every other HOD and Sub-HOD, plus every Admin —
+  // so the right is symmetric: a Sub-HOD can hand work to a HOD and a HOD back
+  // to a Sub-HOD, and either can hand work up to an Admin.
   //
-  // ⚠ HODs ONLY — an ADMIN never gets this group. That is not an oversight: the
-  //   client settled (07-09-2026) that an admin assigning to a HOD is ordinary
-  //   downward work and must keep being scored the normal way. Because the flag
-  //   is stamped only from this list, an admin assignment cannot become peer
-  //   work by construction — and the 183 such tasks already in the database are
-  //   untouched.
+  // ⚠ HOD/SUB-HOD ONLY — an ADMIN never gets this picker (though they can be
+  //   picked from it). That is not an oversight: the client settled
+  //   (07-09-2026) that an admin assigning to a HOD is ordinary downward work
+  //   and must keep being scored the normal way.
+  //   Because the flag is stamped only from this list, an admin assignment
+  //   cannot become peer work by construction — and the 183 such tasks already
+  //   in the database are untouched.
   //
   // ⚠ Anyone already in the downline is filtered OUT. Nobody is mapped that way
   //   today (the three HODs with a boss report to admins), but user_hods is
-  //   editable, and the moment a HOD is mapped under another HOD that is a
+  //   editable, and the moment someone is mapped under this user that is a
   //   reporting line, not a peer one. "My team" wins.
   const peers = useMemo(() => {
-    if (role !== "hod") return [];
+    if (role !== "hod" && role !== "sub_hod") return [];
     const team = new Set(canAssign.map((p) => p.id));
     return peerAssignableUsers(user.id).filter((p) => !team.has(p.id));
   }, [role, user.id, canAssign.map((p) => p.id).join(","), peerAssignableUsers]);
 
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
-  const [assignedTo, setAssignedTo] = useState("");
+  const [assignedTo, setAssignedToRaw] = useState("");
+  const [category, setCategory] = useState(OTHERS);
+  // A KRA belongs to one person, so a new assignee always starts back on Others.
+  const setAssignedTo = (id: string) => {
+    setAssignedToRaw(id);
+    setCategory(OTHERS);
+  };
   const [dueDate, setDueDate] = useState("");
   const [locationIds, setLocationIds] = useState<string[]>([]);
   const [error, setError] = useState("");
@@ -62,6 +80,28 @@ export default function CreateTask() {
   /** Stamped only when the pick came from the peer group — never inferred later. */
   const isPeerAssignment = !!assignedTo && peers.some((p) => p.id === assignedTo);
 
+  // KRA categories: ONLY when this user is the assignee's DIRECT HOD (a user_hods row).
+  // Anyone higher up, a peer, or an admin who is not their HOD gets Others alone — the
+  // guard_task_kra trigger refuses the rest, and org_kras RLS hides the list anyway.
+  const isDirectHod = !!assignedTo && !isPeerAssignment && !!canAssign.find((p) => p.id === assignedTo)?.hodIds.includes(user.id);
+  const krasQ = useQuery({ queryKey: KRAS_QUERY_KEY, queryFn: fetchKras, enabled: isDirectHod });
+  const assigneeKras = useMemo(
+    () => (isDirectHod ? (krasQ.data ?? []).filter((k) => k.profileId === assignedTo && k.active).sort((a, b) => a.sortOrder - b.sortOrder) : []),
+    [isDirectHod, krasQ.data, assignedTo],
+  );
+  const pickedKra = assigneeKras.find((k) => k.id === category) ?? null;
+
+  // A Director (admin + designation Director — is_director() on the server) gets just
+  // Others / KRA, for anyone they assign to. A HOD / Sub-HOD then picks their own KRA
+  // before completing and the Director reviews it; anyone else's direct HOD picks the
+  // KRA and reviews it. The server decides the path again from the assignee's role.
+  const isDirector = role === "admin" && user.designation?.trim().toLowerCase() === "director";
+  const showDirectorCategory = isDirector && !!picked && assignedTo !== user.id;
+  const assigneeIsHod = picked?.role === "hod" || picked?.role === "sub_hod";
+  // Directors have no peer list, so the pick is always a team profile (it has hodIds).
+  const assigneeHodIds = canAssign.find((p) => p.id === assignedTo)?.hodIds ?? [];
+  const kraOpen = showDirectorCategory && category === KRA_OPEN;
+
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!title.trim()) {
@@ -70,6 +110,10 @@ export default function CreateTask() {
     }
     if (!assignedTo) {
       setError("Please choose who to assign this task to.");
+      return;
+    }
+    if (kraOpen && !assigneeIsHod && !assigneeHodIds.length) {
+      setError("This person has no HOD set, so nobody could review a KRA task. Choose Others, or set their HOD first.");
       return;
     }
     setBusy(true);
@@ -83,6 +127,10 @@ export default function CreateTask() {
         dueDate: dueDate || null,
         locationIds,
         isPeerAssignment,
+        kraId: showDirectorCategory ? null : pickedKra?.id ?? null,
+        kraOpen,
+        kraWeight: pickedKra?.weight ?? null,
+        kraCompletionWeight: pickedKra?.completionWeight ?? null,
       });
       navigate(`/task-management/tasks/${id}`);
     } catch (err) {
@@ -121,7 +169,9 @@ export default function CreateTask() {
         {BackLink}
         <h2 className="text-[22px] font-bold text-navy mt-2">Create Task</h2>
         <p className="text-grey text-[13px] mt-1">
-          {peers.length > 0 ? "Assign a task to a member of your team, or to another HOD." : "Assign a task to a member of your team."}
+          {peers.length > 0
+            ? "Assign a task to a member of your team, or to a HOD, Sub-HOD or Admin."
+            : "Assign a task to a member of your team."}
         </p>
       </div>
 
@@ -171,7 +221,7 @@ export default function CreateTask() {
                       label: p.name,
                       sublabel: sub || undefined,
                       icon: <Avatar name={p.name} color={p.avatarColor} size={22} />,
-                      group: "Other HODs",
+                      group: "HODs, Sub-HODs & Admins",
                     };
                   }),
                 ]}
@@ -182,6 +232,61 @@ export default function CreateTask() {
               <TextInput type="date" value={dueDate} onChange={(e) => setDueDate(e.target.value)} />
             </FieldLabel>
           </div>
+
+          {showDirectorCategory && (
+            <FieldLabel label="Task category">
+              <Combobox
+                value={category === KRA_OPEN ? KRA_OPEN : OTHERS}
+                onChange={(v) => setCategory(v || OTHERS)}
+                options={[
+                  { value: OTHERS, label: "Others", sublabel: "Ordinary task — no KRA, no review" },
+                  {
+                    value: KRA_OPEN,
+                    label: "KRA",
+                    sublabel: assigneeIsHod ? "They pick their KRA before completing; you review it 1–10" : "They pick their KRA before completing; their HOD reviews it 1–10",
+                  },
+                ]}
+              />
+              {kraOpen && (
+                <p className="mt-1.5 text-[12px] text-grey">
+                  {assigneeIsHod ? (
+                    <>
+                      <b className="text-navy">{picked?.name}</b> picks which of their KRAs this belongs to before marking it complete. It then comes to you for a 1–10 review.
+                    </>
+                  ) : assigneeHodIds.length ? (
+                    <>
+                      <b className="text-navy">{picked?.name}</b> picks which of their KRAs this belongs to before marking it complete. Their HOD then checks the KRA (and may change it) and gives the 1–10 review.
+                    </>
+                  ) : (
+                    <span className="text-[#d4493f]">{picked?.name} has no HOD set, so nobody could review this KRA task.</span>
+                  )}
+                </p>
+              )}
+            </FieldLabel>
+          )}
+
+          {isDirectHod && !showDirectorCategory && (
+            <FieldLabel
+              label="Task category"
+              hint={assigneeKras.length === 0 && !krasQ.isLoading ? "No KRAs set for this person yet" : undefined}
+            >
+              <Combobox
+                value={category}
+                onChange={(v) => setCategory(v || OTHERS)}
+                options={[
+                  { value: OTHERS, label: "Others", sublabel: "Ordinary task — no KRA, no review" },
+                  ...assigneeKras.map((k) => ({ value: k.id, label: k.name, sublabel: seesKraWeights(role) ? `KRA · Wt ${pctLabel(k.weight)}` : "KRA", group: "KRAs" })),
+                ]}
+              />
+              {pickedKra && seesKraWeights(role) && (
+                <p className="mt-1.5 text-[12px] text-grey">
+                  Worth <b className="text-navy">{pctLabel(pickedKra.weight)}</b>:{" "}
+                  {pctLabel(pickedKra.completionWeight)} when it is completed, and up to{" "}
+                  {pctLabel(reviewWeightOf(pickedKra))} more from your 1–10 review.
+                </p>
+              )}
+            </FieldLabel>
+          )}
 
           <LocationPicker value={locationIds} onChange={setLocationIds} />
 

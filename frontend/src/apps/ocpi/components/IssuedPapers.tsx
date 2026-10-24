@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import PaperSet, { type Paper } from "./PaperSet";
+import { useServiceChecklistPaper } from "./useServiceChecklistPaper";
 import { useOcpiStore } from "../store";
 import { fetchStoredPdf } from "../lib/docUrls";
 import { quotationDetailFileName, quotationFileName } from "../lib/quotationPdf";
@@ -59,6 +60,8 @@ export default function IssuedPapers({
   const [detail, setDetail] = useState<Blob | null>(null);
   const [pi, setPi] = useState<Blob | null>(null);
   const [busy, setBusy] = useState(false);
+  // The machine's service checklist — downloads with every paper here.
+  const checklistPaper = useServiceChecklistPaper(deal, deal.quotationNo);
 
   useEffect(() => {
     if (fresh) {
@@ -136,6 +139,7 @@ export default function IssuedPapers({
         ? `${machine!.name} has no detailed template yet, so this issue is the summary and the PI alone. The sheet appears once somebody builds the template under Machines.`
         : "No detailed sheet was stored for this version.",
     },
+    checklistPaper,
   ];
 
   return (

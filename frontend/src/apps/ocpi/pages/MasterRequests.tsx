@@ -91,6 +91,7 @@ export default function MasterRequests() {
         key: "type",
         header: "List",
         cell: (r) => masterTypeLabel(r.masterType),
+        sortValue: (r) => masterTypeLabel(r.masterType),
         filter: { kind: "select", get: (r) => masterTypeLabel(r.masterType) },
       },
       {
@@ -116,6 +117,7 @@ export default function MasterRequests() {
         key: "by",
         header: "Asked by",
         cell: (r) => personName(r.requestedBy),
+        sortValue: (r) => personName(r.requestedBy),
         filter: { kind: "select", get: (r) => personName(r.requestedBy) },
       },
       {
@@ -129,6 +131,7 @@ export default function MasterRequests() {
         key: "note",
         header: "Reviewer's note",
         cell: (r) => r.reviewNote ?? "—",
+        sortValue: (r) => r.reviewNote ?? "",
         filter: { kind: "text", get: (r) => r.reviewNote ?? "" },
       },
     ],

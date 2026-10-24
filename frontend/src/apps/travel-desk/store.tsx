@@ -6,6 +6,8 @@ import { TRAVEL_QK, travelQueryKey, fetchTravelData } from "./data/travelFetch";
 import {
   markNotificationsRead as markNotificationsReadWrite,
   setCoordinators as setCoordinatorsWrite,
+  setRaiseFor as setRaiseForWrite,
+  setMenuHiddenQueues as setMenuHiddenQueuesWrite,
   setStepSla as setStepSlaWrite,
   setStepOwners as setStepOwnersWrite,
   setPolicy as setPolicyWrite,
@@ -36,6 +38,9 @@ import {
   saveLeg as saveLegWrite,
   removeLeg as removeLegWrite,
   completeBooking as completeBookingWrite,
+  requestCancelBooking as requestCancelBookingWrite,
+  completeCancelBooking as completeCancelBookingWrite,
+  type CreditNoteInput,
   requestCancellation as requestCancellationWrite,
   processCancellation as processCancellationWrite,
 } from "./data/travelBookingWrites";
@@ -78,7 +83,7 @@ import type {
   TravelCity, TravelPurpose, TravelExpenseCategory, TravelHotel, TravelNamedMaster,
   TravelMasterManager, TravelMasterRequest, TravelRateCard, TravelRate,
   TravelMasterType, TravelRequestableMaster, TravelCategory, CityTier, RateType,
-  TripPassenger, ApprovalMatrix, TripLeg, TripLegInput,
+  TripPassenger, ApprovalMatrix, TripLeg, TripLegInput, TripCancellation,
   ClaimLine, ClaimLineInput, ClaimPreview, DaDay, ActualTravelInput, SettlementInput,
 } from "./types";
 
@@ -114,6 +119,8 @@ const EMPTY_CONFIG: TravelConfig = {
   reassignPoolUserIds: [],
   stepSla: null,
   processCoordinators: [],
+  raiseFor: [],
+  menuHiddenQueues: null,
   approvalMatrix: { directorFromBand: 6, managerAlsoForDirectorBands: true },
   policy: {
     maxPassengers: 5,
@@ -161,6 +168,8 @@ interface TravelStoreValue {
   legs: TripLeg[];
   /** This trip's booked legs, in the order they were added. */
   legsOf: (tripId: string) => TripLeg[];
+  /** The booker's cancellations on this trip, oldest first. */
+  cancellationsOf: (tripId: string) => TripCancellation[];
   /**
    * The flat arrays, alongside the per-trip selectors.
    *
@@ -243,6 +252,8 @@ interface TravelStoreValue {
     input: { departmentIds?: string[]; designationId?: string | null; employeeIds: string[] },
   ) => Promise<void>;
   setCoordinators: (userIds: string[]) => Promise<void>;
+  setRaiseFor: (userIds: string[]) => Promise<void>;
+  setMenuHiddenQueues: (keys: string[]) => Promise<void>;
   setStepSla: (map: StepSlaMap) => Promise<void>;
   setPolicy: (policy: TravelPolicyConfig) => Promise<void>;
   setCompanyIdentity: (v: { legalName: string; gstin: string; address: string }) => Promise<void>;
@@ -277,7 +288,7 @@ interface TravelStoreValue {
   setMasterOwners: (type: TravelMasterType, userIds: string[]) => Promise<void>;
 
   /**
-   * Does this band need a Director as well (§3.2)?
+   * Does this band need a Director as well (Section 3.2)?
    *
    * ⚠ READS THE MATRIX, NOT A CONSTANT. Mirrored in SQL by
    *   fms_travel_next_stop, which is the only thing that actually routes — this
@@ -287,7 +298,7 @@ interface TravelStoreValue {
   needsDirector: (bandNo: number | null) => boolean;
 
   /**
-   * What this person still owes in unreconciled advance — the figure §11.2 hangs
+   * What this person still owes in unreconciled advance — the figure Section 11.2 hangs
    * its hardest rule on.
    *
    * ⚠ COMPUTED FROM THE SAME SNAPSHOT EVERY SCREEN READS, so the warning on the
@@ -297,7 +308,7 @@ interface TravelStoreValue {
    *   refusal is never a surprise.
    */
   outstandingAdvanceFor: (userId: string | null, excludeTripId?: string | null) => number;
-  /** §11.1 — the most that may be advanced on this trip. Null with no estimate. */
+  /** Section 11.1 — the most that may be advanced on this trip. Null with no estimate. */
   advanceCeiling: (trip: Trip) => number | null;
 
   claimLinesOf: (tripId: string) => ClaimLine[];
@@ -340,6 +351,8 @@ interface TravelStoreValue {
   saveLeg: (tripId: string, input: TripLegInput, legId?: string | null) => Promise<string>;
   removeLeg: (legId: string) => Promise<void>;
   completeBooking: (tripId: string) => Promise<string>;
+  requestCancelBooking: (tripId: string, legIds: string[], reason: string) => Promise<string>;
+  completeCancelBooking: (cancellationId: string, input: CreditNoteInput) => Promise<string>;
   requestCancellation: (tripId: string, reason: string) => Promise<void>;
   processCancellation: (
     tripId: string,
@@ -401,6 +414,7 @@ export function TravelStoreProvider({ children }: { children: ReactNode }) {
     const trips = data?.trips ?? [];
     const passengers = data?.passengers ?? [];
     const legs = data?.legs ?? [];
+    const cancellations = data?.cancellations ?? [];
     const claimLines = data?.claimLines ?? [];
     const daDays = data?.daDays ?? [];
     const employeeSettings = data?.employeeSettings ?? [];
@@ -437,9 +451,23 @@ export function TravelStoreProvider({ children }: { children: ReactNode }) {
     const assigneeOfStep = (tripId: string | null | undefined, step: string): string | null =>
       tripId ? assigneeByKey.get(tripId + '|' + step) ?? null : null;
 
-    /** Who owns a step when nobody is assigned. Mirrors fms_travel_is_natural_step_owner. */
+    /**
+     * Who owns a step when nobody is assigned. Mirrors fms_travel_is_natural_step_owner.
+     *
+     * ⚠ THE `claim` ARM IS LOAD-BEARING AND WAS MISSING. The SQL has always returned
+     *   true for the trip's own TRAVELLER on the claim step — it is their claim — and
+     *   this mirror did not, so the server would have accepted a filing that the screen
+     *   would not let anybody type. Every field of "What actually happened" rendered
+     *   greyed out for the one person who is meant to fill it in, and the rail read
+     *   "Claim · Unassigned" while every other step named somebody. Nobody is a step
+     *   owner of `claim` and nobody should be, so for an ordinary employee the module
+     *   simply stopped after the trip was booked.
+     *
+     *   Invisible from an admin login, which is a coordinator and returns true above.
+     */
     const isNaturalStepOwner = (step: StepKey, trip: Trip | null | undefined, uid: string): boolean => {
       if (isManagerStep(step) && trip?.approverManagerIds.includes(uid)) return true;
+      if (step === 'claim' && trip?.travellerId === uid) return true;
       if (ownersOf(step).includes(uid)) return true;
       return step === 'request' && ownersOf('request').length === 0;
     };
@@ -488,11 +516,18 @@ export function TravelStoreProvider({ children }: { children: ReactNode }) {
       // against and is where a hand-back returns it. Mirrors fms_travel_can_act.
       const assignee = assigneeOfStep(trip?.id, step);
       if (assignee) return assignee === userId;
-      if (isManagerStep(step) && trip?.approverManagerIds.includes(userId)) return true;
-      if (isOwner(step)) return true;
-      // The origin step is open to any editor while it has no owners; naming
-      // owners closes it to them, admins and coordinators.
-      return step === "request" && ownersOf("request").length === 0;
+      /*
+        ⚠ DELEGATES RATHER THAN RESTATING, BECAUSE RESTATING IS WHAT WENT WRONG.
+          These three arms used to be copied out here, and the copy fell behind:
+          `isNaturalStepOwner` gained the traveller's claim arm and this did not, so
+          the same question got two answers depending on which one a screen happened
+          to ask. `fms_travel_can_act` has exactly this shape — assignee first, then
+          the natural owner — and now so does this.
+
+          The origin step being open to any editor while it has no owners lives in
+          `isNaturalStepOwner` too, with the rest of them.
+      */
+      return isNaturalStepOwner(step, trip, userId);
     };
 
     const canRaise = canActOn("request");
@@ -591,6 +626,10 @@ export function TravelStoreProvider({ children }: { children: ReactNode }) {
       legs,
       legsOf: (tripId: string) =>
         legs.filter((x) => x.tripId === tripId).sort((a, b) => a.sortOrder - b.sortOrder),
+      cancellationsOf: (tripId: string) =>
+        cancellations
+          .filter((x) => x.tripId === tripId)
+          .sort((a, b) => a.requestedAt.localeCompare(b.requestedAt)),
       claimLines,
       daDays,
       claimLinesOf: (tripId: string) =>
@@ -661,6 +700,16 @@ export function TravelStoreProvider({ children }: { children: ReactNode }) {
       },
       setCoordinators: async (userIds) => {
         await setCoordinatorsWrite(userIds);
+        await qc.invalidateQueries({ queryKey: QK });
+      },
+      // QK is a prefix of the raise-for people query too, so one invalidate
+      // refreshes the list AND the coordinator's picker.
+      setRaiseFor: async (userIds) => {
+        await setRaiseForWrite(userIds);
+        await qc.invalidateQueries({ queryKey: QK });
+      },
+      setMenuHiddenQueues: async (keys) => {
+        await setMenuHiddenQueuesWrite(keys);
         await qc.invalidateQueries({ queryKey: QK });
       },
       setStepSla: async (map) => {
@@ -768,6 +817,16 @@ export function TravelStoreProvider({ children }: { children: ReactNode }) {
       },
       completeBooking: async (tripId) => {
         const st = await completeBookingWrite(tripId);
+        await qc.invalidateQueries({ queryKey: QK });
+        return st;
+      },
+      requestCancelBooking: async (tripId, legIds, reason) => {
+        const id = await requestCancelBookingWrite(tripId, legIds, reason);
+        await qc.invalidateQueries({ queryKey: QK });
+        return id;
+      },
+      completeCancelBooking: async (cancellationId, input) => {
+        const st = await completeCancelBookingWrite(cancellationId, input);
         await qc.invalidateQueries({ queryKey: QK });
         return st;
       },

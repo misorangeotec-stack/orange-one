@@ -1,5 +1,6 @@
 import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import { ChevronLeft, ChevronRight } from "lucide-react";
+import { HeightGrip, usePersistedSize } from "./ResizeGrip";
 
 interface Props {
   children: ReactNode;
@@ -9,6 +10,25 @@ interface Props {
   maxHeight?: string;
   /** Pixels moved per key/button press. */
   step?: number;
+  /**
+   * Give the table a drag strip underneath, so the reader sets how tall it is (remembered per
+   * browser under this key; double-click resets to `maxHeight`). Without it, nothing changes.
+   */
+  resizeKey?: string;
+  /** Drop the hint + ‹ › bar for tight screens; the keys and the scrollbar still work. */
+  hideControls?: boolean;
+  /** Drop only the "Use arrow keys…" hint, keeping the ‹ › buttons on the right. */
+  hideHint?: boolean;
+  /**
+   * Keep the wheel inside the table. Without it, scrolling past the last row carries on into the
+   * page, which moves the whole box — sticky headings and all — off the top of the screen.
+   */
+  containScroll?: boolean;
+  /**
+   * Something small (tabs, a filter) to sit on the LEFT of the ‹ › row, using the line that row
+   * already takes rather than a new one. With it, the row shows even when nothing overflows.
+   */
+  barLeft?: ReactNode;
 }
 
 /**
@@ -21,8 +41,10 @@ interface Props {
  * div, which would otherwise capture horizontal scroll. `[&>div]:!overflow-visible`
  * neutralises that so THIS element is the single scroll container for both axes.
  */
-export function ScrollableTable({ children, className, maxHeight, step = 320 }: Props) {
+export function ScrollableTable({ children, className, maxHeight, step = 320, resizeKey, hideControls = false, hideHint = false, containScroll = false, barLeft }: Props) {
   const ref = useRef<HTMLDivElement>(null);
+  const [height, setHeight] = usePersistedSize(resizeKey ? `table.${resizeKey}` : undefined);
+  const dragFrom = useRef(0);
   const [overflow, setOverflow] = useState(false);
 
   const check = () => {
@@ -67,9 +89,13 @@ export function ScrollableTable({ children, className, maxHeight, step = 320 }: 
 
   return (
     <div>
-      {overflow && (
+      {((overflow && !hideControls) || barLeft) && (
         <div className="flex items-center justify-end gap-2 mb-1.5">
-          <span className="text-[11px] text-muted-foreground mr-auto">Use arrow keys ← ↑ → ↓ (or the buttons) to scroll the table.</span>
+          {barLeft && <div className="mr-auto flex min-h-7 items-center">{barLeft}</div>}
+          {overflow && !hideControls && !hideHint && !barLeft && (
+            <span className="text-[11px] text-muted-foreground mr-auto">Use arrow keys ← ↑ → ↓ (or the buttons) to scroll the table.</span>
+          )}
+          {overflow && !hideControls && (<>
           <button
             type="button"
             onClick={() => by(-step, 0)}
@@ -86,16 +112,26 @@ export function ScrollableTable({ children, className, maxHeight, step = 320 }: 
           >
             <ChevronRight className="h-4 w-4" />
           </button>
+          </>)}
         </div>
       )}
       <div
         ref={ref}
         tabIndex={0}
         onKeyDown={onKeyDown}
-        className={`overflow-auto [&>div]:!overflow-visible focus:outline-none ${maxHeight ?? ""} ${className ?? ""}`}
+        style={height !== undefined ? { maxHeight: height } : undefined}
+        className={`overflow-auto [&>div]:!overflow-visible focus:outline-none ${containScroll ? "overscroll-contain" : ""} ${maxHeight ?? ""} ${className ?? ""}`}
       >
         {children}
       </div>
+      {resizeKey && (
+        <HeightGrip
+          label="Drag to make the table taller or shorter · double-click to reset"
+          onStart={() => { dragFrom.current = ref.current?.clientHeight ?? 400; }}
+          onMove={(dy) => setHeight(Math.max(120, Math.min(4000, dragFrom.current + dy)))}
+          onReset={() => setHeight(undefined)}
+        />
+      )}
     </div>
   );
 }

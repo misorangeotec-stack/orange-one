@@ -1,3 +1,4 @@
+import { useBackState } from "@/shared/lib/backState";
 import { useEffect, useMemo, useState, Fragment, type ReactNode } from "react";
 import { Link } from "react-router-dom";
 import * as XLSX from "xlsx-js-style";
@@ -117,7 +118,7 @@ export default function TopExposureReport() {
   const [categories, setCategories] = useState<string[]>([]);
   const [companies, setCompanies] = useState<string[]>([]);
   const [locations, setLocations] = useState<string[]>([]);
-  const [search, setSearch] = useState("");
+  const [search, setSearch] = useBackState("TopExposureReport.search", "");
 
   // Ranking / size
   const [rankBy, setRankBy] = useState<RankBy>("outstanding");
@@ -191,7 +192,7 @@ export default function TopExposureReport() {
         if (ctSet.size > 0 && !ctSet.has(r.collectionTeam)) return false;
         if (coSet.size > 0 && !coSet.has(r.company)) return false;
         if (loSet.size > 0 && !loSet.has(r.location)) return false;
-        if (!matchesCategory({ category: r.category }, categories)) return false;
+        if (!matchesCategory({ category: r.category, markType: r.markType }, categories)) return false;
         if (q && !(r.customer.toLowerCase().includes(q) || r.salesPerson.toLowerCase().includes(q))) return false;
         return true;
       });
@@ -356,7 +357,7 @@ export default function TopExposureReport() {
   if (source === "default") {
     return (
       <div className="p-6 max-w-[900px] mx-auto space-y-4">
-        <Link to="/outstanding-dashboard/reports" className="inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground">
+        <Link to="/reports" className="inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground">
           <ArrowLeft className="h-3.5 w-3.5" /> Reports
         </Link>
         <Card className="rounded-card border-border bg-surface">
@@ -465,7 +466,7 @@ export default function TopExposureReport() {
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
         <div>
-          <Link to="/outstanding-dashboard/reports" className="inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground mb-1">
+          <Link to="/reports" className="inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground mb-1">
             <ArrowLeft className="h-3.5 w-3.5" /> Reports
           </Link>
           <h1 className="text-2xl font-bold text-foreground flex items-center gap-2">

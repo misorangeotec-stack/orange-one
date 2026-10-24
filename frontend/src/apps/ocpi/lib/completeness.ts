@@ -237,6 +237,8 @@ const REQUIREMENTS: readonly Requirement[] = [
 
   { key: "paymentTerms", tier: "approval" },
   { key: "deliveryDays", tier: "approval" },
+  // Send for approval (fms_ocpi_submit_quotation) still asks for the date.
+  { key: "deliveryDate", tier: "approval" },
 ];
 
 /**

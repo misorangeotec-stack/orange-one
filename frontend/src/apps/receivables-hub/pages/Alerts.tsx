@@ -370,7 +370,7 @@ export default function Alerts() {
             ) : (
               <>
                 <ScrollableTable>
-                  <Table>
+                  <Table resizeKey="alerts">
                     <TableHeader>
                       <TableRow className="hover:bg-transparent">
                         <TableHead className="min-w-[220px]">Customer</TableHead>

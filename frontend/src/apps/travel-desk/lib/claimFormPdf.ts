@@ -20,7 +20,7 @@ import type {
  *   makes a traveller discover a disallowance from a smaller bank credit six
  *   weeks later.
  *
- * ⚠ THE FOUR SIGNATURE BLOCKS ARE THE POLICY'S, NOT A DESIGN CHOICE. §11.1 runs
+ * ⚠ THE FOUR SIGNATURE BLOCKS ARE THE POLICY'S, NOT A DESIGN CHOICE. Section 11.1 runs
  *   Employee → HOD → Finance → CFO, and Annexure B prints all four. Three of
  *   them are already recorded in the system by the time this renders, so they
  *   are printed as facts with names and dates; the CFO block stays an empty
@@ -193,7 +193,7 @@ async function build(input: ClaimFormInput): Promise<jsPDF> {
     y = headerBand(ctx, { tag: "TRVL-FRM-01 · Travel Expense Claim", compact: true }) + 16;
   }
 
-  y = sectionHeading(pdf, MARGIN, y, "Daily allowance (§8)", "One row per calendar day, with the reason for each figure");
+  y = sectionHeading(pdf, MARGIN, y, "Daily allowance (Section 8)", "One row per calendar day, with the reason for each figure");
   y += 4;
 
   if (daDays.length === 0) {
@@ -278,7 +278,7 @@ async function build(input: ClaimFormInput): Promise<jsPDF> {
   }
 
   y = divider(pdf, MARGIN, y, W) + 10;
-  y = sectionHeading(pdf, MARGIN, y, "Certification", "§11.1 — Employee, HOD, Finance, CFO");
+  y = sectionHeading(pdf, MARGIN, y, "Certification", "Section 11.1 — Employee, HOD, Finance, CFO");
   y += 30;
 
   const colW = (W - 24) / 2;
@@ -314,7 +314,7 @@ async function build(input: ClaimFormInput): Promise<jsPDF> {
   }
   if (trip.tcDowngradedFrom) {
     notes.unshift(
-      `This trip was regularised after departure, so §3.5 priced it at TC-D rather than ${trip.tcDowngradedFrom}.`,
+      `This trip was regularised after departure, so Section 3.5 priced it at TC-D rather than ${trip.tcDowngradedFrom}.`,
     );
   }
   if (company.gstin) {

@@ -7,6 +7,7 @@ import CoordinatorsSection from "./CoordinatorsSection";
 import MasterOwnersSection from "./MasterOwnersSection";
 import EmailNotificationsSection from "./EmailNotificationsSection";
 import CustomerLoginsSection from "./CustomerLoginsSection";
+import FormsSection from "./FormsSection";
 
 export default function Setup() {
   const [tab, setTab] = useState("owners");
@@ -18,6 +19,7 @@ export default function Setup() {
     { key: "masters", label: "Master Owners" },
     { key: "notifications", label: "Notifications" },
     { key: "customers", label: "Customer Logins" },
+    { key: "forms", label: "Forms" },
   ];
   return (
     <div className="space-y-5">
@@ -25,7 +27,7 @@ export default function Setup() {
         <h1 className="text-[22px] font-bold text-navy">Setup</h1>
         <p className="text-[13.5px] text-grey-2 mt-1">
           Who owns each step, the per-step deadlines, the process coordinators, who owns each master, the two email
-          switches, and which customers place their own orders.
+          switches, which customers place their own orders, and the form names they read.
         </p>
       </div>
       <Tabs tabs={tabs} active={tab} onChange={setTab} />
@@ -36,6 +38,7 @@ export default function Setup() {
       {tab === "masters" && <MasterOwnersSection />}
       {tab === "notifications" && <EmailNotificationsSection />}
       {tab === "customers" && <CustomerLoginsSection />}
+      {tab === "forms" && <FormsSection />}
     </div>
   );
 }

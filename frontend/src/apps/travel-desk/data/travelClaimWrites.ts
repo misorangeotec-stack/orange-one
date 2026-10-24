@@ -180,7 +180,7 @@ export interface BillReading {
   /** A short free-text guess such as "Hotel" or "Taxi" — a hint, not a decision. */
   category: string;
   description: string;
-  /** ⚠ §11.3 excludes foreign currency entirely, so anything but INR is a WARNING. */
+  /** ⚠ Section 11.3 excludes foreign currency entirely, so anything but INR is a WARNING. */
   currency: string;
   confidence: "high" | "medium" | "low";
   model?: string;

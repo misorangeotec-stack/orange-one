@@ -39,7 +39,7 @@ export const assetMaintenanceProvider: MyWorkProvider = {
   key: "asset-maintenance",
   label: appName("asset-maintenance"),
   appId: "asset-maintenance",
-  category: "asset",
+  category: "hr",
   unit: "steps",
   tier: 2,
   useMyWork: useAssetWork,

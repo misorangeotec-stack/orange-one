@@ -129,7 +129,7 @@ async function build(input: AuthorisationInput): Promise<jsPDF> {
   ];
   if (trip.purposeOtherRemarks) facts.push({ k: "Reason", v: trip.purposeOtherRemarks });
   if (trip.isEmergency) {
-    facts.push({ k: "Emergency (§3.5)", v: trip.emergencyReason ?? "no reason recorded" });
+    facts.push({ k: "Emergency (Section 3.5)", v: trip.emergencyReason ?? "no reason recorded" });
   }
 
   y = drawTable(pdf, {
@@ -223,7 +223,7 @@ async function build(input: AuthorisationInput): Promise<jsPDF> {
     {
       k: "Director",
       v: trip.directorApprovalSkipped
-        ? `Not required — band ${trip.snapBandNo ?? "—"} (§3.2)`
+        ? `Not required — band ${trip.snapBandNo ?? "—"} (Section 3.2)`
         : trip.daAt
           ? `${names.director ?? "—"} · ${dmy(trip.daAt)}`
           : "Pending",
@@ -244,20 +244,20 @@ async function build(input: AuthorisationInput): Promise<jsPDF> {
 
   // ---- the fine print the traveller actually needs -------------------------
   const notes: string[] = [
-    "Keep every original receipt. The expense claim is due within 5 working days of your return, and nothing over 30 days old is reimbursed without Director approval (§11).",
-    "A hotel night above the cap needs written evidence that the cap was unavailable, plus HOD approval — and can never exceed 1.5× the cap regardless (§7.3).",
-    "Alcohol, fines, personal entertainment and anything in §15 is not reimbursable at any band.",
+    "Keep every original receipt. The expense claim is due within 5 working days of your return, and nothing over 30 days old is reimbursed without Director approval (Section 11).",
+    "A hotel night above the cap needs written evidence that the cap was unavailable, plus HOD approval — and can never exceed 1.5× the cap regardless (Section 7.3).",
+    "Alcohol, fines, personal entertainment and anything in Section 15 is not reimbursable at any band.",
   ];
   if (company.gstin) {
-    notes.push(`Ask every hotel and vendor to bill Orange O Tec with GSTIN ${company.gstin} — the input credit is lost without it (§11.3).`);
+    notes.push(`Ask every hotel and vendor to bill Orange O Tec with GSTIN ${company.gstin} — the input credit is lost without it (Section 11.3).`);
   } else {
-    // ⚠ NOT A PLACEHOLDER NUMBER. §7.1 and §11.3 both carry the company GSTIN as
+    // ⚠ NOT A PLACEHOLDER NUMBER. Section 7.1 and Section 11.3 both carry the company GSTIN as
     //   "[⚠ CONFIRM with Finance]" (H8). A made-up number printed on guidance an
     //   employee hands to a hotel is worse than a visible gap.
-    notes.push("Ask every hotel and vendor to bill the company, not you personally — the GST input credit is lost on a personal invoice (§11.3). The company GSTIN is not yet recorded in the system; ask Finance for it.");
+    notes.push("Ask every hotel and vendor to bill the company, not you personally — the GST input credit is lost on a personal invoice (Section 11.3). The company GSTIN is not yet recorded in the system; ask Finance for it.");
   }
   if (trip.tcDowngradedFrom) {
-    notes.unshift(`This trip was regularised after departure, so §3.5 reimburses it at TC-D rather than ${trip.tcDowngradedFrom}. The figures above are the reduced ones.`);
+    notes.unshift(`This trip was regularised after departure, so Section 3.5 reimburses it at TC-D rather than ${trip.tcDowngradedFrom}. The figures above are the reduced ones.`);
   }
   if (card && card.status !== "confirmed") {
     notes.unshift(`These figures come from a rate card that has not been signed off (“${card.label}”). They are what the policy proposes; caps are not enforced against them yet.`);

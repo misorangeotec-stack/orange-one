@@ -89,13 +89,33 @@ export const stepByKey = (key: string): StepDef | undefined => STEPS.find((s) =>
  */
 export const SALES_RETURN_KEY = "sales_return" as const;
 
-/** Every key that can own work — the chain, plus Sales Return. */
-export type OwnerStepKey = StepKey | typeof SALES_RETURN_KEY;
+/**
+ * Step 1 of the two-step sales-return cycle: who may RAISE one. Owner-only —
+ * it has no queue, no record RPC and no notification; raising IS its action,
+ * on the Sales Return page. Its owners are ADDED to the people who could
+ * already raise (the order's raiser, coordinators, admins, the Tally owners),
+ * never a restriction on them; `fms_dispatch_request_round_return` agrees
+ * (migration 20270109120000).
+ */
+export const SALES_RETURN_REQUEST_KEY = "sales_return_request" as const;
+
+/** Every key that can own work — the chain, plus the two Sales Return steps. */
+export type OwnerStepKey = StepKey | typeof SALES_RETURN_REQUEST_KEY | typeof SALES_RETURN_KEY;
+
+export const SALES_RETURN_REQUEST_STEP: StepDefBase<OwnerStepKey, StepScope> = {
+  key: SALES_RETURN_REQUEST_KEY,
+  index: 7,
+  title: "Raise Sales Return",
+  short: "Raise return",
+  scope: "order",
+};
 
 export const SALES_RETURN_STEP: StepDefBase<OwnerStepKey, StepScope> = {
   key: SALES_RETURN_KEY,
-  index: 7,
-  title: "Sales Return",
+  index: 8,
+  // Named like the chain's own "Generate Sales Bill": the owner makes the sales
+  // return in Tally, enters its number and attaches it, and that closes it.
+  title: "Generate Sales Return (Tally)",
   short: "Return",
   scope: "order",
 };
@@ -104,7 +124,11 @@ export const SALES_RETURN_STEP: StepDefBase<OwnerStepKey, StepScope> = {
  * What Setup's owner table lists. NOT what the workflow iterates — see above.
  * Anything that walks the six-step chain must keep using `STEPS`.
  */
-export const OWNER_STEPS: StepDefBase<OwnerStepKey, StepScope>[] = [...STEPS, SALES_RETURN_STEP];
+export const OWNER_STEPS: StepDefBase<OwnerStepKey, StepScope>[] = [
+  ...STEPS,
+  SALES_RETURN_REQUEST_STEP,
+  SALES_RETURN_STEP,
+];
 
 export const ownerStepByKey = (key: string): StepDefBase<OwnerStepKey, StepScope> | undefined =>
   OWNER_STEPS.find((s) => s.key === key);

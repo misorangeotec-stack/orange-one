@@ -4,6 +4,7 @@ import Button from "@/shared/components/ui/Button";
 import Modal from "@/shared/components/ui/Modal";
 import MultiSelect from "@/shared/components/ui/MultiSelect";
 import { FieldLabel } from "@/shared/components/ui/Form";
+import { useDirectory } from "@/core/platform/store";
 import { useAssetStore } from "../../store";
 import { STEPS, type StepKey } from "../../lib/steps";
 
@@ -20,6 +21,7 @@ import { STEPS, type StepKey } from "../../lib/steps";
  */
 export default function StepOwnersSection() {
   const s = useAssetStore();
+  const { profiles } = useDirectory();
   const [editing, setEditing] = useState<StepKey | null>(null);
   const [depts, setDepts] = useState<string[]>([]);
   const [people, setPeople] = useState<string[]>([]);
@@ -47,6 +49,24 @@ export default function StepOwnersSection() {
 
   const unowned = STEPS.filter((st) => (s.stepOwnerFor(st.key)?.employeeIds.length ?? 0) === 0 && !st.noQueue);
 
+  /**
+   * Owning a step grants NOTHING on its own — `fms_asset_can_act` is wrapped in
+   * `module_can_edit`, and `RequireModule` turns the person away at the door. So
+   * an owner without an edit grant on Asset Maintenance cannot open the module at
+   * all, and this screen would otherwise list them as responsible for a step they
+   * will never see. Admins hold no `app_access` row and are "edit" by definition.
+   */
+  const lacksGrant = (userId: string): boolean => {
+    const p = profiles.find((x) => x.id === userId);
+    if (!p) return false; // not readable here — say nothing rather than guess
+    return p.role !== "admin" && p.moduleLevels["asset-maintenance"] !== "edit";
+  };
+
+  const ownersWithoutAccess = STEPS.flatMap((st) => s.stepOwnerFor(st.key)?.employeeIds ?? [])
+    .filter((id, i, all) => all.indexOf(id) === i)
+    .filter(lacksGrant)
+    .map((id) => s.personName(id));
+
   return (
     <div className="space-y-4">
       {unowned.length > 0 && (
@@ -54,6 +74,15 @@ export default function StepOwnersSection() {
           <strong>{unowned.length}</strong> queue {unowned.length === 1 ? "step has" : "steps have"} no
           owner, so only admins can action {unowned.length === 1 ? "it" : "them"} and reminders reach
           nobody but the custodian. Set owners before going live.
+        </p>
+      )}
+
+      {ownersWithoutAccess.length > 0 && (
+        <p className="rounded-lg bg-[#FDECEC] px-3 py-2 text-[12.5px] text-ryg-red">
+          <strong>{ownersWithoutAccess.join(", ")}</strong>{" "}
+          {ownersWithoutAccess.length === 1 ? "owns a step but cannot open" : "own steps but cannot open"}{" "}
+          this module — naming somebody here does not grant it. Give them edit access under{" "}
+          <strong>Admin → Users → Module access</strong>, or the step has no working owner.
         </p>
       )}
 
@@ -114,7 +143,7 @@ export default function StepOwnersSection() {
         <div className="space-y-4">
           <FieldLabel
             label="Departments"
-            hint="Recorded for reference and shown on the job's progress rail. Authorisation comes SOLELY from the people below — fms_asset_is_step_owner reads employee_ids and nothing else."
+            hint="Recorded for reference and shown on the job's progress rail. It grants nothing — only the people named below can action the step."
           >
             <MultiSelect
               values={depts}

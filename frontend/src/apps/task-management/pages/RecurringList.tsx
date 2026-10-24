@@ -16,7 +16,8 @@ import { matchesSearch } from "@/shared/lib/search";
 import { formatDate, formatDateTime } from "@/shared/lib/time";
 import { useSession } from "../mock/session";
 import { useTaskStore } from "../mock/store";
-import { MONTH_LAST_DAY, RECURRENCE_LABEL, type RecurringTask } from "../types";
+import { exportRecurringToXlsx } from "../lib/exportRecurring";
+import { MONTH_LAST_DAY, RECURRENCE_LABEL, type RecurrenceType, type RecurringTask } from "../types";
 
 const DOW = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 
@@ -27,18 +28,31 @@ function ordinal(n: number) {
 }
 
 const NTH_WORD = ["", "1st", "2nd", "3rd", "4th", "5th"];
+const MON = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+
+/** "on the 1st Sat" / "on the 5th, last day" — the Monthly day test, shared by Half-yearly / Yearly. */
+function dayInMonthText(r: RecurringTask) {
+  if (r.monthlyWeekday != null && r.monthlyNth != null) {
+    return `on the ${NTH_WORD[r.monthlyNth] ?? r.monthlyNth + "th"} ${DOW[r.monthlyWeekday]}`;
+  }
+  if (!r.monthlyDays.length) return "";
+  return "on the " + r.monthlyDays.map((d) => (d === MONTH_LAST_DAY ? "last day" : ordinal(d))).join(", ");
+}
 
 export function frequencyText(r: RecurringTask) {
   if (r.recurrenceType === "daily") return "Every working day";
   if (r.recurrenceType === "when") return "As and When (Mon–Sat, optional)";
   if (r.recurrenceType === "quarterly") return "Quarterly — 7 days before quarter-end";
   if (r.recurrenceType === "monthly") {
-    if (r.monthlyWeekday != null && r.monthlyNth != null) {
-      return `Every month on the ${NTH_WORD[r.monthlyNth] ?? r.monthlyNth + "th"} ${DOW[r.monthlyWeekday]}`;
-    }
-    if (!r.monthlyDays.length) return "Monthly";
-    const parts = r.monthlyDays.map((d) => (d === MONTH_LAST_DAY ? "last day" : ordinal(d)));
-    return "Every month on the " + parts.join(", ");
+    const day = dayInMonthText(r);
+    return day ? `Every month ${day}` : "Monthly";
+  }
+  if (r.recurrenceType === "yearly" || r.recurrenceType === "half_yearly") {
+    const m = r.yearlyMonth;
+    if (m == null) return RECURRENCE_LABEL[r.recurrenceType];
+    const months = r.recurrenceType === "yearly" ? MON[m - 1] : `${MON[m - 1]} & ${MON[(m + 5) % 12]}`;
+    const day = dayInMonthText(r);
+    return `${r.recurrenceType === "yearly" ? "Yearly" : "Half-yearly"} — ${months}${day ? " " + day : ""}`;
   }
   if (!r.weeklyDays.length) return "Weekly";
   return "Every " + r.weeklyDays.map((d) => DOW[d]).join(", ");
@@ -47,7 +61,7 @@ export function frequencyText(r: RecurringTask) {
 /** Manage recurring task templates (daily / weekly / monthly). HOD + admin. */
 export default function RecurringList() {
   const { user, role } = useSession();
-  const { recurringTasks, toggleRecurring, generateRecurringNow, deleteRecurring, downlineIds, profileById, actorById, canRecurring } = useTaskStore();
+  const { recurringTasks, toggleRecurring, generateRecurringNow, deleteRecurring, downlineIds, profileById, actorById, departmentById, locationById, canRecurring } = useTaskStore();
   const navigate = useNavigate();
   const [confirmId, setConfirmId] = useState<string | null>(null);
   const [busyId, setBusyId] = useState<string | null>(null);
@@ -56,7 +70,7 @@ export default function RecurringList() {
   // filters + sort — sticky, so opening a row's task and coming Back keeps them
   const sticky = useStickyScope("tm:recurring");
   const [q, setQ] = useStickyState(sticky, "q", "");
-  const [type, setType] = useStickyState<"all" | "daily" | "weekly" | "monthly" | "when" | "quarterly">(sticky, "type", "all");
+  const [type, setType] = useStickyState<"all" | RecurrenceType>(sticky, "type", "all");
   const [activeFilter, setActiveFilter] = useStickyState<"all" | "active" | "paused">(sticky, "activeFilter", "all");
   const [person, setPerson] = useStickyState(sticky, "person", "all");
   const [assigner, setAssigner] = useStickyState(sticky, "assigner", "all");
@@ -120,6 +134,23 @@ export default function RecurringList() {
   if (activeFilter !== "all") chips.push({ key: "status", label: activeFilter === "active" ? "Active" : "Paused", onClear: () => setActiveFilter("all") });
   if (assigner !== "all") chips.push({ key: "assigner", label: `Assigned by: ${actorById(assigner)?.name ?? assigner}`, onClear: () => setAssigner("all") });
   if (person !== "all") chips.push({ key: "person", label: `Assigned to: ${profileById(person)?.name ?? person}`, onClear: () => setPerson("all") });
+  // Export exactly what the filters show (every page, not just this one).
+  const onExport = () => {
+    const rows = filtered.map((r) => ({
+      title: r.title,
+      description: r.description?.trim() ?? "",
+      type: RECURRENCE_LABEL[r.recurrenceType],
+      frequency: frequencyText(r),
+      assignedBy: actorById(r.createdBy)?.name ?? "",
+      assignedTo: profileById(r.assignedTo)?.name ?? "",
+      department: departmentById(r.departmentId)?.name ?? "",
+      locations: r.locationIds.map((id) => locationById(id)?.name).filter(Boolean).join(", "),
+      reminder: r.notifyRequired && r.notifyDaysBefore != null ? `${r.notifyDaysBefore} ${r.notifyDaysBefore === 1 ? "day" : "days"} before` : "No",
+      status: r.active ? "Active" : "Paused",
+      createdOn: formatDate(r.createdAt),
+    }));
+    exportRecurringToXlsx(rows, chips.map((c) => c.label), person !== "all" ? profileById(person)?.name : undefined);
+  };
   const clearAll = () => {
     setQ("");
     setType("all");
@@ -135,6 +166,19 @@ export default function RecurringList() {
           <h2 className="text-[22px] font-bold text-navy">Recurring Tasks</h2>
           <p className="text-grey text-[13px] mt-1">Automate repetitive work with daily and weekly templates.</p>
         </div>
+        <div className="flex flex-wrap items-center gap-2.5">
+        {visible.length > 0 && (
+          <button
+            type="button"
+            onClick={onExport}
+            disabled={filtered.length === 0}
+            title="Download the recurring tasks shown below (all pages) as Excel"
+            className="inline-flex items-center gap-2 rounded-xl border border-line bg-white px-4 py-2.5 text-sm font-semibold text-navy transition hover:border-orange hover:text-orange disabled:opacity-40 disabled:hover:border-line disabled:hover:text-navy"
+          >
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 3v12M7 10l5 5 5-5M5 21h14" /></svg>
+            Export Excel
+          </button>
+        )}
         {canRecurring && (
           <Link
             to="/task-management/recurring/new"
@@ -144,6 +188,7 @@ export default function RecurringList() {
             New Recurring Task
           </Link>
         )}
+        </div>
       </div>
 
       <Card className="overflow-hidden">
@@ -164,7 +209,7 @@ export default function RecurringList() {
               </div>
               <Combobox
                 value={type}
-                onChange={(v) => setType(v as "all" | "daily" | "weekly" | "monthly" | "when" | "quarterly")}
+                onChange={(v) => setType(v as "all" | RecurrenceType)}
                 className="w-full sm:w-auto sm:min-w-[140px]"
                 options={[
                   { value: "all", label: "All types" },
@@ -173,6 +218,8 @@ export default function RecurringList() {
                   { value: "monthly", label: "Monthly" },
                   { value: "when", label: "As and When" },
                   { value: "quarterly", label: "Quarterly" },
+                  { value: "half_yearly", label: "Half-yearly" },
+                  { value: "yearly", label: "Yearly" },
                 ]}
               />
               <Combobox
@@ -255,6 +302,23 @@ export default function RecurringList() {
                       <span className="shrink-0 text-[10px] font-semibold uppercase tracking-wide rounded-pill px-1.5 py-0.5 bg-[#EAF1FE] text-blue">
                         {RECURRENCE_LABEL[r.recurrenceType]}
                       </span>
+                      {r.notifyRequired && r.notifyDaysBefore != null && (
+                        <span
+                          className="shrink-0 text-[10px] font-semibold rounded-pill px-1.5 py-0.5 bg-orange-soft text-orange"
+                          title="Notification required: the assignee is reminded before each date"
+                        >
+                          🔔 {r.notifyDaysBefore} {r.notifyDaysBefore === 1 ? "day" : "days"} before
+                        </span>
+                      )}
+                      {/* Like KraBadge: only the assignee and their direct HOD see a KRA. */}
+                      {r.kraId && (r.assignedTo === user.id || !!assignee?.hodIds.includes(user.id)) && (
+                        <span
+                          className="shrink-0 text-[10px] font-semibold uppercase tracking-wide rounded-pill px-1.5 py-0.5 bg-[#E3F5F1] text-[#0f7b6c]"
+                          title="KRA recurring task: every task it generates is a KRA task, reviewed 1-10 by the HOD"
+                        >
+                          KRA
+                        </span>
+                      )}
                     </div>
                     {r.description?.trim() && (
                       <div className="text-[12px] text-grey mt-0.5 truncate">{r.description}</div>

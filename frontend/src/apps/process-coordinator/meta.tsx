@@ -31,7 +31,7 @@ export const processCoordinatorApp: AppManifest = {
   id: "process-coordinator",
   name: appName("process-coordinator"),
   description:
-    "Every master approval in one queue, and every process at a glance — which step is stuck, and who to call about it.",
+    "Who to call today: everyone with FMS work due, their number, and what they owe — plus every master approval and every process at a glance.",
   basePath: appBasePath("process-coordinator"),
   status: "live",
   category: appCategory("process-coordinator"),

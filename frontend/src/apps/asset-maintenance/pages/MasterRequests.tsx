@@ -107,9 +107,17 @@ export default function MasterRequests() {
             Ask for a list entry you need, and review the ones you own.
           </p>
         </div>
-        <Button size="sm" onClick={() => openRaise(REQUESTABLE_ASSET_MASTER_TYPES[0].value)}>
-          Request a new entry
-        </Button>
+        {/*
+          A VIEW-ONLY grant reads every screen in this module and has no buttons
+          anywhere — this one was the exception, and the server does not catch it:
+          the insert policy on fms_asset_master_requests asks only for is_staff().
+          Travel Desk's equivalent has carried this gate from the start.
+        */}
+        {s.canEdit && (
+          <Button size="sm" onClick={() => openRaise(REQUESTABLE_ASSET_MASTER_TYPES[0].value)}>
+            Request a new entry
+          </Button>
+        )}
       </div>
 
       <Tabs

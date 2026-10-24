@@ -79,6 +79,8 @@ export default function BomMaster() {
         ),
       sortValue: (b) => (b.isDefault ? 0 : 1),
       filter: { kind: "select", get: (b) => (b.isDefault ? "Default" : "Alternate") },
+      // A pill: never cut, no handle (PF-20).
+      resize: false,
     },
     {
       key: "components",

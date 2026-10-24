@@ -68,10 +68,18 @@ export function MultiSelectFilter({
         {showSearch && (
           <div className="relative mb-2">
             <Search className="absolute left-2 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
+            {/* Type to narrow, Enter to tick every match — pick without leaving the keyboard. */}
             <Input
+              autoFocus
               value={query}
               onChange={(e) => setQuery(e.target.value)}
-              placeholder="Search…"
+              onKeyDown={(e) => {
+                if (e.key === "Enter" && query.trim() && shown.length) {
+                  e.preventDefault();
+                  onChange([...new Set([...value, ...shown.map((o) => o.value)])]);
+                }
+              }}
+              placeholder="Type to search · Enter selects matches"
               className="pl-7 h-8 text-sm rounded-input"
             />
           </div>
@@ -95,21 +103,27 @@ export function MultiSelectFilter({
           )}
         </div>
         <div className="border-t border-border my-1" />
-        {value.length < options.length ? (
+        {/* Both, side by side. While searching, Select all ticks only the rows the search shows
+            (added to what is already ticked) — "search SHREE, select all" is how a list of
+            customers gets picked. */}
+        <div className="flex items-center gap-1">
           <button
-            className="w-full text-left px-2 py-1.5 text-xs text-muted-foreground hover:text-foreground rounded-md hover:bg-muted/60"
-            onClick={() => onChange(options.map((o) => o.value))}
+            type="button"
+            disabled={shown.every((o) => value.includes(o.value))}
+            className="flex-1 text-left px-2 py-1.5 text-xs text-muted-foreground hover:text-foreground rounded-md hover:bg-muted/60 disabled:opacity-40 disabled:hover:bg-transparent"
+            onClick={() => onChange([...new Set([...value, ...shown.map((o) => o.value)])])}
           >
-            Select all
+            {query.trim() ? "Select shown" : "Select all"}
           </button>
-        ) : (
           <button
-            className="w-full text-left px-2 py-1.5 text-xs text-muted-foreground hover:text-foreground rounded-md hover:bg-muted/60"
+            type="button"
+            disabled={value.length === 0}
+            className="flex-1 text-right px-2 py-1.5 text-xs text-muted-foreground hover:text-foreground rounded-md hover:bg-muted/60 disabled:opacity-40 disabled:hover:bg-transparent"
             onClick={() => onChange([])}
           >
-            Clear selection
+            Clear all
           </button>
-        )}
+        </div>
       </PopoverContent>
     </Popover>
   );

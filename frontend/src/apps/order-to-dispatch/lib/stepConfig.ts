@@ -417,6 +417,35 @@ export const STEP_CONFIG: Record<QueueStep, StepConfig> = {
         get: (_o, v) => s(v.goOutwardNo) || s(v.gpNo),
       },
       { key: "go_remarks", label: "Remarks", kind: "textarea", get: (_o, v) => s(v.goRemarks) },
+      {
+        /*
+          ⚠ THIS ONE LEAVES THE COMPANY (OD-16). Everything else on this form is
+            internal; what is typed here is published to the customer's own screen
+            the moment it saves, and it is the ONLY remark on the order that ever
+            reaches them.
+
+            It sits directly under "Remarks" so the person writing both can see
+            which box is which, and the label says who reads it rather than what
+            it is — "Note to the customer" cannot be confused with the field above
+            it, whereas a second box labelled "Remarks (customer)" can and would be.
+
+            ⚠ THE WARNING IS THE PLACEHOLDER, NOT A `hint` — there is no `hint` on
+              this type and the note on it says why. The placeholder sits INSIDE
+              the box, costs no vertical space, and is on screen at the one moment
+              it matters: while somebody is about to type. It disappears once there
+              is text, which is correct here — the caution is about starting to
+              write, and the step's `description` carries the standing version.
+
+            Optional on purpose. Most consignments need nothing said about them,
+            and a required field here would be filled with "ok" within a week,
+            which is worse than silence on a screen the customer is reading.
+        */
+        key: "go_customer_remark",
+        label: "Note to the customer",
+        kind: "textarea",
+        placeholder: "The customer reads this on their own screen. Leave blank to tell them nothing.",
+        get: (_o, v) => s(v.goCustomerRemark),
+      },
     ],
     captured: { key: "goOutwardNo", header: "Gate outward no.", get: (_o, v) => s(v.goOutwardNo) || "—" },
   },

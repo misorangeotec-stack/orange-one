@@ -1,7 +1,8 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import Modal from "@/shared/components/ui/Modal";
 import Button from "@/shared/components/ui/Button";
 import ChoiceButtons from "@/shared/components/ui/ChoiceButtons";
+import Combobox from "@/shared/components/ui/Combobox";
 import { FieldLabel, TextArea, TextInput } from "@/shared/components/ui/Form";
 import { todayIso } from "@/shared/lib/time";
 import EvidenceCapture from "./EvidenceCapture";
@@ -18,6 +19,11 @@ import type { ComplaintRequest } from "../types";
  *   the remarks, conclusion and commercial call; its second, after management has
  *   ruled, takes only the closing remarks. Same bucket, same queue, different
  *   question — so the modal asks which pass it is rather than the caller.
+ *
+ * ⚠ MANAGEMENT'S TWO JOBS ARE TWO STEPS, NOT TWO ARMS. `rm_management` is where
+ *   an imported-material complaint is read and either answered or handed on;
+ *   `management_review` is the one-click sign-off every chain ends on. They were
+ *   briefly one key with two passes — see lib/steps.ts for why that was undone.
  */
 export default function StepModal({
   step,
@@ -38,6 +44,29 @@ export default function StepModal({
 
   const pass = servicePass(request);
   const call = g("commercial_call");
+  /** Close it here, or hand it on. Management's first pass only. */
+  const mgmtAction = g("mgmt_action") || "close";
+
+  /**
+   * Everyone the complaint could be handed to.
+   *
+   * ⚠ THE DIRECTORY, NOT THE STEP OWNERS. The whole point of the reassign right
+   *   is that management may pick somebody who owns no step in this module — the
+   *   person who actually knows the imported material. The RPC re-resolves the
+   *   id in `profiles` and refuses one it cannot find, so an id from here is the
+   *   only kind that can be saved.
+   */
+  const peopleOpts = useMemo(
+    () =>
+      [...s.profiles]
+        .sort((a, b) => a.name.localeCompare(b.name))
+        .map((p) => ({
+          value: p.id,
+          label: p.name,
+          sublabel: p.designation ?? undefined,
+        })),
+    [s.profiles],
+  );
 
   const submit = async () => {
     setBusy(true);
@@ -70,6 +99,17 @@ export default function StepModal({
           note: g("note") || null,
           date,
         });
+      } else if (step === "purchase") {
+        await s.recordPurchase(request.id, { remarks: g("remarks"), date });
+      } else if (step === "assignee") {
+        await s.recordAssignee(request.id, { remarks: g("remarks"), date });
+      } else if (step === "rm_management") {
+        await s.recordRmManagement(request.id, {
+          action: mgmtAction as "close" | "assign",
+          assigneeId: mgmtAction === "assign" ? g("assignee_id") || null : null,
+          note: g("note") || null,
+          date,
+        });
       } else if (step === "management_review") {
         await s.recordManagementReview(request.id, { note: g("note") || null, date });
       }
@@ -86,6 +126,16 @@ export default function StepModal({
       ? `Close — ${request.complaintNo}`
       : `${stepByKey(step)?.title ?? step} — ${request.complaintNo}`;
 
+  /** What the primary button promises to do. A sign-off and a hand-off are not "Save". */
+  const submitLabel =
+    step === "rm_management"
+      ? mgmtAction === "assign"
+        ? "Assign"
+        : "Close complaint"
+      : step === "management_review"
+        ? "Review done"
+        : "Save";
+
   return (
     <Modal
       open
@@ -99,7 +149,7 @@ export default function StepModal({
             Cancel
           </Button>
           <Button size="sm" onClick={submit} disabled={busy}>
-            {busy ? "Saving…" : step === "management_review" ? "Review done" : "Save"}
+            {busy ? "Saving…" : submitLabel}
           </Button>
         </>
       }
@@ -190,6 +240,94 @@ export default function StepModal({
             >
               <TextArea rows={3} value={g("note")} onChange={(e) => set("note", e.target.value)} />
             </FieldLabel>
+          </>
+        )}
+
+        {step === "purchase" && (
+          <>
+            <FieldLabel strong label="Purchase remarks" required>
+              <TextArea
+                rows={4}
+                value={g("remarks")}
+                onChange={(e) => set("remarks", e.target.value)}
+                placeholder="What the supplier said, and what has been agreed."
+              />
+            </FieldLabel>
+            <EvidenceCapture complaintId={request.id} stepKey={step} slot="other" label="Attachment" />
+          </>
+        )}
+
+        {step === "assignee" && (
+          <>
+            {/* The brief management wrote when they handed it over. Shown here
+                rather than only in the recap, because it is the ONE thing this
+                person was asked to answer. */}
+            {request.rmAssignNote && (
+              <div className="rounded-xl border border-violet-200 bg-violet-50 px-4 py-3">
+                <div className="text-[11px] text-violet-700">Management asked</div>
+                <div className="text-[13px] font-medium text-navy whitespace-pre-wrap break-words mt-0.5">
+                  {request.rmAssignNote}
+                </div>
+              </div>
+            )}
+            <FieldLabel strong label="Your remarks" required>
+              <TextArea
+                rows={4}
+                value={g("remarks")}
+                onChange={(e) => set("remarks", e.target.value)}
+                placeholder="What you found, and what has been done about it."
+              />
+            </FieldLabel>
+            <EvidenceCapture complaintId={request.id} stepKey={step} slot="other" label="Attachment" />
+          </>
+        )}
+
+        {step === "rm_management" && (
+          <>
+            {/* THE FORK. Close it here, or put it on somebody else's desk. */}
+            <FieldLabel strong label="What would you like to do?" required>
+              <ChoiceButtons
+                ariaLabel="Management action"
+                options={[
+                  { value: "close", label: "Answer and close" },
+                  { value: "assign", label: "Assign to someone" },
+                ]}
+                value={mgmtAction}
+                onChange={(v) => set("mgmt_action", v)}
+              />
+            </FieldLabel>
+
+            {mgmtAction === "assign" && (
+              <FieldLabel
+                strong
+                label="Assign to"
+                required
+                hint="it moves to their queue"
+              >
+                <Combobox
+                  value={g("assignee_id")}
+                  onChange={(v) => set("assignee_id", v)}
+                  options={peopleOpts}
+                  placeholder="Search people"
+                  searchable
+                  wrapLabel
+                  clearable
+                />
+              </FieldLabel>
+            )}
+
+            <FieldLabel
+              strong
+              label={mgmtAction === "assign" ? "What should they do?" : "Management remarks"}
+              required={mgmtAction === "close"}
+              hint={mgmtAction === "assign" ? "optional" : undefined}
+            >
+              <TextArea rows={3} value={g("note")} onChange={(e) => set("note", e.target.value)} />
+            </FieldLabel>
+
+            {mgmtAction === "close" && (
+              <EvidenceCapture complaintId={request.id} stepKey={step} slot="other" label="Attachment" />
+            )}
           </>
         )}
 

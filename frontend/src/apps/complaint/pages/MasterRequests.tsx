@@ -84,6 +84,7 @@ export default function MasterRequests() {
       header: "Proposed value",
       cell: (r) => String(r.proposedPayload.name ?? "—"),
       sortValue: (r) => String(r.proposedPayload.name ?? ""),
+      filter: { kind: "text", get: (r) => String(r.proposedPayload.name ?? "") },
     },
     {
       key: "by",
@@ -97,6 +98,7 @@ export default function MasterRequests() {
       header: "Requested",
       cell: (r) => formatDateTime(r.createdAt),
       sortValue: (r) => r.createdAt,
+      filter: { kind: "date", get: (r) => r.createdAt.slice(0, 10) },
       tdClassName: "whitespace-nowrap",
     },
     {

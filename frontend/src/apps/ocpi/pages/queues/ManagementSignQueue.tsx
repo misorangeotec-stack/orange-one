@@ -57,18 +57,21 @@ export default function ManagementSignQueue() {
         key: "customer",
         header: "Customer",
         cell: (d) => d.customerName ?? "",
+        sortValue: (d) => d.customerName ?? "",
         filter: { kind: "select", get: (d) => d.customerName ?? "" },
       },
       {
         key: "machine",
         header: "Machine",
         cell: (d) => machineName(d.machineId),
+        sortValue: (d) => machineName(d.machineId),
         filter: { kind: "select", get: (d) => machineName(d.machineId) },
       },
       {
         key: "salesperson",
         header: "Salesperson",
         cell: (d) => d.salespersonName ?? "",
+        sortValue: (d) => d.salespersonName ?? "",
         filter: { kind: "select", get: (d) => d.salespersonName ?? "" },
       },
       {

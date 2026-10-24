@@ -76,3 +76,26 @@ verify_jwt = false
 # calling with the anon key. Same reasoning as parse-resume.
 [functions.extract-travel-doc]
 verify_jwt = true
+
+# The monthly FMS ranking (CC-1). Called ONLY by the server: pg_cron posts the
+# `x-dispatch-secret` header (EMAIL_DISPATCH_SECRET) with no JWT to offer, and the
+# function calls itself once per module with the same header. People read the ranking
+# through the fms_rank_board RPC, never through this function. So platform
+# verification is OFF and the function checks the secret itself.
+# Deploy with --no-verify-jwt.
+[functions.fms-ranking]
+verify_jwt = false
+
+# KB-1 · Ask the HR handbook. verify_jwt = true, like parse-resume and
+# analyze-receivables: every caller is a signed-in member of staff clicking the Ask HR
+# bubble, and the function reads the handbook under that caller's own JWT so RLS decides
+# whether they may see it. Deploy WITHOUT --no-verify-jwt.
+[functions.ask-handbook]
+verify_jwt = true
+
+# The KRA / KPI scorecard's nightly facts (KPI-1). Called ONLY by the server, exactly like
+# fms-ranking above: pg_cron posts the `x-dispatch-secret` header with no JWT, and the
+# function calls itself once per module with the same header. People read their figures
+# through the kpi_report RPC, never through this function. Deploy with --no-verify-jwt.
+[functions.kpi-facts]
+verify_jwt = false

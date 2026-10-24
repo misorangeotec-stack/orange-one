@@ -7,6 +7,7 @@ import { useDirectory } from "@/core/platform/store";
 import { useTravelStore } from "../store";
 import { downloadTravelAuthorisation } from "../lib/travelAuthorisationPdf";
 import { downloadClaimForm } from "../lib/claimFormPdf";
+import ExportAttachmentsButton from "./ExportAttachmentsButton";
 import { OPEN_STATUSES, type Trip } from "../types";
 
 /**
@@ -43,9 +44,18 @@ export default function TripActions({ trip }: { trip: Trip }) {
   const mine = trip.raisedBy === s.userId || trip.travellerId === s.userId;
   const canPark = s.canEdit && (mine || s.isProcessCoordinator || s.isAdmin);
 
-  const canHold = canPark && isOpen && trip.status !== "draft" && trip.status !== "on_hold";
+  // A cancellation waiting in the Cancel Trip bucket is neither held nor
+  // cancelled from here — it finishes there. Mirrors fms_travel_hold_trip.
+  const pendingCancel = trip.status === "cancel_pending";
+  const canHold =
+    canPark && isOpen && trip.status !== "draft" && trip.status !== "on_hold" && !pendingCancel;
   const canResume = canPark && trip.status === "on_hold";
-  const canCancel = canPark && isOpen && trip.status !== "draft";
+  // Once tickets are booked only the desk cancels (with the credit note); the
+  // traveller's own cancel is for before booking. Mirrors fms_travel_cancel_trip.
+  const canCancel =
+    canPark && isOpen && trip.status !== "draft" && !pendingCancel &&
+    (trip.bkAt === null || s.isProcessCoordinator || s.isAdmin);
+  const canExport = trip.status !== "draft";
 
   const managerDone = trip.managerApprovalSkipped || trip.maDecision === "approve";
   const directorDone = trip.directorApprovalSkipped || trip.daDecision === "approve";
@@ -114,11 +124,12 @@ export default function TripActions({ trip }: { trip: Trip }) {
       });
     }, "claimpdf");
 
-  if (!canHold && !canResume && !canCancel && !approved && !claimFiled) return null;
+  if (!canHold && !canResume && !canCancel && !approved && !claimFiled && !canExport) return null;
 
   return (
     <>
       <div className="flex flex-wrap items-center gap-3">
+        {canExport && <ExportAttachmentsButton trips={[trip]} />}
         {approved && (
           <Button variant="outline" onClick={makePdf} disabled={!!busy}>
             {busy === "pdf" ? "Building…" : "Travel Authorisation (PDF)"}

@@ -42,6 +42,7 @@ import { useAppData, groupEntryOf, groupNameOf } from "@hub/lib/useAppData";
 import { useReceivablesSource } from "@hub/lib/sourceContext";
 import { useFY } from "@hub/lib/fyContext";
 import { sumOutstanding } from "@hub/lib/receivables";
+import { buildLastReceipts, latestReceiptAcross } from "@hub/lib/collections";
 import { buildGroupTree, sortTree, type GroupNode } from "@hub/lib/groupTree";
 import { creditsOfLedger } from "@hub/lib/agingReport";
 import { loadOnAccountEntries, displayableEntries, type OnAccountEntry } from "@hub/lib/onAccountEntries";
@@ -52,7 +53,8 @@ import { CollectionPlanModal } from "@hub/components/CollectionPlanModal";
 import { FollowupModal } from "@hub/components/FollowupModal";
 import { FollowupRowAction } from "@hub/components/FollowupRowAction";
 import { NextFollowupCell } from "@hub/components/NextFollowupCell";
-import { entityKey, type FollowupEntityType, type Followup } from "@hub/lib/followupTypes";
+import { entityKey, outcomeBadgeClass, outcomeLabel, type FollowupEntityType, type Followup } from "@hub/lib/followupTypes";
+import { DeskAgingCard, billPeriodOf, ledgerAging, type AgingBasis } from "@hub/components/DeskAgingCard";
 import { formatDateDMY } from "@hub/lib/utils";
 import type { Customer, SaleType } from "@hub/lib/types";
 
@@ -132,25 +134,34 @@ function formatDateLong(iso: string): string {
   return ddmmyyyy(d);
 }
 
-// NOTE "gap" is the one key here that is NOT a field on Metrics (it is planned − received), so
-// the sort comparator must branch on it BEFORE its `a.metrics.m[sortKey]` fallback.
-type SortKey = "salesperson" | "sales" | "salesPrev" | "outstandingNow" | "outstandingDebit" | "outstandingCredit" | "due" | "planned" | "gap" | "receivedOnAccount" | "receivedAgainst" | "received" | "pendingGross" | "onAccount" | "pending" | "collectionPct" | "collectionPctPrev";
+// NOTE "gap" and "pendingOverdue" are the keys here that are NOT fields on Metrics (planned −
+// received, and pending − dueSoon), so the sort comparator must branch on them BEFORE its
+// `a.metrics.m[sortKey]` fallback.
+type SortKey = "salesperson" | "sales" | "salesPrev" | "outstandingNow" | "outstandingDebit" | "outstandingCredit" | "due" | "planned" | "gap" | "receivedOnAccount" | "receivedAgainst" | "received" | "pendingGross" | "onAccount" | "pendingOverdue" | "dueSoon" | "pending" | "collectionPct" | "collectionPctPrev";
 type SortDir = "asc" | "desc";
 
 /* ── Columns ──────────────────────────────────────────────────────────────────
    Every column the picker offers. This is DELIBERATELY a superset of SortKey and must stay
    separate from it: the sort comparator ends in `a.metrics.m[sortKey]`, so a key that is not a
-   field on Metrics cannot be a SortKey. Four columns here aren't sortable for exactly that reason
-   (the two follow-up columns are text, and `pendingOverdue` is derived), and they simply omit the
-   `sort` field on their definition. */
+   field on Metrics needs its own branch there before it can be a SortKey. The two follow-up
+   columns are text and aren't sortable; they simply omit the `sort` field on their definition. */
 type ColKey =
   | Exclude<SortKey, "salesperson">
-  | "nextFollowup" | "lastRemark" | "pendingOverdue" | "dueSoon";
+  | "nextFollowup" | "lastOutcome" | "lastRemark" | "owner";
 
 /** The shape the report has always opened on. A saved layout replaces this; nothing else does. */
 const DEFAULT_COLS: ColKey[] = [
   "sales", "salesPrev", "due", "planned", "gap",
   "received", "outstandingNow", "pending", "collectionPct", "collectionPctPrev",
+];
+
+/**
+ * The Collection Desk's opening shape (21-10-2026): the money a collector chases with, then the
+ * follow-up log — Follow-ups' own columns — on the same row. Saved separately from the report's.
+ */
+const DESK_COLS: ColKey[] = [
+  "nextFollowup", "lastOutcome", "lastRemark", "owner",
+  "received", "outstandingNow", "pendingOverdue", "dueSoon", "pending", "collectionPct",
 ];
 
 /**
@@ -162,7 +173,7 @@ const DEFAULT_COLS: ColKey[] = [
  * applied when rendering instead. Module-level so its identity is stable across renders.
  */
 const ALL_COL_KEYS: ColKey[] = [
-  "nextFollowup", "lastRemark", "sales", "salesPrev", "due", "planned", "gap",
+  "nextFollowup", "lastOutcome", "lastRemark", "owner", "sales", "salesPrev", "due", "planned", "gap",
   "receivedOnAccount", "receivedAgainst", "received",
   "outstandingDebit", "outstandingCredit", "outstandingNow",
   "pendingGross", "onAccount", "pendingOverdue", "dueSoon", "pending",
@@ -342,15 +353,21 @@ function entityOfNode(n: GroupNode<CM>): { type: FollowupEntityType; name: strin
 
 /* ── Component ─────────────────────────────────────────────── */
 
-export default function SalespersonCollectionReport() {
-  const { label: fyLabel } = useFY();
+/**
+ * `desk` renders the Collection Desk (21-10-2026): THIS report — same filters, same figures, same
+ * table — opened one row per customer group with the follow-up columns on, the aging card of the
+ * customer page summed over every customer shown, and only customers with something still open.
+ * One engine on purpose: the desk's totals can never disagree with this report's.
+ */
+export default function SalespersonCollectionReport({ desk = false }: { desk?: boolean } = {}) {
+  const { label: fyLabel, selected: selectedFYs } = useFY();
   const { loading, error, allCustomers, customerDetail, dashboard, customerGroupMap } = useAppData();
   const isLive = useReceivablesSource() === "connectwave";
   // The payment-chase log, shared with the Risk Register / Follow-ups page (same query key, so
   // this is not a second fetch). MUST stay above the loading/error early returns below — React
   // counts hooks per render, and a hook placed after them makes the first post-load render carry
   // one hook more than the loading render. See the note on `creditLedgers`.
-  const { latestByEntity } = useFollowups();
+  const { latestByEntity, personName } = useFollowups();
 
   const asOfDate = dashboard?.asOfDate ?? new Date().toISOString().slice(0, 10);
   const months = useMemo(() => (dashboard?.trend ?? []).map((t) => t.month), [dashboard]);
@@ -374,12 +391,16 @@ export default function SalespersonCollectionReport() {
   const [customerSearch, setCustomerSearch] = useState<string>("");
   // Aging-style group-by: an ordered list of dimensions rolled up with subtotals at
   // every level. Default mirrors the old Salesperson → Customer view.
-  const [groupBy, setGroupBy] = useState<CDim[]>(["salesperson", "customer"]);
+  const [groupBy, setGroupBy] = useState<CDim[]>(desk ? ["group"] : ["salesperson", "customer"]);
+  // Desk only: the aging card's lens, and the buckets clicked on it (empty = no bucket filter).
+  const [agingBasis, setAgingBasis] = useState<AgingBasis>("overdue");
+  const [agingPick, setAgingPick] = useState<Set<string>>(new Set());
   // Which columns are on. ONE control now owns every column, including the Received / Outstanding
   // / Due Pending breakups and the two follow-up columns — all of which used to hide behind
   // unlabelled +/− buttons in the table header. DEFAULT_COLS is deliberately the shape the report
   // has always opened on, so nobody's table changes underneath them.
-  const [visibleCols, setVisibleCols] = useState<ColKey[]>(DEFAULT_COLS);
+  const defaultCols = desk ? DESK_COLS : DEFAULT_COLS;
+  const [visibleCols, setVisibleCols] = useState<ColKey[]>(defaultCols);
   // Groups folded shut on the table, by their +/− heading button. A passing reading aid layered
   // OVER the picks above — never a substitute for them — so it starts empty and is not saved: a
   // reopened report shows every column you chose, which is the only honest reading of a saved
@@ -388,7 +409,8 @@ export default function SalespersonCollectionReport() {
   // This user's own saved layout, read from profiles.receivables_report_prefs — so it follows them
   // to any browser rather than living in one machine's localStorage. Fails soft: while it loads,
   // and forever if the column isn't there, the report simply uses DEFAULT_COLS.
-  const colPrefs = useReportColumnPrefs(REPORT_PREF_IDS.salespersonCollection, ALL_COL_KEYS);
+  const colPrefs = useReportColumnPrefs(
+    desk ? REPORT_PREF_IDS.collectionDesk : REPORT_PREF_IDS.salespersonCollection, ALL_COL_KEYS);
   // ONE-SHOT. Without the ref, every hand-toggle would be overwritten by the saved set on the
   // next render and the picker would be unusable.
   const appliedPref = useRef(false);
@@ -542,7 +564,8 @@ export default function SalespersonCollectionReport() {
       const set = new Set(collectionTeams);
       d = d.filter((c) => set.has(c.collectionTeam));
     }
-    if (categories.length) d = d.filter((c) => matchesCategory(c, categories));
+    // Always applied: an empty selection is the default, which hides Legal customers.
+    d = d.filter((c) => matchesCategory(c, categories));
     // Customer Segment — judged on the customer's COMBINED (consolidate-by-name) activity,
     // exactly like the Dashboard (useAppData groups ledgers by name BEFORE the segment filter:
     // "segment must be judged on their combined totals, not individual rows"). Judging per raw
@@ -950,7 +973,7 @@ export default function SalespersonCollectionReport() {
 
   // Hide only fully-empty ledgers (no balance and no activity). Customers in advance
   // (negative outstanding) stay so rows tally exactly to the Grand Total.
-  const activeRows = useMemo(
+  const baseRows = useMemo(
     () => filteredCustomers.filter((c) => {
       const m = customerMetrics.get(c.id);
       // Test the GROSS due, never the net: a customer whose entire due is covered by untagged
@@ -960,14 +983,28 @@ export default function SalespersonCollectionReport() {
       // A PLANNED customer is always listed, even at zero balance. Otherwise a plan made against
       // future billing — or against a customer who has since settled — silently vanishes from the
       // table AND from the grand-total Planned, which would then read lower than what was typed in.
-      return m != null && (
+      if (m == null) return false;
+      // The desk lists only customers with something still OPEN — a balance owed, or bills pending
+      // (overdue or coming due) — so a settled customer, or one sitting purely in advance, is off it.
+      if (desk) return Math.round(m.outstanding) > 0 || Math.round(m.pendingGross) > 0;
+      return (
         Math.round(m.outstanding) !== 0 ||
         Math.round(m.pendingGross + m.received) !== 0 ||
         m.planned !== 0
       );
     }),
-    [filteredCustomers, customerMetrics],
+    [filteredCustomers, customerMetrics, desk],
   );
+
+  // Desk: the aging card reads `baseRows`; a bucket clicked on it narrows everything below.
+  const agingPeriod = useMemo(() => billPeriodOf(selectedFYs, asOfDate), [selectedFYs, asOfDate]);
+  const activeRows = useMemo(() => {
+    if (!desk || agingPick.size === 0) return baseRows;
+    return baseRows.filter((c) => {
+      const { buckets } = ledgerAging(c, customerDetail[c.id], agingBasis, agingPeriod, asOfDate);
+      return [...agingPick].some((k) => Math.abs(buckets[k] ?? 0) >= 0.5);
+    });
+  }, [desk, baseRows, agingPick, agingBasis, agingPeriod, customerDetail, asOfDate]);
 
   const tree = useMemo(
     () => buildGroupTree<Customer, CM>(activeRows, groupBy, {
@@ -981,6 +1018,14 @@ export default function SalespersonCollectionReport() {
       add: (acc, x) => { addInto(acc.m, x.m); addInto(acc.mPrev, x.mPrev); },
     }),
     [activeRows, groupBy, dimValue, customerMetrics, customerMetricsPrev],
+  );
+
+  // Last payment received, per ledger — the same figures the Collection Performance report
+  // shows. Built from RAW ledgers (allCustomers), never consolidated ones: consolidateByName
+  // keeps only the first ledger's lastReceiptDate.
+  const lastReceiptByLedger = useMemo(
+    () => buildLastReceipts(allCustomers, customerDetail, isLive ? "live" : "pipeline"),
+    [allCustomers, customerDetail, isLive],
   );
 
 
@@ -1340,12 +1385,36 @@ export default function SalespersonCollectionReport() {
       ),
     },
     {
+      key: "lastOutcome", label: "Last Outcome",
+      help: "How the last chase went, from the follow-up log.",
+      legal: true, xlsxKind: "text",
+      cell: (c) => (
+        <TableCell>
+          {c.latest
+            ? <span className={`rounded border px-1.5 py-0.5 text-[10px] font-semibold uppercase whitespace-nowrap ${outcomeBadgeClass(c.latest.outcome)}`}>
+                {outcomeLabel(c.latest.outcome)}
+              </span>
+            : <span className="text-[10px] text-muted-foreground">—</span>}
+        </TableCell>
+      ),
+    },
+    {
       key: "lastRemark", label: "Last Remark",
       help: "What was said the last time this customer was chased.",
       legal: true, xlsxKind: "text",
       cell: (c) => (
         <TableCell className="text-[11px] text-muted-foreground max-w-[220px] truncate" title={c.latest?.remarks || ""}>
           {c.latest?.remarks || "—"}
+        </TableCell>
+      ),
+    },
+    {
+      key: "owner", label: "Owner",
+      help: "Who logged the last follow-up — they own the next chase, as on the Follow-ups page.",
+      legal: true, xlsxKind: "text",
+      cell: (c) => (
+        <TableCell className="whitespace-nowrap text-[11px] text-muted-foreground">
+          {c.latest ? personName(c.latest.createdBy) : "—"}
         </TableCell>
       ),
     },
@@ -1458,14 +1527,14 @@ export default function SalespersonCollectionReport() {
     },
     {
       key: "pendingOverdue", label: `Due Pending — ${pendingNowLabel}`, short: pendingNowLabel,
-      section: "pending", sub: true,
+      section: "pending", sub: true, sort: "pendingOverdue",
       help: "The overdue slice — bills already past their due date. Matches the dashboard.",
       legal: true, xlsxKind: "money", xlsx: (m) => m.pending - m.dueSoon,
       cell: (c) => <TableCell className={`${sz(c.strong)}${money} text-muted-foreground${c.edge}`}>{fmt(c.m.pending - c.m.dueSoon)}</TableCell>,
     },
     {
       key: "dueSoon", label: `Due Pending — ${pendingTillLabel}`, short: pendingTillLabel,
-      section: "pending", sub: true,
+      section: "pending", sub: true, sort: "dueSoon",
       help: "Bills that are not overdue yet, but fall due before month-end.",
       legal: true, xlsxKind: "money", xlsx: (m) => m.dueSoon,
       cell: (c) => <TableCell className={`${sz(c.strong)}${money} text-muted-foreground${c.edge}`}>{fmt(c.m.dueSoon)}</TableCell>,
@@ -1597,6 +1666,7 @@ export default function SalespersonCollectionReport() {
       if (sortKey === "collectionPctPrev")  return dir * ((collectionPct(a.metrics.mPrev) ?? -1) - (collectionPct(b.metrics.mPrev) ?? -1));
       // Derived, not stored — must be handled before the Metrics-key fallback below.
       if (sortKey === "gap")                return dir * (planGap(a.metrics.m) - planGap(b.metrics.m));
+      if (sortKey === "pendingOverdue")     return dir * ((a.metrics.m.pending - a.metrics.m.dueSoon) - (b.metrics.m.pending - b.metrics.m.dueSoon));
       return dir * (a.metrics.m[sortKey] - b.metrics.m[sortKey]);
     };
     return sortTree(tree.roots, cmp);
@@ -1694,7 +1764,7 @@ export default function SalespersonCollectionReport() {
   /* ── Export ── */
   const handleExport = () => {
     const aoa: (string | number)[][] = [];
-    aoa.push(["Salesperson Collection Report"]);
+    aoa.push([desk ? "Collection Desk" : "Salesperson Collection Report"]);
     aoa.push([`Financial Year: ${fyLabel}`]);
     aoa.push([`Month: ${selectedMonth}`]);
     aoa.push([`As on: ${formatDateLong(asOfDate)}`]);
@@ -1788,9 +1858,10 @@ export default function SalespersonCollectionReport() {
     /** The follow-up cells, which come from the follow-up log rather than from Metrics. */
     const followupsOf = (fu: Followup | undefined): string[] =>
       followupCols.map((c) =>
-        c.key === "nextFollowup"
-          ? (fu?.nextFollowupDate ? formatDateDMY(fu.nextFollowupDate) : "")
-          : (fu?.remarks ?? ""),
+        c.key === "nextFollowup" ? (fu?.nextFollowupDate ? formatDateDMY(fu.nextFollowupDate) : "")
+        : c.key === "lastOutcome" ? (fu ? outcomeLabel(fu.outcome) : "")
+        : c.key === "owner" ? (fu ? personName(fu.createdBy) : "")
+        : (fu?.remarks ?? ""),
       );
 
     for (const d of flat) {
@@ -1870,7 +1941,7 @@ export default function SalespersonCollectionReport() {
     XLSX.utils.book_append_sheet(wb, ws, "Collection");
     const buf = XLSX.write(wb, { bookType: "xlsx", type: "array" });
     const blob = new Blob([buf], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
-    saveAs(blob, `Salesperson-Collection_${selectedMonth}_${asOfDate}.xlsx`);
+    saveAs(blob, `${desk ? "Collection-Desk" : "Salesperson-Collection"}_${selectedMonth}_${asOfDate}.xlsx`);
   };
 
   // Ledgers sitting in net credit, grouped by their TALLY group (master data — a new group in
@@ -2157,6 +2228,20 @@ export default function SalespersonCollectionReport() {
                       {n.sub}
                     </div>
                   )}
+                  {(() => {
+                    const lr = latestReceiptAcross(n.ids, lastReceiptByLedger);
+                    const text = lr
+                      ? `Last recd: ${formatDateLong(lr.date)}${lr.amount !== null ? ` · ${fmt(lr.amount)}` : ""}`
+                      : "No receipt on record";
+                    return (
+                      <div
+                        className={`truncate text-[10px] font-normal leading-tight mt-0.5 ${lr ? "text-emerald-700 dark:text-emerald-400" : "text-muted-foreground opacity-70"}`}
+                        title={hasChildren ? `${text} — latest payment across all ${n.children.length} rows below` : text}
+                      >
+                        {text}
+                      </div>
+                    );
+                  })()}
                 </div>
               </TableCell>
             ); })()}
@@ -2189,7 +2274,7 @@ export default function SalespersonCollectionReport() {
           </div>
           <div>
             <div className="flex items-center gap-2">
-              <h1 className="text-2xl font-bold text-foreground">Salesperson Collection Report</h1>
+              <h1 className="text-2xl font-bold text-foreground">{desk ? "Collection Desk" : "Salesperson Collection Report"}</h1>
               {/* Same badge the topbar shows in Live mode. Repeated here because this report used to
                   ALSO exist as a separate "Collection Report (Tally Live)" menu item, and the two were
                   indistinguishable on screen — so the source is now called out on the report itself. */}
@@ -2212,7 +2297,7 @@ export default function SalespersonCollectionReport() {
             visible={legalVisible}
             onChange={mergeVisible}
             onSave={() => colPrefs.save(visibleCols)}
-            onResetSaved={async () => { await colPrefs.clear(); setVisibleCols(DEFAULT_COLS); }}
+            onResetSaved={async () => { await colPrefs.clear(); setVisibleCols(defaultCols); }}
             hasSaved={colPrefs.saved !== null}
             saving={colPrefs.saving}
             saveError={colPrefs.error}
@@ -2369,6 +2454,25 @@ export default function SalespersonCollectionReport() {
           );
         })}
       </div>
+      {desk && (
+        <DeskAgingCard
+          ledgers={baseRows}
+          customerDetail={customerDetail}
+          asOfDate={asOfDate}
+          period={agingPeriod}
+          basis={agingBasis}
+          onBasis={(b) => { setAgingBasis(b); setAgingPick(new Set()); }}
+          selected={agingPick}
+          onToggle={(k) => setAgingPick((prev) => {
+            const next = new Set(prev);
+            if (next.has(k)) next.delete(k); else next.add(k);
+            return next;
+          })}
+          onClear={() => setAgingPick(new Set())}
+          fmt={fmt}
+          fmtAxis={fmt}
+        />
+      )}
       <details className="group -mt-3 text-[11px] text-muted-foreground">
         <summary className="flex items-center gap-1 cursor-pointer select-none list-none w-fit font-medium hover:text-foreground">
           <ChevronRight className="h-3 w-3 transition-transform group-open:rotate-90" />
@@ -2412,13 +2516,13 @@ export default function SalespersonCollectionReport() {
           </span>
           <span className="text-[11px] text-muted-foreground inline-flex items-center gap-1">Click a row to expand; the top level also scopes the Monthly analysis. <Plus className="h-3 w-3 inline" />/<Minus className="h-3 w-3 inline" /> on a group heading folds its breakup; the <Pin className="h-3 w-3 inline" /> on the group column freezes it while scrolling</span>
         </div>
-        <ScrollableTable>
-          <Table>
-            <TableHeader>
+        <ScrollableTable maxHeight="max-h-[calc(100vh_-_190px)]">
+          <Table resizeKey={desk ? "collection.desk" : "collection.people"}>
+            <TableHeader className="sticky top-0 z-30 bg-muted">
               {/* Received, Outstanding and Due Pending each band their breakup under a banner —
                   but only while TWO or more of that section's columns are on. Leave one and it
                   renders as an ordinary column, which is exactly how the report looks by default. */}
-              <TableRow className="bg-muted/50">
+              <TableRow className="bg-muted">
                 <TableHead
                   ref={chevRef}
                   rowSpan={anyBanner ? 2 : 1}
@@ -2467,7 +2571,7 @@ export default function SalespersonCollectionReport() {
                 )}
               </TableRow>
               {anyBanner && (
-                <TableRow className="bg-muted/50">
+                <TableRow className="bg-muted">
                   {headGroups.map((g) =>
                     g.kind === "banner"
                       ? g.cols.map((col) => <Fragment key={col.key}>{colHead(col, { banded: true })}</Fragment>)
@@ -2584,7 +2688,7 @@ export default function SalespersonCollectionReport() {
 
             {/* Month table */}
             <ScrollableTable>
-              <Table>
+              <Table resizeKey="collection.customers">
                 <TableHeader>
                   {/* This panel follows the main table's Received / Due Pending breakups — turn
                       them on with Columns above and they band here too. */}
@@ -2775,7 +2879,7 @@ export default function SalespersonCollectionReport() {
               `flex-1 min-h-0` passed through className lands on the inner div and never resolves
               to a height — which leaves the list unconstrained and unscrollable. */}
           <ScrollableTable maxHeight="max-h-[60vh]" className="rounded-card border border-border">
-            <Table>
+            <Table resizeKey="collection.invoices">
               <TableHeader className="sticky top-0 bg-background z-10">
                 <TableRow>
                   <TableHead className="text-xs">Ledger</TableHead>

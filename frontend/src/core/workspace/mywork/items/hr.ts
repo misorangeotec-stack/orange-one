@@ -30,7 +30,7 @@
  */
 import { appName } from "@/apps/appInfo";
 import type { HrData } from "@/apps/hr-recruitment/data/hrFetch";
-import { buildQueueEntries, hrSnapshotFrom } from "@/apps/hr-recruitment/lib/queues";
+import { buildHeldEntries, buildQueueEntries, hrSnapshotFrom } from "@/apps/hr-recruitment/lib/queues";
 import { isHodStep, stepByKey } from "@/apps/hr-recruitment/lib/steps";
 import { isMineByStepOwners, type StepOwnerRow } from "@/shared/lib/fmsOwners";
 import type { WorkItem } from "../types";
@@ -110,9 +110,19 @@ export function hrWorkItems(data: HrData, uid: string, isAdmin: boolean): WorkIt
       : isMineByStepOwners(stepKey, uid, owners);
   };
 
-  return buildQueueEntries(hrSnapshotFrom(data))
-    .filter((e) => isAdmin || isMine(e.stepKey, e.requisitionId, e.entityId))
-    .map((e) => ({
+  const snap = hrSnapshotFrom(data);
+  const reasonByReq = new Map(data.requisitions.map((r) => [r.id, r.holdReason]));
+
+  // Held requisitions are listed, flagged, at the step they are parked at — see
+  // ./officeSupplies.ts for why they are added back rather than dropped.
+  const entries = [
+    ...buildQueueEntries(snap).map((e) => ({ e, held: false })),
+    ...buildHeldEntries(snap).map((e) => ({ e, held: true })),
+  ];
+
+  return entries
+    .filter(({ e }) => isAdmin || isMine(e.stepKey, e.requisitionId, e.entityId))
+    .map(({ e, held }) => ({
       id: `hr:${e.entityId}:${e.stepKey}`,
       source: "hr",
       sourceLabel: appName("hr-recruitment"),
@@ -126,5 +136,6 @@ export function hrWorkItems(data: HrData, uid: string, isAdmin: boolean): WorkIt
       }`,
       assignment: isMine(e.stepKey, e.requisitionId, e.entityId) ? ("direct" as const) : ("team" as const),
       isApproval: APPROVAL_STEPS.has(e.stepKey),
+      ...(held ? { isHeld: true, holdReason: reasonByReq.get(e.entityId) ?? null } : {}),
     }));
 }

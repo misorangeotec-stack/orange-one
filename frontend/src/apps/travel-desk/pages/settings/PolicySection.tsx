@@ -18,8 +18,8 @@ import type { TravelPolicyConfig } from "../../types";
  * ⚠ TWO OF THESE ARE ENFORCED IN SQL AND THE REST ARE NOT, and the screen
  *   separates them, because an admin editing a number that stops somebody
  *   claiming deserves to know that is what it does:
- *     · the 30-day hard stop REFUSES a claim (§11.3)
- *     · the advance ceiling REFUSES a disbursement above it (§11.1)
+ *     · the 30-day hard stop REFUSES a claim (Section 11.3)
+ *     · the advance ceiling REFUSES a disbursement above it (Section 11.1)
  *   Everything else advises, warns or colours a cell.
  *
  * ⚠ THE RATES ARE NOT HERE. Hotel caps, DA and mileage live on the effective-
@@ -49,28 +49,28 @@ const GROUPS: { title: string; blurb: string; rows: Row[] }[] = [
         label: "Co-passengers per trip",
         section: "PRD",
         unit: "people",
-        hint: "How many other travellers can ride on one booking. Reimbursement is still personal — §11 is entirely per-employee.",
+        hint: "How many other travellers can ride on one booking. Reimbursement is still personal — Section 11 is entirely per-employee.",
       },
       {
         key: "bookingWindowDays",
         label: "Request ahead of departure",
-        section: "§3.3",
+        section: "Section 3.3",
         unit: "days",
         hint: "How far ahead a trip should be raised. A shorter notice is allowed and simply flagged.",
       },
       {
         key: "advanceBookingWarnDays",
         label: "Warn when booking inside",
-        section: "§4.1",
+        section: "Section 4.1",
         unit: "days",
         hint: "Air fares rise sharply inside this window, so the booking screen says so.",
       },
       {
         key: "emergencyWindowHours",
         label: "Regularise emergency travel within",
-        section: "§3.5",
+        section: "Section 3.5",
         unit: "hours",
-        hint: "Travel taken without prior approval must be regularised inside this window, or §3.5 prices the whole trip at TC-D. The two figures in the source (24h from departure, 48h from return) disagree — H4.",
+        hint: "Travel taken without prior approval must be regularised inside this window, or Section 3.5 prices the whole trip at TC-D. The two figures in the source (24h from departure, 48h from return) disagree — H4.",
       },
     ],
   },
@@ -81,7 +81,7 @@ const GROUPS: { title: string; blurb: string; rows: Row[] }[] = [
       {
         key: "advanceMaxPct",
         label: "Advance ceiling",
-        section: "§11.1",
+        section: "Section 11.1",
         unit: "% of the estimate",
         hint: "An advance may not exceed this share of the estimated cost.",
         enforced: true,
@@ -89,7 +89,7 @@ const GROUPS: { title: string; blurb: string; rows: Row[] }[] = [
       {
         key: "advanceRecoveryDays",
         label: "Recover an unused advance within",
-        section: "§11.2",
+        section: "Section 11.2",
         unit: "days",
         hint: "How long after a cancelled or unclaimed trip the money should be back. It ages the Outstanding Advances report; it does not refuse anything.",
       },
@@ -102,22 +102,22 @@ const GROUPS: { title: string; blurb: string; rows: Row[] }[] = [
       {
         key: "claimDeadlineDays",
         label: "File a claim within",
-        section: "§11.1",
+        section: "Section 11.1",
         unit: "working days of return",
         hint: "Drives the claim queue's due date. A late claim is red, not refused.",
       },
       {
         key: "claimHardStopDays",
         label: "Hard stop after travel",
-        section: "§11.3",
+        section: "Section 11.3",
         unit: "days",
         hint: "Past this, a claim line is allowed NOTHING without written Director approval. This one genuinely refuses.",
         enforced: true,
       },
       {
         key: "hotelCapHardMultiple",
-        label: "§7.3 hard ceiling",
-        section: "§7.3",
+        label: "Section 7.3 hard ceiling",
+        section: "Section 7.3",
         unit: "× the hotel cap",
         hint: "Evidence plus HOD approval can take a hotel line above its cap, but never above this multiple. Beyond it needs written Director approval.",
         enforced: true,
@@ -127,33 +127,33 @@ const GROUPS: { title: string; blurb: string; rows: Row[] }[] = [
   {
     title: "Turnaround and disputes",
     blurb:
-      "§12's promise, and who decides when somebody disagrees with it. The per-step due dates above are what actually colour a queue; these are the figures the policy quotes.",
+      "Section 12's promise, and who decides when somebody disagrees with it. The per-step due dates above are what actually colour a queue; these are the figures the policy quotes.",
     rows: [
       {
         key: "hodReviewDays",
         label: "Manager decides within",
-        section: "§12",
+        section: "Section 12",
         unit: "working days",
-        hint: "Past this the employee may escalate to the HR Head (§12.1).",
+        hint: "Past this the employee may escalate to the HR Head (Section 12.1).",
       },
       {
         key: "financeProcessDays",
         label: "Finance processes within",
-        section: "§12",
+        section: "Section 12",
         unit: "working days of HOD approval",
-        hint: "Past this the employee may escalate to the CFO (§12.1).",
+        hint: "Past this the employee may escalate to the CFO (Section 12.1).",
       },
       {
         key: "creditDays",
         label: "Money credited within",
-        section: "§12",
+        section: "Section 12",
         unit: "working days of HOD approval",
         hint: "Counted from the manager's approval, not from Finance's verification — so Finance taking its full window does not buy another week.",
       },
       {
         key: "disputeThreshold",
         label: "HR Head's decision is final below",
-        section: "§12.2",
+        section: "Section 12.2",
         unit: "",
         hint: "A disputed claim above this figure is decided by a Director instead.",
         money: true,

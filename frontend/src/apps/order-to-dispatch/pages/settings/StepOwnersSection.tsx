@@ -1,10 +1,13 @@
-import { useMemo, useState } from "react";
+import { useMemo, useState, type ReactNode } from "react";
 import Card from "@/shared/components/ui/Card";
 import Button from "@/shared/components/ui/Button";
 import Modal from "@/shared/components/ui/Modal";
 import MultiSelect, { type MultiOption } from "@/shared/components/ui/MultiSelect";
 import { FieldLabel } from "@/shared/components/ui/Form";
 import { ScrollableTable } from "@/core/shared/components/ScrollableTable";
+import { FitCell } from "@/shared/components/ui/ColumnResizer";
+import { FIT } from "@/shared/lib/tableLook";
+import { useColumnWidths } from "@/shared/lib/useColumnWidths";
 import { useDispatchStore } from "../../store";
 import { OWNER_STEPS, type OwnerStepKey } from "../../lib/steps";
 
@@ -107,6 +110,20 @@ export default function StepOwnersSection() {
     }
   };
 
+  /**
+   * PF-20: one line per row, a long owner list cut at the table's cut width and whole on hover.
+   * A settings matrix, so no drag handles (the user, 19-09-2026).
+   */
+  const fit = useColumnWidths("tb", ["step", "location", "owners"]);
+  const cut = (col: string, node: ReactNode) =>
+    fit.on ? (
+      <FitCell fit={fit} col={col} cap={FIT.CUT}>
+        {node}
+      </FitCell>
+    ) : (
+      node
+    );
+
   const editingStep = OWNER_STEPS.find((st) => st.key === editing?.step);
   const editingSite = editing?.locationId ? s.masterName("company_location", editing.locationId) : "All locations";
   const overridden = !!editing?.locationId && !!s.stepOwnerFor(editing.step, editing.locationId);
@@ -127,7 +144,11 @@ export default function StepOwnersSection() {
     if (names.length) return <span className="text-navy">{names.join(", ")}</span>;
     return (
       <span className="text-grey-2">
-        {step === "sales_order" && locationId === null ? "Anyone with access may raise" : "Unassigned"}
+        {step === "sales_order" && locationId === null
+          ? "Anyone with access may raise"
+          : step === "sales_return_request" && locationId === null
+            ? "Order raiser, coordinators & Tally owners may raise"
+            : "Unassigned"}
       </span>
     );
   };
@@ -153,7 +174,7 @@ export default function StepOwnersSection() {
                 <th className="font-medium px-4 py-3">Owners</th>
               </tr>
             </thead>
-            <tbody>
+            <tbody {...fit.tbodyProps}>
               {OWNER_STEPS.map((st) => {
                 const isOpen = expanded.has(st.key);
                 return (
@@ -180,7 +201,7 @@ export default function StepOwnersSection() {
                           </button>
                         )}
                       </td>
-                      <td className="px-4 py-3">{ownerCell(st.key, null)}</td>
+                      <td className="px-4 py-3">{cut("owners", ownerCell(st.key, null))}</td>
                     </tr>
 
                     {isOpen &&
@@ -197,18 +218,23 @@ export default function StepOwnersSection() {
                           <td className="px-4 py-2.5" />
                           <td className="px-4 py-2.5" />
                           <td className="px-4 py-2.5 whitespace-nowrap text-grey pl-8">
-                            {site.name}
-                            {/* Every company that dispatches from this site, not
-                                one. The site used to be stored once per company,
-                                so a single name was the whole truth; now it is
-                                one shed serving several, and naming only the
-                                first would read as "this row is that company's". */}
-                            <span className="text-grey-2 text-[12px]">
-                              {" "}
-                              · {site.companyIds.map((id) => s.masterName("company", id)).join(" · ")}
-                            </span>
+                            {cut(
+                              "location",
+                              <>
+                                {site.name}
+                                {/* Every company that dispatches from this site, not
+                                    one. The site used to be stored once per company,
+                                    so a single name was the whole truth; now it is
+                                    one shed serving several, and naming only the
+                                    first would read as "this row is that company's". */}
+                                <span className="text-grey-2 text-[12px]">
+                                  {" "}
+                                  · {site.companyIds.map((id) => s.masterName("company", id)).join(" · ")}
+                                </span>
+                              </>,
+                            )}
                           </td>
-                          <td className="px-4 py-2.5">{ownerCell(st.key, site.id)}</td>
+                          <td className="px-4 py-2.5">{cut("owners", ownerCell(st.key, site.id))}</td>
                         </tr>
                       ))}
                   </>
@@ -248,9 +274,19 @@ export default function StepOwnersSection() {
               driver-confirms-their-own-delivery path went with the Drivers master.
             </p>
           )}
+          {editing?.step === "sales_return_request" && (
+            <p className="text-[12.5px] text-grey-2">
+              Who may raise a sales return against an invoice that has gone out. The request goes
+              straight to Generate Sales Return (Tally). The person who raised the order,
+              coordinators, admins and the Tally owners can always raise one — naming people here
+              adds to them, it does not restrict anyone.
+            </p>
+          )}
           {editing?.step === "sales_return" && (
             <p className="text-[12.5px] text-grey-2">
-              Name someone here. When an order is cancelled after its sales bill has been raised,
+              Name someone here. Every sales return raised in step 7 comes to them: they make it
+              in Tally, enter its number and attach it, and that closes it. Also, when an order is
+              cancelled after its sales bill has been raised,
               this is who is told to cancel the bill in Tally — or punch a sales return against it —
               and the order stays uncancelled until they record which they did. Usually the people
               who generate the sales bill; name accounts instead if they own the reversal. Leave it

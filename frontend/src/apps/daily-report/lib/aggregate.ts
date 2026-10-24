@@ -263,6 +263,8 @@ export function cellFoc(c: PivotCell | undefined): "none" | "all" | "part" {
  *   · Above that, customers are named biggest first until they cover FOLD_SHARE
  *     of the list's total; the rest fold into one "Remaining N" line, and a
  *     TOTAL follows so the list still adds up to the figure on page one.
+ *   · AND every customer at or above the list's MONEY FLOOR is named, wherever
+ *     the FOLD_SHARE cut happened to fall (Ritesh Bhai, 21-09-2026 — DR-4).
  *   · FREE-OF-CHARGE IS NEVER FOLDED. Goods sent free still cost money and
  *     management must see every one. A customer who is only free of charge is
  *     named at the foot of the block; one with a paid sale AND a free one keeps
@@ -275,6 +277,43 @@ export function cellFoc(c: PivotCell | undefined): "none" | "all" | "part" {
  */
 export const FOLD_MIN = 10;
 export const FOLD_SHARE = 0.8;
+
+/**
+ * THE MONEY FLOOR — Ritesh Bhai, 21-09-2026 (DR-4). ₹ LAKHS, like every figure
+ * in this module: ₹50,000 is 0.5, never 50000.
+ *
+ * ⚠ IT IS ADDED TO THE FOLD_SHARE CUT, NEVER SUBSTITUTED FOR IT — his call, the
+ *   same day, and it is the whole point of the entry. A list names everyone at
+ *   or above its floor PLUS everyone the 80% cut already named, so the floor can
+ *   only ever ADD a name. A floor on its own would have been a quiet regression
+ *   on the very lists he asked to see more of: measured on live days, ₹25,000
+ *   alone names 3 spare-parts customers against today's 4 on 17-09 and 1 against
+ *   2 on 12-09, because on a small total the 80% cut already reaches below it.
+ *
+ * 0 means NO FLOOR — that list folds on the 80% cut alone. Print heads, machines,
+ * paper and service never reach FOLD_MIN in 90 days of live data (9, 3, 1 and 6
+ * customers at their busiest), so they already name everyone and a floor would
+ * change nothing. They are left at 0 rather than given a number nobody chose.
+ */
+export const SALE_FOLD_FLOOR_LACS: Record<SaleType, number> = {
+  ink: 0.5,          // ₹50,000
+  spare_parts: 0.25, // ₹25,000
+  head: 0,
+  machine: 0,
+  paper: 0,
+  non_product: 0,
+  other: 0,
+};
+
+/**
+ * Receipts AND payments, every band. ₹1,00,000.
+ *
+ * One number for both directions is his call of 21-09-2026: Money in and Money
+ * out are twin pages and a reader should not have to remember that they read to
+ * different depths. Purchases are NOT folded at all — that block prints every
+ * line through `drawLines` — so there is nothing for a floor to do there.
+ */
+export const MONEY_FOLD_FLOOR_LACS = 1;
 
 export interface FoldTotals {
   count: number;
@@ -319,8 +358,13 @@ function sumRows(rows: PivotRow[]): FoldTotals {
  * ⚠ RANKED ONCE, ON THE ROW TOTAL ACROSS ALL COMPANIES. Ranking inside each
  *   company column would name a customer under O-tec and fold the same customer
  *   under Enterprise, and the rows would stop adding up to their own TOTAL.
+ *
+ * `floorLacs` is THIS list's money floor (`SALE_FOLD_FLOOR_LACS` /
+ * `MONEY_FOLD_FLOOR_LACS`); 0 or omitted leaves the 80% cut on its own. It is a
+ * parameter rather than a lookup inside here because `foldList` is handed rows
+ * and nothing else — it cannot tell an ink list from a receipts band.
  */
-export function foldList(rows: PivotRow[]): Folded {
+export function foldList(rows: PivotRow[], floorLacs = 0): Folded {
   const all = [...rows].sort(byAmount);
   const total = sumRows(all);
   const focOnly = all.filter((r) => r.focOnly);
@@ -332,6 +376,9 @@ export function foldList(rows: PivotRow[]): Folded {
     named = ranked;
   } else {
     const cut = FOLD_SHARE * total.amountLacs;
+    // A floor of 0 must never mean "name everything": a list can hold rows worth
+    // exactly nothing, and `>=` would sweep them all above the Remaining line.
+    const floors = floorLacs > 0;
     let cum = 0;
     for (const r of ranked) {
       // Named while the rows ABOVE it have not yet reached the cut, so the row
@@ -339,6 +386,12 @@ export function foldList(rows: PivotRow[]): Folded {
       if (cum < cut) {
         named.push(r);
         cum += r.amountLacs;
+      } else if (floors && r.amountLacs >= floorLacs) {
+        // Above the floor, whatever the cut said. `ranked` is biggest first, so
+        // the rows the floor rescues are the ones directly under the cut and the
+        // named block stays in one descending run — no re-sort, and the Remaining
+        // line still holds a contiguous tail.
+        named.push(r);
       } else if (r.focQty > 0) {
         named.push(r);
       } else {

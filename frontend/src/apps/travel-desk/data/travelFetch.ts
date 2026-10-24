@@ -14,7 +14,7 @@ import type {
   TravelMasterManager, TravelMasterRequest, TravelRateCard, TravelRate,
   TravelMasterType, TravelRequestableMaster, CityTier, ExpenseCategoryKind,
   RateType, RateCardStatus, TravelCategory, ApprovalMatrix,
-  TripPassenger, TripStatus, JourneyType, TimeSlot, TripLeg, LegKind, LegDirection,
+  TripPassenger, TripStatus, JourneyType, TimeSlot, TripLeg, LegKind, LegDirection, TripCancellation,
   ClaimLine,
   DaDay,
   TravelActivity,
@@ -52,6 +52,7 @@ type Tbl =
   | "fms_travel_trips"
   | "fms_travel_passengers"
   | "fms_travel_legs"
+  | "fms_travel_cancellations"
   | "fms_travel_step_owners"
   | "fms_travel_step_assignees"
   | "fms_travel_config"
@@ -103,6 +104,8 @@ export interface TravelData {
   passengers: TripPassenger[];
   /** Every booked leg on every visible trip, in the same snapshot. */
   legs: TripLeg[];
+  /** The booker's cancellations, each with its credit note. */
+  cancellations: TripCancellation[];
   stepOwners: TravelStepOwner[];
   stepAssignees: TravelStepAssignee[];
   config: TravelConfig;
@@ -209,7 +212,7 @@ function mapPolicy(raw: any): TravelPolicyConfig {
 }
 
 /**
- * The approval matrix, with §3.2's own answer as the floor.
+ * The approval matrix, with Section 3.2's own answer as the floor.
  *
  * ⚠ THE FALLBACK IS "BOTH", NOT "EITHER". A missing or malformed config row must
  *   not quietly drop an approval: the safe direction on a spending control is
@@ -446,6 +449,11 @@ function mapTrip(r: any): Trip {
     holdFromStatus: (r.hold_from_status ?? null) as TripStatus | null,
     cancelledAt: r.cancelled_at ?? null,
     cancelReason: r.cancel_reason ?? null,
+    closedAtBooking: r.closed_at_booking === true,
+    cancelRequestedAt: r.cancel_requested_at ?? null,
+    cancelRequestedBy: r.cancel_requested_by ?? null,
+    cancelDoneAt: r.cancel_done_at ?? null,
+    cancelDoneBy: r.cancel_done_by ?? null,
 
     editedAt: r.edited_at ?? null,
     editedBy: r.edited_by ?? null,
@@ -479,11 +487,28 @@ const mapLeg = (r: any): TripLeg => ({
   cancelledAt: r.cancelled_at ?? null,
   cancelReasonKind: (r.cancel_reason_kind ?? null) as TripLeg["cancelReasonKind"],
   cancelReason: r.cancel_reason ?? null,
+  cancellationId: r.cancellation_id ?? null,
   docPath: r.doc_path ?? null,
   aiExtracted: (r.ai_extracted ?? null) as Record<string, unknown> | null,
   notes: r.notes ?? null,
   sortOrder: r.sort_order ?? 0,
   createdAt: r.created_at,
+});
+
+const mapCancellation = (r: any): TripCancellation => ({
+  id: r.id,
+  tripId: r.trip_id,
+  legIds: (r.leg_ids ?? []) as string[],
+  wholeTrip: r.whole_trip === true,
+  reason: r.reason ?? "",
+  status: r.status === "requested" ? "requested" : "completed",
+  requestedBy: r.requested_by ?? null,
+  requestedAt: r.requested_at ?? r.cancelled_at,
+  creditNoteNo: r.credit_note_no ?? null,
+  creditNoteAmount: r.credit_note_amount === null || r.credit_note_amount === undefined ? null : Number(r.credit_note_amount),
+  creditNotePath: r.credit_note_path ?? null,
+  cancelledBy: r.cancelled_by ?? null,
+  cancelledAt: r.cancelled_at ?? null,
 });
 
 const mapClaimLine = (r: any): ClaimLine => ({
@@ -564,7 +589,7 @@ export async function fetchTravelData(): Promise<TravelData> {
     ownerRows, assigneeRows, configRows, settingRows, notificationRows,
     cityRows, purposeRows, categoryRows, airlineRows, hotelRows, busRows,
     cardRows, rateRows, managerRows, requestRows,
-    claimLineRows, daDayRows,
+    claimLineRows, daDayRows, cancellationRows,
   ] = await Promise.all([
     fetchAll("fms_travel_trips"),
     // ⚠ Ordered by `id`, not by `sort_order`. sort_order restarts at 10 on every
@@ -596,6 +621,9 @@ export async function fetchTravelData(): Promise<TravelData> {
     //   paging on it could return one row twice and drop another.
     fetchAll("fms_travel_claim_lines", "id"),
     fetchAll("fms_travel_da_days", "id"),
+    // ⚠ Tolerant: the table arrives with migration 20270124120000, and a missing
+    //   table must not take the whole module down with it.
+    fetchAll("fms_travel_cancellations", "id").catch(() => []),
   ]);
 
   const cfg = new Map<string, any>(configRows.map((r: any) => [r.key, r.value]));
@@ -604,13 +632,15 @@ export async function fetchTravelData(): Promise<TravelData> {
   const config: TravelConfig = {
     stepSla: (cfg.get("step_sla") as Record<string, unknown> | undefined) ?? null,
     processCoordinators: (cfg.get("process_coordinators")?.user_ids as string[] | undefined) ?? [],
+    raiseFor: (cfg.get("raise_for")?.user_ids as string[] | undefined) ?? [],
+    menuHiddenQueues: (cfg.get("menu_hidden_queues")?.keys as string[] | undefined) ?? null,
     approvalMatrix: mapMatrix(cfg.get("approval_matrix")),
     policy: mapPolicy(cfg.get("policy")),
     reassignPoolDepartmentIds: (cfg.get("reassign_pool")?.department_ids as string[] | undefined) ?? [],
     reassignPoolUserIds: (cfg.get("reassign_pool")?.user_ids as string[] | undefined) ?? [],
     companyIdentity: {
       legalName: str(identity.legal_name),
-      // ⚠ Blank until Finance confirms it. Policy §7.1 and §11.3 both carry the
+      // ⚠ Blank until Finance confirms it. Policy Section 7.1 and Section 11.3 both carry the
       //   GSTIN as "[⚠ CONFIRM with Finance]", and a placeholder number printed
       //   on guidance an employee hands a hotel is worse than a visible gap.
       gstin: str(identity.gstin),
@@ -622,6 +652,7 @@ export async function fetchTravelData(): Promise<TravelData> {
     trips: tripRows.map(mapTrip),
     passengers: passengerRows.map(mapPassenger),
     legs: legRows.map(mapLeg),
+    cancellations: cancellationRows.map(mapCancellation),
     stepOwners: ownerRows.map(mapStepOwner),
     stepAssignees: assigneeRows.map(mapStepAssignee),
     config,

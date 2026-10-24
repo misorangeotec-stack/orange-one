@@ -13,7 +13,7 @@ const MATRIX: [string, boolean[]][] = [
   // Admin is false ON PURPOSE, and it is a design fact rather than a restriction:
   // an admin assigning to a HOD is ordinary downward work and keeps being scored
   // that way, so an admin's picker has no peer group at all (client, 07-09-2026).
-  ["Assign a task sideways, to another HOD", [false, true, false, false]],
+  ["Assign a task sideways, to a HOD or Sub-HOD", [false, true, true, false]],
   ["View team tasks", [true, true, true, false]],
   ["View all organization tasks", [true, false, false, false]],
   ["Manage recurring tasks", [true, true, true, false]],

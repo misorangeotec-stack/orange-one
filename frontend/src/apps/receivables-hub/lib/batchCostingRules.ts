@@ -32,6 +32,14 @@ export const COLOURS = [
   "VIOLET", "PURPLE", "BROWN", "WHITE",
 ] as const;
 
+/**
+ * The Bushra Sales and Purchase Registers' colours (lib/bushraSalesRegister.ts,
+ * lib/bushraPurchaseRegister.ts): the same list plus TURQUOISE, for their dye names. KEPT APART ON PURPOSE — colourOf takes the word that appears first, so adding one to
+ * COLOURS re-buckets Batch Costing, the Production Dashboard and Packing Material ("TURQUOISE BLUE"
+ * would stop being BLUE). Add it there only with the Batch Costing owner's say-so.
+ */
+export const SALES_REGISTER_COLOURS: readonly string[] = [...COLOURS, "TURQUOISE"];
+
 interface CategoryRule {
   /** Tested against the upper-cased FG name. */
   test: RegExp;
@@ -90,11 +98,11 @@ export function lineCategory(type: LineType, item: string): LineCategory {
 }
 
 /** The colour word in a name — the one that appears FIRST, so "BLACK ULTRA" is BLACK. "" if none. */
-export function colourOf(item: string): string {
+export function colourOf(item: string, colours: readonly string[] = COLOURS): string {
   const name = up(item);
   let best = "";
   let at = Infinity;
-  for (const c of COLOURS) {
+  for (const c of colours) {
     const m = new RegExp(`\\b${c}\\b`).exec(name);
     if (m && m.index < at) { at = m.index; best = c; }
   }

@@ -1,3 +1,4 @@
+import { useBackState } from "@/shared/lib/backState";
 import {
   useState, useMemo, useEffect, useRef, useLayoutEffect, useCallback, Fragment,
   type ReactNode, type CSSProperties,
@@ -192,7 +193,7 @@ function DsoInner() {
   const asOfDate = dashboard?.asOfDate ?? new Date().toISOString().slice(0, 10);
 
   // ── Filters ───────────────────────────────────────────────────────────────────────
-  const [search, setSearch] = useState("");
+  const [search, setSearch] = useBackState("DsoReport.search", "");
   const [customerNames, setCustomerNames] = useState<string[]>([]);
   const [groupNamesSel, setGroupNamesSel] = useState<string[]>([]);
   const [salespersons, setSalespersons] = useState<string[]>([]);
@@ -889,7 +890,7 @@ function DsoInner() {
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
         <div>
-          <Link to="/outstanding-dashboard/reports" className="inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground mb-1">
+          <Link to="/reports" className="inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground mb-1">
             <ArrowLeft className="h-3 w-3" /> Reports
           </Link>
           <h1 className="text-2xl font-bold text-foreground flex items-center gap-2">

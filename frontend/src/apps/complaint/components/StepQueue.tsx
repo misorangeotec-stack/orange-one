@@ -9,7 +9,14 @@ import StatusPill from "./StatusPill";
 import { useComplaintStore } from "../store";
 import { requestHref } from "../lib/routes";
 import { stepByKey, type StepKey } from "../lib/steps";
-import { COMPLAINT_TYPE_TONE, STATUS_LABEL, dmy, formatDateTime } from "../lib/format";
+import {
+  COMPLAINT_TYPE_TONE,
+  RM_ORIGIN_TONE,
+  STATUS_LABEL,
+  dmy,
+  formatDateTime,
+  rmOriginLabelOf,
+} from "../lib/format";
 import { COMPLAINT_TYPE_LABEL, type ComplaintRequest } from "../types";
 
 /**
@@ -54,6 +61,7 @@ export default function StepQueue({ step }: { step: StepKey }) {
         </Link>
       ),
       sortValue: (r) => r.complaintNo,
+      // No filter, as on the requests list: every complaint number is unique.
       tdClassName: "whitespace-nowrap",
     },
     {
@@ -68,6 +76,27 @@ export default function StepQueue({ step }: { step: StepKey }) {
       ),
       sortValue: (r) => COMPLAINT_TYPE_LABEL[r.complaintType],
       filter: { kind: "select", get: (r) => COMPLAINT_TYPE_LABEL[r.complaintType] },
+    },
+    {
+      // Domestic / Import — blank on every finished-good row, because there is
+      // no such thing there. A filterable column rather than a second badge on
+      // the Type cell above: the two answer different questions ("which side of
+      // the business" vs "whose desk"), and the grid's select filter can only
+      // narrow on a column of its own.
+      key: "rmOrigin",
+      header: "Domestic / Import",
+      cell: (r) =>
+        r.rmOrigin ? (
+          <span
+            className={`inline-flex rounded-full px-2 py-0.5 text-[11.5px] font-medium whitespace-nowrap ${RM_ORIGIN_TONE[r.rmOrigin]}`}
+          >
+            {rmOriginLabelOf(r.rmOrigin)}
+          </span>
+        ) : (
+          "—"
+        ),
+      sortValue: (r) => rmOriginLabelOf(r.rmOrigin),
+      filter: { kind: "select", get: (r) => rmOriginLabelOf(r.rmOrigin) },
     },
     {
       key: "party",
@@ -100,6 +129,7 @@ export default function StepQueue({ step }: { step: StepKey }) {
       header: "Due",
       cell: (r) => <DueCell dueIso={s.dueIsoFor(r, step)} />,
       sortValue: (r) => s.dueIsoFor(r, step) ?? "9999-12-31",
+      filter: { kind: "date", get: (r) => s.dueIsoFor(r, step) ?? "" },
       tdClassName: "whitespace-nowrap",
     },
     {

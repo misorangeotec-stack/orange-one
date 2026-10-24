@@ -7,63 +7,25 @@ import { FYMultiSelect } from "@hub/components/FYMultiSelect";
 import { useFY } from "@hub/lib/fyContext";
 import { useLiveMode } from "@hub/lib/liveMode";
 import UserMenu from "@/shared/components/layout/UserMenu";
+import AnnouncementStrip from "@/core/announcements/AnnouncementStrip";
 import Breadcrumbs from "@/shared/components/layout/Breadcrumbs";
 import CustomerBell from "@hub/components/customerOnboarding/CustomerBell";
 import { RECEIVABLES_MENUS } from "@hub/lib/menus";
 import { reportCrumbs } from "@hub/lib/reportCatalog";
+import { formatAsOfDateTime } from "@hub/lib/asOfFormat";
 import { pageLabelFor } from "@/apps/currentApp";
 import { useSession } from "@/core/platform/session";
 import type { AppRole } from "@/core/platform/types";
 
 const ROLE_LABEL: Record<AppRole, string> = { admin: "Admin", hod: "HOD", sub_hod: "Sub-HOD", employee: "Employee" };
 
-const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
-
-/** Format an ISO date ("2026-05-28") as "28 May 2026" without timezone drift. */
-function formatAsOf(iso: string): string {
-  const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(iso);
-  if (!m) return iso;
-  return `${parseInt(m[3], 10)} ${MONTHS[parseInt(m[2], 10) - 1]} ${m[1]}`;
-}
-
 /**
- * Format the last-refresh stamp as "28 May 2026, 2:30 PM" (12-hour).
+ * Routes that IGNORE the financial-year selector, because the screen either reads the whole
+ * book by design or carries a period control of its own. Showing a selector that cannot
+ * change the numbers below it is worse than showing none.
  *
- * The pipeline writes the timestamp as IST wall-clock but tags it "+00:00" (e.g.
- * "2026-06-29T12:55:38+00:00" is actually 12:55 PM IST, not UTC). So we read the date/time
- * components LITERALLY via regex — no `new Date()`, no timezone conversion — which keeps the
- * displayed time identical to the wall clock the pipeline recorded.
- *
- * When the value carries no time component (e.g. a date-only as-of date), falls back to the
- * drift-free date-only `formatAsOf` so we never render a spurious "12:00 AM".
- */
-function formatAsOfDateTime(input: string): string {
-  if (!input) return "";
-  const s = String(input).trim();
-  const m = /^(\d{4})-(\d{2})-(\d{2})[T ](\d{2}):(\d{2})/.exec(s);
-  if (m) {
-    const hour = parseInt(m[4], 10);
-    const ampm = hour >= 12 ? "PM" : "AM";
-    const h12 = hour % 12 || 12;
-    return `${parseInt(m[3], 10)} ${MONTHS[parseInt(m[2], 10) - 1]} ${m[1]}, ${h12}:${m[5]} ${ampm}`;
-  }
-  return formatAsOf(s);
-}
-
-/**
- * Routes that IGNORE the financial-year selector because they read the whole book by design.
- *
- * The Overdue Aging report is pinned to Both FYs: a single financial year cannot contain a
- * 120-day-old invoice until it is itself 120 days old, so an FY-scoped view of "overdue > 120
- * days" silently becomes 100% brought-forward debt.
- *
- * The Dormant Debtors report is pinned for the same class of reason: its window is the last N
- * months of the FY-scoped month vocabulary, so inside a young FY "no sales in 6 months" quietly
- * collapses to "no sales in 3" — and a customer who last bought in February gets reported as
- * having never bought at all. Dormancy is a property of the whole book.
- *
- * Each page enforces this with its own nested FYProvider; hiding the selector here is what stops
- * the topbar from claiming otherwise.
+ * Each such page enforces the period itself (its own nested FYProvider, or its own pickers);
+ * hiding the selector here is what stops the topbar from claiming otherwise.
  */
 const FY_PINNED_ROUTES = [
   // Customer Onboarding reads the IDENTITY project, not the receivables data the
@@ -71,80 +33,15 @@ const FY_PINNED_ROUTES = [
   // and a control that cannot change what is below it is worse than no control.
   // One entry covers the subtree (the match is a prefix test).
   "/outstanding-dashboard/customer-onboarding",
-  // The Sales Report carries its own FY picker in the page header (it needs to name the FY
-  // AND its prior year on every panel). A topbar selector would be a second, disagreeing
-  // control over the same thing.
-  "/outstanding-dashboard/reports/sales",
-  // The Purchase Report carries its own FY picker in the page header, same as Sales.
-  "/outstanding-dashboard/reports/purchase",
-  // The Day Book carries its own company + date picker in the page header — the FY is implied
-  // by the chosen date, so a topbar FY selector would be a second, disagreeing control.
-  "/outstanding-dashboard/reports/day-book",
-  // The Finance master reports (Receivables / Payables / Income / Expense / Sales Gain) each carry
-  // their own company + FY picker in the page header, naming the FY and its prior year on every
-  // panel — a topbar selector would be a second, disagreeing control over the same thing.
-  "/outstanding-dashboard/reports/finance-receivables",
-  "/outstanding-dashboard/reports/finance-payables",
-  "/outstanding-dashboard/reports/finance-income",
-  "/outstanding-dashboard/reports/finance-expense",
-  "/outstanding-dashboard/reports/finance-sales-gain",
-  // The Sales Dashboard carries its own company + FY picker for the same reason, and names the FY
-  // and its prior year on every one of its thirteen panels.
-  "/outstanding-dashboard/reports/sales-dashboard",
-  // Its purchase-side twin, same reason. Note this entry is currently redundant — the match below
-  // is a startsWith and "/reports/purchase" is already listed above — but the Purchase Report could
-  // move, and a route relying on another route's prefix is not something to leave implicit.
-  "/outstanding-dashboard/reports/purchase-dashboard",
-  // Stock Analysis carries its own company + FY picker, and additionally stamps the date its
-  // closing figures are actually as at (the mirror's last sync, which is not the same thing as
-  // the FY). A topbar FY selector would be a third control over the same period.
-  "/outstanding-dashboard/reports/stock-analysis",
-  // The C-Level Dashboard, same reason again — it names the FY and its prior year on nearly all
-  // of its twenty-two panels, and its balance-sheet half is additionally pinned to the sync date.
-  "/outstanding-dashboard/reports/c-level-dashboard",
-  // Customer Profile carries its own company + FY picker, and every bucket on it is a comparison
-  // between the chosen FY and the one before — a topbar multi-FY selector would make "new" and
-  // "non active" meaningless.
-  "/outstanding-dashboard/reports/customer-profile",
-  // The Red Mark report's Received / Sales columns are the last three CALENDAR months, which no
-  // financial year can contain: in April a single-FY view would keep the receipts (not FY-windowed)
-  // and silently drop February's and March's sales. Its own nested FYProvider pins it to Both FYs.
-  "/outstanding-dashboard/reports/red-mark",
-  // Disputed Bills (RC-13) reads only open bills, which are not FY-windowed, so a selector here would
-  // change nothing on the page and read as broken. Its own nested FYProvider pins it to Both FYs.
-  "/outstanding-dashboard/reports/disputed-bills",
-  // Advances Not Applied (RC-18) reads open bills and ledger balances, neither FY-windowed — same reason.
-  "/outstanding-dashboard/reports/advances",
-  "/outstanding-dashboard/reports/overdue",
-  "/outstanding-dashboard/reports/dormant",
-  // The Category Report's balance/aging half is a property of the whole book, while its
-  // sales/collections half has its own period selector on the page. An FY selector in the topbar
-  // would be claiming to drive both, and would drive neither.
-  "/outstanding-dashboard/reports/category",
-  // DSO reads a 12-month lookback. Inside a single young FY that would silently collapse to the
-  // months elapsed so far and every DSO would be wrong — so the report reads the whole book.
-  "/outstanding-dashboard/reports/dso",
-  // The financial statements are whatever Tally held at the connector's last sync — the mirror stores
-  // exactly ONE statement per company, with its own as-of date shown on each block. An FY selector
-  // would promise a period the data cannot be re-cut to.
-  "/outstanding-dashboard/reports/balance-sheet",
-  "/outstanding-dashboard/reports/profit-loss",
-  "/outstanding-dashboard/reports/trial-balance",
-  // The list and its /:ledgerId detail both hide the FY selector — the report has its own "As on"
-  // date control, and the mirror holds one snapshot per company. startsWith covers the sub-route.
-  "/outstanding-dashboard/reports/ledger-outstanding",
-  // The Sales Register carries its own From/To date window; a topbar FY selector would be a second
-  // control over the same period.
-  "/outstanding-dashboard/reports/sales-register",
-  // The Stock Summary carries its own company + FY + From/To period pickers and prints the period
-  // band ("1-Apr-26 to 31-Mar-27") the way Tally does. A topbar FY selector would be a second,
-  // disagreeing control over the same year.
-  "/outstanding-dashboard/reports/stock-summary",
-  // Batch Costing — same own company + FY + period pickers as the Stock Summary, same reason.
-  "/outstanding-dashboard/reports/batch-costing",
-  // Bushra-Dashboard → Production Batch Costing Dashboard — own company + FY + period pickers.
-  "/outstanding-dashboard/bushra-dashboard",
 ];
+
+/*
+ * ONE ENTRY IS ALL THAT IS LEFT. The other twenty-six — every report, and Bushra-Dashboard —
+ * moved with their screens to apps/reports/ReportsLayout.tsx. Each of them named an
+ * /outstanding-dashboard/… path this app no longer serves, so keeping them would have left a
+ * list of prefixes that can never match, read by the next editor as if it still meant
+ * something.
+ */
 
 export default function UserLayout() {
   const { dashboard } = useAppData({});
@@ -234,6 +131,10 @@ export default function UserLayout() {
               />
             </div>
           </header>
+          {/* PF-18 · The hub-wide announcement strip. This module has its own shell,
+              so AppShell's copy never reaches it; without this line the Outstanding
+              Dashboard would be the one app nobody saw announcements in. */}
+          <AnnouncementStrip />
           <main className="flex-1 overflow-auto">
             <Outlet />
           </main>

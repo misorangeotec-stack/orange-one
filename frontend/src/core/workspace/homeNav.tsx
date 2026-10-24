@@ -16,9 +16,18 @@
  */
 import type { ReactNode } from "react";
 import type { AppManifest } from "@/apps/types";
-import { groupByCategory } from "@/apps/categories";
+import type { Profile } from "@/core/platform/types";
+import { CATEGORIES, groupByCategory } from "@/apps/categories";
 import { GROUP_ICONS } from "./groupIcons";
-import { HOME_LABEL, HOME_PATH, type NavItem } from "@/shared/components/layout/types";
+import {
+  ANNOUNCEMENTS_LABEL,
+  ANNOUNCEMENTS_PATH,
+  HANDBOOK_LABEL,
+  HANDBOOK_PATH,
+  HOME_LABEL,
+  HOME_PATH,
+  type NavItem,
+} from "@/shared/components/layout/types";
 
 const ic: Record<string, ReactNode> = {
   today: (
@@ -40,6 +49,18 @@ const ic: Record<string, ReactNode> = {
       <path d="M4 20c0-4 3.5-6 8-6s8 2 8 6" />
     </svg>
   ),
+  handbook: (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M2 5.5h7a3 3 0 0 1 3 3V20a2.5 2.5 0 0 0-2.5-2.5H2Z" />
+      <path d="M22 5.5h-7a3 3 0 0 0-3 3V20a2.5 2.5 0 0 1 2.5-2.5H22Z" />
+    </svg>
+  ),
+  announcements: (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M3 11v2a1 1 0 0 0 1 1h2l5 4V6L6 10H4a1 1 0 0 0-1 1Z" />
+      <path d="M15.5 8.5a5 5 0 0 1 0 7M18.5 5.5a9 9 0 0 1 0 13" />
+    </svg>
+  ),
 };
 
 /**
@@ -50,21 +71,59 @@ const ic: Record<string, ReactNode> = {
  * copies of "which apps, in what order" is two chances to disagree.
  *
  * Coming-soon apps are omitted rather than disabled: NavItem has no disabled
- * state, and a menu row that silently does nothing is worse than no row.
+ * state, and a menu row that silently does nothing is worse than no row. Same reasoning
+ * behind `canOpenApp` below carrying the FULL rule rather than just the module grant: a
+ * row that bounces you straight back to /home is a row that should not be drawn.
  */
-export function visibleApps(apps: AppManifest[], hasModule: (id: string) => boolean): AppManifest[] {
+export function visibleApps(apps: AppManifest[], access: AppAccess): AppManifest[] {
   return apps
-    .filter((a) => a.status === "live" && hasModule(a.id))
+    .filter((a) => a.status === "live" && canOpenApp(a, access))
     .sort((a, b) => (a.order ?? 100) - (b.order ?? 100) || a.name.localeCompare(b.name));
 }
 
-export function buildHomeNav(
-  apps: AppManifest[],
-  opts: { hasModule: (id: string) => boolean; isAdmin: boolean }
-): NavItem[] {
+/**
+ * "Can this person open this app?" — the whole rule, in one place so the menu and the
+ * route guard in App.tsx cannot answer it differently.
+ *
+ * Two parts, and most apps only have the first:
+ *   1. the module grant, read under `accessAppId` where an app rides another app's grant
+ *      rather than one of its own (Reports rides `outstanding-dashboard`);
+ *   2. the app's own extra rule, where its access was never the module grant alone.
+ */
+export function canOpenApp(app: AppManifest, { hasModule, isAdmin, user }: AppAccess): boolean {
+  return hasModule(app.accessAppId ?? app.id) && (app.canOpen?.({ isAdmin, user }) ?? true);
+}
+
+/** Everything the two rules above need about the signed-in person. */
+export interface AppAccess {
+  hasModule: (id: string) => boolean;
+  isAdmin: boolean;
+  user: Profile;
+}
+
+export function buildHomeNav(apps: AppManifest[], opts: AppAccess): NavItem[] {
   // Same label the other apps use to get here, so the place you clicked and the
   // place you land on are recognisably one destination.
-  const nav: NavItem[] = [{ label: HOME_LABEL, to: HOME_PATH, icon: ic.today, section: "Home" }];
+  const nav: NavItem[] = [
+    { label: HOME_LABEL, to: HOME_PATH, icon: ic.today, section: "Home" },
+    // PF-18: everyone's, no grant needed, so it sits under Home rather than in a
+    // category that only some people would see.
+    { label: ANNOUNCEMENTS_LABEL, to: ANNOUNCEMENTS_PATH, icon: ic.announcements },
+  ];
+
+  // KB-1 · The HR handbook. Two decisions are layered here, both deliberate:
+  //   30-09-2026  it got a menu row at all, reversing KB-1 §0's "deliberately in no menu".
+  //               That rule was about not making ASKING a menu item (asking is still only
+  //               the floating bubble); being unable to BROWSE the manual was the first
+  //               thing raised once the module went in front of anyone.
+  //   01-10-2026  it was gated on the grant, reversing "reading needs no grant", so HR can
+  //               check it before the whole company sees it. Granting everyone 'view' puts
+  //               it back in front of all staff with no code change.
+  //   02-10-2026  it moved from under Home into the HR group, as that group's first row,
+  //               at the business's request. The grant rule is unchanged. Holding
+  //               'knowledge-base' always brings the HR group with it, because the
+  //               Knowledge Base app is itself filed under HR.
+  const showHandbook = opts.hasModule("knowledge-base");
 
   // Every category becomes a COLLAPSIBLE group (see Sidebar), which is why these
   // carry `group` rather than `section`. An empty category never reaches here, so
@@ -72,17 +131,45 @@ export function buildHomeNav(
   // a category left holding ONE app is collapsed back to a plain link by the
   // sidebar, so "Sampling → Ink / RM Sampling" doesn't cost a click to say one
   // thing twice.
-  for (const group of groupByCategory(visibleApps(apps, opts.hasModule))) {
-    for (const app of group.rows) {
+  //
+  // One row per app, unless the app says otherwise. Reports is the only one that does: it is
+  // a catalogue, so it lists the sections the reader holds rather than a single link they
+  // would have to open to find out what is inside (see AppManifest.menuEntries). Rows are
+  // expanded BEFORE grouping because a row may name a group of its own — Reports sends its
+  // dashboards to "Report Dashboard" — and otherwise inherits its app's.
+  const rows = visibleApps(apps, opts).flatMap((app) => {
+    const own: NonNullable<ReturnType<NonNullable<AppManifest["menuEntries"]>>> = app.menuEntries?.(opts) ?? [
+      { label: app.name, to: app.basePath, icon: app.icon },
+    ];
+    return own.map(({ category, subGroup, ...row }) => ({
+      ...row,
+      category: category ?? app.category,
+      // Second level inside a category, rendered as a dropdown. A row may claim its own, and
+      // otherwise it inherits the app's, which nothing sets today (see apps/appInfo.ts).
+      subGroup: subGroup ?? app.subGroup,
+    }));
+  });
+
+  for (const group of groupByCategory(rows)) {
+    const keepGroup = CATEGORIES.some((c) => c.key === group.key && c.keepHeading);
+    if (group.key === "hr" && showHandbook) {
       nav.push({
-        label: app.name,
-        to: app.basePath,
-        icon: app.icon,
+        label: HANDBOOK_LABEL,
+        to: HANDBOOK_PATH,
+        icon: ic.handbook,
         group: group.label,
         groupIcon: GROUP_ICONS[group.key],
-        // Optional second level inside a category. Nothing sets one today — see
-        // the note in apps/appInfo.ts — but the level still works end to end.
-        ...(app.subGroup ? { subGroup: app.subGroup } : {}),
+      });
+    }
+    // A group of several rows is not collapsed back to a plain link by the sidebar, which is
+    // what makes the heading appear at all.
+    for (const { category: _category, subGroup, ...row } of group.rows) {
+      nav.push({
+        ...row,
+        group: group.label,
+        groupIcon: GROUP_ICONS[group.key],
+        ...(subGroup ? { subGroup } : {}),
+        ...(keepGroup ? { keepGroup } : {}),
       });
     }
   }

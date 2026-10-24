@@ -1,3 +1,4 @@
+import { useBackState } from "@/shared/lib/backState";
 import { ScrollableTable } from "@/core/shared/components/ScrollableTable";
 import { useState, useMemo, useEffect, useRef, useLayoutEffect, useCallback, type CSSProperties } from "react";
 import { useNavigate } from "react-router-dom";
@@ -157,7 +158,7 @@ export default function SalespersonAnalysis() {
   const navigate = useNavigate();
 
   // Filter state
-  const [search, setSearch] = useState("");
+  const [search, setSearch] = useBackState("SalespersonAnalysis.search", "");
   const [riskLevels, setRiskLevels] = useState<string[]>([]);
   const [agingFilters, setAgingFilters] = useState<string[]>([]);
   const [customerSegment, setCustomerSegment] = useState<"all" | "active" | "no_activity">("active");
@@ -283,9 +284,8 @@ export default function SalespersonAnalysis() {
     if (riskLevels.length > 0) {
       d = d.filter((r) => riskLevels.includes(r.risk));
     }
-    if (categories.length > 0) {
-      d = d.filter((r) => matchesCategory(r, categories));
-    }
+    // Always applied: an empty selection is the default, which hides Legal customers.
+    d = d.filter((r) => matchesCategory(r, categories));
     if (agingFilters.length > 0) {
       const bkMap: Record<string, keyof AgingBuckets> = {
         "0-30": "0_30", "31-60": "31_60", "61-90": "61_90",
@@ -697,7 +697,7 @@ export default function SalespersonAnalysis() {
           <span className="text-[11px] text-muted-foreground">Click a name or cell to filter the list below</span>
         </div>
         <ScrollableTable>
-          <Table>
+          <Table resizeKey="salesperson-analysis.people">
             <TableHeader>
               <TableRow className="bg-muted/50">
                 {(() => { const f = pivotStick({ header: true }); return (
@@ -884,7 +884,7 @@ export default function SalespersonAnalysis() {
           </span>
         </div>
         <ScrollableTable>
-          <Table>
+          <Table resizeKey="salesperson-analysis.customers">
             <TableHeader>
               <TableRow className="bg-muted/50">
                 {bottomColumns.map((col) => {

@@ -37,6 +37,16 @@ const OVERRIDES: Partial<Record<StepKey, Partial<StepSla>>> = {
   // Management signing off a commercial call: one day. The customer has already
   // been told something is coming.
   approval: { anchor: "service", days: 1 },
+  // RM domestic opens straight here, so the raise is its anchor. Two days, the
+  // same as the plant gets: somebody has to speak to the supplier.
+  purchase: { anchor: "raise", days: 2 },
+  // An imported-material complaint lands here off the raise. Two days: management
+  // have to read it and decide whether it is theirs or somebody's.
+  rm_management: { anchor: "raise", days: 2 },
+  // Whoever management handed an imported-material complaint to. Anchored on the
+  // step that handed it over — which is why `rm_management` precedes `assignee`
+  // in STEPS (anchorOptions only offers strictly earlier steps).
+  assignee: { anchor: "rm_management", days: 2 },
   management_review: { anchor: "service", days: 2 },
 };
 

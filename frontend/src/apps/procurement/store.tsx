@@ -1,12 +1,20 @@
-import { createContext, useContext, useMemo } from "react";
+import { createContext, useCallback, useContext, useMemo, useState } from "react";
 import type { ReactNode } from "react";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useQueries, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useSession } from "@/core/platform/session";
 import { useDirectory } from "@/core/platform/store";
 import { fetchOrgPeople } from "@/core/platform/orgPeople";
 import type { Department, Profile } from "@/core/platform/types";
 import { useEffectiveIdentity } from "@/shared/sandbox/useEffectiveIdentity";
-import { fetchProcurementData, PROCUREMENT_QK, procurementQueryKey } from "./data/procFetch";
+import {
+  fetchCompanyItems,
+  fetchProcurementData,
+  fetchProcurementMasters,
+  PROCUREMENT_ITEM_BOOK_QK,
+  PROCUREMENT_MASTERS_QK,
+  PROCUREMENT_QK,
+  procurementQueryKey,
+} from "./data/procFetch";
 import type {
   Company,
   Category,
@@ -41,6 +49,7 @@ import type {
   ProcNotification,
   ProcEntityType,
   CancelLinesResult,
+  FollowupItem,
 } from "./types";
 import { STEPS, type StepKey } from "./lib/steps";
 import { holderOfLines, ownerResolver } from "./lib/owners";
@@ -93,16 +102,10 @@ import {
 } from "./lib/queues";
 import { DEFAULT_STEP_SLA, type StepSlaMap } from "./lib/sla";
 import {
-  insertCompany,
-  updateCompany,
   insertCategory,
   updateCategory,
   insertItemGroup,
   updateItemGroup,
-  insertItem,
-  updateItem,
-  insertVendor,
-  updateVendor,
   insertVendorItemPrice,
   updateVendorItemPrice,
   setMasterManagers as setMasterManagersWrite,
@@ -120,6 +123,9 @@ import {
   uploadSourcingDoc as uploadSourcingDocWrite,
   sourcingDocUrl as sourcingDocUrlWrite,
   saveSourcingDocs as saveSourcingDocsWrite,
+  uploadRequestDoc as uploadRequestDocWrite,
+  saveRequestDocs as saveRequestDocsWrite,
+  recordPartialDispatch as recordPartialDispatchWrite,
   decideApprovalRequest as decideApprovalRequestWrite,
   updateApprovalRequest as updateApprovalRequestWrite,
   reassignApprovalRequest as reassignApprovalRequestWrite,
@@ -139,6 +145,7 @@ import {
   updateTally as updateTallyWrite,
   updateApproval as updateApprovalWrite,
   updatePoDetails as updatePoDetailsWrite,
+  setPoHold as setPoHoldWrite,
   addPi as addPiWrite,
   uploadPiDocument as uploadPiDocumentWrite,
   piDocumentUrl as piDocumentUrlWrite,
@@ -167,11 +174,8 @@ import {
   announce as announceWrite,
   markNotificationsRead as markNotificationsReadWrite,
   type ProcEntity,
-  type CompanyInput,
   type CategoryInput,
   type ItemGroupInput,
-  type ItemInput,
-  type VendorInput,
   type VendorItemPriceInput,
   type StepOwnerInput,
   type ApprovalBandInput,
@@ -191,19 +195,41 @@ import {
 const QK = PROCUREMENT_QK;
 
 interface ProcurementStoreValue {
-  // masters
+  // masters — companies, vendors and items are Central Masters (mst_*)
   companies: Company[];
   categories: Category[];
   itemGroups: ItemGroup[];
+  /**
+   * Every item this session knows: the ones the requisitions name, plus every
+   * company book a screen has asked for through `ensureItemBook`.
+   */
   items: Item[];
+  /** Every vendor ledger in every book. Pick through `vendorsForCompany`. */
   vendors: Vendor[];
+  /** Central Masters' unit names — the item-request form's Unit list. */
+  unitNames: string[];
   activeCompanies: Company[];
   activeCategories: Category[];
   itemGroupsByCategory: (categoryId: string) => ItemGroup[];
-  itemsByCategory: (categoryId: string) => Item[];
-  /** Every active item under a category (via its item groups) — the request form
-   *  picks Category → Item directly, with the group step hidden. */
-  itemsForCategory: (categoryId: string) => Item[];
+  /**
+   * Load one company's Tally stock book (if not already loaded). A requisition
+   * form calls this when a company is picked; until it lands, `itemsForLine`
+   * returns [] and `itemBookLoading` is true.
+   */
+  ensureItemBook: (companyId: string) => void;
+  itemBookLoading: (companyId: string) => boolean;
+  /**
+   * What a requisition line may pick: the company's active items whose Tally
+   * type is one the line's category covers. A category with no types set offers
+   * the whole book.
+   */
+  itemsForLine: (companyId: string, categoryId: string) => Item[];
+  /**
+   * The vendors a requisition of this company may shortlist: that book's active
+   * ledgers, plus portal vendors not given a book yet. Never another book's —
+   * the PO is booked in the requisition's company.
+   */
+  vendorsForCompany: (companyId: string | null) => Vendor[];
   categoryById: (id: string | null) => Category | undefined;
   itemGroupById: (id: string | null) => ItemGroup | undefined;
   itemById: (id: string | null) => Item | undefined;
@@ -217,6 +243,14 @@ interface ProcurementStoreValue {
    */
   companyLabel: (id: string | null) => string;
   vendorLabel: (id: string | null) => string;
+  /**
+   * The category (or categories, comma-joined) a requisition / PO buys under —
+   * shown in the reference block on every step. Read off the LINES, because a
+   * line carries its own category; the header's is the fallback for lines that
+   * predate per-line categories.
+   */
+  categoryLabelForRequest: (requestId: string) => string;
+  categoryLabelForPo: (poId: string) => string;
 
   // governance
   masterManagers: MasterManager[];
@@ -305,6 +339,10 @@ interface ProcurementStoreValue {
   vendorsForRequest: (requestId: string) => RequestVendor[];
   /** The files attached at sourcing, in the order the buyer arranged them. */
   sourcingDocsForRequest: (requestId: string) => SourcingDoc[];
+  /** Files the requester attached when raising the request. */
+  requestDocsForRequest: (requestId: string) => SourcingDoc[];
+  /** The requester's attachments of every requisition this PO was raised from. */
+  requestDocsForPo: (poId: string) => SourcingDoc[];
   /** The standing rate-card row for a (vendor, item), if one exists. */
   priceFor: (vendorId: string, itemId: string) => VendorItemPrice | undefined;
   /** Sum of the lines currently under approval — what the band is picked on. */
@@ -491,11 +529,22 @@ interface ProcurementStoreValue {
   pendingPoCancelRequests: PoCancelRequest[];
   /** A PO-side owner (or admin) may LOG a vendor cancellation request while the PO is still cancellable and none is open. */
   canRequestPoCancel: (po: PurchaseOrder) => boolean;
-  /** The PO's approver (a user stamped on its lines) or an admin may cancel it, while it has no GRN/Tally booking. */
+  /** Sourcing step owners, admins or the PO's approver — only while it has no GRN and no Tally booking. */
   canCancelPo: (po: PurchaseOrder) => boolean;
+  /** The PO Desk ("po" step owner) or an admin may hold a requisition at Generate PO / edit its PO remarks. */
+  canHoldPo: boolean;
 
   // workflow mutations
-  submitRequest: (input: { companyId: string; categoryId: string | null; note: string | null; items: NewRequestLine[] }) => Promise<string>;
+  /**
+   * `docs` are ALREADY UPLOADED (uploadRequestDoc). They are filed against the
+   * new request before anyone is notified, so the sourcing owners never open a
+   * request whose attachments have not landed yet.
+   */
+  submitRequest: (input: { companyId: string; categoryId: string | null; note: string | null; items: NewRequestLine[]; docs?: SourcingDocInput[] }) => Promise<string>;
+  /** Upload one requester attachment into `folderKey` (a random key for a new request, the id for an edit). */
+  uploadRequestDoc: (folderKey: string, file: File) => Promise<SourcingDocInput>;
+  /** Replace a request's requester attachments with this list. */
+  saveRequestDocs: (requestId: string, docs: SourcingDocInput[]) => Promise<void>;
   /** Stage 2 — source a WHOLE requisition. Re-calling it is the edit path. */
   saveSourcingRequest: (input: {
     requestId: string;
@@ -562,6 +611,12 @@ interface ProcurementStoreValue {
   updateApproval: (input: { lineId: string; decision: string; overrideVendorId?: string | null; reason?: string | null }) => Promise<void>;
   /** Correct what the PO stage recorded. Refused server-side once the PO is shared. */
   updatePoDetails: (input: { poId: string; poNo: string; tallyPoNo: string; documentPath?: string | null; documentName?: string | null }) => Promise<void>;
+  /**
+   * Save the PO Desk's remarks and hold on a requisition at the Generate PO step.
+   * When it is (or stays) on hold the requester is notified with the remarks;
+   * resuming tells them too. Remarks changed while NOT on hold are only logged.
+   */
+  setPoHold: (input: { requestId: string; onHold: boolean; remarks: string | null }) => Promise<void>;
   /** True while the Share PO entry may still be corrected. Mirrors the server rule. */
   canEditSharePo: (po: PurchaseOrder) => boolean;
   addPi: (input: { poId: string; vendorPiNo: string; piValue: number; items: PiItemInput[]; documentPath?: string | null; documentName?: string | null }) => Promise<string>;
@@ -572,6 +627,22 @@ interface ProcurementStoreValue {
   uploadNewPoDocument: (requestId: string, file: File) => Promise<{ path: string; name: string }>;
   poDocumentUrl: (path: string) => Promise<string>;
   recordPayment: (input: { poId: string; piId: string | null; kind: "advance" | "installment"; amount: number; paidOn: string | null; utrRef: string | null; piRemarks?: string | null }) => Promise<string>;
+  /** Record one partial-dispatch lot. The lot that clears every balance is saved as a full dispatch. */
+  recordPartialDispatch: (input: { poId: string; actualDispatchDate: string; lrNo: string | null; transportDetails: string | null; remarks: string | null; items: { poItemId: string; qty: number }[] }) => Promise<void>;
+  /** Quantity of this PO line dispatched so far across partial lots. */
+  dispatchedQtyForPoItem: (poItemId: string) => number;
+  /** Quantities per line in one partial-dispatch lot. */
+  followupItemsForFollowup: (followupId: string) => FollowupItem[];
+  /**
+   * True while the PO has partial lots on record and some quantity is still to
+   * be dispatched — it stays on the Follow-up page. Mirrors refresh_po.
+   */
+  partialDispatchOpen: (poId: string) => boolean;
+  /**
+   * While a PO is partially dispatched, the most of this line a GRN may bring in
+   * in total (= dispatched so far). Null = not capped. Mirrors the GRN trigger.
+   */
+  receiveCapForPoItem: (poItemId: string) => number | null;
   recordFollowup: (input: { poId: string; dispatchStatus: string; actualDispatchDate: string | null; lrNo: string | null; transportDetails: string | null; revisedDispatchDate: string | null; remarks: string | null; piRemarks?: string | null }) => Promise<void>;
   recordGrn: (input: { poId: string; piId: string | null; poRef?: string | null; piRef?: string | null; gateRegisterNo: string | null; condition: string; note: string | null; items: GrnItemInput[]; photoPath?: string | null; photoName?: string | null }) => Promise<string>;
   uploadGrnPhoto: (poId: string, file: File) => Promise<{ path: string; name: string }>;
@@ -611,16 +682,12 @@ interface ProcurementStoreValue {
   departmentById: (id: string | null) => Department | undefined;
 
   // mutations — masters
-  createCompany: (input: CompanyInput) => Promise<string>;
-  editCompany: (id: string, input: CompanyInput) => Promise<void>;
+  // No company / item / vendor mutations: those masters are Tally's, edited in
+  // Central Masters (/admin/masters). A missing one is REQUESTED here instead.
   createCategory: (input: CategoryInput) => Promise<string>;
   editCategory: (id: string, input: CategoryInput) => Promise<void>;
   createItemGroup: (input: ItemGroupInput) => Promise<string>;
   editItemGroup: (id: string, input: ItemGroupInput) => Promise<void>;
-  createItem: (input: ItemInput) => Promise<string>;
-  editItem: (id: string, input: ItemInput) => Promise<void>;
-  createVendor: (input: VendorInput) => Promise<string>;
-  editVendor: (id: string, input: VendorInput) => Promise<void>;
   createVendorItemPrice: (input: VendorItemPriceInput) => Promise<string>;
   editVendorItemPrice: (id: string, input: VendorItemPriceInput) => Promise<void>;
 
@@ -674,11 +741,65 @@ export function ProcurementStoreProvider({ children }: { children: ReactNode }) 
   // pattern the receivables follow-ups screen uses.
   const { data: orgPeople } = useQuery({ queryKey: ["orgPeople"], queryFn: fetchOrgPeople, staleTime: 5 * 60 * 1000 });
 
-  const companies = data?.companies ?? [];
+  /**
+   * CENTRAL MASTERS — the company books and every vendor ledger.
+   *
+   * ⚠ ITS OWN QUERY, NOT PART OF THE WORKING SET. Every workflow save calls
+   *   `invalidate()`, which re-fetches the working set; ~3,000 vendor ledgers do
+   *   not change because a GRN was booked. Tally feeds these on its own
+   *   schedule, so 30 minutes stale is the right granularity. Only a master
+   *   approval (which creates a ledger) invalidates this — see
+   *   resolveMasterRequest.
+   */
+  const mastersQ = useQuery({
+    queryKey: PROCUREMENT_MASTERS_QK,
+    queryFn: fetchProcurementMasters,
+    enabled: !!session.user,
+    staleTime: 30 * 60 * 1000,
+  });
+
+  /**
+   * COMPANY ITEM BOOKS, loaded on demand. A form asks for a book with
+   * `ensureItemBook`; the book then joins `items`, so itemById, the emails and
+   * every label resolve an item picked from it straight away — before the save
+   * that would bring it into the working set.
+   */
+  const [bookCompanyIds, setBookCompanyIds] = useState<string[]>([]);
+  const ensureItemBook = useCallback((companyId: string) => {
+    if (!companyId) return;
+    setBookCompanyIds((prev) => (prev.includes(companyId) ? prev : [...prev, companyId]));
+  }, []);
+  const bookQs = useQueries({
+    queries: bookCompanyIds.map((companyId) => ({
+      queryKey: PROCUREMENT_ITEM_BOOK_QK(companyId),
+      queryFn: () => fetchCompanyItems(companyId),
+      enabled: !!session.user,
+      staleTime: 30 * 60 * 1000,
+    })),
+  });
+  // A stable fingerprint of what the books hold, so the merge below reruns only
+  // when a book actually lands — useQueries hands back a new array every render.
+  const booksKey = bookQs.map((q, i) => `${bookCompanyIds[i]}:${q.dataUpdatedAt}`).join("|");
+  const bookLoadingIds = bookCompanyIds.filter((_, i) => bookQs[i]?.isLoading);
+  const bookLoadingKey = bookLoadingIds.join("|");
+
+  const companies = mastersQ.data?.companies ?? [];
   const categories = data?.categories ?? [];
   const itemGroups = data?.itemGroups ?? [];
-  const items = data?.items ?? [];
-  const vendors = data?.vendors ?? [];
+  const vendors = mastersQ.data?.vendors ?? [];
+  const legacyCompanies = data?.legacyCompanies ?? [];
+  const legacyVendors = data?.legacyVendors ?? [];
+  const unitNames = mastersQ.data?.units ?? [];
+  const workingItems = data?.items;
+  const items = useMemo(() => {
+    const byId = new Map<string, Item>();
+    for (const q of bookQs) for (const it of q.data ?? []) byId.set(it.id, it);
+    // The working set's own copy wins: it carries inactive and cross-book items
+    // a line still names, which a book (active rows only) leaves out.
+    for (const it of workingItems ?? []) byId.set(it.id, it);
+    return [...byId.values()];
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [workingItems, booksKey]);
   const masterManagers = data?.masterManagers ?? [];
   const masterRequests = data?.masterRequests ?? [];
   const poCancelRequests = data?.poCancelRequests ?? [];
@@ -694,6 +815,7 @@ export function ProcurementStoreProvider({ children }: { children: ReactNode }) 
   const requestItems = data?.requestItems ?? [];
   const requestVendors = data?.requestVendors ?? [];
   const sourcingDocs = data?.sourcingDocs ?? [];
+  const requestDocs = data?.requestDocs ?? [];
   const vendorItemPrices = data?.vendorItemPrices ?? [];
   const quotations = data?.quotations ?? [];
   const pos = data?.pos ?? [];
@@ -707,6 +829,7 @@ export function ProcurementStoreProvider({ children }: { children: ReactNode }) 
   const qcItems = data?.qcItems ?? [];
   const payments = data?.payments ?? [];
   const followups = data?.followups ?? [];
+  const followupItems = data?.followupItems ?? [];
   const activity = data?.activity ?? [];
   const notifications = data?.notifications ?? [];
 
@@ -961,6 +1084,32 @@ export function ProcurementStoreProvider({ children }: { children: ReactNode }) 
       poCancelRequests.find((r) => r.poId === poId && r.status === "pending");
     const isPoApprover = (po: PurchaseOrder): boolean => canEdit && (isAdmin || poApproverIds(po).includes(user.id));
 
+    // ---- partial dispatch (20261217160000) — mirrors refresh_po and the GRN trigger.
+    const dispatchedQtyOf = (poItemId: string): number =>
+      followupItems.filter((fi) => fi.poItemId === poItemId).reduce((sum, fi) => sum + fi.qty, 0);
+    const fullyDispatched = (poId: string): boolean =>
+      followups.some((f) => f.poId === poId && f.dispatchStatus === "dispatched") ||
+      pis.some((p) => p.poId === poId && p.dispatchStatus === "dispatched");
+    /** Lots on record and no full dispatch yet: receipts are capped at what was dispatched. */
+    const partialTracked = (poId: string): boolean => {
+      if (fullyDispatched(poId)) return false;
+      const fuIds = new Set(followups.filter((f) => f.poId === poId).map((f) => f.id));
+      return followupItems.some((fi) => fuIds.has(fi.followupId));
+    };
+    const partialOpen = (poId: string): boolean =>
+      partialTracked(poId) &&
+      poItems.some((poi) => poi.poId === poId && poi.qty > dispatchedQtyOf(poi.id) + 0.0005);
+
+    const categoryLabelOf = (lines: RequestItem[]): string => {
+      const names = new Set<string>();
+      for (const l of lines) {
+        const catId = l.categoryId ?? requests.find((r) => r.id === l.requestId)?.categoryId ?? null;
+        const name = catId ? categories.find((c) => c.id === catId)?.name : undefined;
+        if (name) names.add(name);
+      }
+      return names.size ? [...names].join(", ") : "—";
+    };
+
     const itemsByGroupId = new Map<string, RequestItem[]>();
     for (const ri of requestItems) {
       const list = itemsByGroupId.get(ri.requestId) ?? [];
@@ -969,8 +1118,15 @@ export function ProcurementStoreProvider({ children }: { children: ReactNode }) 
     }
     const poItemByLine = new Map(poItems.map((pi) => [pi.requestItemId, pi]));
 
-    const itemLabel = (itemId: string): string =>
-      items.find((i) => i.id === itemId)?.name ?? "Unknown item";
+    // Maps, not .find(): a company book is thousands of items and there are
+    // ~3,000 vendor ledgers, and every queue row looks both up on every render.
+    const itemMap = new Map(items.map((i) => [i.id, i]));
+    // Legacy rows first, so a Central Masters row with the same id always wins.
+    // They only resolve ids on pre-cutover records; the pickers never see them.
+    const vendorMap = new Map([...legacyVendors, ...vendors].map((v) => [v.id, v]));
+    const companyMap = new Map([...legacyCompanies, ...companies].map((c) => [c.id, c]));
+
+    const itemLabel = (itemId: string): string => itemMap.get(itemId)?.name ?? "Unknown item";
 
     // --- notification fan-out helpers ---
     const ownerIdsOf = (stepKey: StepKey): string[] =>
@@ -1028,28 +1184,45 @@ export function ProcurementStoreProvider({ children }: { children: ReactNode }) 
       itemGroups,
       items,
       vendors,
+      unitNames,
       activeCompanies: companies.filter((c) => c.active).sort(byName),
       activeCategories: categories.filter((c) => c.active).sort(byName),
       itemGroupsByCategory: (categoryId) =>
         itemGroups.filter((g) => g.categoryId === categoryId).sort(byName),
-      itemsByCategory: (categoryId) => items.filter((i) => i.categoryId === categoryId).sort(byName),
-      itemsForCategory: (categoryId) => {
-        if (!categoryId) return [];
-        return items.filter((i) => i.active && i.categoryId === categoryId).sort(byName);
+      ensureItemBook,
+      itemBookLoading: (companyId) => !!companyId && bookLoadingKey.split("|").includes(companyId),
+      itemsForLine: (companyId, categoryId) => {
+        if (!companyId || !categoryId) return [];
+        const types = categories.find((c) => c.id === categoryId)?.itemTypes ?? [];
+        return items
+          .filter((i) => i.active && i.companyId === companyId)
+          .filter((i) => types.length === 0 || (i.itemType !== null && types.includes(i.itemType)))
+          .sort((a, b) => a.name.localeCompare(b.name));
       },
+      vendorsForCompany: (companyId) =>
+        vendors
+          .filter((v) => v.active && (v.companyId === null || v.companyId === companyId))
+          .sort((a, b) => a.name.localeCompare(b.name)),
       categoryById: (id) => (id ? categories.find((c) => c.id === id) : undefined),
       itemGroupById: (id) => (id ? itemGroups.find((g) => g.id === id) : undefined),
-      itemById: (id) => (id ? items.find((i) => i.id === id) : undefined),
-      vendorById: (id) => (id ? vendors.find((v) => v.id === id) : undefined),
-      companyById: (id) => (id ? companies.find((c) => c.id === id) : undefined),
+      itemById: (id) => (id ? itemMap.get(id) : undefined),
+      vendorById: (id) => (id ? vendorMap.get(id) : undefined),
+      companyById: (id) => (id ? companyMap.get(id) : undefined),
       companyLabel: (id) => {
-        const c = id ? companies.find((x) => x.id === id) : undefined;
+        const c = id ? companyMap.get(id) : undefined;
         if (!c) return "—";
-        // Two companies can share a name across locations, so the location is part
-        // of the identity whenever it is recorded. Same rendering as PoDetail's.
+        // A company is one Tally book, and two books share an alias (O-tec in
+        // Surat and in Noida), so the site is part of the identity. Same
+        // rendering as PoDetail's.
         return c.location ? `${c.name} — ${c.location}` : c.name;
       },
-      vendorLabel: (id) => (id ? vendors.find((v) => v.id === id)?.name ?? "—" : "—"),
+      vendorLabel: (id) => (id ? vendorMap.get(id)?.name ?? "—" : "—"),
+      categoryLabelForRequest: (requestId) =>
+        categoryLabelOf(requestItems.filter((ri) => ri.requestId === requestId)),
+      categoryLabelForPo: (poId) => {
+        const lineIds = new Set(poItems.filter((pi) => pi.poId === poId).map((pi) => pi.requestItemId));
+        return categoryLabelOf(requestItems.filter((ri) => lineIds.has(ri.id)));
+      },
 
       masterManagers,
       masterRequests,
@@ -1115,6 +1288,15 @@ export function ProcurementStoreProvider({ children }: { children: ReactNode }) 
         requestVendors.filter((v) => v.requestId === requestId).sort((a, b) => a.sortOrder - b.sortOrder),
       sourcingDocsForRequest: (requestId) =>
         sourcingDocs.filter((d) => d.requestId === requestId).sort((a, b) => a.sortOrder - b.sortOrder),
+      requestDocsForRequest: (requestId) =>
+        requestDocs.filter((d) => d.requestId === requestId).sort((a, b) => a.sortOrder - b.sortOrder),
+      requestDocsForPo: (poId) => {
+        const lineIds = new Set(poItems.filter((pi) => pi.poId === poId).map((pi) => pi.requestItemId));
+        const reqIds = new Set(requestItems.filter((ri) => lineIds.has(ri.id)).map((ri) => ri.requestId));
+        return requestDocs
+          .filter((d) => reqIds.has(d.requestId))
+          .sort((a, b) => a.sortOrder - b.sortOrder);
+      },
       priceFor: (vendorId, itemId) =>
         vendorItemPrices.find((p) => p.active && p.vendorId === vendorId && p.itemId === itemId),
       requestApprovalTotal: requestApprovalTotalOf,
@@ -1181,6 +1363,14 @@ export function ProcurementStoreProvider({ children }: { children: ReactNode }) 
       followups,
       followupsForPi: (piId) => followups.filter((f) => f.piId === piId).sort((a, b) => b.createdAt.localeCompare(a.createdAt)),
       followupsForPo: (poId) => followups.filter((f) => f.poId === poId).sort((a, b) => b.createdAt.localeCompare(a.createdAt)),
+      dispatchedQtyForPoItem: (poItemId) => dispatchedQtyOf(poItemId),
+      followupItemsForFollowup: (followupId) => followupItems.filter((fi) => fi.followupId === followupId),
+      partialDispatchOpen: (poId) => partialOpen(poId),
+      receiveCapForPoItem: (poItemId) => {
+        const poi = poItems.find((x) => x.id === poItemId);
+        if (!poi || !partialTracked(poi.poId)) return null;
+        return dispatchedQtyOf(poItemId);
+      },
       dispatchDueForPo: (poId) => dispatchDueForPoPure(procIndex, snapshot, poId),
       stepSla,
       dueIsoForLine: (line, step) => lineDueIso(snapshot, line, step),
@@ -1231,11 +1421,26 @@ export function ProcurementStoreProvider({ children }: { children: ReactNode }) 
         (isAdmin || poScopeStepKeys.some((k) => isStepOwner(k))) &&
         poCancellable(po) &&
         !pendingCancelRequestForPo(po.id),
-      canCancelPo: (po) => isPoApprover(po) && poCancellable(po),
+      // The purchase department (sourcing step owners), admins and the PO's
+      // approver — and for ALL of them only until goods are received or booked
+      // in Tally (poCancellable). Mirrors fms_purchase_cancel_po (20261217150000).
+      canCancelPo: (po) =>
+        ((canEdit && (isAdmin || isStepOwner("sourcing"))) || isPoApprover(po)) && poCancellable(po),
+      // Same people who may generate the PO — the server checks the same rule.
+      canHoldPo: canEdit && (isAdmin || isStepOwner("po")),
 
       // ---- workflow mutations ----
-      submitRequest: async (input) => {
+      submitRequest: async ({ docs, ...input }) => {
         const id = await submitRequestWrite(input);
+        if (docs && docs.length) {
+          try {
+            await saveRequestDocsWrite(id, docs);
+          } catch (e) {
+            // The request exists; say plainly that only the files are missing.
+            await invalidate();
+            throw new Error(`The request was raised, but its attachments could not be saved: ${(e as Error).message}. Open it and edit to attach them again.`);
+          }
+        }
         await safeAnnounce({
           entityType: "request",
           entityId: id,
@@ -1248,6 +1453,11 @@ export function ProcurementStoreProvider({ children }: { children: ReactNode }) 
         return id;
       },
       uploadSourcingDoc: (requestId, file) => uploadSourcingDocWrite(requestId, file),
+      uploadRequestDoc: (folderKey, file) => uploadRequestDocWrite(folderKey, file),
+      saveRequestDocs: async (requestId, docs) => {
+        await saveRequestDocsWrite(requestId, docs);
+        await invalidate();
+      },
       sourcingDocUrl: (path) => sourcingDocUrlWrite(path),
       saveSourcingDocs: async (requestId, docs) => {
         await saveSourcingDocsWrite(requestId, docs);
@@ -1552,6 +1762,44 @@ export function ProcurementStoreProvider({ children }: { children: ReactNode }) 
       updateTally: async (input) => { await updateTallyWrite(input); await invalidate(); },
       updateApproval: async (input) => { await updateApprovalWrite(input); await invalidate(); },
       updatePoDetails: async (input) => { await updatePoDetailsWrite(input); await invalidate(); },
+      setPoHold: async (input) => {
+        const before = requests.find((r) => r.id === input.requestId);
+        const wasOnHold = !!before?.poOnHoldAt;
+        const remarks = input.remarks?.trim() || null;
+        await setPoHoldWrite({ requestId: input.requestId, onHold: input.onHold, remarks });
+        const label = before?.requestNo ? `Requisition ${before.requestNo}` : "Requisition";
+        const requester = before?.requesterId ? [before.requesterId] : [];
+        // ⚠ Built BEFORE invalidate(), like every other announce here, so the
+        //   email reads the requisition off the snapshot in hand.
+        if (input.onHold) {
+          await safeAnnounce({
+            entityType: "request",
+            entityId: input.requestId,
+            type: wasOnHold ? "po_hold_remarks_updated" : "po_on_hold",
+            text: `${label} is on hold at PO generation${remarks ? ` — ${remarks}` : ""}`,
+            recipients: requester,
+            meta: email.poOnHold(input.requestId, remarks, wasOnHold),
+          });
+        } else if (wasOnHold) {
+          await safeAnnounce({
+            entityType: "request",
+            entityId: input.requestId,
+            type: "po_resumed",
+            text: `${label} resumed for PO generation${remarks ? ` — ${remarks}` : ""}`,
+            recipients: requester,
+            meta: email.poResumed(input.requestId, remarks),
+          });
+        } else if ((before?.poRemarks ?? null) !== remarks) {
+          // Not on hold: the change is recorded on the requisition's timeline, nobody is pinged.
+          await safeAnnounce({
+            entityType: "request",
+            entityId: input.requestId,
+            type: "po_remarks_updated",
+            text: remarks ? `PO remarks updated — ${remarks}` : "PO remarks cleared",
+          });
+        }
+        await invalidate();
+      },
       canEditSharePo: (po) => canEdit && isStepOwner("share_po") && poShareLockReason(procIndex, po) === null,
       addPi: async (input) => {
         const id = await addPiWrite(input);
@@ -1603,6 +1851,26 @@ export function ProcurementStoreProvider({ children }: { children: ReactNode }) 
         });
         await invalidate();
         return id;
+      },
+      recordPartialDispatch: async (input) => {
+        await recordPartialDispatchWrite(input);
+        // The receiving team can book this lot in now, while the PO stays on Follow-up.
+        await safeAnnounce({
+          entityType: "po",
+          entityId: input.poId,
+          type: "partial_dispatch",
+          text: `Part of the order dispatched — ${input.items.length} item${input.items.length === 1 ? "" : "s"} in this lot, expect inward (GRN)`,
+          recipients: ownerIdsOf("inward"),
+          meta: email.dispatched({
+            poId: input.poId,
+            actualDispatchDate: input.actualDispatchDate,
+            revisedDispatchDate: null,
+            lrNo: input.lrNo,
+            transportDetails: input.transportDetails,
+            remarks: input.remarks ? `Partial dispatch — ${input.remarks}` : "Partial dispatch",
+          }),
+        });
+        await invalidate();
       },
       recordFollowup: async (input) => {
         await recordFollowupWrite(input);
@@ -1774,15 +2042,6 @@ export function ProcurementStoreProvider({ children }: { children: ReactNode }) 
       departmentById: dir.departmentById,
 
       // ---- master mutations ----
-      createCompany: async (input) => {
-        const id = await insertCompany({ ...input, createdBy: user.id });
-        await invalidate();
-        return id;
-      },
-      editCompany: async (id, input) => {
-        await updateCompany(id, input);
-        await invalidate();
-      },
       createCategory: async (input) => {
         const id = await insertCategory({ ...input, createdBy: user.id });
         await invalidate();
@@ -1799,24 +2058,6 @@ export function ProcurementStoreProvider({ children }: { children: ReactNode }) 
       },
       editItemGroup: async (id, input) => {
         await updateItemGroup(id, input);
-        await invalidate();
-      },
-      createItem: async (input) => {
-        const id = await insertItem({ ...input, createdBy: user.id });
-        await invalidate();
-        return id;
-      },
-      editItem: async (id, input) => {
-        await updateItem(id, input);
-        await invalidate();
-      },
-      createVendor: async (input) => {
-        const id = await insertVendor({ ...input, createdBy: user.id });
-        await invalidate();
-        return id;
-      },
-      editVendor: async (id, input) => {
-        await updateVendor(id, input);
         await invalidate();
       },
       createVendorItemPrice: async (input) => {
@@ -1869,6 +2110,15 @@ export function ProcurementStoreProvider({ children }: { children: ReactNode }) 
           recipients: req?.requestedBy ? [req.requestedBy] : [],
           meta: { masterType: req?.masterType, resolvedMasterId: newId, ...email.masterResolved(label, name, approve, note) },
         });
+        // An approved vendor or item is a NEW central row — the catalogue and
+        // that company's book must learn about it, or "now selectable" is a lie
+        // for the next 30 minutes. The only writes allowed to touch these keys.
+        if (approve && (req?.masterType === "vendor" || req?.masterType === "item")) {
+          await Promise.all([
+            queryClient.invalidateQueries({ queryKey: PROCUREMENT_MASTERS_QK }),
+            queryClient.invalidateQueries({ queryKey: ["procurementItemBook"] }),
+          ]);
+        }
         await invalidate();
         return newId;
       },
@@ -1925,10 +2175,13 @@ export function ProcurementStoreProvider({ children }: { children: ReactNode }) 
     };
   }, [
     companies,
+    legacyCompanies,
+    legacyVendors,
     categories,
     itemGroups,
     items,
     vendors,
+    unitNames,
     masterManagers,
     masterRequests,
     poCancelRequests,
@@ -1958,6 +2211,9 @@ export function ProcurementStoreProvider({ children }: { children: ReactNode }) 
     followups,
     activity,
     notifications,
+    sourcingDocs,
+    requestDocs,
+    followupItems,
     dir,
     // `personName` closes over this: without it the memo would not recompute when
     // the org-wide people query resolves, and every actor would read "Unknown user".
@@ -1966,21 +2222,27 @@ export function ProcurementStoreProvider({ children }: { children: ReactNode }) 
     session,
     isAdmin,
     queryClient,
+    ensureItemBook,
+    // A string, so `itemBookLoading` refreshes when a book starts or lands
+    // without the memo depending on useQueries' new-every-render array.
+    bookLoadingKey,
   ]);
 
-  if (isLoading) {
+  // The catalogue is part of "loaded": every PO and quotation names its vendor
+  // and company through it, and rendering before it lands would paint "—".
+  if (isLoading || mastersQ.isLoading) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-page-grad text-grey text-sm">
         Loading procurement…
       </div>
     );
   }
-  if (error) {
+  if (error || mastersQ.error) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-page-grad px-6 text-center">
         <div className="max-w-sm">
           <p className="text-[15px] font-semibold text-navy">Couldn't load procurement data</p>
-          <p className="text-[13px] text-grey mt-1">{(error as Error).message}</p>
+          <p className="text-[13px] text-grey mt-1">{((error ?? mastersQ.error) as Error).message}</p>
         </div>
       </div>
     );

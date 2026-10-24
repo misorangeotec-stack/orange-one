@@ -124,10 +124,11 @@ export default function InterviewsQueue() {
     {
       key: "candidate",
       header: "Candidate",
+      // One line (PF-20): the second line follows the first, cut with "…" and whole on hover.
       cell: (r) => (
-        <button onClick={() => openCandidate(r.candidate)} className="text-left">
-          <div className="font-semibold text-navy hover:text-orange">{r.candidate.name}</div>
-          <div className="text-[12px] text-grey">{r.candidate.phone ?? "—"}</div>
+        <button onClick={() => openCandidate(r.candidate)} className="max-w-full truncate text-left">
+          <span className="font-semibold text-navy hover:text-orange">{r.candidate.name}</span>
+          <span className="ml-1.5 text-[12px] text-grey">{r.candidate.phone ?? "—"}</span>
         </button>
       ),
       sortValue: (r) => r.candidate.name,
@@ -168,6 +169,8 @@ export default function InterviewsQueue() {
     {
       key: "status",
       header: "Status",
+      // A pill: never cut, no handle (PF-20).
+      resize: false,
       cell: (r) =>
         r.booked ? (
           <span className="rounded-full bg-page px-2 py-0.5 text-[11.5px] font-semibold text-navy">Booked</span>
@@ -208,6 +211,7 @@ export default function InterviewsQueue() {
           <span className="text-grey">—</span>
         ),
       sortValue: (r) => r.interview?.scheduledOn ?? "9999",
+      filter: { kind: "date", get: (r) => r.interview?.scheduledOn ?? "" },
       exportValue: (r) => formatDateDMY(r.interview?.scheduledOn ?? null),
       tdClassName: "whitespace-nowrap",
     },
@@ -216,6 +220,7 @@ export default function InterviewsQueue() {
       header: "Waiting",
       cell: (r) => <span className="text-grey">{s.daysInStage(r.candidate)}d</span>,
       sortValue: (r) => s.daysInStage(r.candidate),
+      filter: { kind: "number", get: (r) => s.daysInStage(r.candidate) },
       exportValue: (r) => s.daysInStage(r.candidate),
       align: "right",
       tdClassName: "whitespace-nowrap",
@@ -225,6 +230,7 @@ export default function InterviewsQueue() {
       header: "Due",
       cell: (r) => <DueCell dueIso={dueOf(r)} />,
       sortValue: (r) => dueOf(r) ?? "9999",
+      filter: { kind: "date", get: (r) => dueOf(r) ?? "" },
       exportValue: (r) => formatDateDMY(dueOf(r)),
       tdClassName: "whitespace-nowrap",
     },
