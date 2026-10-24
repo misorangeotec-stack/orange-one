@@ -220,7 +220,14 @@ export interface HandoverBomLine {
    *  extras. Positional: mh_bom_lines mirrors bom_lines index for index. */
   isAdditional?: boolean;
   qty: number | null;
+  /** Flat text every reader shows: one lot as picked, several as "A (60) / B (40)". */
   lotNo: string | null;
+  /**
+   * The lots picked from Tally's stock at handover, with the quantity drawn from
+   * each when there is more than one (same picker as Order to Dispatch). Absent on
+   * lines recorded before the picker, which carry only `lotNo`.
+   */
+  lots?: { lotNo: string; qty: number | null; seq: number }[];
 }
 
 /** One packaging line captured at the LOG BOOK ENTRY: the packaging item (from the

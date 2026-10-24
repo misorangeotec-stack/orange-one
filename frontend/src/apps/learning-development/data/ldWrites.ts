@@ -926,3 +926,96 @@ export const setMandatoryProgramActive = async (id: string, active: boolean): Pr
     .eq("id", id);
   if (error) throw new Error(error.message);
 };
+
+/* ------------------------------------------------ the training calendar */
+
+/**
+ * One training added or uploaded on the calendar (decision D1: no request,
+ * no approvals — the year calendar counts as approved).
+ *
+ * `attendeeIds` is the FULL list: on an edit, anyone left out is removed (and,
+ * if they already had the invite, told it is off for them).
+ */
+export interface CalendarTrainingInput {
+  id?: string | null;
+  title: string;
+  category: "internal" | "external";
+  sessionDate: string;
+  startTime: string;
+  endTime: string;
+  teamsLink: string;
+  description?: string | null;
+  trainerUserId?: string | null;
+  trainerId?: string | null;
+  externalTrainerName?: string | null;
+  sessionTypeIds?: string[];
+  attendeeIds: string[];
+  /** Bulk upload only — the spreadsheet row, so an error can name it. */
+  rowNo?: number;
+}
+
+const calendarPayload = (i: CalendarTrainingInput) => ({
+  id: i.id ?? null,
+  row_no: i.rowNo ?? null,
+  title: i.title,
+  category: i.category,
+  session_date: i.sessionDate,
+  start_time: i.startTime,
+  end_time: i.endTime,
+  teams_link: i.teamsLink,
+  description: i.description ?? null,
+  trainer_user_id: i.trainerUserId ?? null,
+  trainer_id: i.trainerId ?? null,
+  external_trainer_name: i.externalTrainerName ?? null,
+  session_type_ids: i.sessionTypeIds ?? [],
+  attendee_ids: i.attendeeIds,
+});
+
+export const saveCalendarTraining = (input: CalendarTrainingInput): Promise<string> =>
+  rpc("fms_ld_save_calendar_session", { p_payload: calendarPayload(input) });
+
+/** All rows or none — a bad row is named by its spreadsheet row number. */
+export const bulkSaveCalendar = (rows: CalendarTrainingInput[]): Promise<{ created: number }> =>
+  rpc("fms_ld_bulk_save_calendar", { p_rows: rows.map(calendarPayload) });
+
+/** Mails attendees ONLY if the invite had already gone out (requirement 4). */
+export const cancelTraining = (sessionId: string, reason: string): Promise<{ cancel_mails: number }> =>
+  rpc("fms_ld_cancel_session", { p_session_id: sessionId, p_reason: reason });
+
+export const completeTraining = (
+  sessionId: string,
+  rows: { employeeId: string; status: "present" | "absent" }[],
+  mom: string | null = null,
+  paths: string[] = [],
+): Promise<{ present: number; absent: number }> =>
+  rpc("fms_ld_complete_session", {
+    p_session_id: sessionId,
+    p_rows: rows.map((r) => ({ employee_id: r.employeeId, status: r.status })),
+    p_mom: mom,
+    p_paths: paths,
+  });
+
+export interface DirectoryPerson {
+  id: string;
+  name: string;
+  email: string | null;
+  employeeCode: string | null;
+  departmentId: string | null;
+  designation: string | null;
+}
+
+/** Staff with emails + employee codes, for matching uploaded attendees. Calendar managers only. */
+export const peopleDirectory = async (): Promise<DirectoryPerson[]> => {
+  const rows = (await rpc("fms_ld_people_directory", {})) as any[];
+  return (rows ?? []).map((r) => ({
+    id: r.id,
+    name: r.name,
+    email: r.email ?? null,
+    employeeCode: r.employee_code ?? null,
+    departmentId: r.department_id ?? null,
+    designation: r.designation ?? null,
+  }));
+};
+
+export const setCalendarManagers = (userIds: string[]): Promise<void> =>
+  setConfig("calendar_managers", { user_ids: userIds } as Json);

@@ -12618,6 +12618,28 @@ export type Database = {
         Returns: boolean
       }
       fms_ld_close_attendance: { Args: { p_session_id: string }; Returns: Json }
+      fms_ld_bulk_save_calendar: { Args: { p_rows: Json }; Returns: Json }
+      fms_ld_can_manage_calendar: { Args: { p_uid?: string }; Returns: boolean }
+      fms_ld_cancel_session: {
+        Args: { p_reason: string; p_session_id: string }
+        Returns: Json
+      }
+      fms_ld_complete_session: {
+        Args: { p_rows: Json; p_session_id: string }
+        Returns: Json
+      }
+      fms_ld_people_directory: {
+        Args: never
+        Returns: {
+          department_id: string | null
+          designation: string | null
+          email: string | null
+          employee_code: string | null
+          id: string
+          name: string
+        }[]
+      }
+      fms_ld_save_calendar_session: { Args: { p_payload: Json }; Returns: string }
       fms_ld_close_request: {
         Args: { p_payload: Json; p_request_id: string }
         Returns: undefined

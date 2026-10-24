@@ -815,10 +815,13 @@ export async function loadInkConsumption(
  *            imported, but it is supply arriving on a date, which is the only thing the planning
  *            maths cares about, so it rides the same entry screen and the same edits. One entry
  *            per week; an ink set to two weeks in the item master wants two of them.
+ *   NEW ORDER  placed from the dashboard's "Place order" panel, not yet confirmed by the
+ *            supplier. Sits in the ETD block and counts exactly like ETD; the planner moves it
+ *            to ETD / ETA as the order progresses.
  * A consignment that has been received is DELETED, because from then on it is in the stock
  * figure and counting it twice would overstate cover.
  */
-export const SHIPMENT_STATUSES = ["ETD", "ETA", "AT PORT", "PLANT"] as const;
+export const SHIPMENT_STATUSES = ["ETD", "ETA", "AT PORT", "PLANT", "NEW ORDER"] as const;
 export type ShipmentStatus = (typeof SHIPMENT_STATUSES)[number];
 
 /** One item and quantity inside a consignment — a single cell of the sheet's shipment column. */
@@ -841,6 +844,12 @@ export interface Shipment {
   company: string;
   note: string;
   lines: ShipmentLine[];
+  /**
+   * NEW ORDER only: the Purchase hand-offs the order was split into (see lib/orderHandoff.ts),
+   * so the column heading can reopen a request that was not raised yet. The hand-off itself lives
+   * in the placing browser's storage; elsewhere this is inert.
+   */
+  handoffs?: { target: "import" | "domestic"; id: string }[];
 }
 
 /** Planning inputs the planner maintains per ink. Tally cannot supply these. */
@@ -942,8 +951,14 @@ export interface InkRow extends InkPosition {
   band: InkBand;
   stockPct: number | null;          // shelf only
   stockBand: InkBand;
-  incomingPct: number | null;       // ETA + at port only
-  incomingBand: InkBand;
+  /**
+   * Stock + ETA + at port: the shelf plus what is already moving. ETA + at port on its own was
+   * coloured once, but incoming against the target ignores the shelf, so an ink with little
+   * stock and one consignment showed green. The colour now sits on this sum.
+   */
+  stockIncoming: number;
+  stockIncomingPct: number | null;
+  stockIncomingBand: InkBand;
   remark: "NEW ORDER REQUIRED" | "EXCESS STOCK" | "";
 }
 
@@ -982,7 +997,7 @@ export function deriveInkRow(
       // Without this guard every blank consignment line would count as incoming for EVERY
       // uncoded item.
       if (!pos.itemCode || line.itemCode !== pos.itemCode) continue;
-      if (s.status === "ETD") etd += line.qty;
+      if (s.status === "ETD" || s.status === "NEW ORDER") etd += line.qty;
       else if (s.status === "ETA") eta += line.qty;
       else if (s.status === "AT PORT") atPort += line.qty;
       else plant += line.qty;
@@ -1012,7 +1027,7 @@ export function deriveInkRow(
    */
   const pctOf = (qty: number) => (monthMaxLevel > 0 ? (qty / monthMaxLevel) * 100 : null);
   const stockPct = pctOf(stock);
-  const incomingPct = pctOf(incoming);
+  const stockIncomingPct = pctOf(stock + incoming);
   const coverPct = pctOf(stock + committed + etd);
 
   let remark: InkRow["remark"] = "";
@@ -1040,8 +1055,9 @@ export function deriveInkRow(
     band: bandFor(coverPct, thresholds),
     stockPct,
     stockBand: bandFor(stockPct, thresholds),
-    incomingPct,
-    incomingBand: bandFor(incomingPct, thresholds),
+    stockIncoming: stock + incoming,
+    stockIncomingPct,
+    stockIncomingBand: bandFor(stockIncomingPct, thresholds),
     remark,
   };
 }

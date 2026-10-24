@@ -21,6 +21,7 @@ import ClaimQueue from "./pages/queues/ClaimQueue";
 import ClaimReviewQueue from "./pages/queues/ClaimReviewQueue";
 import FinanceReviewQueue from "./pages/queues/FinanceReviewQueue";
 import SettlementQueue from "./pages/queues/SettlementQueue";
+import CancelTripQueue from "./pages/queues/CancelTripQueue";
 import OutstandingAdvances from "./pages/reports/OutstandingAdvances";
 import UpcomingTravel from "./pages/reports/UpcomingTravel";
 import CancelledTravel from "./pages/reports/CancelledTravel";
@@ -150,6 +151,8 @@ function TravelDeskRoutes() {
               <FinanceReviewQueue />
             ) : step === "settlement" ? (
               <SettlementQueue />
+            ) : step === "cancel_trip" ? (
+              <CancelTripQueue />
             ) : null;
           return (
             <Route

@@ -1,6 +1,7 @@
 import { useEffect, useRef } from "react";
 import { TextInput } from "@/shared/components/ui/Form";
 import MultiSelect from "@/shared/components/ui/MultiSelect";
+import Combobox from "@/shared/components/ui/Combobox";
 import { advanceFocus } from "@/shared/lib/advanceFocus";
 import type { LotOption } from "../data/lotFetch";
 
@@ -141,6 +142,7 @@ const boxQty = (n: number): string => String(Number(n.toFixed(3)));
 
 export default function LotAllocField({
   rows, onChange, quantity, unit = "", options, bookOf, disabled = false, autoFill = false,
+  alwaysQty = false,
 }: {
   rows: LotRow[];
   onChange: (next: LotRow[]) => void;
@@ -157,6 +159,13 @@ export default function LotAllocField({
    * more than `quantity`. Off unless asked for — see the header.
    */
   autoFill?: boolean;
+  /**
+   * Production Entry's handover: a quantity box beside EVERY picked lot, one lot
+   * included, so the split is always visible. A single lot is filled with
+   * `quantity` (and follows it until someone types). Off for dispatch, whose
+   * single-lot path asks for nothing extra — see the header.
+   */
+  alwaysQty?: boolean;
 }) {
   const qtyRefs = useRef<Record<number, HTMLInputElement | null>>({});
   const wrapRef = useRef<HTMLDivElement>(null);
@@ -164,6 +173,8 @@ export default function LotAllocField({
   const picked = filledLots(rows);
   const values = picked.map((r) => r.lot_no);
   const multi = picked.length > 1;
+  // Show the per-lot boxes: always with alwaysQty, else only once there are several.
+  const showRows = multi || (alwaysQty && picked.length > 0);
   const target = Number(quantity) || 0;
 
   /*
@@ -273,9 +284,31 @@ export default function LotAllocField({
    * The capacity is summed from the ROUNDED figures the boxes will hold, so the
    * decision and the footer's own sum can never disagree.
    */
+  /** What one lot can give, when Tally answers for it cleanly (one book, the line's unit). */
+  const lotCap = (lot: string): number | null => {
+    const found = byLot.get(lot);
+    const one = found && found.length === 1 ? found[0]! : null;
+    if (!one || !(one.balance > 0)) return null;
+    const sameUnit = !one.uom || !unit || one.uom.trim().toLowerCase() === unit.trim().toLowerCase();
+    return sameUnit ? one.balance : null;
+  };
+
   const reseed = (current: LotRow[], shipNow: number): LotRow[] | null => {
     const lots = filledLots(current);
-    if (!autoFill || disabled || lots.length < 2) return null;
+    if (!autoFill || disabled) return null;
+    // alwaysQty · ONE lot carries the whole quantity — or as much of it as the
+    // lot holds, so a short lot opens the next-lot row below by itself. Its box
+    // follows the quantity until a person types a figure of their own.
+    if (alwaysQty && lots.length === 1) {
+      const only = lots[0]!;
+      if (!only.seeded && only.qty.trim() !== "") return null;
+      const cap = lotCap(only.lot_no);
+      const qty = shipNow > 0 ? boxQty(cap !== null ? Math.min(shipNow, cap) : shipNow) : "";
+      if (only.seeded ? only.qty === qty : qty === "") return null;
+      return current.map((r): LotRow =>
+        r === only ? (qty ? { lot_no: r.lot_no, qty, seeded: true } : { lot_no: r.lot_no, qty: "" }) : r);
+    }
+    if (lots.length < 2) return null;
     if (lots.some((r) => !r.seeded && r.qty.trim() !== "")) return null;
 
     const seedOf = new Map<string, string>();
@@ -334,7 +367,22 @@ export default function LotAllocField({
     const out: LotRow[] = next.map((lot) => prev.get(lot) ?? { lot_no: lot, qty: "" });
     if (out.length <= 1) {
       const one = out[0] ?? emptyLotRow();
-      onChange([{ lot_no: one.lot_no, qty: "" }]);
+      const single: LotRow[] = [{ lot_no: one.lot_no, qty: "" }];
+      // alwaysQty: the one lot takes the whole quantity, seeded so it follows it.
+      onChange(alwaysQty && one.lot_no ? reseed(single, target) ?? single : single);
+      return;
+    }
+    // alwaysQty · lots already there keep their figures; a newly picked one takes
+    // what is still missing (capped at what it holds), as the next-lot row does.
+    if (alwaysQty) {
+      let left = target - out.filter((r) => prev.has(r.lot_no)).reduce((a, r) => a + (Number(r.qty) || 0), 0);
+      onChange(out.map((r): LotRow => {
+        if (prev.has(r.lot_no) || left <= QTY_EPS) return r;
+        const cap = lotCap(r.lot_no);
+        const fill = cap !== null ? Math.min(left, cap) : left;
+        left -= fill;
+        return { lot_no: r.lot_no, qty: boxQty(fill) };
+      }));
       return;
     }
     // Decided in the SAME change as the pick, not in an effect after it, so the
@@ -386,6 +434,28 @@ export default function LotAllocField({
   const anyQty = picked.some((r) => r.qty.trim() !== "");
   const off = anyQty && target > 0 && Math.abs(sum - target) > QTY_EPS;
 
+  /*
+    alwaysQty · THE NEXT LOT OPENS BY ITSELF. While the lots picked so far cover
+    less than the quantity (every box answered), a second picker appears under
+    them for the rest; picking from it adds the lot with what is still missing,
+    capped at what that lot holds — so a short lot opens yet another row, until
+    the lots add up.
+  */
+  const remaining = target - sum;
+  const showNext =
+    alwaysQty && !disabled && picked.length > 0 && target > 0 &&
+    picked.every((r) => r.qty.trim() !== "") && remaining > QTY_EPS;
+  const nextOpts = opts
+    .filter((o) => !values.includes(o.value))
+    .map((o) => ({ value: o.value, label: o.value, sublabel: balanceText(o.value) ?? undefined }));
+  const addLot = (lot: string) => {
+    const t = lot.trim();
+    if (!t || values.includes(t)) return;
+    const cap = lotCap(t);
+    const fill = cap !== null ? Math.min(remaining, cap) : remaining;
+    onChange([...picked, { lot_no: t, qty: boxQty(fill) }]);
+  };
+
   return (
     <div ref={wrapRef} className="space-y-1.5">
       <MultiSelect
@@ -412,15 +482,17 @@ export default function LotAllocField({
            not caught up with looks impossible to enter. */
         placeholder="pick or type the lot"
         triggerClassName="py-1"
+        // Production's handover: close on each pick so the lot and its box show at once.
+        closeOnPick={alwaysQty}
       />
 
       {/* ONE LOT: no box to fill, just what Tally shows against it. Keeping this
           line is what stops OD-12's balance disappearing on the common path. */}
-      {!multi && values[0] && balanceText(values[0]) && (
+      {!showRows && values[0] && balanceText(values[0]) && (
         <p className="text-[11.5px] text-grey-2">{balanceText(values[0])}</p>
       )}
 
-      {multi && (
+      {showRows && (
         <div className="space-y-1">
           {picked.map((r, i) => {
             const bal = balanceText(r.lot_no);
@@ -474,11 +546,24 @@ export default function LotAllocField({
           {/* The same shape as the grid's credit footer: the figure is always
               there, and only its colour changes. A gap is shown, never blocked —
               see the header. */}
+          {showNext && (
+            <Combobox
+              value=""
+              onChange={addLot}
+              options={nextOpts}
+              onCreate={(typed) => { addLot(typed); }}
+              createLabel={(q) => (byLot.has(q.trim()) ? `Use “${q}”` : `Use “${q}” (not in Tally)`)}
+              searchable
+              placeholder={`pick the next lot — ${fmtQty(remaining)}${unit ? ` ${unit}` : ""} still to cover`}
+              triggerClassName="py-1"
+            />
+          )}
+
           <p className={`text-[11.5px] ${off ? "text-orange" : "text-grey-2"}`}>
             {!anyQty
               ? `Say how much came from each — ${target || "the quantity"}${unit ? ` ${unit}` : ""} in total.`
               : off
-                ? `${fmtQty(sum)} of ${fmtQty(target)}${unit ? ` ${unit}` : ""} — ${fmtQty(Math.abs(target - sum))} ${sum < target ? "short" : "over"}, saved as it is.`
+                ? `${fmtQty(sum)} of ${fmtQty(target)}${unit ? ` ${unit}` : ""} — ${fmtQty(Math.abs(target - sum))} ${sum < target ? "short" : "over"}${alwaysQty ? (sum < target ? " — pick another lot" : " — reduce a lot") : ", saved as it is"}.`
                 : `${fmtQty(sum)} of ${fmtQty(target)}${unit ? ` ${unit}` : ""}`}
           </p>
         </div>

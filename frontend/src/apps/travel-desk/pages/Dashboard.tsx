@@ -154,7 +154,7 @@ export default function Dashboard() {
       <div>
         <h1 className="text-[20px] font-bold text-navy">Travel Desk</h1>
         <p className="mt-1 text-[13.5px] text-grey-2">
-          Request a trip, get it approved, book it, and claim what it cost.
+          Request a trip, get it approved, and book it.
         </p>
       </div>
 

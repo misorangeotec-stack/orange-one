@@ -214,8 +214,11 @@ function production(d: ProductionData): RefIndex {
       r.lotNo,
       r.pmhBatchNo,
       ...(r.mhBomLines ?? []).map((l) => l.lotNo),
+      // Each lot of a multi-lot handover on its own, not only the joined "A (60) / B (40)".
+      ...(r.mhBomLines ?? []).flatMap((l) => (l.lots ?? []).map((x) => x.lotNo)),
       ...(r.tsBomLines ?? []).map((l) => l.lotNo),
       ...(r.aisRounds ?? []).flatMap((a) => [a.rmtTally, ...(a.mhLines ?? []).map((l) => l.lotNo)]),
+      ...(r.aisRounds ?? []).flatMap((a) => (a.mhLines ?? []).flatMap((l) => (l.lots ?? []).map((x) => x.lotNo))),
       ...(coas.get(r.id) ?? []).map((c) => c.lotNo),
     );
   }

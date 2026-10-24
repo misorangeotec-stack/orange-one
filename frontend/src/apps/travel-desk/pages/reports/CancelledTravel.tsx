@@ -29,19 +29,45 @@ export default function CancelledTravel() {
   const s = useTravelStore();
   const { departmentById } = useDirectory();
 
+  /** Cancellations the Cancel Trip team completed — a request still waiting has no credit note yet. */
+  const done = (t: Trip) => s.cancellationsOf(t.id).filter((c) => c.status === "completed");
+
   const rows = useMemo(
     () =>
       s.trips.filter(
-        (t) => t.status === "cancelled" || t.status === "cancelled_pending_claim",
+        (t) =>
+          t.status === "cancelled" ||
+          t.status === "cancelled_pending_claim" ||
+          // Since 2026-10 the booker may cancel one ticket and leave the trip closed.
+          done(t).length > 0,
       ),
-    [s.trips],
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [s.trips, s.legs],
   );
+
+  /** The booker's credit notes on this trip (new process, 2026-10). */
+  const creditNoteNos = (t: Trip): string =>
+    done(t).map((c) => c.creditNoteNo ?? "").filter(Boolean).join(", ");
+  const creditNoteTotal = (t: Trip): number =>
+    done(t).reduce((sum, c) => sum + (c.creditNoteAmount ?? 0), 0);
+  const whyOf = (t: Trip): string | null =>
+    t.cancelReason ?? (done(t).map((c) => c.reason).join(" · ") || null);
 
   /** The reason recorded on the legs — the trip itself carries only the words. */
   const kindOf = (t: Trip): "business" | "personal" | null =>
     s.legsOf(t.id).find((l) => l.cancelReasonKind)?.cancelReasonKind ?? null;
 
-  const charges = (t: Trip) => s.legsOf(t.id).reduce((sum, l) => sum + l.netCost, 0);
+  /*
+    ⚠ A TRIP THAT CLOSED AT BOOKING (2026-10) CAN BE PARTLY CANCELLED — one
+      ticket off, the rest still flying. Only its cancelled tickets are charges;
+      counting the kept ones would report a live flight as money lost. Old-flow
+      trips are cancelled whole, so every leg counts as before.
+  */
+  const charges = (t: Trip) =>
+    s
+      .legsOf(t.id)
+      .filter((l) => !t.closedAtBooking || l.cancelledAt)
+      .reduce((sum, l) => sum + l.netCost, 0);
 
   const businessCharges = rows
     .filter((t) => kindOf(t) === "business")
@@ -52,8 +78,11 @@ export default function CancelledTravel() {
   const advanceOut = rows.reduce((sum, t) => sum + stillOwed(t), 0);
   const openCount = rows.filter((t) => t.status === "cancelled_pending_claim").length;
 
+  const creditNotes = rows.reduce((sum, t) => sum + creditNoteTotal(t), 0);
+
   const tiles: KpiTile[] = [
     { key: "count", label: "Cancelled trips", value: rows.length },
+    { key: "cn", label: "Credit notes", value: money(creditNotes) },
     {
       key: "open",
       label: "Still to settle",
@@ -147,9 +176,26 @@ export default function CancelledTravel() {
       {
         key: "why",
         header: "What happened",
-        cell: (t) => t.cancelReason ?? "—",
-        sortValue: (t) => t.cancelReason ?? "",
-        filter: { kind: "text", get: (t) => t.cancelReason ?? "" },
+        cell: (t) => whyOf(t) || "—",
+        sortValue: (t) => whyOf(t) ?? "",
+        filter: { kind: "text", get: (t) => whyOf(t) ?? "" },
+      },
+      {
+        key: "creditNote",
+        header: "Credit note",
+        cell: (t) => creditNoteNos(t) || "—",
+        sortValue: (t) => creditNoteNos(t),
+        filter: { kind: "text", get: (t) => creditNoteNos(t) },
+      },
+      {
+        key: "creditNoteAmount",
+        header: "Credit note amount",
+        align: "right",
+        cell: (t) => (creditNoteTotal(t) ? money(creditNoteTotal(t)) : "—"),
+        sortValue: (t) => creditNoteTotal(t),
+        filter: { kind: "number", get: (t) => creditNoteTotal(t) },
+        exportValue: (t) => creditNoteTotal(t),
+        tdClassName: "whitespace-nowrap",
       },
       {
         key: "charges",
@@ -195,8 +241,8 @@ export default function CancelledTravel() {
       <div>
         <h1 className="text-[19px] font-bold text-navy">Cancelled travel</h1>
         <p className="max-w-3xl text-[13px] text-grey">
-          Trips called off after they were booked, and what they cost anyway. Section 4.1 makes an
-          unrefunded charge reimbursable when the reason is business and not when it is personal.
+          Trips called off, and tickets cancelled after booking, with the credit note that came back
+          and what they cost anyway.
         </p>
       </div>
 
@@ -226,7 +272,8 @@ export default function CancelledTravel() {
         initialSort={{ key: "cancelledOn", dir: "desc" }}
         exportName="Travel_Cancelled"
         exportNotes={[
-          "“Unrefunded” is the sum of each leg's net cost — ticket plus fees, less whatever the airline or hotel gave back.",
+          "“Unrefunded” is the sum of each leg's net cost — ticket plus fees, less whatever the airline or hotel gave back (the credit note).",
+          "Since 2026-10 the Travel Desk cancels on the trip itself, one ticket or all, and must file the credit note — number, amount and the document.",
           "The Section 4.1 reason is recorded on the legs when the desk processes the cancellation. A business reason makes the charge reimbursable; a personal one does not.",
           "“Advance out” is money paid to the traveller that has not been settled or recovered. It appears on Outstanding Advances too.",
         ]}

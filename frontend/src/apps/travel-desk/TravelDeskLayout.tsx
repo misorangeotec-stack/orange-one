@@ -5,11 +5,12 @@ import { roleLabel, useSession } from "@/core/platform/session";
 import { useOrgPersonById } from "@/core/platform/orgPeople";
 import { buildTravelNav } from "./nav";
 import { useTravelStore } from "./store";
-import { STEPS } from "./lib/steps";
+import { STEPS, MENU_HIDDEN_DEFAULT } from "./lib/steps";
 import type { QueueStep } from "./lib/queues";
 import type { TravelNotification } from "./types";
 
 const B = "/travel-desk";
+
 
 /**
  * Where a bell notification lands. Everything in this module is about ONE trip —
@@ -27,12 +28,19 @@ export default function TravelDeskLayout() {
 
   const queueSteps = STEPS.filter((st) => !st.noQueue).map((st) => st.key as QueueStep);
 
+  // Settings → Menu queues decides which queues the left menu shows. Hidden
+  // ones are only out of the menu: the page, the work and the URL stay.
+  const menuHidden = useMemo(
+    () => new Set(s.config.menuHiddenQueues ?? MENU_HIDDEN_DEFAULT),
+    [s.config.menuHiddenQueues],
+  );
+
   const queues = useMemo(() => {
     const out = {} as Record<QueueStep, boolean>;
-    for (const step of queueSteps) out[step] = s.canSeeQueue(step);
+    for (const step of queueSteps) out[step] = s.canSeeQueue(step) && !menuHidden.has(step);
     return out;
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [s]);
+  }, [s, menuHidden]);
 
   const nav = useMemo(
     () =>
@@ -43,9 +51,10 @@ export default function TravelDeskLayout() {
         queues,
         canManageAnyMaster: s.canManageAnyMaster,
         pendingMasterRequests: s.pendingMasterRequests.length,
+        showCancellations: !menuHidden.has("cancellations"),
       }),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [isAdmin, s.canRaise, s.canSetup, queues, s.canManageAnyMaster, s.pendingMasterRequests],
+    [isAdmin, s.canRaise, s.canSetup, queues, s.canManageAnyMaster, s.pendingMasterRequests, menuHidden],
   );
 
   const notifItems: NotificationItem[] = s.notifications.map((n) => {

@@ -5,7 +5,7 @@ import { appName } from "@/apps/appInfo";
 import { fetchTravelData, travelQueryKey } from "@/apps/travel-desk/data/travelFetch";
 import { buildQueueEntries } from "@/apps/travel-desk/lib/queues";
 import { resolveStepSla } from "@/apps/travel-desk/lib/sla";
-import { STAGES, STEPS } from "@/apps/travel-desk/lib/steps";
+import { shownStages, shownSteps } from "@/apps/travel-desk/lib/steps";
 import { snapshotFrom } from "../lib/buckets";
 import type { FmsAdapter } from "./types";
 
@@ -54,7 +54,13 @@ export const travelDeskAdapter: FmsAdapter = {
     const snapshot = useMemo(
       () =>
         data
-          ? snapshotFrom(buildQueueEntries(data.trips, resolveStepSla(data.stepSla)), STEPS, STAGES)
+          ? (() => {
+              const entries = buildQueueEntries(data.trips, resolveStepSla(data.stepSla));
+              // Hidden Travel Desk steps show only while a trip still waits at one.
+              const keys = new Set(entries.map((e) => e.stepKey as string));
+              const inUse = (k: string) => keys.has(k);
+              return snapshotFrom(entries, shownSteps(inUse), shownStages(inUse));
+            })()
           : null,
       [data],
     );
