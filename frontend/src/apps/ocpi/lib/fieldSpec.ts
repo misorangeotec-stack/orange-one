@@ -61,6 +61,8 @@ export interface QuotationDraft {
 
   companyId: string;
   locationId: string;
+  /** Surat / Noida — picks who approves (fms_ocpi_quotation_approver_ids). "" = general list. */
+  approvalLocation: string;
 
   machineCount: string;
   machineId: string;
@@ -364,6 +366,7 @@ export const EMPTY_DRAFT: QuotationDraft = {
   gstNo: "",
   companyId: "",
   locationId: "",
+  approvalLocation: "",
   machineCount: "1",
   machineId: "",
   machineCategoryId: "",
@@ -1377,6 +1380,7 @@ export const FIELD_LABEL: Record<keyof QuotationDraft, string> = {
   gstNo: "GST number",
   companyId: "Selling company",
   locationId: "Location",
+  approvalLocation: "Approval location",
   machineCount: "No. of machines",
   machineId: "Machine",
   machineCategoryId: "Machine category",
@@ -1560,6 +1564,7 @@ export function draftFromDeal(
     gstNo: s(d.gstNo),
     companyId: s(d.companyId),
     locationId: s(d.locationId),
+    approvalLocation: s(d.approvalLocation),
     machineCount: s(d.machineCount),
     machineId: s(d.machineId),
     machineCategoryId: s(d.machineCategoryId),
@@ -1730,6 +1735,7 @@ export function payloadFromDraft(d: QuotationDraft): Record<string, unknown> {
     gst_no: d.gstNo,
     company_id: d.companyId,
     location_id: d.locationId,
+    approval_location: d.approvalLocation,
     machine_count: d.machineCount,
     machine_id: d.machineId,
     machine_category_id: d.machineCategoryId,

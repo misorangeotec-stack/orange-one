@@ -83,11 +83,12 @@ export default function ApprovalPanel({
   const [rebuilt, setRebuilt] = useState(false);
   const [loading, setLoading] = useState(false);
 
-  const mayAct = s.canActOn("quotation_approval");
+  // Per deal: with approval by location, the deal's location picks its approvers.
+  const mayAct = s.canApprove(deal);
   const waiting = deal.status === "awaiting_quotation_approval";
   const isOwnDeal = deal.raisedBy === s.userId;
-  const soleApprover =
-    s.ownersOf("quotation_approval").length === 1 && s.ownersOf("quotation_approval")[0] === s.userId;
+  const approvers = s.approversFor(deal);
+  const soleApprover = approvers.length === 1 && approvers[0] === s.userId;
 
   const machine = s.machineById(deal.machineId);
   // The machine's service checklist — downloads with every paper here.
@@ -369,8 +370,9 @@ export default function ApprovalPanel({
       ) : (
         <Card className="p-4">
           <p className="text-[13.5px] text-grey">
-            This quotation is waiting for approval. You are not one of the approvers, so there is
-            nothing for you to do here.
+            This quotation is waiting for approval. You are not one of the approvers
+            {deal.approvalLocation ? ` for ${deal.approvalLocation}` : ""}, so there is nothing for
+            you to do here.
           </p>
           {error && <p className="mt-2 text-[13px] text-ryg-red">{error}</p>}
         </Card>
