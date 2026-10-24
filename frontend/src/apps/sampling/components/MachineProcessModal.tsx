@@ -110,7 +110,7 @@ export default function MachineProcessModal({
   const options: ComboOption[] = useMemo(() => {
     const opts: ComboOption[] = [
       ...(selfId ? [{ value: selfId, label: "Self (me)" }] : []),
-      ...s.activeRecipients.filter((r) => r.userId !== selfId).map((r) => ({ value: r.userId, label: r.name })),
+      ...s.handoverPeople.filter((r) => r.userId !== selfId).map((r) => ({ value: r.userId, label: r.name })),
     ];
     if (pick.startsWith("free:")) opts.push({ value: pick, label: pick.slice(5) });
     // The person the lab result went to need not be in the recipient master.
@@ -181,7 +181,7 @@ export default function MachineProcessModal({
         toName =
           pick === selfId
             ? session.user?.name ?? "Self"
-            : s.activeRecipients.find((r) => r.userId === pick)?.name ?? s.personName(pick);
+            : s.handoverPeople.find((r) => r.userId === pick)?.name ?? s.personName(pick);
       }
 
       const base = {

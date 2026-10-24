@@ -118,10 +118,10 @@ export function useSampleRequestForm(initial?: SamplingRequest) {
   // people only. Blank is the "nobody collects" state and needs no row of its own:
   // the field is `clearable`, so a mis-picked collector can be un-picked.
   const collectorOptions: ComboOption[] = s.activeCollectors.map((c) => ({ value: c.userId, label: c.name }));
-  // Recipients = Self + the curated recipient master (deduped against Self).
+  // Recipients = Self + every Orange Hub user (deduped against Self).
   const recipientOptions: ComboOption[] = [
     ...(selfId ? [{ value: selfId, label: "Self (me)" }] : []),
-    ...s.activeRecipients.filter((r) => r.userId !== selfId).map((r) => ({ value: r.userId, label: r.name })),
+    ...s.handoverPeople.filter((r) => r.userId !== selfId).map((r) => ({ value: r.userId, label: r.name })),
   ];
   // An edit keeps the people the request already names, even when they are not on
   // today's lists — the requester's own "Self" seen by a coordinator, or a
@@ -184,7 +184,7 @@ export function useSampleRequestForm(initial?: SamplingRequest) {
   const recipientName = (id: string): string | null => {
     if (!id) return null;
     if (id === selfId) return session.user?.name ?? "Self";
-    const listed = s.activeRecipients.find((r) => r.userId === id)?.name;
+    const listed = s.handoverPeople.find((r) => r.userId === id)?.name;
     if (listed) return listed;
     // A recipient kept from the request being edited (see recipientOptions).
     return id === initial?.handoverRecipientId ? initial.handoverRecipientName : null;

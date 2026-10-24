@@ -57,12 +57,12 @@ export default function CollectModal({
   const options: ComboOption[] = useMemo(() => {
     const opts: ComboOption[] = [
       ...(selfId ? [{ value: selfId, label: "Self (me)" }] : []),
-      ...s.activeRecipients.filter((r) => r.userId !== selfId).map((r) => ({ value: r.userId, label: r.name })),
+      ...s.handoverPeople.filter((r) => r.userId !== selfId).map((r) => ({ value: r.userId, label: r.name })),
     ];
     // Keep a typed free-text pick visible in the trigger.
     if (pick.startsWith("free:")) opts.push({ value: pick, label: pick.slice(5) });
     return opts;
-  }, [s.activeRecipients, selfId, pick]);
+  }, [s.handoverPeople, selfId, pick]);
 
   const save = async () => {
     if (!request) return;
@@ -80,7 +80,7 @@ export default function CollectModal({
       } else {
         recipientId = pick;
         recipientName =
-          pick === selfId ? session.user?.name ?? "Self" : s.activeRecipients.find((r) => r.userId === pick)?.name ?? null;
+          pick === selfId ? session.user?.name ?? "Self" : s.handoverPeople.find((r) => r.userId === pick)?.name ?? null;
       }
       // Date collected defaults to today server-side (the entry date).
       const input = {
