@@ -234,7 +234,8 @@ export interface TaskActivity {
  * `peer_reopened` = the giver reopened your peer task (trg_tasks_notify_peer_review,
  * 20270204120100).
  */
-export type NotificationType = "mention" | "assigned" | "task_recurring_reminder" | "peer_review" | "peer_reopened";
+/** fund_flow: a Budgeted Fund Flow reminder or change alert — its own message and link (no task). */
+export type NotificationType = "mention" | "assigned" | "task_recurring_reminder" | "peer_review" | "peer_reopened" | "fund_flow";
 
 export interface Notification {
   id: string;
@@ -259,6 +260,9 @@ export interface Notification {
   /** Reminder rows only: the recurring template, and the date its task will appear. */
   recurringTaskId: string | null;
   reminderDate: string | null;
+  /** Module notices (Fund Flow): the row's own text and where it opens. NULL for task notifications. */
+  message?: string | null;
+  link?: string | null;
   readAt: string | null;
   createdAt: string;
 }

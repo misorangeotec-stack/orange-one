@@ -8,7 +8,7 @@ import { useStickyScope, useStickyState } from "@/shared/lib/stickyState";
 import { timeAgo, formatDateTime } from "@/shared/lib/time";
 import { cn } from "@/shared/lib/cn";
 import { useTaskStore } from "../mock/store";
-import { notificationText, notificationLink } from "../lib/notifyText";
+import { notificationText, notificationLink, notificationActorFallback } from "../lib/notifyText";
 
 type Filter = "all" | "unread";
 
@@ -118,7 +118,7 @@ export default function Notifications() {
                     <div className="min-w-0 flex-1">
                       <div className="text-[13px] text-ink leading-snug">
                         {notificationText(n, {
-                          actorName: actorById(n.actorId)?.name ?? "Someone",
+                          actorName: actorById(n.actorId)?.name ?? notificationActorFallback(n),
                           taskTitle: getTask(n.taskId ?? "")?.title,
                         })}
                       </div>

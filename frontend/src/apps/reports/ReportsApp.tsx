@@ -49,6 +49,7 @@ import PayablesMasterReport from "@hub/pages/PayablesMasterReport";
 import IncomeMasterReport from "@hub/pages/IncomeMasterReport";
 import ExpenseMasterReport from "@hub/pages/ExpenseMasterReport";
 import SalesGainReport from "@hub/pages/SalesGainReport";
+import FundFlowReport from "@hub/pages/FundFlowReport";
 import SalesDashboard from "@hub/pages/SalesDashboard";
 import PurchaseDashboard from "@hub/pages/PurchaseDashboard";
 import StockAnalysis from "@hub/pages/StockAnalysis";
@@ -158,6 +159,9 @@ function ReportRoutes() {
                   VALUATIONMETHOD, so a configured standard price is never mistaken for a cost. Own
                   company + FY pickers. */}
               <Route path="finance-sales-gain" element={<SalesGainReport />} />
+              {/* Finance → Budgeted Fund Flow — the monthly fund flow budget, entered and CFO-approved
+                  in Hub (fund_flow_* tables). Own month picker (see FY_PINNED_ROUTES). */}
+              <Route path="finance-fund-flow" element={<FundFlowReport />} />
               {/* Dashboards → Sales Dashboard — the Talligence composite screen. Unlike every master
                   report it spans FOUR spines (sales / income / expense / receivables), so its RPC
                   returns meta.tie_* and the page warns when two separately-crons'd snapshots drift.

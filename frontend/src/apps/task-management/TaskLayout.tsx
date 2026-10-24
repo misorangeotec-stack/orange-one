@@ -4,7 +4,7 @@ import type { NotificationItem } from "@/shared/components/layout/types";
 import { buildTaskNav } from "./nav";
 import { useSession, roleLabel } from "./mock/session";
 import { useTaskStore } from "./mock/store";
-import { notificationMessage, notificationLink } from "./lib/notifyText";
+import { notificationMessage, notificationLink, notificationActorFallback } from "./lib/notifyText";
 
 
 /** Wires the session + live task data into the generic AppShell, then renders routes. */
@@ -19,7 +19,7 @@ export default function TaskLayout() {
     const actor = actorById(n.actorId);
     return {
       id: n.id,
-      actorName: actor?.name ?? "Someone",
+      actorName: actor?.name ?? notificationActorFallback(n),
       actorColor: actor?.avatarColor,
       // Wording lives in lib/notifyText so the bell, the Notifications page, the
       // dashboard panel and the /home bell can't drift apart. Prefer the live task

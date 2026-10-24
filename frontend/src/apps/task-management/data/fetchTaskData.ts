@@ -121,6 +121,8 @@ const mapNotification = (r: any): Notification => ({
   taskTitle: r.tasks?.title ?? r.recurring_tasks?.title ?? null,
   recurringTaskId: r.recurring_task_id ?? null,
   reminderDate: r.reminder_date ?? null,
+  message: r.message ?? null,
+  link: r.link ?? null,
   readAt: r.read_at,
   createdAt: r.created_at,
 });
@@ -349,9 +351,12 @@ export async function fetchTaskActivity(): Promise<TaskActivityData> {
 export async function fetchMyNotifications(userId: string): Promise<Notification[]> {
   const out: any[] = []; // eslint-disable-line @typescript-eslint/no-explicit-any
   const BASE = "id,user_id,type,task_id,activity_id,actor_id,read_at,created_at,tasks(title)";
-  // The reminder columns arrive with migration 20270106120100. Until it has run the
-  // wider select errors, so fall back to the old one and the bell never breaks.
-  let select = `${BASE},recurring_task_id,reminder_date,recurring_tasks(title)`;
+  // The reminder columns arrive with migration 20270106120100 and message/link (Fund Flow
+  // notices) with 20270217120000. Until each has run the wider select errors, so step down one
+  // select at a time and the bell never breaks.
+  const SELECTS = [`${BASE},recurring_task_id,reminder_date,recurring_tasks(title),message,link`,
+    `${BASE},recurring_task_id,reminder_date,recurring_tasks(title)`, BASE];
+  let select = SELECTS[0];
   for (let from = 0; ; from += PAGE_SIZE) {
     const page = () =>
       supabase
@@ -361,8 +366,8 @@ export async function fetchMyNotifications(userId: string): Promise<Notification
         .order("id", { ascending: true })
         .range(from, from + PAGE_SIZE - 1);
     let { data, error } = await page();
-    if (error && select !== BASE) {
-      select = BASE;
+    while (error && select !== BASE) {
+      select = SELECTS[SELECTS.indexOf(select) + 1];
       ({ data, error } = await page());
     }
     if (error) throw new Error(error.message);

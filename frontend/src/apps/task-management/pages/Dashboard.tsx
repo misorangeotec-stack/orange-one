@@ -9,7 +9,7 @@ import { WEEK_START } from "../mock/data";
 import { computeStats, actualRygFor, aggregateRyg, countsTowardWorkload } from "../mock/selectors";
 import type { ActivityType, AppRole, StatusFilter, Task } from "../types";
 import { taskListLink, taskDetailPath } from "../lib/taskLink";
-import { notificationText, notificationLink } from "../lib/notifyText";
+import { notificationText, notificationLink, notificationActorFallback } from "../lib/notifyText";
 import StatCard from "../components/StatCard";
 import StatusChip from "../components/StatusChip";
 import RygBar from "../components/RygBar";
@@ -292,7 +292,7 @@ function UnreadNotificationsCard() {
           const body = (
             <span className="text-grey leading-snug">
               {notificationText(n, {
-                actorName: actorById(n.actorId)?.name ?? "Someone",
+                actorName: actorById(n.actorId)?.name ?? notificationActorFallback(n),
                 taskTitle: getTask(n.taskId ?? "")?.title,
               })}
               <span className="block text-[11px] text-grey-2 mt-0.5">{timeAgo(n.createdAt)}</span>
