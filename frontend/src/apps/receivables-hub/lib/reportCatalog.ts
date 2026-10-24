@@ -438,6 +438,21 @@ export const REPORTS: ReportEntry[] = [
     status: "live",
     keywords: ["sales gain", "margin", "profit", "gross profit", "cost of goods", "cogs", "product margin"],
   },
+  {
+    id: "finance-fund-flow",
+    // A treasury budget: lines are payment heads and vendors, not customers. Its collections
+    // figure is the Salesperson Collection Report's whole-company total, never a scoped one.
+    scoping: "none",
+    scopeNote: "Treasury budget for the whole group — salesperson scope does not apply.",
+    title: "Budgeted Fund Flow",
+    purpose: "The month's fund flow budget — payments by head, receipts, closing — entered, approved by the CFO, tracked to paid.",
+    category: "finance",
+    path: "reports/finance-fund-flow",
+    icon: Landmark,
+    source: "tally",
+    status: "live",
+    keywords: ["fund flow", "cash flow", "cashflow", "budget", "0F", "import due", "advances", "customs duty", "emi", "vendor payments", "closing balance"],
+  },
 
   // ── Inventory ──────────────────────────────────────────────────────────────
   {

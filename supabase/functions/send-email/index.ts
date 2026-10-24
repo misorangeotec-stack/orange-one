@@ -545,6 +545,32 @@ async function compose(row: Row): Promise<Composed | null> {
       replyTo,
     };
   }
+  // ---- Budgeted Fund Flow: reminders and change alerts ----------------------
+  // Queued by ff_notify (migration 20270219120000_fund_flow.sql): month opening / closing, the
+  // Saturday follow-up, the 4 PM / 7 PM change summary, CFO plan approval -> Directors, the
+  // Directors' approval -> CFO, a reopen. Only while the 'fund-flow' email switch is on.
+  // `fund_flow_` is not in the module-prefix list below, so without this branch it would be
+  // marked skipped. Points arrive as an array, like the Daily Report's `bullets`.
+  if (row.kind === "fund_flow_notice") {
+    const p = (row.payload ?? {}) as Record<string, unknown>;
+    const str = (v: unknown, d = "") => (typeof v === "string" && v ? v : d);
+    const headline = str(p.headline, "Budgeted Fund Flow");
+    const points = (Array.isArray(p.bullets) ? p.bullets : [])
+      .filter((b): b is string => typeof b === "string" && !!b);
+    const link = APP_BASE_URL ? `${APP_BASE_URL}${str(p.link, "/reports/finance-fund-flow")}` : "";
+    return {
+      subject: str(p.subject, headline),
+      html: emailShell({
+        eyebrow: "Budgeted Fund Flow",
+        headline,
+        inner: bulletLines(points) + (link ? cta(link, "Open the Fund Flow") : ""),
+        tag: "Fund Flow",
+        footer: `<b style="color:${GREY};">Orange One Hub</b> &middot; Budgeted Fund Flow reminders and change alerts.`,
+      }),
+      text: [headline, ...points.map((t) => `- ${t}`), link].filter(Boolean).join("\n\n"),
+      replyTo,
+    };
+  }
   // ---- the CUSTOMER-FACING mail ------------------------------------------
   // The one message this portal sends outside the company: the customer being
   // told their planned dispatch date. It must come BEFORE the shared FMS

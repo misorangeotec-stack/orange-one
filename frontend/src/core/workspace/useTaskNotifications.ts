@@ -3,7 +3,7 @@ import { useSession } from "@/core/platform/session";
 import { fetchOrgPeople } from "@/core/platform/orgPeople";
 import type { NotificationItem } from "@/shared/components/layout/types";
 import { useMyNotifications, markReadOptimistic, TASK_NOTIF_KEY } from "@/apps/task-management/lib/useMyNotifications";
-import { notificationMessage, notificationLink } from "@/apps/task-management/lib/notifyText";
+import { notificationMessage, notificationLink, notificationActorFallback } from "@/apps/task-management/lib/notifyText";
 import { markNotificationsRead } from "@/apps/task-management/data/taskWrites";
 
 /**
@@ -47,7 +47,7 @@ export function useTaskNotifications(): {
     const actor = n.actorId ? personById.get(n.actorId) : undefined;
     return {
       id: n.id,
-      actorName: actor?.name ?? "Someone",
+      actorName: actor?.name ?? notificationActorFallback(n),
       actorColor: actor?.avatarColor,
       // No tasks array here — the builder falls back to the title carried on the
       // row itself by fetchMyNotifications' embedded join.

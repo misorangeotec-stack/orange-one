@@ -38,6 +38,9 @@ export function notificationMessage(
       return <span>completed {title} — please review it</span>;
     case "peer_reopened":
       return <span>re-opened {title} — changes needed</span>;
+    case "fund_flow":
+      // A Fund Flow reminder or change alert carries its own sentence (no task behind it).
+      return <span>{n.message ?? "Budgeted Fund Flow update"}</span>;
     case "task_recurring_reminder":
       return <span>reminder: {title} is due on {formatReminderDate(n.reminderDate)}</span>;
     case "mention":
@@ -64,6 +67,11 @@ export function notificationText(
   );
 }
 
+/** Byline when the row has no person behind it (a scheduled Fund Flow reminder). */
+export function notificationActorFallback(n: Notification): string {
+  return n.type === "fund_flow" ? "Fund Flow" : "Someone";
+}
+
 /** "2026-11-10" → "10-11-2026"; the reminder's fire date, as the rest of the hub writes dates. */
 function formatReminderDate(iso: string | null): string {
   if (!iso) return "its next date";
@@ -73,6 +81,7 @@ function formatReminderDate(iso: string | null): string {
 
 /** Where a notification takes you. Null task = nowhere (the row stays inert). */
 export function notificationLink(n: Notification): string | undefined {
+  if (n.link) return n.link;
   if (n.taskId) return `/task-management/tasks/${n.taskId}`;
   // A reminder comes before its task exists, and the recurring pages are managers-only,
   // so it opens the assignee's task list (the task appears there on the day).

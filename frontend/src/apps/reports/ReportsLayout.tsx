@@ -75,6 +75,8 @@ const FY_PINNED_ROUTES = [
   "/reports/finance-income",
   "/reports/finance-expense",
   "/reports/finance-sales-gain",
+  // Fund Flow is month-based with its own month picker; the FY selector would change nothing on it.
+  "/reports/finance-fund-flow",
   "/reports/sales-dashboard",
   // Currently redundant — the prefix match means "/reports/purchase" above already covers it —
   // but the Purchase Report could move, and a route relying on another route's prefix is not
