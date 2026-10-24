@@ -5,6 +5,7 @@ import { cn } from "@/shared/lib/cn";
 import { useInPanel } from "@/shared/lib/embedded";
 import { pageLabelFor } from "@/apps/currentApp";
 import AnnouncementStrip from "@/core/announcements/AnnouncementStrip";
+import { useHubSearch } from "@/core/workspace/hubSearch";
 import Sidebar from "./Sidebar";
 import Topbar from "./Topbar";
 import { HOME_LABEL, HOME_PATH, type NavItem, type NotificationItem, type ShellUser } from "./types";
@@ -70,6 +71,8 @@ export default function AppShell({
   // stops at the module rather than naming the page wrongly.
   const pageLabel = useMemo(() => pageLabelFor(pathname, items), [pathname, items]);
   const inPanel = useInPanel();
+  // Hub-wide, not this app's own menu: the search box jumps to ANY FMS or report.
+  const search = useHubSearch();
 
   // Inside My Control Center's work panel: the page alone, no sidebar or topbar —
   // the panel scrolls it. See shared/lib/embedded.ts.
@@ -86,7 +89,7 @@ export default function AppShell({
     <div className="h-screen flex bg-page-grad overflow-hidden">
       {/* desktop sidebar — owns its own width (resizable / collapsible to a rail) */}
       <aside className="hidden lg:block shrink-0 h-full">
-        <Sidebar nav={items} role={role} logoTo={logoTo} />
+        <Sidebar nav={items} role={role} logoTo={logoTo} search={search} />
       </aside>
 
       {/* mobile drawer */}
@@ -101,7 +104,14 @@ export default function AppShell({
             drawer ? "translate-x-0" : "-translate-x-full"
           )}
         >
-          <Sidebar nav={items} role={role} logoTo={logoTo} onNavigate={() => setDrawer(false)} variant="drawer" />
+          <Sidebar
+            nav={items}
+            role={role}
+            logoTo={logoTo}
+            search={search}
+            onNavigate={() => setDrawer(false)}
+            variant="drawer"
+          />
         </div>
       </div>
 

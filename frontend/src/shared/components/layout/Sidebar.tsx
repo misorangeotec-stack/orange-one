@@ -1,8 +1,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { overrideRail, railRequested, subscribeRail } from "./navRail";
-import { NavLink, useLocation } from "react-router-dom";
+import { NavLink, useLocation, useNavigate } from "react-router-dom";
 import Logo from "@/shared/components/ui/Logo";
 import { cn } from "@/shared/lib/cn";
+import { searchNav, type SearchEntry } from "./navSearch";
 import type { NavItem } from "./types";
 
 /**
@@ -134,6 +135,7 @@ export default function Sidebar({
   logoTo = "/home",
   onNavigate,
   variant = "docked",
+  search,
 }: {
   nav: NavItem[];
   role: string;
@@ -141,6 +143,11 @@ export default function Sidebar({
   onNavigate?: () => void;
   /** The mobile drawer is a fixed-width overlay: no resize, no rail. */
   variant?: "docked" | "drawer";
+  /**
+   * What the search box above the menu can find. Omit it and there is no search box.
+   * With the groups closed, people could not tell which FMS sat under which heading.
+   */
+  search?: SearchEntry[];
 }) {
   const items = nav.filter((i) => !i.roles || i.roles.includes(role));
   const nodes = useMemo(() => buildNodes(items), [items]);
@@ -234,6 +241,54 @@ export default function Sidebar({
     if (!rail) setFlyout(null);
   }, [rail]);
 
+  // ---- search -----------------------------------------------------------------
+  const [query, setQuery] = useState("");
+  const [cursor, setCursor] = useState(0);
+  const searchRef = useRef<HTMLInputElement>(null);
+  const navigate = useNavigate();
+  const results = useMemo(() => (search ? searchNav(search, query) : []), [search, query]);
+  const searching = !!search && query.trim() !== "";
+  useEffect(() => setCursor(0), [query]);
+
+  const openResult = (to: string) => {
+    setQuery("");
+    navigate(to);
+    onNavigate?.();
+  };
+  const onSearchKey = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === "ArrowDown") {
+      e.preventDefault();
+      setCursor((c) => Math.min(c + 1, results.length - 1));
+    } else if (e.key === "ArrowUp") {
+      e.preventDefault();
+      setCursor((c) => Math.max(c - 1, 0));
+    } else if (e.key === "Enter" && results[cursor]) {
+      e.preventDefault();
+      openResult(results[cursor].to);
+      searchRef.current?.blur();
+    } else if (e.key === "Escape") {
+      setQuery("");
+      searchRef.current?.blur();
+    }
+  };
+
+  // Ctrl+K (⌘K) jumps to the box from anywhere. Docked sidebar only — the drawer is
+  // hidden on desktop, and two listeners would fight over one keypress.
+  useEffect(() => {
+    if (!search || !docked) return;
+    const onKey = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "k") {
+        e.preventDefault();
+        if (rail) setRailPersisted(false);
+        // After the rail has expanded and the input exists.
+        window.setTimeout(() => searchRef.current?.focus(), 0);
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [search, docked, rail]);
+
   const containsActive = (g: Group) => leavesOf(g).some((i) => isActivePath(pathname, i.to));
   const effectiveWidth = docked ? (rail ? RAIL_WIDTH : width) : SIDEBAR_DEFAULT_WIDTH;
 
@@ -267,11 +322,84 @@ export default function Sidebar({
           )}
         </div>
 
+        {search &&
+          (rail ? (
+            <div className="px-2 pt-3">
+              <button
+                type="button"
+                onClick={() => {
+                  setRailPersisted(false);
+                  window.setTimeout(() => searchRef.current?.focus(), 0);
+                }}
+                title="Search FMS & reports (Ctrl+K)"
+                className="w-full h-10 rounded-xl flex items-center justify-center text-[#aebbd4] hover:bg-white/[0.08] hover:text-white transition-colors"
+              >
+                <SearchIcon />
+              </button>
+            </div>
+          ) : (
+            <div className="px-3 pt-4">
+              <div className="relative">
+                <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-white/40">
+                  <SearchIcon />
+                </span>
+                <input
+                  ref={searchRef}
+                  type="search"
+                  value={query}
+                  onChange={(e) => setQuery(e.target.value)}
+                  onKeyDown={onSearchKey}
+                  placeholder="Search FMS, reports…"
+                  aria-label="Search FMS and reports"
+                  autoComplete="off"
+                  spellCheck={false}
+                  className="w-full h-10 rounded-xl bg-white/[0.07] border border-white/10 pl-9 pr-9 text-[13px] text-white placeholder:text-white/40 outline-none focus:border-orange/70 focus:bg-white/[0.10] transition-colors [&::-webkit-search-cancel-button]:hidden"
+                />
+                {query ? (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setQuery("");
+                      searchRef.current?.focus();
+                    }}
+                    title="Clear"
+                    className="absolute right-2 top-1/2 -translate-y-1/2 w-6 h-6 rounded-md flex items-center justify-center text-white/50 hover:text-white hover:bg-white/[0.08]"
+                  >
+                    ×
+                  </button>
+                ) : (
+                  docked && (
+                    <kbd className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 text-[10px] font-semibold text-white/30">
+                      Ctrl K
+                    </kbd>
+                  )
+                )}
+              </div>
+            </div>
+          ))}
+
         <nav className={cn("flex-1 overflow-y-auto py-4 space-y-0.5", rail ? "px-2" : "px-3")}>
-          {/* Keyed by to+index, NOT by `to` alone: an app may legitimately list the
+          {searching && !rail ? (
+            results.length ? (
+              results.map((r, i) => (
+                <ResultRow
+                  key={`${r.to}#${i}`}
+                  entry={r}
+                  active={i === cursor}
+                  onHover={() => setCursor(i)}
+                  onOpen={() => openResult(r.to)}
+                />
+              ))
+            ) : (
+              <p className="px-3 py-6 text-center text-[12.5px] text-white/45">
+                Nothing found for “{query.trim()}”.
+              </p>
+            )
+          ) : (
+          /* Keyed by to+index, NOT by `to` alone: an app may legitimately list the
               same destination twice (Sampling shows one shared step under both of
-              its branch headings), and a duplicate React key silently drops a row. */}
-          {nodes.map((node, idx) =>
+              its branch headings), and a duplicate React key silently drops a row. */
+          nodes.map((node, idx) =>
             node.kind === "item" ? (
               rail ? (
                 <RailButton
@@ -308,7 +436,7 @@ export default function Sidebar({
                 pathname={pathname}
               />
             )
-          )}
+          ))}
         </nav>
 
         {!rail && (
@@ -571,6 +699,54 @@ function Row({
     </NavLink>
   );
 }
+
+/** One search hit: the name, and faintly under it the menu group it lives in. */
+function ResultRow({
+  entry,
+  active,
+  onHover,
+  onOpen,
+}: {
+  entry: SearchEntry;
+  active: boolean;
+  onHover: () => void;
+  onOpen: () => void;
+}) {
+  const ref = useRef<HTMLAnchorElement>(null);
+  useEffect(() => {
+    if (active) ref.current?.scrollIntoView({ block: "nearest" });
+  }, [active]);
+  return (
+    // A real link, so Ctrl+click / middle-click still opens a new tab.
+    <a
+      ref={ref}
+      href={entry.to}
+      onMouseEnter={onHover}
+      onClick={(e) => {
+        if (e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
+        e.preventDefault();
+        onOpen();
+      }}
+      className={cn(
+        "flex items-center gap-3 rounded-xl px-3 py-2 transition-colors",
+        active ? "bg-white/[0.10] text-white" : "text-[#aebbd4] hover:text-white"
+      )}
+    >
+      <span className="[&>svg]:w-[18px] [&>svg]:h-[18px] shrink-0">{entry.icon}</span>
+      <span className="flex-1 min-w-0">
+        <span className="block truncate text-[13.5px] font-medium">{entry.label}</span>
+        {entry.hint && <span className="block truncate text-[11px] text-white/40">{entry.hint}</span>}
+      </span>
+    </a>
+  );
+}
+
+const SearchIcon = () => (
+  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <circle cx="11" cy="11" r="7" />
+    <path d="m20 20-3.5-3.5" />
+  </svg>
+);
 
 function Chevron({ open, small }: { open: boolean; small?: boolean }) {
   const s = small ? 12 : 14;
