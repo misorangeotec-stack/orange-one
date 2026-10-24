@@ -5,7 +5,7 @@ import type { Profile } from "@/core/platform/types";
 import { appName, appBasePath, appCategory, appSubGroup } from "../appInfo";
 import { canSeeMenu } from "@hub/lib/menus";
 import { allowedReportIds, GRANTABLE_REPORTS } from "@hub/lib/reportAccess";
-import { categoryHref, reportCategoriesFor } from "@hub/lib/reportCatalog";
+import { categoryById, categoryHref, reportCategoriesFor, reportHref, visibleReports } from "@hub/lib/reportCatalog";
 import { BUSHRA_DASHBOARDS, dashboardGroupHref, groupPageIds } from "@hub/lib/bushraDashboards";
 import ReportsApp from "./ReportsApp";
 
@@ -161,6 +161,22 @@ export const reportsApp: AppManifest = {
     }
 
     return rows;
+  },
+  /**
+   * Every single report the viewer holds, for the sidebar search — the menu above stops at
+   * sections on purpose, but someone typing "aging" wants the Aging report, not a section.
+   * Each half is offered only if it is open, exactly as `menuEntries` decides it.
+   */
+  searchEntries: ({ isAdmin, user }) => {
+    const { held, reports, dashboards } = halves(isAdmin, user);
+    return visibleReports(held)
+      .filter((r) => r.status === "live" && r.path && (r.category === "bushra-report" ? dashboards.length > 0 : reports))
+      .map((r) => ({
+        label: r.title,
+        to: reportHref(r),
+        hint: `${r.category === "bushra-report" ? "Report Dashboard" : "Reports"} › ${categoryById(r.category)?.title ?? ""}`,
+        keywords: r.keywords,
+      }));
   },
   Component: ReportsApp,
 };

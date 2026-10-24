@@ -3,6 +3,8 @@ import { overrideRail, railRequested, subscribeRail } from "./navRail";
 import { NavLink, useLocation } from "react-router-dom";
 import Logo from "@/shared/components/ui/Logo";
 import { cn } from "@/shared/lib/cn";
+import type { SearchEntry } from "./navSearch";
+import { NavSearchIconButton, NavSearchInput, NavSearchResults, useNavSearch } from "./NavSearchBox";
 import type { NavItem } from "./types";
 
 /**
@@ -134,6 +136,7 @@ export default function Sidebar({
   logoTo = "/home",
   onNavigate,
   variant = "docked",
+  search,
 }: {
   nav: NavItem[];
   role: string;
@@ -141,6 +144,11 @@ export default function Sidebar({
   onNavigate?: () => void;
   /** The mobile drawer is a fixed-width overlay: no resize, no rail. */
   variant?: "docked" | "drawer";
+  /**
+   * What the search box above the menu can find. Omit it and there is no search box.
+   * With the groups closed, people could not tell which FMS sat under which heading.
+   */
+  search?: SearchEntry[];
 }) {
   const items = nav.filter((i) => !i.roles || i.roles.includes(role));
   const nodes = useMemo(() => buildNodes(items), [items]);
@@ -234,6 +242,17 @@ export default function Sidebar({
     if (!rail) setFlyout(null);
   }, [rail]);
 
+  // ---- search -----------------------------------------------------------------
+  // Ctrl+K on the docked sidebar only — the drawer is hidden on desktop, and two
+  // listeners would fight over one keypress.
+  const finder = useNavSearch({
+    entries: search ?? [],
+    onNavigate,
+    shortcut: !!search && docked,
+    onShortcut: () => rail && setRailPersisted(false),
+  });
+  const searching = !!search && finder.searching;
+
   const containsActive = (g: Group) => leavesOf(g).some((i) => isActivePath(pathname, i.to));
   const effectiveWidth = docked ? (rail ? RAIL_WIDTH : width) : SIDEBAR_DEFAULT_WIDTH;
 
@@ -267,11 +286,28 @@ export default function Sidebar({
           )}
         </div>
 
+        {search &&
+          (rail ? (
+            <div className="px-2 pt-3">
+              <NavSearchIconButton
+                onClick={() => {
+                  setRailPersisted(false);
+                  finder.focus();
+                }}
+              />
+            </div>
+          ) : (
+            <NavSearchInput s={finder} className="mx-3 mt-4" />
+          ))}
+
         <nav className={cn("flex-1 overflow-y-auto py-4 space-y-0.5", rail ? "px-2" : "px-3")}>
-          {/* Keyed by to+index, NOT by `to` alone: an app may legitimately list the
+          {searching && !rail ? (
+            <NavSearchResults s={finder} />
+          ) : (
+          /* Keyed by to+index, NOT by `to` alone: an app may legitimately list the
               same destination twice (Sampling shows one shared step under both of
-              its branch headings), and a duplicate React key silently drops a row. */}
-          {nodes.map((node, idx) =>
+              its branch headings), and a duplicate React key silently drops a row. */
+          nodes.map((node, idx) =>
             node.kind === "item" ? (
               rail ? (
                 <RailButton
@@ -308,7 +344,7 @@ export default function Sidebar({
                 pathname={pathname}
               />
             )
-          )}
+          ))}
         </nav>
 
         {!rail && (

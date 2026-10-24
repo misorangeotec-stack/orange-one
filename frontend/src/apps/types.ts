@@ -74,6 +74,19 @@ export interface AppManifest {
      */
     category?: AppCategory;
   }[];
+  /**
+   * Extra destinations for the sidebar SEARCH box only, on top of this app's menu rows —
+   * places worth finding by name that are too many to list in the menu. Reports uses it
+   * for its individual reports (the menu stops at sections). Same purity and per-user rule
+   * as `menuEntries`: return only what this viewer may open.
+   */
+  searchEntries?: (ctx: { isAdmin: boolean; user: Profile }) => {
+    label: string;
+    to: string;
+    /** Where it lives, shown faintly under the label (e.g. "Reports › Receivables"). */
+    hint?: string;
+    keywords?: string[];
+  }[];
   /** Display name shown on the launcher card. */
   name: string;
   /** One-line description for the launcher card. */
