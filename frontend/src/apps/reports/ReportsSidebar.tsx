@@ -23,7 +23,6 @@ import {
 import { appBasePath } from "@/apps/appInfo";
 import {
   Sidebar,
-  SidebarContent,
   SidebarGroup,
   SidebarGroupContent,
   SidebarGroupLabel,
@@ -33,6 +32,7 @@ import {
   SidebarMenuItem,
   useSidebar,
 } from "@hub/components/ui/sidebar";
+import { SidebarSearchContent } from "@hub/components/SidebarSearchContent";
 
 const LINK_CLASS =
   "text-sidebar-foreground/80 hover:text-sidebar-foreground hover:bg-sidebar-accent rounded-button transition-colors";
@@ -110,7 +110,7 @@ export function ReportsSidebar() {
         </div>
       </SidebarHeader>
 
-      <SidebarContent>
+      <SidebarSearchContent>
         {/*
           The route back to the portal. Deliberately outside the grant-filtered lists below,
           for the same reason the hub keeps its own copy outside `visibleMenusFor`: this app
@@ -229,7 +229,7 @@ export function ReportsSidebar() {
             </SidebarGroupContent>
           </SidebarGroup>
         )}
-      </SidebarContent>
+      </SidebarSearchContent>
     </Sidebar>
   );
 }

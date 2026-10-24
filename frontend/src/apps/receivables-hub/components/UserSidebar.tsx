@@ -5,7 +5,6 @@ import { HOME_LABEL, HOME_PATH } from "@/shared/components/layout/types";
 import { visibleMenusFor } from "@hub/lib/menus";
 import {
   Sidebar,
-  SidebarContent,
   SidebarGroup,
   SidebarGroupContent,
   SidebarGroupLabel,
@@ -15,6 +14,7 @@ import {
   SidebarMenuItem,
   useSidebar,
 } from "@hub/components/ui/sidebar";
+import { SidebarSearchContent } from "@hub/components/SidebarSearchContent";
 
 const LINK_CLASS =
   "text-sidebar-foreground/80 hover:text-sidebar-foreground hover:bg-sidebar-accent rounded-button transition-colors";
@@ -66,7 +66,7 @@ export function UserSidebar() {
         </div>
       </SidebarHeader>
 
-      <SidebarContent>
+      <SidebarSearchContent>
         {/*
           The route back to the portal, deliberately OUTSIDE `visibleMenusFor`.
           That list is filtered by the per-user deny-list an admin edits in
@@ -153,7 +153,7 @@ export function UserSidebar() {
             </SidebarGroupContent>
           </SidebarGroup>
         )}
-      </SidebarContent>
+      </SidebarSearchContent>
     </Sidebar>
   );
 }
