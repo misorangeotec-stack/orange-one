@@ -163,7 +163,7 @@ export function exportExpenseCfoXlsx(ctx: ExportCtx): void {
   for (const s of ctx.index) {
     const sh = new Sheet();
     const name = names.get(s.id)!;
-    header(sh, ctx, s.id === "index" ? "Expense Analysis (CFO) — Index" : s.name, s.id === "index" ? null : idx, !["index", "tb", "raw"].includes(s.id));
+    header(sh, ctx, s.id === "index" ? "CFO EXP — Index" : s.name, s.id === "index" ? null : idx, !["index", "tb", "raw"].includes(s.id));
 
     switch (s.id) {
       case "analytics": {

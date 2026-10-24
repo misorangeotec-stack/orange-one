@@ -198,7 +198,7 @@ function HubRoutes() {
                   (Direct/Indirect Expenses + Purchase Accounts, debit-positive); own company + FY
                   pickers (see FY_PINNED_ROUTES). */}
               <Route path="reports/finance-expense" element={<ExpenseMasterReport />} />
-              {/* Finance → Expense Analysis (CFO) — the CFO expense workbook, from the hub's own
+              {/* Finance → CFO EXP — the CFO expense workbook, from the hub's own
                   expense_cfo_* tables (filled by tools/expense_cfo_loader.py and proved against
                   Tally's TB). Own month + company filters (see FY_PINNED_ROUTES). */}
               <Route path="reports/finance-expense-cfo" element={<ExpenseCfoReport />} />

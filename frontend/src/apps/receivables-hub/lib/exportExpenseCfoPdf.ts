@@ -163,7 +163,7 @@ export async function exportExpenseCfoPdf(ctx: ExportCtx): Promise<void> {
     pageWash(pdf);
     watermark();
     if (key) pageOf.set(key, page);
-    const top = headerBand(doc, { tag: "Expense Analysis (CFO)", compact: true, note }) + 16;
+    const top = headerBand(doc, { tag: "CFO EXP", compact: true, note }) + 16;
     backLink(top);
     return top + 14;
   };
@@ -203,8 +203,8 @@ export async function exportExpenseCfoPdf(ctx: ExportCtx): Promise<void> {
   // ── Page 1: cover and contents ─────────────────────────────────────────────────────────────
   pageWash(pdf);
   watermark();
-  let y = headerBand(doc, { tag: "Expense Analysis (CFO)", note }) + 22;
-  text(pdf, "Expense Analysis (CFO)", MARGIN, y, { size: 18, bold: true });
+  let y = headerBand(doc, { tag: "CFO EXP", note }) + 22;
+  text(pdf, "CFO EXP - Expense Analysis", MARGIN, y, { size: 18, bold: true });
   y += 10;
   y = metaStrip(pdf, MARGIN, y, W(), [
     { label: "Period", value: period, ...(part ? { note: part } : {}) },
@@ -239,7 +239,7 @@ export async function exportExpenseCfoPdf(ctx: ExportCtx): Promise<void> {
     ],
     rows: contents,
     rowKind: (s) => (s.review === "HIGH" ? "big" : "normal"),
-    onNewPage: () => { footer(doc, page, generatedAt, footNote); pdf.addPage("a4", "landscape"); page += 1; pageWash(pdf); watermark(); return headerBand(doc, { tag: "Expense Analysis (CFO)", compact: true, note }) + 20; },
+    onNewPage: () => { footer(doc, page, generatedAt, footNote); pdf.addPage("a4", "landscape"); page += 1; pageWash(pdf); watermark(); return headerBand(doc, { tag: "CFO EXP", compact: true, note }) + 20; },
     maxY: floor(),
   });
 

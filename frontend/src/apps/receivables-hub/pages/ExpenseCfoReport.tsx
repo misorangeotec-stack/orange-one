@@ -27,7 +27,7 @@ import { exportExpenseCfoXlsx } from "@hub/lib/exportExpenseCfo";
 import { exportExpenseCfoPdf } from "@hub/lib/exportExpenseCfoPdf";
 
 /**
- * Finance → Expense Analysis (CFO).
+ * Finance → CFO EXP (Expense Analysis for the CFO).
  *
  * The CFO's expense workbook as a hub report: the same sheets (Index, Summary with AUDIT FLAG,
  * COMPANY WISE, Direct, Direct by Component, Indirect Exp, one vendor-wise sheet per indirect
@@ -89,7 +89,7 @@ function Report({ data }: { data: ExpenseCfoData }) {
     setAsking(false);
     setBusy(true);
     try {
-      const stem = `Expense_CFO_${monthLabel(months[0])}_to_${monthLabel(months[months.length - 1])}_${new Date().toISOString().slice(0, 16).replace(/[-:T]/g, "")}`;
+      const stem = `CFO_EXP_${monthLabel(months[0])}_to_${monthLabel(months[months.length - 1])}_${new Date().toISOString().slice(0, 16).replace(/[-:T]/g, "")}`;
       const ctx = { data, lines, months, filters, flags, index, tb, stem, opts };
       await exportExpenseCfoPdf(ctx);
       exportExpenseCfoXlsx(ctx);
@@ -103,7 +103,7 @@ function Report({ data }: { data: ExpenseCfoData }) {
       <Card className="p-4">
         <div className="flex flex-wrap items-start justify-between gap-4">
           <div>
-            <h1 className="flex items-center gap-2 text-xl font-semibold"><Wallet className="h-5 w-5 text-primary" /> Expense Analysis (CFO)</h1>
+            <h1 className="flex items-center gap-2 text-xl font-semibold"><Wallet className="h-5 w-5 text-primary" /> CFO EXP <span className="text-base font-normal text-muted-foreground">— Expense Analysis</span></h1>
             <p className="text-sm text-muted-foreground">
               Direct + Indirect expenses, all 5 companies, straight from the Tally books · load #{data.meta.loadId} built {new Date(data.meta.finishedAt).toLocaleString("en-IN")}
             </p>

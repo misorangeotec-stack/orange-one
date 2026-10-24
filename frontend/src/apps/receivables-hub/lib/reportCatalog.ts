@@ -365,7 +365,7 @@ export const REPORTS: ReportEntry[] = [
     id: "finance-expense-cfo",
     // All 5 companies in one book; the lines are nominal-account postings with no customer.
     scoping: "none",
-    title: "Expense Analysis (CFO)",
+    title: "CFO EXP",
     purpose: "The CFO expense workbook: month-wise by group, vendor and company, audit flags, MoM variance and its nature, tied to Tally's Trial Balance. Downloads as linked PDF + Excel.",
     category: "finance",
     path: "reports/finance-expense-cfo",
